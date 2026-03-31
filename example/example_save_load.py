@@ -30,7 +30,13 @@ gptq = GPTQ(
     groupsize=128,
 )
 
-runner = Runner(model_config=model_config, quantizer=gptq, qep=True)
+runner = Runner(
+    model_config=model_config,
+    quantizer=gptq,
+    qep=True,
+    max_length=512,
+    num_calibration_samples=128,
+)
 runner.run()
 
 # ── 2. Save ───────────────────────────────────────────────────

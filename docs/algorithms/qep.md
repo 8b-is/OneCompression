@@ -6,7 +6,8 @@ the error that propagates from previously quantized layers to subsequent ones.
 !!! abstract "Reference"
     Yamato Arai and Yuma Ichikawa, "Quantization Error Propagation: Revisiting Layer-Wise
     Post-Training Quantization," NeurIPS 2025.
-    [OpenReview](https://openreview.net/forum?id=a3l3K9khbL)
+    [OpenReview](https://openreview.net/forum?id=a3l3K9khbL) |
+    [Original implementation](https://github.com/FujitsuResearch/qep)
 
 ## Motivation
 

@@ -36,8 +36,8 @@ from onecomp import Runner
 runner = Runner(
     model_config=model_config,
     quantizer=quantizer,
-    max_length=512,
-    num_calibration_samples=128,
+    max_length=2048,
+    num_calibration_samples=512,
     qep=False,
 )
 ```
@@ -57,8 +57,8 @@ runner = Runner(
 | Parameter                   | Type   | Description                                      | Default          |
 |-----------------------------|--------|--------------------------------------------------|------------------|
 | `calibration_dataset`       | `Dataset` | Custom calibration dataset                    | `None`           |
-| `max_length`                | `int`  | Maximum input sequence length                    | `512`            |
-| `num_calibration_samples`   | `int`  | Number of calibration samples                    | `128`            |
+| `max_length`                | `int`  | Maximum input sequence length                    | `2048`           |
+| `num_calibration_samples`   | `int`  | Number of calibration samples                    | `512`            |
 | `calibration_strategy`      | `str`  | Strategy for preparing calibration inputs        | `"drop_rand"`    |
 | `calibration_seed`          | `int`  | Random seed for calibration                      | `0`              |
 | `calibration_batch_size`    | `int`  | Batch size for chunked calibration               | `None`           |

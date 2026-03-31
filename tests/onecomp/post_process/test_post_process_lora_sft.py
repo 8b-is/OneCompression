@@ -43,6 +43,7 @@ def quantized_model_and_config():
     runner = Runner(
         model_config=model_config,
         quantizer=quantizer,
+        max_length=512,
         num_calibration_samples=8,
     )
     runner.run()
@@ -120,6 +121,7 @@ class TestPostProcessLoraSFTViaRunner:
         runner = Runner(
             model_config=model_config,
             quantizer=quantizer,
+            max_length=512,
             num_calibration_samples=8,
             post_processes=[post_process],
         )

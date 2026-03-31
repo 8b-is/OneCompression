@@ -22,7 +22,13 @@ model_config = ModelConfig(
 gptq = GPTQ(wbits=3)
 
 # Configure the runner
-runner = Runner(model_config=model_config, quantizer=gptq, qep=False)
+runner = Runner(
+    model_config=model_config,
+    quantizer=gptq,
+    qep=False,
+    max_length=512,
+    num_calibration_samples=128,
+)
 
 # Run quantization
 runner.run()

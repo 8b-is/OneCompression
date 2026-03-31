@@ -94,6 +94,8 @@ def ppl_dict():
         quantizers=quantizers,
         qep=False,
         calibration_batch_size=128,
+        max_length=512,
+        num_calibration_samples=128,
     )
     runner.run()
 

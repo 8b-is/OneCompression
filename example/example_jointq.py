@@ -22,7 +22,13 @@ model_config = ModelConfig(
 jointq = JointQ(bits=4, group_size=128)
 
 # Configure the runner
-runner = Runner(model_config=model_config, quantizer=jointq, qep=False)
+runner = Runner(
+    model_config=model_config,
+    quantizer=jointq,
+    qep=False,
+    max_length=512,
+    num_calibration_samples=128,
+)
 
 # Run quantization
 runner.run()

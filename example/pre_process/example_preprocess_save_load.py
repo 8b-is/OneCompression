@@ -71,6 +71,7 @@ gptq = GPTQ(wbits=WBITS, groupsize=GROUPSIZE)
 runner = Runner(
     model_config=rotated_config,
     quantizer=gptq,
+    max_length=512,
     num_calibration_samples=NUM_CALIBRATION_SAMPLES,
     calibration_seed=SEED,
 )

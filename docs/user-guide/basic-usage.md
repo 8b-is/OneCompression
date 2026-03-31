@@ -121,7 +121,9 @@ print(f"Quantized: {quantized_ppl:.2f}")
 
 !!! note
     - Evaluating the original or dequantized model requires loading the full model on GPU.
-    - Quantized-model evaluation is currently supported only for **GPTQ** and **DBF** quantizers. Support for other methods is planned.
+    - Quantized-model evaluation (`quantized_model=True`) is supported only for quantizers
+      that implement `create_quantized_model()` (**GPTQ**, **DBF**, **AutoBitQuantizer**).
+      For other quantizers, evaluation automatically falls back to the dequantized (FP16) model.
 
 ### Zero-shot Accuracy
 
@@ -145,6 +147,29 @@ runner.save_dequantized_model("./output/dequantized")
 # Save quantized model (packed integer weights, compatible with vLLM)
 runner.save_quantized_model("./output/quantized")
 ```
+
+!!! note "Quantizer feature support"
+    `save_quantized_model()`, `create_quantized_model()`, and quantized-model PPL/ACC evaluation
+    require the quantizer to implement `get_quant_config()` and `create_inference_layer()`.
+    Currently only **GPTQ**, **DBF**, and **AutoBitQuantizer** support these features.
+
+    | Quantizer          | Save | Quantized PPL/ACC | Fallback                  |
+    |--------------------|:----:|:-----------------:|---------------------------|
+    | `GPTQ`             | Yes  | Yes               | —                         |
+    | `DBF`              | Yes  | Yes               | —                         |
+    | `AutoBitQuantizer` | Yes  | Yes               | —                         |
+    | `RTN`              | —    | —                 | Dequantized (FP16) model  |
+    | `JointQ`           | —    | —                 | Dequantized (FP16) model  |
+    | `QUIP`             | —    | —                 | Dequantized (FP16) model  |
+    | `CQ`               | —    | —                 | Dequantized (FP16) model  |
+    | `ARB`              | —    | —                 | Dequantized (FP16) model  |
+    | `QBB`              | —    | —                 | Dequantized (FP16) model  |
+    | `Onebit`           | —    | —                 | Dequantized (FP16) model  |
+
+    For unsupported quantizers:
+
+    - **PPL/ACC evaluation**: automatically falls back to the dequantized (FP16) model. No error is raised.
+    - **Saving**: use `save_dequantized_model()` (FP16) or `save_quantization_results()` instead.
 
 ## Enabling QEP
 

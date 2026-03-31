@@ -48,6 +48,8 @@ def test_autobit_small_model_ilp():
         model_config=ModelConfig(model_id=SMALL_MODEL_ID, device="cpu"),
         quantizer=quantizer,
         qep=True,
+        max_length=512,
+        num_calibration_samples=128,
     )
     runner.run()
 
@@ -67,6 +69,8 @@ def test_autobit_small_model_dbf():
         model_config=ModelConfig(model_id=SMALL_MODEL_ID, device="cpu"),
         quantizer=quantizer,
         qep=True,
+        max_length=512,
+        num_calibration_samples=128,
     )
     runner.run()
 
@@ -90,6 +94,8 @@ def test_autobit_small_model_error():
         model_config=ModelConfig(model_id=SMALL_MODEL_ID, device="cpu"),
         quantizer=quantizer,
         qep=True,
+        max_length=512,
+        num_calibration_samples=128,
     )
     with pytest.raises(ValueError, match="target_bit=.* is below 1.0 bpw"):
         runner.run()
@@ -108,5 +114,7 @@ def test_autobit_large_model():
         model_config=ModelConfig(model_id=LARGE_MODEL_ID, device="cpu"),
         quantizer=quantizer,
         qep=True,
+        max_length=512,
+        num_calibration_samples=128,
     )
     runner.run()

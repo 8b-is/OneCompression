@@ -30,6 +30,8 @@ runner = Runner(
     model_config=ModelConfig(model_id=MODEL_ID, device="cuda:0"),
     quantizer=quantizer,
     qep=False,
+    max_length=512,
+    num_calibration_samples=128,
 )
 runner.run()
 

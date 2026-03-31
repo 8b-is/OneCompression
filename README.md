@@ -6,13 +6,25 @@ This package is currently under development (version 0) and may behave unstably.
 
 ## 📦 Features
 
-- **Quantization Error Propagation (QEP)**: A post-training quantization method that corrects quantization errors by propagating them to subsequent layers, improving the accuracy of quantized LLMs. See [Arai & Ichikawa, NeurIPS 2025](https://openreview.net/forum?id=a3l3K9khbL) for details.
+- **Quantization Error Propagation (QEP)**: A post-training quantization method that corrects quantization errors by propagating them to subsequent layers, improving the accuracy of quantized LLMs. See [Arai & Ichikawa, NeurIPS 2025](https://openreview.net/forum?id=a3l3K9khbL) for details. The original reference implementation is available at [FujitsuResearch/qep](https://github.com/FujitsuResearch/qep).
 - **vLLM Plugin Integration**: Serve OneComp-quantized models with [vLLM](https://docs.vllm.ai/) via built-in plugins for DBF and Mixed-GPTQ quantization methods.
 - **AutoBit**: Mixed-precision quantization with ILP-based bitwidth assignment. Automatically estimates the target bitwidth from available VRAM and assigns per-layer bitwidths to minimize quantization error under the memory budget.
 - **JointQ**: Joint quantization method that optimizes weight assignments and scale parameters simultaneously for improved quantization accuracy. Supports group-wise quantization (e.g., 4-bit, groupsize=128).
 - **LoRA SFT Post-Process**: Fine-tune quantized models with LoRA adapters for accuracy recovery or domain-specific knowledge injection. Supports SFT loss, teacher distillation, and intermediate block alignment.
 - **Rotation Preprocessing**: SpinQuant/OstQuant-based rotation preprocessing that reduces quantization error by learning optimal rotation matrices before quantization. Rotation/scaling matrices are absorbed into model weights, with online Hadamard hooks automatically registered at load time. Supports Llama and Qwen3 architectures.
 - (TBD)
+
+## 🤖 Supported Models
+
+OneComp has been verified with the following model architectures.
+Other Hugging Face-compatible models may work but are currently untested.
+
+| # | Architecture | Verified Models | Status |
+|---|-------------|-----------------|--------|
+| 1 | Llama | TinyLlama, Llama-2, Llama-3 | ✅ Verified |
+| 2 | Qwen3 | Qwen3-0.6B ~ 32B | ✅ Verified |
+
+> **Note:** Support for additional architectures is planned. Contributions and test reports are welcome.
 
 ## 🔧 Installation
 
@@ -180,6 +192,19 @@ See the [vLLM Inference guide](https://FujitsuResearch.github.io/OneCompression/
 See [LICENSE](./LICENSE) for more details.
 
 ## Citation
+
+OneComp technical report (coming soon on ArXiv):
+
+```
+@misc{onecomp2026,
+  title={TBD},
+  author={TBD},
+  year={2026},
+  note={arXiv preprint coming soon}
+}
+```
+
+QEP (Quantization Error Propagation):
 
 ```
 @inproceedings{

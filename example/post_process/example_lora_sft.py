@@ -80,6 +80,8 @@ runner = Runner(
     model_config=model_config,
     quantizer=gptq,
     post_processes=[post_process],
+    max_length=512,
+    num_calibration_samples=128,
 )
 runner.run()
 

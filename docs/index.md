@@ -17,6 +17,19 @@ It implements state-of-the-art quantization algorithms including GPTQ, DBF, RTN,
 - **LoRA SFT Post-Process** -- Fine-tune quantized models with LoRA adapters for accuracy recovery or domain-specific knowledge injection. Supports SFT loss, teacher distillation, and intermediate block alignment.
 - **Rotation Preprocessing** -- SpinQuant/OstQuant-based rotation preprocessing that reduces quantization error by learning optimal rotation matrices before quantization. Rotation/scaling matrices are absorbed into model weights, with online Hadamard hooks automatically registered at load time. Supports Llama and Qwen3 architectures.
 
+## Supported Models
+
+OneComp has been verified with the following model architectures.
+Other Hugging Face-compatible models may work but are currently untested.
+
+| # | Architecture | Verified Models | Status |
+|---|-------------|-----------------|--------|
+| 1 | Llama | TinyLlama, Llama-2, Llama-3 | :white_check_mark: Verified |
+| 2 | Qwen3 | Qwen3-0.6B ~ 32B | :white_check_mark: Verified |
+
+!!! note
+    Support for additional architectures is planned. Contributions and test reports are welcome.
+
 ## Quick Example
 
 Quantize any Hugging Face model in a single line -- with QEP, GPTQ 4-bit quantization,
@@ -71,6 +84,19 @@ For full control over each step, see the [step-by-step workflow](user-guide/basi
 ## Citation
 
 If you use OneComp in your research, please cite our paper:
+
+OneComp technical report (coming soon on ArXiv):
+
+```bibtex
+@misc{onecomp2026,
+  title={TBD},
+  author={TBD},
+  year={2026},
+  note={arXiv preprint coming soon}
+}
+```
+
+QEP (Quantization Error Propagation):
 
 ```bibtex
 @inproceedings{

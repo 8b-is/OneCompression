@@ -1,5 +1,23 @@
 # Change log
 
+## [v1.0.0] 2026-03-31
+
+### Default Parameter Changes
+
+- Changed `Runner.__init__` default values for calibration parameters:
+  - `max_length`: `512` → `2048`
+  - `num_calibration_samples`: `128` → `512`
+- Pinned old default values explicitly in all `example/` and `tests/` files that previously relied on the defaults
+
+### Documentation
+
+- Updated `docs/user-guide/configuration.md` to reflect the new default values for `max_length` and `num_calibration_samples`
+- Added quantizer feature support table to `docs/user-guide/basic-usage.md` and `docs/api/quantizers/base.md`
+  - Documents which quantizers support `save_quantized_model()` / `create_quantized_model()` and quantized-model PPL/ACC evaluation
+  - Currently supported: **GPTQ**, **DBF**, **AutoBitQuantizer** (requires `get_quant_config()` and `create_inference_layer()`)
+  - Unsupported quantizers (RTN, JointQ, QUIP, CQ, ARB, QBB, Onebit): PPL/ACC evaluation automatically falls back to the dequantized (FP16) model
+- Updated the perplexity/accuracy evaluation note in `basic-usage.md` to reflect AutoBitQuantizer support and fallback behavior
+
 ## [v0.5.0] 2026-03-30
 
 ### New Feature: Post-quantization Workflow

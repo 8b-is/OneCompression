@@ -60,7 +60,12 @@ print("=" * 70)
 model_config = ModelConfig(model_id=MODEL_ID, device="cuda:0")
 gptq = GPTQ(wbits=4, groupsize=128)
 
-runner = Runner(model_config=model_config, quantizer=gptq)
+runner = Runner(
+    model_config=model_config,
+    quantizer=gptq,
+    max_length=512,
+    num_calibration_samples=128,
+)
 runner.run()
 
 # ================================================================
