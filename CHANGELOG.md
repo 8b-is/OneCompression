@@ -188,6 +188,21 @@
 - Added LoRA SFT post-process implementation (`onecomp/post_process/post_process_lora_sft.py`)
   - Provides learning-based post-quantization fine-tuning for GPTQ-quantized models
   - Public API is exposed as `PostProcessLoraSFT`
+- Implemented `BlockWisePTQ.run()` pipeline (`onecomp/post_process/blockwise_ptq.py`)
+  - Phase 1: per-block distillation with teacher model (GPTQ / DBF / OneBit / Generic)
+  - Phase 2: Cross-Block Quantisation (CBQ) sliding-window optimisation (K=2)
+  - Teacher model loaded via `model_config.load_model(device_map="cpu")`
+  - Calibration inputs collected via Catcher hook on first transformer block
+- Added `onecomp/post_process/_blockwise/` sub-package (9 modules)
+  - `helpers.py`: `collect_layer_inputs`, `auto_detect_quantization_strategy`, `get_transformer_layers`, `layer_kwargs_to_device`, etc.
+  - Phase 1 optimisers: `gptq_block_optimizer.py`, `dbf_block_optimizer.py`, `onebit_block_optimizer.py`, `generic_block_optimizer.py`
+  - Phase 2 CBQ optimisers: `gptq_cbq_optimizer.py`, `dbf_cbq_optimizer.py`, `onebit_cbq_optimizer.py`
+  - All optimisers use float32 promotion, best-state tracking with rollback, and hard MSE evaluation
+- Set `use_gemlite=False` in `Runner.run_post_processes()` (`onecomp/runner.py`) to avoid GemLite fp16-only Triton kernel incompatibility with float32 block optimisation
+- Added VLM support for BlockWisePTQ (Qwen3-VL, Qwen2.5-VL, etc.)
+  - `helpers.py`: `get_transformer_layers` / `_get_language_model_backbone` handle `model.model.language_model.*` path
+  - `model_config.py`: `load_model()` falls back to `AutoModelForImageTextToText` for VLM configs
+- Fixed `Quantizer.calculate_hessian` / `calculate_delta_hatX` (`onecomp/quantizer/_quantizer.py`): handle 2D activations from OPT-style architectures
 
 ### New Feature: Rotation Preprocessing Pipeline (`onecomp/pre_process/`)
 
@@ -249,6 +264,7 @@ SpinQuant/OstQuant-based rotation preprocessing that reduces quantization error 
 
 ### Examples
 
+- Added `example/post_process/example_blockwise_ptq.py`: GPTQ 4-bit quantization + BlockWisePTQ (Phase 1 greedy + Phase 2 CBQ) with PPL comparison
 - Added `example/post_process/example_lora_sft.py`: End-to-end demo — GPTQ 4-bit quantization + LoRA SFT (WikiText-2) + PPL evaluation + save/load with `save_quantized_model_pt` / `load_quantized_model_pt`
 - Added `example/post_process/example_lora_sft_knowledge.py`: Knowledge injection demo — teaches the quantized model about "OneCompression" via LoRA SFT and compares generation before/after
 - Added `example/post_process/onecomp_knowledge.jsonl`: Training data describing OneCompression for the knowledge injection example
