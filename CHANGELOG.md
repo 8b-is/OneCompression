@@ -176,18 +176,8 @@
 
 ## [v0.5.0] 2026-03-30
 
-### New Feature: Post-quantization Workflow
+### New Feature: BlockWisePTQ
 
-- Added `PostQuantizationProcess` abstract base class (`onecomp/post_process/_base.py`)
-  - Defines the interface for post-quantization operations (e.g. block-wise PTQ, fine-tuning)
-- Added `post_processes` parameter to `Runner.__init__`
-  - Accepts a list of `PostQuantizationProcess` instances
-  - After quantization, builds a quantized model on CPU and executes each process in order
-  - The processed model is stored as `self.quantized_model`
-- Updated `Runner.calculate_perplexity` and `Runner.calculate_accuracy` to use `self.quantized_model` if available (GPU transfer is handled automatically; `device="auto"` is resolved to `"cuda"`)
-- Added LoRA SFT post-process implementation (`onecomp/post_process/post_process_lora_sft.py`)
-  - Provides learning-based post-quantization fine-tuning for GPTQ-quantized models
-  - Public API is exposed as `PostProcessLoraSFT`
 - Implemented `BlockWisePTQ.run()` pipeline (`onecomp/post_process/blockwise_ptq.py`)
   - Phase 1: per-block distillation with teacher model (GPTQ / DBF / OneBit / Generic)
   - Phase 2: Cross-Block Quantisation (CBQ) sliding-window optimisation (K=2)
@@ -203,6 +193,25 @@
   - `helpers.py`: `get_transformer_layers` / `_get_language_model_backbone` handle `model.model.language_model.*` path
   - `model_config.py`: `load_model()` falls back to `AutoModelForImageTextToText` for VLM configs
 - Fixed `Quantizer.calculate_hessian` / `calculate_delta_hatX` (`onecomp/quantizer/_quantizer.py`): handle 2D activations from OPT-style architectures
+
+### Examples
+
+- Added `example/post_process/example_blockwise_ptq.py`: GPTQ 4-bit quantization + BlockWisePTQ (Phase 1 greedy + Phase 2 CBQ) with PPL comparison
+
+## [v0.5.0] 2026-03-30
+
+### New Feature: Post-quantization Workflow
+
+- Added `PostQuantizationProcess` abstract base class (`onecomp/post_process/_base.py`)
+  - Defines the interface for post-quantization operations (e.g. block-wise PTQ, fine-tuning)
+- Added `post_processes` parameter to `Runner.__init__`
+  - Accepts a list of `PostQuantizationProcess` instances
+  - After quantization, builds a quantized model on CPU and executes each process in order
+  - The processed model is stored as `self.quantized_model`
+- Updated `Runner.calculate_perplexity` and `Runner.calculate_accuracy` to use `self.quantized_model` if available (GPU transfer is handled automatically; `device="auto"` is resolved to `"cuda"`)
+- Added LoRA SFT post-process implementation (`onecomp/post_process/post_process_lora_sft.py`)
+  - Provides learning-based post-quantization fine-tuning for GPTQ-quantized models
+  - Public API is exposed as `PostProcessLoraSFT`
 
 ### New Feature: Rotation Preprocessing Pipeline (`onecomp/pre_process/`)
 
@@ -264,7 +273,6 @@ SpinQuant/OstQuant-based rotation preprocessing that reduces quantization error 
 
 ### Examples
 
-- Added `example/post_process/example_blockwise_ptq.py`: GPTQ 4-bit quantization + BlockWisePTQ (Phase 1 greedy + Phase 2 CBQ) with PPL comparison
 - Added `example/post_process/example_lora_sft.py`: End-to-end demo — GPTQ 4-bit quantization + LoRA SFT (WikiText-2) + PPL evaluation + save/load with `save_quantized_model_pt` / `load_quantized_model_pt`
 - Added `example/post_process/example_lora_sft_knowledge.py`: Knowledge injection demo — teaches the quantized model about "OneCompression" via LoRA SFT and compares generation before/after
 - Added `example/post_process/onecomp_knowledge.jsonl`: Training data describing OneCompression for the knowledge injection example
