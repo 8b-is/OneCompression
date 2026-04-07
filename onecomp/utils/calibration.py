@@ -255,6 +255,7 @@ def _chunk_single_document(
     return {
         "input_ids": input_ids.to(device),
         "attention_mask": attention_mask.to(device),
+        "token_type_ids": torch.zeros_like(input_ids, dtype=torch.long).to(device),
     }
 
 
@@ -338,6 +339,7 @@ def _chunk_concat(
     return {
         "input_ids": input_ids.to(device),
         "attention_mask": attention_mask.to(device),
+        "token_type_ids": torch.zeros_like(input_ids, dtype=torch.long).to(device),
     }
 
 

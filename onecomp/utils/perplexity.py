@@ -104,7 +104,7 @@ def calculate_perplexity(
             raise ValueError("model_config must be provided if tokenizer is not provided")
         tokenizer = model_config.load_tokenizer()
 
-    device = model.device
+    device = next(model.parameters()).device
 
     # Load the dataset.
     # For C4, dataset_config is treated as data_files.
@@ -133,7 +133,8 @@ def calculate_perplexity(
         target_ids = input_ids.clone()
         target_ids[:, :-trg_len] = -100
         with torch.no_grad():
-            outputs = model(input_ids, labels=target_ids)
+            token_type_ids = torch.zeros_like(input_ids)
+            outputs = model(input_ids, labels=target_ids, token_type_ids=token_type_ids)
             # loss is calculated using CrossEntropyLoss which averages over valid labels
             # N.B. the model only calculates loss over trg_len - 1 labels,
             # because it internally shifts the labels

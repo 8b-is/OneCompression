@@ -1641,6 +1641,17 @@ class Runner:
         model.save_pretrained(save_directory)
         tokenizer.save_pretrained(save_directory)
 
+        # Copy processor config from original model (for VLMs with image/audio support)
+        import shutil
+
+        src_dir = self.model_config.get_model_id_or_path()
+        if src_dir and os.path.isdir(src_dir):
+            for fname in ("processor_config.json", "preprocessor_config.json"):
+                src = os.path.join(src_dir, fname)
+                if os.path.isfile(src):
+                    shutil.copy2(src, save_directory)
+                    logger.info("Copied %s to save directory", fname)
+
         logger.info(f"Quantized model saved to {save_directory}")
         return save_directory
 

@@ -416,8 +416,14 @@ class Quantizer(metaclass=ABCMeta):
 
         return True
 
+    _VLM_TEXT_SUFFIXES = ("language_model", "text_model")
+
     def setup(self, model):
         """Setup the quantizer with the model
+
+        For VLMs (e.g. Gemma3, Qwen3-VL), only language-model submodule
+        layers are considered for quantization.  Vision / audio encoder
+        layers are automatically excluded.
 
         Args:
             model: The model to be quantized
@@ -428,13 +434,20 @@ class Quantizer(metaclass=ABCMeta):
 
         assert len(self.module_to_name) == 0
 
-        for name, module in model.named_modules():
-            # Check if the layer should be quantized
-            if self._should_quantize_layer(name, module):
-                self.module_to_name[module] = name
+        search_root = model
+        prefix = ""
+        for name, mod in model.named_modules():
+            if any(name.endswith(s) for s in self._VLM_TEXT_SUFFIXES):
+                search_root = mod
+                prefix = name + "."
+                self.logger.info("Quantizer restricting to text submodel: %s", name)
+                break
 
-            # If the number of layers is specified,
-            # stop the loop when the number of layers is reached
+        for name, module in search_root.named_modules():
+            full_name = prefix + name if prefix else name
+            if self._should_quantize_layer(full_name, module):
+                self.module_to_name[module] = full_name
+
             if self.num_layers is not None and len(self.module_to_name) >= self.num_layers:
                 break
 

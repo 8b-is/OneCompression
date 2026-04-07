@@ -331,13 +331,35 @@ class QuantizedModelLoader:
 
         name_to_module = dict(model.named_modules())
 
+        # For VLMs with tied/shared submodules (e.g. Gemma3), the
+        # named_modules() path may differ from the state_dict key prefix.
+        # Build a suffix -> state_dict prefix map to handle this.
+        sd_prefix_map: dict[str, str] = {}
+        for key in state_dict:
+            parts = key.rsplit(".", 1)
+            if len(parts) == 2:
+                sd_prefix_map.setdefault(parts[0], parts[0])
+
+        def _get_layer_sd(name: str) -> dict:
+            prefix = name + "."
+            result = {k[len(prefix):]: v for k, v in state_dict.items() if k.startswith(prefix)}
+            if result:
+                return result
+            # Fallback: match by layer suffix (e.g. "layers.0.self_attn.q_proj")
+            m = re.search(r"(layers\.\d+\..+)$", name)
+            if m:
+                suffix = m.group(1)
+                for sd_name in sd_prefix_map:
+                    if sd_name.endswith(suffix):
+                        alt_prefix = sd_name + "."
+                        return {k[len(alt_prefix):]: v for k, v in state_dict.items() if k.startswith(alt_prefix)}
+            return {}
+
         for name in quantized_names:
             if name not in name_to_module:
-                # Layer name not found in model skeleton; skip rather than crash.
                 continue
 
-            prefix = name + "."
-            layer_sd = {k[len(prefix) :]: v for k, v in state_dict.items() if k.startswith(prefix)}
+            layer_sd = _get_layer_sd(name)
 
             linear = name_to_module[name]
             in_features, out_features = linear.in_features, linear.out_features
