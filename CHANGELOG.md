@@ -194,6 +194,22 @@
   - `model_config.py`: `load_model()` falls back to `AutoModelForImageTextToText` for VLM configs
 - Fixed `Quantizer.calculate_hessian` / `calculate_delta_hatX` (`onecomp/quantizer/_quantizer.py`): handle 2D activations from OPT-style architectures
 
+### AutoBit: per-quantizer groupsize support
+
+- `AutoBitQuantizer` supports each candidate quantizer's `groupsize` individually, enabling mixed group-size configurations (`onecomp/quantizer/autobit/_autobit.py`)
+  - RTN error evaluation uses per-quantizer grouped quantisation (`onecomp/quantizer/autobit/ilp.py`)
+  - Added test for mixed group-size autobit (`tests/onecomp/quantizer/autobit/test_autobit.py`)
+- Remove default quantizer from AutoBit; a quantizer must be explicitly provided. (`onecomp/quantizer/autobit/_autobit.py`)
+
+### Breaking Change: `enable_fused_groups` default changed to `True`
+
+- **`AutoBitQuantizer.enable_fused_groups` now defaults to `True`** (`onecomp/quantizer/autobit/_autobit.py`)
+  - Ensures that vLLM fused layers (qkv_proj, gate_up_proj) are assigned the same quantizer (same bits and groupsize), which is required for vLLM inference.
+  - Previously defaulted to `False`, which could cause vLLM to reject the model at load time when fused-layer constituents had mismatched configurations.
+  - `Runner.auto_run()` already set `enable_fused_groups=True`, so this change has no effect on `auto_run` users.
+  - **Migration:** If you use `AutoBitQuantizer` with candidate bit-widths not supported by vLLM (e.g. `wbits=5`), pass `enable_fused_groups=False` explicitly.
+- Added vLLM mixed group-size tests (`tests/vllm_plugins/gptq/test_mixed_gptq.py`, `tests/vllm_plugins/gptq/test_mixed_gptq_e2e.py`)
+
 ### Examples
 
 - Added `example/post_process/example_blockwise_ptq.py`: GPTQ 4-bit quantization + BlockWisePTQ (Phase 1 greedy + Phase 2 CBQ) with PPL comparison
