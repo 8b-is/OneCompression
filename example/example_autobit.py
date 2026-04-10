@@ -9,7 +9,7 @@ Author: Akihiro Yoshida
 """
 
 from onecomp import setup_logger
-from onecomp import ModelConfig, Runner, AutoBitQuantizer, GPTQ
+from onecomp import CalibrationConfig, ModelConfig, Runner, AutoBitQuantizer, GPTQ
 from onecomp.utils import estimate_wbits_from_vram
 
 setup_logger()
@@ -22,16 +22,15 @@ target_bit = result.target_bitwidth
 quantizer = AutoBitQuantizer(
     assignment_strategy="activation_aware",
     target_bit=target_bit,
-    quantizers=[GPTQ(wbits=b) for b in (2, 3, 4, 8)],
+    quantizers=[GPTQ(wbits=b, groupsize=128) for b in (2, 3, 4, 8)],
     save_path="./results/vram_0.8",
 )
 
 runner = Runner(
     model_config=ModelConfig(model_id=MODEL_ID, device="cuda:0"),
     quantizer=quantizer,
+    calibration_config=CalibrationConfig(max_length=512, num_calibration_samples=128),
     qep=False,
-    max_length=512,
-    num_calibration_samples=128,
 )
 runner.run()
 

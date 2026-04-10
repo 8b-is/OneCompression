@@ -217,6 +217,10 @@ class GPTQ(Quantizer):
     def __post_init__(self):
         if self.name is None:
             self.name = f"GPTQ_{self.wbits}bit"
+        if self.groupsize == -1:
+            self.name += "_perchannel"
+        else:
+            self.name += f"_gs{self.groupsize}"
         super().__post_init__()
 
     def validate_params(self):

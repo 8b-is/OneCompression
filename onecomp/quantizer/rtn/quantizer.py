@@ -93,9 +93,10 @@ def pseudo_quantize_tensor(
     # Configure group size
     if q_group_size > 0:
         # (out_features, in_features) -> (out_features, num_groups, group_size)
-        assert (
-            w.shape[-1] % q_group_size == 0
-        ), f"Tensor shape {w.shape[-1]} must be divisible by group size {q_group_size}"
+        if w.shape[-1] % q_group_size != 0:
+            raise ValueError(
+                f"Tensor shape {w.shape[-1]} must be divisible by group size {q_group_size}"
+            )
         w = w.reshape(-1, w.shape[-1] // q_group_size, q_group_size)
     else:
         # Treat the entire row as a single group

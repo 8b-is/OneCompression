@@ -8,7 +8,7 @@ Author: Keiji Kimura
 
 """
 
-from onecomp import GPTQ, ModelConfig, Runner, setup_logger
+from onecomp import CalibrationConfig, GPTQ, ModelConfig, Runner, setup_logger
 
 # Set up logger (output logs to stdout)
 setup_logger()
@@ -26,8 +26,7 @@ runner = Runner(
     model_config=model_config,
     quantizer=gptq,
     qep=True,
-    max_length=512,
-    num_calibration_samples=128,
+    calibration_config=CalibrationConfig(max_length=512, num_calibration_samples=128),
 )
 
 # Run quantization

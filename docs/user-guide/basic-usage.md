@@ -76,7 +76,7 @@ Available quantizers and their typical parameters:
 
 | Quantizer          | Key Parameters                          | Calibration Required |
 |--------------------|------------------------------------------|----------------------|
-| `AutoBitQuantizer` | `target_bit`, `assignment_strategy`      | Yes                  |
+| `AutoBitQuantizer` | `quantizers`, `target_bit`, `assignment_strategy`, `enable_fused_groups` | Yes                  |
 | `GPTQ`             | `wbits`, `groupsize`, `sym`              | Yes                  |
 | `RTN`              | `wbits`, `groupsize`, `sym`              | No                   |
 | `DBF`              | `target_bits`, `iters`                   | Yes                  |

@@ -6,6 +6,7 @@ build/
 models
 .vscode/
 .cursor/rules/benchmark-directory.mdc
+.cursor/rules/example-workflow.mdc
 .cursor/rules/merge-request-review.mdc
 .cursor/rules/test-workflow.mdc
 .hydra/

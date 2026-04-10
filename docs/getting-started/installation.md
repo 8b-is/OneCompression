@@ -114,7 +114,7 @@ uv sync --extra cu128 --extra dev --extra visualize --extra vllm
     uv run onecomp --version
     uv run onecomp TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T
     uv run pytest tests/ -v
-    uv run python example/example1.py
+    uv run python example/example_gptq.py
     ```
 
 === "Traditional virtualenv"
@@ -124,7 +124,7 @@ uv sync --extra cu128 --extra dev --extra visualize --extra vllm
     onecomp --version
     onecomp TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T
     pytest tests/ -v
-    python example/example1.py
+    python example/example_gptq.py
     ```
 
 ## For Developers (pip)
