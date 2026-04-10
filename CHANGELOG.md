@@ -76,9 +76,12 @@
 
 - Added `example/example_custom_calibration.py`: Demonstrates `CalibrationConfig` with a custom calibration dataset (Python code snippets in `example/data/python_calibration.txt`).  Quantizes TinyLlama with GPTQ 3-bit using both default C4 and custom Python-code calibration, then compares inference outputs across multiple prompts to show how calibration data choice affects quantization quality.
 - Added `example/post_process/example_blockwise_ptq.py`: GPTQ 4-bit quantization + BlockWisePTQ (Phase 1 greedy + Phase 2 CBQ) with PPL comparison
+- Updated `example/vllm_inference/example_gptq_vllm_inference.py`: changed model to `TinyLlama-1.1B-Chat-v1.0` (chat model), disabled QEP, added `CalibrationConfig(num_calibration_samples=128, max_length=512)`
 
 ### Documentation
 
+- Added "Chat with Open WebUI" section to `docs/user-guide/vllm-inference.md`: step-by-step guide for connecting Open WebUI to a vLLM server (Docker / pip install with dedicated venv, connection settings, chat usage)
+- Added Open WebUI mention to `README.md` Features and vLLM Inference sections, and `docs/index.md` Key Features
 - Fixed broken `example/example1.py` references in `README.md` and `docs/getting-started/installation.md` (replaced with `example/example_gptq.py`)
 - Added `example/example_custom_calibration.py` to `README.md` Examples table under new "Calibration" category
 - Removed scratch files from `example/`: `buf.py`, `buf2.py`, `run_example.sh`
