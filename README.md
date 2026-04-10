@@ -9,7 +9,7 @@ Full documentation is available at **[https://FujitsuResearch.github.io/OneCompr
 ## 📦 Features
 
 - **Quantization Error Propagation (QEP)**: A post-training quantization method that corrects quantization errors by propagating them to subsequent layers, improving the accuracy of quantized LLMs. See [Arai & Ichikawa, NeurIPS 2025](https://openreview.net/forum?id=a3l3K9khbL) for details. The original reference implementation is available at [FujitsuResearch/qep](https://github.com/FujitsuResearch/qep).
-- **vLLM Plugin Integration**: Serve OneComp-quantized models with [vLLM](https://docs.vllm.ai/) via built-in plugins for DBF and Mixed-GPTQ quantization methods.
+- **vLLM Plugin Integration**: Serve OneComp-quantized models with [vLLM](https://docs.vllm.ai/) via built-in plugins for DBF and Mixed-GPTQ quantization methods. Pair with [Open WebUI](https://github.com/open-webui/open-webui) for a ChatGPT-like chat experience on your local machine.
 - **AutoBit**: Mixed-precision quantization with ILP-based bitwidth assignment. Automatically estimates the target bitwidth from available VRAM and assigns per-layer bitwidths to minimize quantization error under the memory budget.
 - **JointQ**: Joint quantization method that optimizes weight assignments and scale parameters simultaneously for improved quantization accuracy. Supports group-wise quantization (e.g., 4-bit, groupsize=128).
 - **Block-wise PTQ**: Post-quantization block-wise distillation that minimises intermediate-representation MSE against an FP16 teacher model at Transformer-block granularity. Includes Phase 1 (greedy per-block optimisation) and Phase 2 CBQ (cross-block sliding-window optimisation). Supports GPTQ, DBF, and OneBit quantizers.
@@ -179,6 +179,7 @@ Then open [http://127.0.0.1:8000](http://127.0.0.1:8000) in your browser.
 ## 🔌 vLLM Inference
 
 OneComp-quantized models can be served with [vLLM](https://docs.vllm.ai/) via built-in plugins (DBF, Mixed-GPTQ).
+Combined with [Open WebUI](https://github.com/open-webui/open-webui), you can chat with your quantized model through a ChatGPT-like browser interface — entirely on your local machine.
 
 ```bash
 # uv users
@@ -188,7 +189,7 @@ uv sync --extra cu128 --extra vllm
 pip install vllm
 ```
 
-See the [vLLM Inference guide](https://FujitsuResearch.github.io/OneCompression/user-guide/vllm-inference/) for details.
+See the [vLLM Inference guide](https://FujitsuResearch.github.io/OneCompression/user-guide/vllm-inference/) for details, including Open WebUI setup instructions.
 
 
 ## 📄 License
