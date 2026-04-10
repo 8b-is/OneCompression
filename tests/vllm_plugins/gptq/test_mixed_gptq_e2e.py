@@ -85,6 +85,7 @@ def quantized_model_dir(tmp_path_factory):
 # Config verification (no vLLM needed)
 # ---------------------------------------------------------------------------
 
+
 class TestMixedGroupSizeQuantizeSave:
     """Verify the saved model contains per-module group_size in its config."""
 
@@ -125,6 +126,7 @@ class TestMixedGroupSizeQuantizeSave:
 # ---------------------------------------------------------------------------
 # vLLM inference (requires vLLM)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.skipif(not _HAS_VLLM, reason="vLLM not installed")
 class TestMixedGroupSizeVllmInference:

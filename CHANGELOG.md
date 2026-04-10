@@ -210,8 +210,45 @@
   - **Migration:** If you use `AutoBitQuantizer` with candidate bit-widths not supported by vLLM (e.g. `wbits=5`), pass `enable_fused_groups=False` explicitly.
 - Added vLLM mixed group-size tests (`tests/vllm_plugins/gptq/test_mixed_gptq.py`, `tests/vllm_plugins/gptq/test_mixed_gptq_e2e.py`)
 
+### CalibrationConfig: unified calibration configuration
+
+- **Breaking change:** Introduced `CalibrationConfig` dataclass (`onecomp/calibration/calibration_config.py`) to consolidate all calibration-related parameters
+  - `Runner.__init__` now accepts `calibration_config: CalibrationConfig` instead of individual parameters (`calibration_dataset`, `max_length`, `num_calibration_samples`, `calibration_strategy`, `calibration_seed`, `calibration_batch_size`, `num_layers_per_group`)
+  - `AutoBitQuantizer` now accepts `calibration_config: CalibrationConfig` instead of `num_calib_samples`, `calib_seqlen`, `calibration_dataset`
+  - `prepare_rotated_model()` now accepts `calibration_config: CalibrationConfig` instead of `calibration_dataset`, `max_length`, `num_calibration_samples`, `calibration_strategy`
+  - `BlockWisePTQ` now accepts `calibration_config: CalibrationConfig` instead of `num_calibration_samples`, `max_length`, `calibration_strategy`, `calibration_seed`
+  - When `calibration_config=None`, default values are created automatically (`calibration_dataset="c4"`, `max_length=2048`, `num_calibration_samples=512`)
+  - New user-configurable parameters exposed via `CalibrationConfig`: `text_key`, `use_quality_filter`, `max_documents` (previously hard-coded in `calibration_data_loader.py`)
+- Added cross-validation in `Runner.check()`: if both Runner and AutoBitQuantizer specify `calibration_dataset`, they must match
+- Removed backward-compatibility re-exports from `onecomp/utils/__init__.py` (`prepare_calibration_dataset`, `load_c4_for_aligned_chunks`, `load_c4_for_n_samples_min_length`); import from `onecomp.calibration` instead
+- Added unit tests for calibration module (`tests/onecomp/calibration/`)
+- Internal functions now accept `CalibrationConfig` directly instead of individual parameters:
+  - `prepare_calibration_dataset()` (`calibration_data_loader.py`): replaced 8 individual parameters with `calibration_config: CalibrationConfig` (required argument)
+  - `run_chunked_quantization()` (`runner_methods/chunked_quantization.py`): `calibration_dataset`, `max_length`, `num_calibration_samples`, `calibration_strategy`, `calibration_seed`, `calibration_batch_size`, `num_layers_per_group` replaced by `calibration_config`
+  - `run_multi_gpu_quantization()`, `run_capture_phase()`, `get_calibration_config_dict()` (`runner_methods/multi_gpu_quantization.py`): same consolidation
+  - `run_quantize_with_qep()` (`qep/_quantize_with_qep.py`), `run_quantize_with_qep_arch()` (`qep/_quantize_with_qep_arch.py`): same consolidation
+  - `collect_activation_stats_blockwise()` (`quantizer/autobit/activation_stats.py`): `num_samples`, `seqlen`, `calibration_dataset` replaced by `calibration_config`
+- Code quality improvements:
+  - `CalibrationConfig.calibration_dataset` defaults to `"c4"` instead of `None` (no more implicit fallback)
+  - Removed implicit dataset inheritance from quantizer to Runner; use explicit `CalibrationConfig` instead
+  - Cross-validation uses `isinstance(quantizer, AutoBitQuantizer)` instead of duck typing
+  - Consolidated `from .calibration import CalibrationConfig, prepare_calibration_dataset` into single import
+  - Added missing `"concat_rand"` strategy to `prepare_calibration_dataset()` docstring
+  - Documented `batch_size` and `num_layers_per_group` in `CalibrationConfig` as chunked-quantization-only parameters
+
+### Calibration data: support WikiText-2, custom datasets, and C4 quality filtering
+
+- Refactored `onecomp/utils/calibration.py` into `onecomp/calibration/` folder with submodules
+  - `calibration_data_loader.py`: unified entry point `prepare_calibration_dataset()` that dispatches by dataset name or file path
+  - `c4.py`: C4 dataset loader with optional quality filtering (`check_text_quality()`)
+  - `wikitext.py`: WikiText-2 dataset loader (new; loads from `Salesforce/wikitext`)
+  - `custom.py`: custom dataset loader supporting `.txt`, `.json`, `.jsonl`, `.csv`, `.tsv`, `.parquet`, `.arrow`, and HuggingFace Dataset directories
+  - `chunking.py`: shared chunking strategies (`concat_chunk`, `concat_chunk_align`, `concat_rand`, `drop_head`, `drop_rand`) extracted as reusable helpers
+- Added `calibration_dataset` parameter to `AutoBitQuantizer` to specify the calibration data source (`onecomp/quantizer/autobit/_autobit.py`)
+
 ### Examples
 
+- Added `example/example_custom_calibration.py`: Demonstrates `CalibrationConfig` with a custom calibration dataset (Python code snippets in `example/data/python_calibration.txt`).  Quantizes TinyLlama with GPTQ 3-bit using both default C4 and custom Python-code calibration, then compares inference outputs across multiple prompts to show how calibration data choice affects quantization quality.
 - Added `example/post_process/example_blockwise_ptq.py`: GPTQ 4-bit quantization + BlockWisePTQ (Phase 1 greedy + Phase 2 CBQ) with PPL comparison
 
 ## [v0.5.0] 2026-03-30
