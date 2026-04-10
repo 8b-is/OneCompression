@@ -8,7 +8,7 @@ Author: Keiji Kimura
 
 """
 
-from onecomp import JointQ, ModelConfig, Runner, setup_logger
+from onecomp import CalibrationConfig, JointQ, ModelConfig, Runner, setup_logger
 
 # Set up logger (output logs to stdout)
 setup_logger()
@@ -25,9 +25,8 @@ jointq = JointQ(bits=4, group_size=128)
 runner = Runner(
     model_config=model_config,
     quantizer=jointq,
+    calibration_config=CalibrationConfig(max_length=512, num_calibration_samples=128),
     qep=False,
-    max_length=512,
-    num_calibration_samples=128,
 )
 
 # Run quantization

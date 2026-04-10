@@ -11,6 +11,13 @@ from logging import getLogger
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 import torch
 
+try:
+    from transformers import AutoModelForImageTextToText as _AutoVLM
+
+    _HAS_VLM_AUTO = True
+except ImportError:
+    _HAS_VLM_AUTO = False
+
 
 class ModelConfig:
     """Model and Tokenizer"""
@@ -58,27 +65,29 @@ class ModelConfig:
     def load_model(self, device_map=None):
         """Load the model
 
-        Automatically selects the appropriate AutoModel class based on
-        the model's architecture (CausalLM, Vision2Seq, etc.).
+        Tries ``AutoModelForCausalLM`` first.  If the model is a
+        Vision-Language Model (e.g. Qwen3-VL) that is not registered
+        with ``AutoModelForCausalLM``, falls back to
+        ``AutoModelForImageTextToText``.
+
+        Args:
+            device_map (str or None):
+                Override the device placement for this load.
+                If ``None`` (default), ``self.device`` is used.
         """
-
-        if device_map is None:
-            device_map = self.device
-
-        pretrained = self.get_model_id_or_path()
+        effective_device = device_map if device_map is not None else self.device
         kwargs = dict(
             dtype=getattr(torch, self.dtype),
-            device_map=device_map,
+            device_map=effective_device,
         )
-
         try:
-            model = AutoModelForCausalLM.from_pretrained(pretrained, **kwargs)
-        except (ValueError, KeyError):
-            from transformers import AutoModelForImageTextToText
-
+            model = AutoModelForCausalLM.from_pretrained(self.get_model_id_or_path(), **kwargs)
+        except ValueError as e:
+            _vlm_hints = ("Unrecognized model", "is not supported")
+            if not _HAS_VLM_AUTO or not any(h in str(e) for h in _vlm_hints):
+                raise
             self.logger.info("AutoModelForCausalLM failed; trying AutoModelForImageTextToText.")
-            model = AutoModelForImageTextToText.from_pretrained(pretrained, **kwargs)
-
+            model = _AutoVLM.from_pretrained(self.get_model_id_or_path(), **kwargs)
         model.eval()
         return model
 

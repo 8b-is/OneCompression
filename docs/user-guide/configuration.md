@@ -31,38 +31,31 @@ model_config = ModelConfig(
 `Runner` is the main entry point for quantization. It manages the full pipeline: loading the model, preparing calibration data, executing quantization, and providing evaluation utilities.
 
 ```python
-from onecomp import Runner
+from onecomp import CalibrationConfig, Runner
+
+calib_config = CalibrationConfig(
+    max_length=2048,
+    num_calibration_samples=512,
+)
 
 runner = Runner(
     model_config=model_config,
     quantizer=quantizer,
-    max_length=2048,
-    num_calibration_samples=512,
+    calibration_config=calib_config,
     qep=False,
 )
 ```
 
 ### Core Parameters
 
-| Parameter                   | Type              | Description                                      | Default          |
-|-----------------------------|-------------------|--------------------------------------------------|------------------|
-| `model_config`              | `ModelConfig`     | Model and tokenizer configuration                | —                |
-| `quantizer`                 | `Quantizer`       | Quantization method                              | `None`           |
-| `quantizers`                | `list[Quantizer]` | Multiple quantizers (for benchmarking)           | `None`           |
-| `qep`                       | `bool`            | Enable QEP                                       | `False`          |
-| `qep_config`                | `QEPConfig`       | QEP configuration                                | `None`           |
-
-### Calibration Parameters
-
-| Parameter                   | Type   | Description                                      | Default          |
-|-----------------------------|--------|--------------------------------------------------|------------------|
-| `calibration_dataset`       | `Dataset` | Custom calibration dataset                    | `None`           |
-| `max_length`                | `int`  | Maximum input sequence length                    | `2048`           |
-| `num_calibration_samples`   | `int`  | Number of calibration samples                    | `512`            |
-| `calibration_strategy`      | `str`  | Strategy for preparing calibration inputs        | `"drop_rand"`    |
-| `calibration_seed`          | `int`  | Random seed for calibration                      | `0`              |
-| `calibration_batch_size`    | `int`  | Batch size for chunked calibration               | `None`           |
-| `num_layers_per_group`      | `int`  | Layers processed simultaneously in chunked mode  | `7`              |
+| Parameter                   | Type                | Description                                      | Default          |
+|-----------------------------|---------------------|--------------------------------------------------|------------------|
+| `model_config`              | `ModelConfig`       | Model and tokenizer configuration                | —                |
+| `quantizer`                 | `Quantizer`         | Quantization method                              | `None`           |
+| `quantizers`                | `list[Quantizer]`   | Multiple quantizers (for benchmarking)           | `None`           |
+| `calibration_config`        | `CalibrationConfig` | Calibration data configuration                   | `None` (auto)    |
+| `qep`                       | `bool`              | Enable QEP                                       | `False`          |
+| `qep_config`                | `QEPConfig`         | QEP configuration                                | `None`           |
 
 ### Advanced Parameters
 
@@ -70,6 +63,37 @@ runner = Runner(
 |---------------|-------------|--------------------------------------------------|----------|
 | `multi_gpu`   | `bool`      | Enable multi-GPU layer-wise parallel quantization| `False`  |
 | `gpu_ids`     | `list[int]` | Specific GPU IDs to use                          | `None`   |
+
+!!! note
+    When `calibration_config` is `None`, a `CalibrationConfig()` with default values is created automatically.
+
+## CalibrationConfig
+
+`CalibrationConfig` groups all calibration-related parameters into a single dataclass.
+
+```python
+from onecomp import CalibrationConfig
+
+calib_config = CalibrationConfig(
+    calibration_dataset="wikitext2",
+    max_length=2048,
+    num_calibration_samples=256,
+    strategy="concat_rand",
+)
+```
+
+| Parameter                   | Type   | Description                                      | Default          |
+|-----------------------------|--------|--------------------------------------------------|------------------|
+| `calibration_dataset`       | `str`  | Dataset name (`"c4"`, `"wikitext2"`), local file path, or HuggingFace Hub ID | `"c4"`           |
+| `max_length`                | `int`  | Maximum token length per calibration chunk        | `2048`           |
+| `num_calibration_samples`   | `int`  | Target number of calibration samples              | `512`            |
+| `strategy`                  | `str`  | Chunking strategy (see table below)               | `"drop_rand"`    |
+| `seed`                      | `int`  | Random seed for stochastic strategies             | `0`              |
+| `batch_size`                | `int`  | Batch size for chunked calibration forward passes | `None`           |
+| `num_layers_per_group`      | `int`  | Layers processed simultaneously in chunked mode   | `7`              |
+| `text_key`                  | `str`  | Column name when loading custom or Hub datasets   | `"text"`         |
+| `use_quality_filter`        | `bool` | Apply C4 quality filtering                        | `False`          |
+| `max_documents`             | `int`  | Cap on documents loaded from custom/Hub sources   | `10000`          |
 
 ### Calibration Strategies
 
@@ -79,16 +103,26 @@ runner = Runner(
 | `"drop_head"`        | Same, but always take the first `max_length` tokens.                 |
 | `"concat_chunk"`     | Concatenate all texts, tokenize, and split into fixed-length chunks. |
 | `"concat_chunk_align"` | Same as `concat_chunk`, but adjusts samples so chunk count equals `num_calibration_samples`. |
+| `"concat_rand"`      | Concatenate all texts, tokenize, then randomly sample windows. Standard GPTQ/AWQ approach. |
+
+### Supported Calibration Datasets
+
+| Value               | Source                                                               |
+|---------------------|----------------------------------------------------------------------|
+| `"c4"`              | AllenAI C4 dataset (default)                                         |
+| `"wikitext2"`       | WikiText-2 dataset (Salesforce)                                      |
+| Local file path     | `.txt`, `.json`, `.jsonl`, `.csv`, `.tsv`, `.parquet`, `.arrow`, or HuggingFace Dataset directory |
+| HuggingFace Hub ID  | Any public dataset (e.g. `"username/dataset"`)                       |
 
 ### Valid Parameter Combinations
 
-| `quantizers` | `qep`  | `multi_gpu` | `calibration_batch_size` |
-|:------------:|:------:|:-----------:|:------------------------:|
-| Specified    | False  | False       | Specified                |
-| None         | True   | False       | None                     |
-| None         | False  | True        | None                     |
-| None         | False  | False       | Specified                |
-| None         | False  | False       | None                     |
+| `quantizers` | `qep`  | `multi_gpu` | `calibration_config.batch_size` |
+|:------------:|:------:|:-----------:|:-------------------------------:|
+| Specified    | False  | False       | Specified                       |
+| None         | True   | False       | None                            |
+| None         | False  | True        | None                            |
+| None         | False  | False       | Specified                       |
+| None         | False  | False       | None                            |
 
 ## QEPConfig
 

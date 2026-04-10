@@ -45,6 +45,7 @@ from typing import TYPE_CHECKING
 import torch
 from transformers import AutoModelForCausalLM
 
+from ..calibration import CalibrationConfig
 from ..model_config import ModelConfig
 from .rotation_utils import cleanup_memory
 
@@ -65,10 +66,7 @@ def prepare_rotated_model(
     scaling_mode: str = "identity",
     seed: int = 0,
     enable_training: bool = True,
-    calibration_dataset=None,
-    max_length: int = 2048,
-    num_calibration_samples: int = 128,
-    calibration_strategy: str = "drop_rand",
+    calibration_config: CalibrationConfig | None = None,
     wbits: int = 4,
     sym: bool = False,
     groupsize: int = -1,
@@ -91,14 +89,10 @@ def prepare_rotated_model(
             data shuffling and training reproducibility.
         enable_training: If ``True``, train the rotation/scaling matrices;
             otherwise use the randomly initialised matrices directly.
-        calibration_dataset: List of texts for calibration.
-            If ``None``, the C4 dataset is used (same as ``Runner``).
-        max_length: Sequence length for calibration data (default: 2048).
-        num_calibration_samples: Number of calibration samples.
-            Default matches ``Runner`` (128).
-        calibration_strategy: Strategy for preparing calibration inputs
-            (``"drop_rand"``, ``"concat_chunk"``, etc.).
-            See :func:`~onecomp.utils.calibration.prepare_calibration_dataset`.
+        calibration_config: Calibration data configuration.  When ``None``
+            (default), a :class:`CalibrationConfig` with default values
+            is created automatically.
+            See :class:`~onecomp.calibration.CalibrationConfig`.
         wbits: Weight quantisation bit-width for the RTN proxy during
             training.  Should match the quantizer's ``wbits``.
         sym: Symmetric quantisation for the RTN proxy.
@@ -132,12 +126,19 @@ def prepare_rotated_model(
         ...     enable_training=False,
         ... )
     """
+    if calibration_config is None:
+        calibration_config = CalibrationConfig(
+            calibration_dataset="c4",
+            max_length=2048,
+            num_calibration_samples=128,
+            strategy="drop_rand",
+        )
     from .train_rotation import (
         PreprocessManager,
         apply_preprocess_eval,
         apply_preprocess_train,
     )
-    from ..utils import prepare_calibration_dataset
+    from ..calibration import prepare_calibration_dataset
 
     model_path = model_config.get_model_id_or_path()
 
@@ -171,11 +172,7 @@ def prepare_rotated_model(
         calibration_inputs = prepare_calibration_dataset(
             tokenizer=tokenizer,
             device="cpu",
-            calibration_dataset=calibration_dataset,
-            max_length=max_length,
-            num_calibration_samples=num_calibration_samples,
-            strategy=calibration_strategy,
-            seed=seed,
+            calibration_config=calibration_config,
         )
 
         # Release the original model to halve peak CPU memory during training.

@@ -34,13 +34,7 @@ def main():
         model_id="TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T",
     )
     quantizer = GPTQ(wbits=4, groupsize=128)
-    runner = Runner(
-        model_config=model_config,
-        quantizer=quantizer,
-        qep=True,
-        max_length=512,
-        num_calibration_samples=128,
-    )
+    runner = Runner(model_config=model_config, quantizer=quantizer, qep=True)
     runner.run()
     runner.save_quantized_model(save_dir)
 

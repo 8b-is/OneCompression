@@ -37,6 +37,29 @@ vLLM is available as an optional dependency:
 !!! warning
     **uv users:** Do not install vLLM with `uv pip install vllm`. Packages installed via `uv pip` are not tracked by the lockfile and will be removed by subsequent `uv sync` or `uv run` commands. Always use `--extra vllm` instead.
 
+## AutoBit + vLLM
+
+When using `AutoBitQuantizer` with mixed-precision candidates (different `wbits` or `groupsize`),
+the `enable_fused_groups` parameter must be `True` (the default since v0.5.1) to ensure vLLM compatibility.
+
+vLLM fuses certain layers into a single linear module during inference:
+
+- **qkv_proj**: `q_proj` + `k_proj` + `v_proj`
+- **gate_up_proj**: `gate_proj` + `up_proj`
+
+A fused module can only have **one** quantization configuration (one bit-width, one group size).
+When `enable_fused_groups=True`, the ILP solver constrains fused-layer constituents to share the same quantizer.
+
+!!! warning "`enable_fused_groups=False` causes vLLM load failures"
+    Setting `enable_fused_groups=False` allows the ILP to assign different quantizers
+    (different bits or group sizes) to layers within a fused group. The resulting model
+    will **fail to load in vLLM** with an error like:
+    *"Detected some but not all shards of ... are quantized. All shards of fused layers to have the same precision."*
+
+    Only set `enable_fused_groups=False` if you do **not** intend to serve the model with vLLM.
+
+`Runner.auto_run()` always sets `enable_fused_groups=True`, so models quantized via `auto_run` or the CLI are always vLLM-compatible.
+
 ## Usage
 
 ### 1. Quantize and save a model with OneComp

@@ -74,7 +74,7 @@ class MixedGPTQConfig(QuantizationConfig):
         desc_act=False,
         sym=True,
         lm_head_quantized=False,
-        checkpoint_format="gptq_v2"
+        checkpoint_format="gptq_v2",
     ):
         super().__init__()
         self.quantization_bits = quantization_bits
@@ -92,7 +92,9 @@ class MixedGPTQConfig(QuantizationConfig):
                 all_methods.add(mod_cfg.get("method", "gptq"))
         logger.info(
             "MixedGPTQConfig: %d layers, bits=%s, methods=%s",
-            len(quantization_bits), sorted(all_bits), sorted(all_methods),
+            len(quantization_bits),
+            sorted(all_bits),
+            sorted(all_methods),
         )
 
     def __repr__(self):
@@ -118,14 +120,12 @@ class MixedGPTQConfig(QuantizationConfig):
         return ["quantize_config.json"]
 
     @classmethod
-    def from_config(cls, config: dict[str, Any]) -> 'MixedGPTQConfig':
+    def from_config(cls, config: dict[str, Any]) -> "MixedGPTQConfig":
         quantization_bits = config.get("quantization_bits", [])
 
         if not quantization_bits and "layer_bits" in config:
             layer_bits = config["layer_bits"]
-            quantization_bits = [
-                {"_all": {"bits": b, "method": "gptq"}} for b in layer_bits
-            ]
+            quantization_bits = [{"_all": {"bits": b, "method": "gptq"}} for b in layer_bits]
 
         group_size = config.get("group_size", -1)
         desc_act = config.get("desc_act", False)
@@ -185,9 +185,7 @@ class MixedGPTQConfig(QuantizationConfig):
         # so modules_in_block_to_quantize is not needed.
         pass
 
-    def get_quant_method(
-            self, layer: torch.nn.Module, prefix: str
-    ) -> QuantizeMethodBase | None:
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> QuantizeMethodBase | None:
         if not isinstance(layer, LinearBase):
             return None
 
@@ -199,11 +197,14 @@ class MixedGPTQConfig(QuantizationConfig):
         if mod_cfg is None:
             return UnquantizedLinearMethod()
 
-        if not _validate_quant_config_within_shard(self.quantization_bits, layer_idx, module_suffix):
+        if not _validate_quant_config_within_shard(
+            self.quantization_bits, layer_idx, module_suffix
+        ):
             raise ValueError(
-                    f"Detected some but not all shards of {prefix} "
-                    "are quantized. All shards of fused layers "
-                    "to have the same precision.")
+                f"Detected some but not all shards of {prefix} "
+                "are quantized. All shards of fused layers "
+                "to have the same precision."
+            )
 
         bits = mod_cfg.get("bits", 0)
         method = mod_cfg.get("method", "gptq")
@@ -225,9 +226,10 @@ class MixedGPTQConfig(QuantizationConfig):
             return GPTQLinearMethod(self._make_gptq_config(int_bits, group_size))
 
         logger.warning(
-            "mixed_gptq: unsupported method=%s bits=%s at %s, "
-            "falling back to unquantized",
-            method, bits, prefix,
+            "mixed_gptq: unsupported method=%s bits=%s at %s, " "falling back to unquantized",
+            method,
+            bits,
+            prefix,
         )
         return UnquantizedLinearMethod()
 

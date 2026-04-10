@@ -15,7 +15,14 @@ Author: Keiji Kimura
 """
 
 import torch
-from onecomp import ModelConfig, Runner, GPTQ, load_quantized_model, setup_logger
+from onecomp import (
+    CalibrationConfig,
+    ModelConfig,
+    Runner,
+    GPTQ,
+    load_quantized_model,
+    setup_logger,
+)
 
 setup_logger()
 
@@ -34,8 +41,7 @@ runner = Runner(
     model_config=model_config,
     quantizer=gptq,
     qep=True,
-    max_length=512,
-    num_calibration_samples=128,
+    calibration_config=CalibrationConfig(max_length=512, num_calibration_samples=128),
 )
 runner.run()
 

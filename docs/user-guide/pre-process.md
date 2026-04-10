@@ -81,6 +81,14 @@ The saved `config.json` includes `"rotated": true` and `"fp32_had": false`,
 which `load_quantized_model()` uses to automatically register the required
 Hadamard hooks on `down_proj` layers.
 
+## Examples
+
+!!! tip
+    Complete working examples are available in the repository:
+
+    - [`example/pre_process/example_llama_preprocess_rtn.py`](https://github.com/FujitsuResearch/OneCompression/blob/main/example/pre_process/example_llama_preprocess_rtn.py) -- Rotation preprocessing + RTN quantization (TinyLlama)
+    - [`example/pre_process/example_preprocess_save_load.py`](https://github.com/FujitsuResearch/OneCompression/blob/main/example/pre_process/example_preprocess_save_load.py) -- Rotation preprocessing + GPTQ with save/load and perplexity comparison
+
 ## Limitations
 
 - **vLLM inference is not supported.** vLLM kernels do not apply the online Hadamard

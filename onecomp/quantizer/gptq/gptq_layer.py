@@ -375,6 +375,9 @@ class GPTQLinear(nn.Module):
         # Cast dequantized weight to input dtype (e.g. float32 -> float16)
         weight = weight.to(x.dtype)
 
+        # Cast dequantized weight to input dtype (e.g. float32 -> float16)
+        weight = weight.to(x.dtype)
+
         # Linear op
         weight = weight.to(x.dtype)
         bias = self.bias.to(x.dtype) if self.bias is not None else None
