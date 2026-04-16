@@ -37,6 +37,29 @@ vLLM is available as an optional dependency:
 !!! warning
     **uv users:** Do not install vLLM with `uv pip install vllm`. Packages installed via `uv pip` are not tracked by the lockfile and will be removed by subsequent `uv sync` or `uv run` commands. Always use `--extra vllm` instead.
 
+## AutoBit + vLLM
+
+When using `AutoBitQuantizer` with mixed-precision candidates (different `wbits` or `groupsize`),
+the `enable_fused_groups` parameter must be `True` (the default since v0.5.1) to ensure vLLM compatibility.
+
+vLLM fuses certain layers into a single linear module during inference:
+
+- **qkv_proj**: `q_proj` + `k_proj` + `v_proj`
+- **gate_up_proj**: `gate_proj` + `up_proj`
+
+A fused module can only have **one** quantization configuration (one bit-width, one group size).
+When `enable_fused_groups=True`, the ILP solver constrains fused-layer constituents to share the same quantizer.
+
+!!! warning "`enable_fused_groups=False` causes vLLM load failures"
+    Setting `enable_fused_groups=False` allows the ILP to assign different quantizers
+    (different bits or group sizes) to layers within a fused group. The resulting model
+    will **fail to load in vLLM** with an error like:
+    *"Detected some but not all shards of ... are quantized. All shards of fused layers to have the same precision."*
+
+    Only set `enable_fused_groups=False` if you do **not** intend to serve the model with vLLM.
+
+`Runner.auto_run()` always sets `enable_fused_groups=True`, so models quantized via `auto_run` or the CLI are always vLLM-compatible.
+
 ## Usage
 
 ### 1. Quantize and save a model with OneComp
@@ -121,6 +144,74 @@ print(outputs[0].outputs[0].text)
 
 A complete working example (quantization + vLLM inference) is available at
 [`example/vllm_inference/example_gptq_vllm_inference.py`](https://github.com/FujitsuResearch/OneCompression/blob/main/example/vllm_inference/example_gptq_vllm_inference.py).
+
+### 3. Chat with Open WebUI (optional)
+
+[Open WebUI](https://github.com/open-webui/open-webui) provides a ChatGPT-like browser interface.
+Because vLLM exposes an OpenAI-compatible API, Open WebUI can connect to it directly.
+
+#### 3-1. Start the vLLM server
+
+```bash
+vllm serve ./Llama-3.1-8B-Instruct-gptq-4bit
+```
+
+Keep this terminal open. The server listens on `http://localhost:8000` by default.
+
+#### 3-2. Launch Open WebUI
+
+=== "Docker (recommended)"
+
+    ```bash
+    docker run -d -p 3000:8080 \
+      --add-host=host.docker.internal:host-gateway \
+      --name open-webui \
+      ghcr.io/open-webui/open-webui:latest
+    ```
+
+    `--add-host` allows the container to reach the vLLM server running on the host (required on Linux; macOS/Windows Docker Desktop resolves it automatically).
+
+=== "pip"
+
+    Open WebUI requires **Python 3.11 or 3.12** (3.13+ is not supported).
+    To avoid dependency conflicts with OneComp/vLLM, create a separate virtual environment:
+
+    ```bash
+    # Create a dedicated venv (uv auto-downloads Python 3.12 if needed)
+    uv venv ~/open-webui-env --python 3.12
+    source ~/open-webui-env/bin/activate
+
+    # Install and launch
+    uv pip install open-webui
+    open-webui serve --port 3000
+    ```
+
+    When done, run `deactivate` to leave the venv.
+    To uninstall completely, remove the directory: `rm -rf ~/open-webui-env`.
+
+!!! note
+    The first launch takes several minutes while Open WebUI runs database migrations and downloads an embedding model (~80 MB). Subsequent launches start in seconds.
+
+#### 3-3. Connect to vLLM
+
+1. Open `http://localhost:3000` in your browser.
+2. Create an admin account on first launch.
+3. Go to **Admin Panel** → **Settings** → **Connections**.
+4. Under **OpenAI API**, set the URL:
+
+    | Setting | Value |
+    |---------|-------|
+    | URL | `http://host.docker.internal:8000/v1` (Docker) or `http://localhost:8000/v1` (pip) |
+    | API Key | `dummy` (any non-empty string) |
+
+5. Click **Save**. The quantized model appears in the model selector.
+
+#### 3-4. Start chatting
+
+Select the model from the dropdown at the top of the chat screen and start a conversation.
+
+!!! tip
+    Open WebUI persists chat history, supports multiple conversations, and provides features like system prompt customization and temperature control out of the box.
 
 ### Environment Variables
 

@@ -23,7 +23,7 @@ def _parse_layer_and_module(prefix: str) -> tuple[int | None, str | None]:
     if m is None:
         return None, None
     layer_idx = int(m.group(1))
-    after = prefix[m.end():]
+    after = prefix[m.end() :]
     return layer_idx, after
 
 
@@ -37,7 +37,9 @@ def _resolve_fused_bits(layer_cfg: dict, module_suffix: str) -> dict | None:
     return None
 
 
-def _lookup_module_config(quantization_bits: list[dict], layer_idx: int, module_suffix: str) -> dict | None:
+def _lookup_module_config(
+    quantization_bits: list[dict], layer_idx: int, module_suffix: str
+) -> dict | None:
     if layer_idx >= len(quantization_bits):
         return None
     layer_cfg = quantization_bits[layer_idx]
@@ -51,8 +53,11 @@ def _lookup_module_config(quantization_bits: list[dict], layer_idx: int, module_
         return layer_cfg["_all"]
     return None
 
+
 # Check whether all quantization configs within the same shard are identical
-def _validate_quant_config_within_shard(quantization_bits: list[dict], layer_idx: int, module_suffix: str) -> bool:
+def _validate_quant_config_within_shard(
+    quantization_bits: list[dict], layer_idx: int, module_suffix: str
+) -> bool:
     if layer_idx >= len(quantization_bits):
         return False
     layer_cfg = quantization_bits[layer_idx]
@@ -71,11 +76,11 @@ def _validate_quant_config_within_shard(quantization_bits: list[dict], layer_idx
             # all sub-modules in the shard must also have one.
             if name not in layer_cfg:
                 return False
-            
+
             cfg = layer_cfg[name]
             if cfg is None:
                 return False
-            
+
             configs.append(cfg)
 
         # If configs is empty all sub-modules are unquantized, which is fine.
@@ -84,9 +89,6 @@ def _validate_quant_config_within_shard(quantization_bits: list[dict], layer_idx
             if cfg != configs[0]:
                 return False
         return True
-    
+
     # Not a fused module: no within-shard check needed.
     return True
-
-
-

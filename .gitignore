@@ -6,14 +6,17 @@ build/
 models
 .vscode/
 .cursor/rules/benchmark-directory.mdc
+.cursor/rules/example-workflow.mdc
 .cursor/rules/merge-request-review.mdc
 .cursor/rules/test-workflow.mdc
+.cursor/rules/gitlab-integration.mdc
 .hydra/
 *.out
 *.err
 md/*.md
 example/run_example.sh
 work/issue-*
+work/open-webui
 site/
 debug_code/
 .pytest_cache/

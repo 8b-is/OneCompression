@@ -23,17 +23,15 @@ Processing flow:
 
 """
 
-# pylint: disable=too-many-arguments, too-many-positional-arguments
-
 import time
 from logging import getLogger
 from typing import List
 
 import torch
 
+from onecomp.calibration import CalibrationConfig, prepare_calibration_dataset
 from onecomp.model_config import ModelConfig
 from onecomp.quantizer._quantizer import Quantizer, QuantizationResult
-from onecomp.utils import prepare_calibration_dataset
 
 logger = getLogger(__name__)
 
@@ -46,13 +44,7 @@ logger = getLogger(__name__)
 def run_chunked_quantization(
     model_config: ModelConfig,
     quantizers: List[Quantizer],
-    calibration_dataset,
-    max_length: int,
-    num_calibration_samples: int,
-    calibration_strategy: str,
-    calibration_seed: int,
-    calibration_batch_size: int,
-    num_layers_per_group: int,
+    calibration_config: CalibrationConfig,
 ):
     """Run quantization for large-scale calibration data.
 
@@ -64,17 +56,14 @@ def run_chunked_quantization(
         model_config (ModelConfig): Model configuration.
         quantizers (list[Quantizer]): List of quantizers. Each quantizer must have
             flag_hessian=True or flag_xtx=True.
-        calibration_dataset (datasets.Dataset): Calibration dataset.
-        max_length (int): Maximum sequence length.
-        num_calibration_samples (int): Number of calibration samples.
-        calibration_strategy (str): Calibration strategy.
-        calibration_seed (int): Random seed.
-        calibration_batch_size (int): Number of sentences per chunk.
-        num_layers_per_group (int): Number of layers to process simultaneously.
+        calibration_config (CalibrationConfig): Calibration parameters.
 
     Note:
         Results are stored directly in each quantizer.results.
     """
+
+    calibration_batch_size = calibration_config.batch_size
+    num_layers_per_group = calibration_config.num_layers_per_group
 
     # Load model
     model = model_config.load_model()
@@ -85,11 +74,7 @@ def run_chunked_quantization(
     inputs = prepare_calibration_dataset(
         tokenizer=tokenizer,
         device=torch.device("cpu"),
-        calibration_dataset=calibration_dataset,
-        max_length=max_length,
-        num_calibration_samples=num_calibration_samples,
-        strategy=calibration_strategy,
-        seed=calibration_seed,
+        calibration_config=calibration_config,
         logger=logger,
         model=model,
     )

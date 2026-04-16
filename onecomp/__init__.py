@@ -8,6 +8,7 @@ Author: Keiji Kimura
 
 from .__version__ import __version__
 
+from .calibration import CalibrationConfig
 from .model_config import ModelConfig
 from .qep import QEPConfig
 from .rotated_model_config import RotatedModelConfig

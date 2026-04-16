@@ -25,7 +25,8 @@ where \(W\) is the original weight matrix and \(X\) is the input activation matr
 | [**GPTQ**](gptq.md)  | Arbitrary (typically 2--4) | Required | Hessian-based optimal rounding with column-by-column processing |
 | [**DBF**](dbf.md)     | ~1.5 (binary) | Required | Double Binary Factorization: \(W \approx A \cdot \text{diag}(d) \cdot B\) |
 | [**RTN**](rtn.md)     | Arbitrary | Not required | Round-To-Nearest baseline |
-| **JointQ** | Arbitrary | Required | Joint optimization across groups |
+| [**AutoBit**](autobit.md) | Mixed-precision | Required | ILP-based per-layer bit-width assignment under a VRAM budget |
+| [**JointQ**](jointq.md) | Arbitrary | Required | Joint optimization of assignments and scale parameters |
 | **QuIP**   | Arbitrary | Required | Quantization with Incoherence Processing |
 | **ARB**    | Arbitrary | Required | Adaptive Rounding with Binary search |
 | **CQ**     | Arbitrary | Required | Combinatorial quantization |

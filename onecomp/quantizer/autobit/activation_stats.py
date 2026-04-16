@@ -68,9 +68,8 @@ def _map_candidates_to_blocks(blocks, candidates):
 def collect_activation_stats_blockwise(
     model,
     candidates,
+    calibration_config,
     *,
-    num_samples=128,
-    seqlen=256,
     use_curvature_b=True,
     batch_size=16,
     device=None,
@@ -82,7 +81,7 @@ def collect_activation_stats_blockwise(
         tuple[dict, dict]: (a_diag, b_diag)
     """
     from transformers import AutoTokenizer
-    from onecomp.utils.calibration import prepare_calibration_dataset
+    from onecomp.calibration import prepare_calibration_dataset
 
     if device is None:
         device = torch.device("cuda")
@@ -95,16 +94,15 @@ def collect_activation_stats_blockwise(
         torch.cuda.empty_cache()
 
     model_id = getattr(model.config, "_name_or_path", None)
-
     tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
     calib_data = prepare_calibration_dataset(
         tokenizer=tokenizer,
         device=torch.device("cpu"),
-        max_length=seqlen,
-        num_calibration_samples=num_samples,
+        calibration_config=calibration_config,
         model=model,
     )
 
+    num_samples = calibration_config.num_calibration_samples
     actual_samples = min(num_samples, calib_data["input_ids"].shape[0])
     model_inputs = {
         k: v[:actual_samples] for k, v in calib_data.items()
@@ -131,7 +129,7 @@ def collect_activation_stats_blockwise(
             "Block-wise activation stats (%s): %d samples, seqlen=%d, " "%d blocks, %d layers",
             tag,
             actual_samples,
-            seqlen,
+            calibration_config.max_length,
             len(blocks),
             len(candidates),
         )

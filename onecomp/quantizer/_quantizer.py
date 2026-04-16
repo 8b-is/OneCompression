@@ -655,10 +655,13 @@ class Quantizer(metaclass=ABCMeta):
             input_activations = input.detach()
 
         assert isinstance(module, Linear)  # TODO: Support other layer types
-        # MoE expert layers recive 2d tensor (num_routed_tokens, hidden_size)
-        assert len(input_activations.shape) in (2, 3)
-        if len(input_activations.shape) == 2:
+
+        # Some architectures (e.g. OPT) reshape hidden_states to 2D
+        # (batch*seq, hidden) before linear layers.  Unsqueeze so the
+        # batching loop below works uniformly.
+        if input_activations.dim() == 2:
             input_activations = input_activations.unsqueeze(0)
+        assert len(input_activations.shape) == 3  # (batch_size, seq_len, hidden_size)
 
         hidden_size = input_activations.shape[-1]
         assert hidden_size == module.weight.shape[1]
@@ -705,6 +708,12 @@ class Quantizer(metaclass=ABCMeta):
         # TODO: Would it be more efficient to compute together with hessian?
 
         assert isinstance(module, Linear)  # TODO: Support other layer types
+
+        # Handle 2D activations from architectures that flatten before linears
+        if quant_input_activation.dim() == 2:
+            quant_input_activation = quant_input_activation.unsqueeze(0)
+        if original_input_activation.dim() == 2:
+            original_input_activation = original_input_activation.unsqueeze(0)
         assert len(quant_input_activation.shape) == 3
         assert len(original_input_activation.shape) == 3
         assert quant_input_activation.shape == original_input_activation.shape

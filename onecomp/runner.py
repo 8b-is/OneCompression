@@ -19,12 +19,13 @@ from pathlib import Path
 import torch
 
 from .__version__ import __version__
+from .calibration import CalibrationConfig, prepare_calibration_dataset
 from .model_config import ModelConfig
 from .qep import QEPConfig
 from .quantizer import GPTQ, Quantizer
+from .quantizer.autobit import AutoBitQuantizer
 from .utils import calculate_accuracy as calc_accuracy
 from .utils import calculate_perplexity as calc_perplexity
-from .utils import prepare_calibration_dataset as prepare_calib_dataset
 from .log import setup_logger
 
 
@@ -73,19 +74,13 @@ class Runner:
     def __init__(
         self,
         model_config=None,
-        calibration_dataset=None,
-        max_length=2048,
-        num_calibration_samples=512,
         quantizer=None,
         quantizers=None,
+        calibration_config=None,
         qep=False,
         qep_config=None,
-        calibration_strategy="drop_rand",
-        calibration_seed=0,
         multi_gpu=False,
         gpu_ids=None,
-        calibration_batch_size=None,
-        num_layers_per_group=7,
         post_processes=None,
     ):
         """__init__ method
@@ -93,72 +88,33 @@ class Runner:
         Args:
             model_config (ModelConfig):
                 Model configuration.  Required.
-            calibration_dataset (datasets.Dataset):
-            max_length (int):
-                The maximum length of the input sequence.
-            num_calibration_samples (int):
-                The number of calibration samples to use when loading default dataset.
             quantizer (Quantizer):
                 The quantizer to use. Specify either ``quantizer`` or
                 ``quantizers``, not both.  At least one must be given.
             quantizers (list[Quantizer]):
                 Specify multiple quantizers. When used with
-                calibration_batch_size, the X^T X accumulation is shared,
-                reducing the forward pass to a single execution.
+                ``calibration_config.batch_size``, the X^T X accumulation
+                is shared, reducing the forward pass to a single execution.
                 Specify either ``quantizer`` or ``quantizers``, not both.
                 Currently, this is only available when
-                ``calibration_batch_size`` is set and ``qep=False``.
+                ``calibration_config.batch_size`` is set and ``qep=False``.
+            calibration_config (CalibrationConfig or None):
+                Calibration data configuration.  When ``None`` (default),
+                a :class:`CalibrationConfig` with default values is
+                created automatically.
+
+                See :class:`CalibrationConfig` for available fields.
             qep (bool):
                 Whether to use QEP.
             qep_config (QEPConfig or None):
                 Configuration for QEP. If None and ``qep=True``,
                 a default ``QEPConfig()`` is used.
-            calibration_strategy (str):
-                Strategy for preparing calibration inputs.
-                Default is "drop_rand".
-
-                Available strategies:
-                - "concat_chunk":
-                    Concatenate all texts, tokenize once, and split into
-                    fixed-length chunks (max_length).
-                    Creates as many chunks as possible from the data.
-                - "concat_chunk_align":
-                    Same as concat_chunk, but adjusts the number of loaded
-                    samples so that num_chunks == num_calibration_samples.
-                    This ensures consistent token counts across experiments.
-                - "drop_head":
-                    No cross-document mixing. Tokenize each document
-                    independently; drop samples with token length < max_length;
-                    take the head window (first max_length tokens).
-                - "drop_rand":
-                    Same as above, but take a random window of length max_length
-                    from each long document (reproducible with calibration_seed).
-            calibration_seed (int):
-                Random seed used by some calibration strategies
-                (e.g., "drop_rand").
             multi_gpu (bool):
                 Whether to use multi-GPU for layer-wise parallel quantization.
                 Default is False.
             gpu_ids (list[int]):
                 List of GPU IDs to use for multi-GPU quantization.
                 If None and multi_gpu is True, all available GPUs will be used.
-            calibration_batch_size (int or None):
-                Batch size (number of sentences) for chunked calibration
-                forward passes. Default is None (all calibration data in
-                a single forward pass).
-                When set to a positive integer (e.g., 128), calibration
-                data is split into chunks of this size and forwarded in
-                multiple passes to reduce GPU memory usage. The necessary
-                statistics (e.g., X^T X for Hessian-based methods) are
-                accumulated across chunks. This is mathematically exact,
-                not an approximation.
-            num_layers_per_group (int):
-                Number of layers to process simultaneously in chunked
-                calibration mode. Default is 7 (one Transformer block
-                for Llama-like architectures: q,k,v,o,gate,up,down).
-                Controls the trade-off between CPU memory usage for
-                X^T X storage and the number of forward passes required.
-                Only used when calibration_batch_size is set.
             post_processes (list[PostQuantizationProcess] or None):
                 Optional list of post-quantization processes to execute
                 after the main quantization step.  Each process receives
@@ -175,31 +131,36 @@ class Runner:
 
             Chunked calibration with GPTQ (large-scale calibration data):
 
-            >>> from onecomp import Runner, ModelConfig
+            >>> from onecomp import Runner, ModelConfig, CalibrationConfig
             >>> from onecomp.quantizer.gptq import GPTQ
             >>> model_config = ModelConfig(
             ...     model_id_or_path="meta-llama/Llama-2-7b-hf"
             ... )
             >>> quantizer = GPTQ(wbits=4, groupsize=128)
+            >>> calib_config = CalibrationConfig(
+            ...     max_length=2048,
+            ...     num_calibration_samples=1024,
+            ...     batch_size=128,
+            ... )
             >>> runner = Runner(
             ...     model_config=model_config,
             ...     quantizer=quantizer,
-            ...     max_length=2048,
-            ...     num_calibration_samples=1024,
-            ...     calibration_batch_size=128,  # Forward 128 sentences at a time
+            ...     calibration_config=calib_config,
             ... )
             >>> runner.run()
 
             With custom num_layers_per_group:
 
-            >>> # When memory is sufficient: process 2 blocks (14 layers) simultaneously
+            >>> calib_config = CalibrationConfig(
+            ...     max_length=2048,
+            ...     num_calibration_samples=1024,
+            ...     batch_size=128,
+            ...     num_layers_per_group=14,
+            ... )
             >>> runner = Runner(
             ...     model_config=model_config,
             ...     quantizer=quantizer,
-            ...     max_length=2048,
-            ...     num_calibration_samples=1024,
-            ...     calibration_batch_size=128,
-            ...     num_layers_per_group=14,
+            ...     calibration_config=calib_config,
             ... )
             >>> runner.run()
 
@@ -210,32 +171,33 @@ class Runner:
             >>> gptq = GPTQ(wbits=4, groupsize=128, calc_quant_error=True)
             >>> jointq = JointQ(bits=4, group_size=128, calc_quant_error=True,
             ...                 device=torch.device(0))
+            >>> calib_config = CalibrationConfig(
+            ...     max_length=2048,
+            ...     num_calibration_samples=1024,
+            ...     batch_size=128,
+            ... )
             >>> runner = Runner(
             ...     model_config=model_config,
             ...     quantizers=[gptq, jointq],
-            ...     max_length=2048,
-            ...     num_calibration_samples=1024,
-            ...     calibration_batch_size=128,
+            ...     calibration_config=calib_config,
             ... )
             >>> runner.run()
             >>> # Results are stored in gptq.results and jointq.results respectively
         """
 
         self.model_config = model_config
-        self.calibration_dataset = calibration_dataset
-        self.max_length = max_length
-        self.num_calibration_samples = num_calibration_samples
         self.logger = getLogger(__name__)
 
         self.quantizer = quantizer
         self.quantizers = quantizers
+
+        if calibration_config is None:
+            calibration_config = CalibrationConfig()
+        self.calibration_config = calibration_config
+
         self.qep = qep
-        self.calibration_strategy = calibration_strategy
-        self.calibration_seed = calibration_seed
         self.multi_gpu = multi_gpu
         self.gpu_ids = gpu_ids
-        self.calibration_batch_size = calibration_batch_size
-        self.num_layers_per_group = num_layers_per_group
         self.post_processes = post_processes or []
         self.quantized_model = None
         if qep:
@@ -255,15 +217,15 @@ class Runner:
 
         Valid parameter combinations:
 
-        ===========  ====  ==========  ======================
-        quantizers   qep   multi_gpu   calibration_batch_size
-        ===========  ====  ==========  ======================
+        ===========  ====  ==========  ================================
+        quantizers   qep   multi_gpu   calibration_config.batch_size
+        ===========  ====  ==========  ================================
         Specified    False False       Specified
         None         True  False       None
         None         False True        None
         None         False False       Specified
         None         False False       None
-        ===========  ====  ==========  ======================
+        ===========  ====  ==========  ================================
 
         Note:
             ``multi_gpu=True`` requires a quantizer with ``flag_calibration=True``.
@@ -293,24 +255,42 @@ class Runner:
             raise ValueError("Either 'quantizer' or 'quantizers' must be specified.")
 
         # Parameter combination check
+        batch_size = self.calibration_config.batch_size
         if self.quantizers is not None:
-            # quantizers mode: qep=False, multi_gpu=False, calibration_batch_size required
+            # quantizers mode: qep=False, multi_gpu=False, batch_size required
             if self.qep:
                 raise ValueError("'quantizers' cannot be used with qep=True.")
             if self.multi_gpu:
                 raise ValueError("'quantizers' cannot be used with multi_gpu=True.")
-            if self.calibration_batch_size is None:
-                raise ValueError("'quantizers' requires 'calibration_batch_size' to be set.")
+            if batch_size is None:
+                raise ValueError(
+                    "'quantizers' requires 'calibration_config.batch_size' to be set."
+                )
         else:
             # Single quantizer mode: combination check
             if self.qep and self.multi_gpu:
                 raise ValueError("'qep' and 'multi_gpu' cannot be used together.")
-            if self.qep and self.calibration_batch_size is not None:
-                raise ValueError("'qep' cannot be used with 'calibration_batch_size'.")
-            if self.multi_gpu and self.calibration_batch_size is not None:
-                raise ValueError("'multi_gpu' cannot be used with 'calibration_batch_size'.")
+            if self.qep and batch_size is not None:
+                raise ValueError("'qep' cannot be used with 'calibration_config.batch_size'.")
+            if self.multi_gpu and batch_size is not None:
+                raise ValueError(
+                    "'multi_gpu' cannot be used with 'calibration_config.batch_size'."
+                )
             if self.multi_gpu and not self.quantizer.flag_calibration:
                 raise ValueError("'multi_gpu' requires a quantizer with flag_calibration=True.")
+
+        # Cross-validate calibration_dataset when AutoBitQuantizer is used
+        quantizer = self.quantizer or (self.quantizers[0] if self.quantizers else None)
+        if isinstance(quantizer, AutoBitQuantizer) and quantizer.calibration_config is not None:
+            runner_ds = self.calibration_config.calibration_dataset
+            quantizer_ds = quantizer.calibration_config.calibration_dataset
+            if runner_ds != quantizer_ds:
+                raise ValueError(
+                    f"Calibration dataset mismatch: Runner uses "
+                    f"{runner_ds!r} but quantizer uses {quantizer_ds!r}. "
+                    f"Set the same calibration_dataset in both "
+                    f"CalibrationConfig objects."
+                )
 
     def run(self):
         """Execute quantization (and related) processing"""
@@ -513,7 +493,7 @@ class Runner:
         elif self.multi_gpu:
             # Multi-GPU quantization (flag_calibration=True is guaranteed by check())
             self.quantize_with_calibration_on_multi_gpu()
-        elif self.calibration_batch_size is not None:
+        elif self.calibration_config.batch_size is not None:
             # Chunked quantization (single quantizer)
             self.quantize_with_calibration_chunked()
         elif self.quantizer.flag_calibration:
@@ -576,13 +556,7 @@ class Runner:
         run_chunked_quantization(
             model_config=self.model_config,
             quantizers=self.quantizers if self.quantizers is not None else [self.quantizer],
-            calibration_dataset=self.calibration_dataset,
-            max_length=self.max_length,
-            num_calibration_samples=self.num_calibration_samples,
-            calibration_strategy=self.calibration_strategy,
-            calibration_seed=self.calibration_seed,
-            calibration_batch_size=self.calibration_batch_size,
-            num_layers_per_group=self.num_layers_per_group,
+            calibration_config=self.calibration_config,
         )
 
     def quantize_with_calibration_on_multi_gpu(self):
@@ -609,11 +583,7 @@ class Runner:
         result = run_multi_gpu_quantization(
             model_config=self.model_config,
             quantizer=self.quantizer,
-            calibration_dataset=self.calibration_dataset,
-            max_length=self.max_length,
-            num_calibration_samples=self.num_calibration_samples,
-            calibration_strategy=self.calibration_strategy,
-            calibration_seed=self.calibration_seed,
+            calibration_config=self.calibration_config,
             gpu_ids=self.gpu_ids,
         )
 
@@ -662,11 +632,7 @@ class Runner:
             model_config=self.model_config,
             quantizer=self.quantizer,
             qep_config=self.qep_config,
-            calibration_dataset=self.calibration_dataset,
-            max_length=self.max_length,
-            num_calibration_samples=self.num_calibration_samples,
-            calibration_strategy=self.calibration_strategy,
-            calibration_seed=self.calibration_seed,
+            calibration_config=self.calibration_config,
         )
 
         if self.qep_config.general:
@@ -796,7 +762,7 @@ class Runner:
     def prepare_calibration_dataset(self, device, model=None):
         """Prepare calibration data for quantization methods such as GPTQ.
 
-        See utils.calibration.prepare_calibration_dataset for details.
+        See calibration.calibration_data_loader.prepare_calibration_dataset for details.
 
         Args:
             device (torch.device): Device to place tensors on (CPU or GPU)
@@ -810,14 +776,10 @@ class Runner:
         """
         tokenizer = self.model_config.load_tokenizer()
 
-        return prepare_calib_dataset(
+        return prepare_calibration_dataset(
             tokenizer=tokenizer,
             device=device,
-            calibration_dataset=self.calibration_dataset,
-            max_length=self.max_length,
-            num_calibration_samples=self.num_calibration_samples,
-            strategy=self.calibration_strategy,
-            seed=self.calibration_seed,
+            calibration_config=self.calibration_config,
             logger=self.logger,
             model=model,
         )
@@ -1632,10 +1594,15 @@ class Runner:
         logger = self.logger
         logger.info("Saving quantized model to %s", save_directory)
 
-        # Disable GemLite when saving to avoid extra params in safetensors
-        model, tokenizer = self.create_quantized_model(
-            pack_weights=pack_weights, use_gemlite=False
-        )
+        if self.quantized_model is not None:
+            logger.info("Using existing quantized model (post-process results preserved)")
+            model = self.quantized_model
+            tokenizer = self.model_config.load_tokenizer()
+        else:
+            # Disable GemLite when saving to avoid extra params in safetensors
+            model, tokenizer = self.create_quantized_model(
+                pack_weights=pack_weights, use_gemlite=False
+            )
 
         # Save model and tokenizer
         save_path = Path(save_directory)

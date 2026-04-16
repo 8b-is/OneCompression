@@ -13,8 +13,6 @@ input activations, so they can be captured once and reused.
 
 """
 
-# pylint: disable=too-many-arguments, too-many-positional-arguments
-
 import math
 import copy
 from logging import getLogger
@@ -22,10 +20,10 @@ from collections import OrderedDict
 
 import torch
 from torch import nn
+from onecomp.calibration import CalibrationConfig, prepare_calibration_dataset
 from onecomp.model_config import ModelConfig
 from onecomp.qep._qep_config import QEPConfig
 from onecomp.quantizer._quantizer import Quantizer
-from onecomp.utils import prepare_calibration_dataset
 from onecomp.utils.blockwise import (
     _PER_LAYER_INPUTS_KEY,
     prepare_block_kwargs,
@@ -191,11 +189,7 @@ def run_quantize_with_qep_arch(
     model_config: ModelConfig,
     quantizer: Quantizer,
     qep_config: QEPConfig,
-    calibration_dataset,
-    max_length: int,
-    num_calibration_samples: int,
-    calibration_strategy: str,
-    calibration_seed: int,
+    calibration_config: CalibrationConfig,
 ):
     """Run architecture-aware quantization with QEP.
 
@@ -211,12 +205,7 @@ def run_quantize_with_qep_arch(
         quantizer (Quantizer): The quantizer to use.
         qep_config (QEPConfig): Configuration for QEP
             (percdamp, perccorr, exclude_layer_keywords).
-        calibration_dataset: Calibration dataset. If None, a default dataset
-            is loaded.
-        max_length (int): Maximum sequence length for calibration inputs.
-        num_calibration_samples (int): Number of calibration samples.
-        calibration_strategy (str): Strategy for preparing calibration inputs.
-        calibration_seed (int): Random seed for calibration data preparation.
+        calibration_config (CalibrationConfig): Calibration parameters.
 
     """
 
@@ -230,11 +219,7 @@ def run_quantize_with_qep_arch(
     model_inputs = prepare_calibration_dataset(
         tokenizer=tokenizer,
         device=torch.device("cpu"),
-        calibration_dataset=calibration_dataset,
-        max_length=max_length,
-        num_calibration_samples=num_calibration_samples,
-        strategy=calibration_strategy,
-        seed=calibration_seed,
+        calibration_config=calibration_config,
         logger=logger,
         model=model,
     )

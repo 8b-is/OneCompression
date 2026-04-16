@@ -20,6 +20,7 @@ Usage:
 import torch
 
 from onecomp import (
+    CalibrationConfig,
     GPTQ,
     ModelConfig,
     PostProcessLoraSFT,
@@ -79,9 +80,8 @@ post_process = PostProcessLoraSFT(
 runner = Runner(
     model_config=model_config,
     quantizer=gptq,
+    calibration_config=CalibrationConfig(max_length=512, num_calibration_samples=128),
     post_processes=[post_process],
-    max_length=512,
-    num_calibration_samples=128,
 )
 runner.run()
 
