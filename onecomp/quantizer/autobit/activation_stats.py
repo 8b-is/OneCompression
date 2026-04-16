@@ -65,6 +65,13 @@ def _map_candidates_to_blocks(blocks, candidates):
     return block_to_candidates
 
 
+def _is_kv_shared_block(block):
+    """Return True if the block reuses KV states from an earlier layer.
+    """
+    attn = getattr(block, "self_attn", None)
+    return getattr(attn, "is_kv_shared_layer", False)
+
+
 def collect_activation_stats_blockwise(
     model,
     candidates,
@@ -138,6 +145,12 @@ def collect_activation_stats_blockwise(
     saved_inps = [inps]
 
     for block_idx, block in enumerate(blocks):
+        if _is_kv_shared_block(block):
+            if logger:
+                logger.info("Skipping KV-shared block %d (no independent forward possible)", block_idx)
+            saved_inps.append(inps)
+            continue
+
         block.to(device)
 
         hooks = []
@@ -175,6 +188,10 @@ def collect_activation_stats_blockwise(
 
         for block_idx in range(len(blocks) - 1, -1, -1):
             block = blocks[block_idx]
+
+            if _is_kv_shared_block(block):
+                continue
+
             block.to(device)
 
             orig_grad_flags = {}
