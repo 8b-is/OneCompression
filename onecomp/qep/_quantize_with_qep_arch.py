@@ -27,6 +27,8 @@ from onecomp.qep._qep_config import QEPConfig
 from onecomp.quantizer._quantizer import Quantizer
 from onecomp.utils import prepare_calibration_dataset
 from onecomp.utils.blockwise import (
+    _PER_LAYER_INPUTS_KEY,
+    prepare_block_kwargs,
     get_blocks_and_inputs,
     forward_input,
     move_kwargs_to_device,
@@ -62,7 +64,8 @@ def make_grouped_module(
     groups = OrderedDict()
 
     def hook(module, inp, _):
-        key = _make_tensor_id(inp[0] if isinstance(inp, tuple) else inp)
+        tensor = inp[0] if isinstance(inp, tuple) else inp
+        key = _make_tensor_id(tensor)
         if key not in groups:
             groups[key] = [module]
         else:
@@ -75,12 +78,27 @@ def make_grouped_module(
 
     with torch.no_grad():
         inp = inps[0].unsqueeze(0).to(device)
-        _ = block(inp, **kwargs)
+        pli = kwargs.get(_PER_LAYER_INPUTS_KEY)
+        block_kwargs = expand_kwargs_batch(kwargs, 1)
+        block_kwargs = prepare_block_kwargs(block_kwargs, block, pli, 0, 1, device)
+        _ = block(inp, **block_kwargs)
 
     for handler in handlers:
         handler.remove()
 
-    return list(groups.values())
+    # split groups by in_features so that modules 
+    # with different input dimensions (e.g. MoE router vs expert down_proj)
+    result = []
+    for group in groups.values():
+        by_dim = OrderedDict()
+        for module in group:
+            dim = module.in_features
+            if dim not in by_dim:
+                by_dim[dim] = []
+            by_dim[dim].append(module)
+        result.extend(by_dim.values())
+
+    return result
 
 
 @torch.no_grad()
@@ -134,11 +152,14 @@ def compute_hessian_and_crossterm(
     # compute Hessian and crossterm
     N = inps_q.size(0)
     nsamples = 0
+    pli = kwargs.get(_PER_LAYER_INPUTS_KEY)
 
     # compute Hessian and crossterm in batches
     for first in range(0, N, batch_size):
         last = min(first + batch_size, N)
-        batch_kwargs = expand_kwargs_batch(kwargs, last - first)
+        bs = last - first
+        batch_kwargs = expand_kwargs_batch(kwargs, bs)
+        batch_kwargs = prepare_block_kwargs(batch_kwargs, block_q, pli, first, bs, device)
 
         _ = block_q(inps_q[first:last].to(device), **batch_kwargs)
         _ = block_f(inps_f[first:last].to(device), **batch_kwargs)
@@ -215,6 +236,7 @@ def run_quantize_with_qep_arch(
         strategy=calibration_strategy,
         seed=calibration_seed,
         logger=logger,
+        model=model,
     )
 
     # Setup the quantizer

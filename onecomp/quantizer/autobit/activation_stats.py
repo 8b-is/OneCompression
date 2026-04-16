@@ -102,12 +102,12 @@ def collect_activation_stats_blockwise(
         device=torch.device("cpu"),
         max_length=seqlen,
         num_calibration_samples=num_samples,
+        model=model,
     )
 
     actual_samples = min(num_samples, calib_data["input_ids"].shape[0])
     model_inputs = {
-        "input_ids": calib_data["input_ids"][:actual_samples],
-        "attention_mask": calib_data["attention_mask"][:actual_samples],
+        k: v[:actual_samples] for k, v in calib_data.items()
     }
 
     blocks, inps, kwargs = get_blocks_and_inputs(model, model_inputs, batch_size)

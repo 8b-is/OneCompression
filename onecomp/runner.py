@@ -529,7 +529,7 @@ class Runner:
         model = self.model_config.load_model()
         logger = self.logger
         input_device = next(model.parameters()).device
-        inputs = self.prepare_calibration_dataset(input_device)
+        inputs = self.prepare_calibration_dataset(input_device, model=model)
 
         # Setup the quantizer
         self.quantizer.setup(model)
@@ -738,7 +738,7 @@ class Runner:
         model = self.model_config.load_model()
         logger = self.logger
         input_device = next(model.parameters()).device
-        inputs = self.prepare_calibration_dataset(input_device)
+        inputs = self.prepare_calibration_dataset(input_device, model=model)
 
         run_jointq_error_propagation(
             model=model,
@@ -793,13 +793,15 @@ class Runner:
 
         self.quantized_model = quantized_model
 
-    def prepare_calibration_dataset(self, device):
+    def prepare_calibration_dataset(self, device, model=None):
         """Prepare calibration data for quantization methods such as GPTQ.
 
         See utils.calibration.prepare_calibration_dataset for details.
 
         Args:
             device (torch.device): Device to place tensors on (CPU or GPU)
+            model: Model instance (optional). Add model-specific fields 
+            (e.g. mm_token_type_ids for Gemma 4).
 
         Returns:
             dict: Input dictionary for the model
@@ -817,6 +819,7 @@ class Runner:
             strategy=self.calibration_strategy,
             seed=self.calibration_seed,
             logger=self.logger,
+            model=model,
         )
 
     def print_quantization_results(self, quantizer=None):
@@ -1796,7 +1799,7 @@ class Runner:
 
             model = self.model_config.load_model()
             input_device = next(model.parameters()).device
-            inputs = self.prepare_calibration_dataset(input_device)
+            inputs = self.prepare_calibration_dataset(input_device, model=model)
 
             combined_results = _analyze(model, inputs, quantizer.results, layer_keywords)
 
@@ -1820,7 +1823,7 @@ class Runner:
 
                 model = self.model_config.load_model()
                 input_device = next(model.parameters()).device
-                inputs = self.prepare_calibration_dataset(input_device)
+                inputs = self.prepare_calibration_dataset(input_device, model=model)
 
                 keyword_results = _analyze(model, inputs, quantizer.results, [keyword])
                 all_results[keyword] = {

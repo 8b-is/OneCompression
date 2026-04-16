@@ -77,6 +77,7 @@ def run_quantize_with_qep(
         strategy=calibration_strategy,
         seed=calibration_seed,
         logger=logger,
+        model=model,
     )
 
     # Setup the quantizer

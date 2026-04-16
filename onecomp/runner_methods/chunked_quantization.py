@@ -91,6 +91,7 @@ def run_chunked_quantization(
         strategy=calibration_strategy,
         seed=calibration_seed,
         logger=logger,
+        model=model,
     )
     total_samples = inputs["input_ids"].shape[0]
 

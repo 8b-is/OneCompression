@@ -176,6 +176,7 @@ def prepare_rotated_model(
             num_calibration_samples=num_calibration_samples,
             strategy=calibration_strategy,
             seed=seed,
+            model=model,
         )
 
         # Release the original model to halve peak CPU memory during training.

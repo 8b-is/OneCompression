@@ -418,6 +418,18 @@ class Quantizer(metaclass=ABCMeta):
 
     _VLM_TEXT_SUFFIXES = ("language_model", "text_model")
 
+    def _get_text_search_root(self, model):
+        """Return (search_root, prefix) restricting to the text submodel.
+
+        For VLMs this finds the
+        language_model or text_model submodule and returns it
+        For plain CausalLMs the whole model is returned
+        """
+        for name, mod in model.named_modules():
+            if any(name.endswith(s) for s in self._VLM_TEXT_SUFFIXES):
+                return mod, name + "."
+        return model, ""
+
     def setup(self, model):
         """Setup the quantizer with the model
 
@@ -434,14 +446,9 @@ class Quantizer(metaclass=ABCMeta):
 
         assert len(self.module_to_name) == 0
 
-        search_root = model
-        prefix = ""
-        for name, mod in model.named_modules():
-            if any(name.endswith(s) for s in self._VLM_TEXT_SUFFIXES):
-                search_root = mod
-                prefix = name + "."
-                self.logger.info("Quantizer restricting to text submodel: %s", name)
-                break
+        search_root, prefix = self._get_text_search_root(model)
+        if prefix:
+            self.logger.info("Quantizer restricting to text submodel: %s", prefix.rstrip("."))
 
         for name, module in search_root.named_modules():
             full_name = prefix + name if prefix else name
@@ -648,7 +655,10 @@ class Quantizer(metaclass=ABCMeta):
             input_activations = input.detach()
 
         assert isinstance(module, Linear)  # TODO: Support other layer types
-        assert len(input_activations.shape) == 3  # (batch_size, seq_len, hidden_size)
+        # MoE expert layers recive 2d tensor (num_routed_tokens, hidden_size)
+        assert len(input_activations.shape) in (2, 3)
+        if len(input_activations.shape) == 2:
+            input_activations = input_activations.unsqueeze(0)
 
         hidden_size = input_activations.shape[-1]
         assert hidden_size == module.weight.shape[1]

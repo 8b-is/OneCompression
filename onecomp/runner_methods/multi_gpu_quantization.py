@@ -119,6 +119,7 @@ def run_capture_phase(
         strategy=calibration_strategy,
         seed=calibration_seed,
         logger=logger,
+        model=model,
     )
 
     # Set up quantizer and get target layers

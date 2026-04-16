@@ -490,12 +490,14 @@ def prepare_calibration_dataset(
     strategy="drop_rand",
     seed=0,
     logger=None,
+    model=None,
 ):  # pylint: disable=too-many-arguments, too-many-positional-arguments
     """Prepare calibration data for quantization methods such as GPTQ.
 
     Processing flow:
         1. Obtain data source: use C4 if calibration_dataset is None.
         2. Chunk the data according to the chosen strategy.
+        3. Add model-specific fields (e.g. mm_token_type_ids for Gemma 4).
 
     strategy:
         - "concat_chunk": concatenate all texts -> tokenize at once -> equal-length chunks.
@@ -531,6 +533,9 @@ def prepare_calibration_dataset(
         seed (int):
             Random seed for strategy="drop_rand".
         logger: Logger (optional).
+        model: Model instance (optional).  When provided, model-specific
+            fields such as mm_token_type_ids (Gemma 4) are added
+            automatically.
 
     Returns:
         dict: Model input dictionary.
@@ -549,7 +554,18 @@ def prepare_calibration_dataset(
     logger.info("Preparing the calibration dataset... (strategy=%s)", strategy)
 
     if calibration_dataset is None:
-        return _prepare_from_c4(
+        result = _prepare_from_c4(
+            tokenizer,
+            device,
+            max_length,
+            num_calibration_samples,
+            strategy,
+            seed,
+            logger,
+        )
+    else:
+        result = _prepare_from_custom(
+            calibration_dataset,
             tokenizer,
             device,
             max_length,
@@ -559,13 +575,26 @@ def prepare_calibration_dataset(
             logger,
         )
 
-    return _prepare_from_custom(
-        calibration_dataset,
-        tokenizer,
-        device,
-        max_length,
-        num_calibration_samples,
-        strategy,
-        seed,
-        logger,
-    )
+    return finalize_calibration_inputs(result, model)
+
+
+def finalize_calibration_inputs(inputs, model):
+    """Add model-specific token-type fields to calibration inputs.
+
+    Gemma 4 requires mm_token_type_ids (multimodal token type ids) even
+    for text-only inference.
+    cf) https://huggingface.co/google/gemma-4-31B/discussions/3
+
+    Args:
+        inputs: Calibration input dictionary.
+        model: Model instance.
+
+    Returns:
+        dict: The same inputs dict after modifying based on the model architecture.
+    """
+    config = getattr(model, "config", model)
+    if getattr(config, "model_type", "") == "gemma4":
+        inputs["mm_token_type_ids"] = torch.zeros_like(
+            inputs["input_ids"], dtype=torch.long
+        )
+    return inputs

@@ -19,7 +19,7 @@ class ModelConfig:
         self,
         model_id: str = None,
         path: str = None,
-        dtype: str = "float16",
+        dtype: str = "auto",
         device: str = "auto",
     ):
         """
@@ -67,7 +67,7 @@ class ModelConfig:
 
         pretrained = self.get_model_id_or_path()
         kwargs = dict(
-            dtype=getattr(torch, self.dtype),
+            dtype=self.dtype if self.dtype == "auto" else getattr(torch, self.dtype),
             device_map=device_map,
         )
 
