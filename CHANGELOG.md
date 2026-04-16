@@ -1,5 +1,29 @@
 # Change log
 
+## [v1.1.0+gemma] 2026-04-16
+
+### Gemma 3 / Gemma 4 & VLM Support
+
+- Auto-detect `language_model` / `text_model` sub-modules in `setup()` so only the language model is quantized; `vision_tower`, `audio_tower`, etc. are automatically excluded (`quantizer/_quantizer.py`)
+- Introduced `prepare_block_kwargs` to reproduce Gemma 4-specific additional inputs during block-wise forward (`runner_methods/chunked_quantization.py`, `qep/_quantize_with_qep_arch.py`)
+  - `_per_layer_inputs`: pre-compute per-layer embeddings for all calibration samples
+  - `_position_embeddings_map`: hook into `rotary_emb` to capture position embeddings per layer type
+  - `_attention_mask_map`: pre-compute masks per layer type via `create_causal_mask` / `create_sliding_window_causal_mask`
+- Updated `Catcher.forward` to accept `*args` (Gemma 4 passes `per_layer_input` as a positional argument)
+- Added a guard to safely skip KV-shared layers where `k_proj` / `v_proj` are never called during forward and X^TX is not accumulated (`runner_methods/chunked_quantization.py`)
+- Added `token_type_ids` (`mm_token_type_ids`) required by Gemma 4 to calibration data and PPL computation (`utils/calibration.py`, `utils/perplexity.py`)
+  - Added `model` argument to `prepare_calibration_dataset`; model-specific inputs are appended via `finalize_calibration_inputs()`
+  - Changed `model.device` to `next(model.parameters()).device` to support VLM `device_map="auto"`
+- Fixed MoE block partitioning (`down_proj` and `router.proj` were incorrectly placed in the same block) and relaxed Hessian input shape assertion for 2D tensors after router dispatch
+- Added layer-suffix fallback lookup for Gemma 3's shared sub-modules where `named_modules()` paths differ from `state_dict()` keys (`quantized_model_loader.py`)
+- `save_quantized_model()` now copies `processor_config.json` from the source model so the quantized model directory is self-contained for multi-modal inference (`runner.py`)
+- Added skip logic in vLLM plugin to prevent vision / audio encoder layers from being incorrectly matched to language model quantization configs (`vllm_plugins/utils/module.py`)
+- Changed `ModelConfig` default `dtype` from `float16` to `"auto"` so the model's native dtype (e.g. bfloat16) is used, fixing NaN Hessians on Gemma 3 and similar models whose values exceed the float16 range
+- Fixed an issue where non-language-model layers in multi-modal models were included in AutoBit bit allocation
+- Bumped `transformers` requirement from `>= 4.53.0` to `>= 4.55.0` (`pyproject.toml`)
+  - Gemma 4's `model_type: gemma4` is registered in `CONFIG_MAPPING` starting from 4.55.0 (released 2026-04-02); 4.53.0 fails to load it
+- Added `cu130` extra for the validation environment (NVIDIA B200, CUDA 13.0); under `cu128`, torch (cu130) and torchvision (cu128) had a CUDA version mismatch
+
 ## [v1.1.0] 2026-04-10
 
 ### New Feature: BlockWisePTQ
