@@ -240,7 +240,7 @@ def finalize_calibration_inputs(inputs, model):
     Returns:
         dict: The same inputs dict after modifying based on the model architecture.
     """
-    config = getattr(model, "config", model)
+    config = getattr(model, "config", None)
     if getattr(config, "model_type", "") == "gemma4":
         inputs["mm_token_type_ids"] = torch.zeros_like(
             inputs["input_ids"], dtype=torch.long
