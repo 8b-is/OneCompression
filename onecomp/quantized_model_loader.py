@@ -349,10 +349,14 @@ class QuantizedModelLoader:
             m = re.search(r"(layers\.\d+\..+)$", name)
             if m:
                 suffix = m.group(1)
-                for sd_name in sd_prefix_map:
-                    if sd_name.endswith(suffix):
-                        alt_prefix = sd_name + "."
-                        return {k[len(alt_prefix):]: v for k, v in state_dict.items() if k.startswith(alt_prefix)}
+                hits = [s for s in sd_prefix_map if s.endswith(suffix)]
+                if len(hits) > 1:
+                    logger.warning(
+                        "Ambiguous suffix %s for %s: %s", suffix, name, hits,
+                    )
+                if hits:
+                    alt_prefix = hits[0] + "."
+                    return {k[len(alt_prefix):]: v for k, v in state_dict.items() if k.startswith(alt_prefix)}
             return {}
 
         for name in quantized_names:
