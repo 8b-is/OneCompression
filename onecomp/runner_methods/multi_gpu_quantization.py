@@ -95,8 +95,8 @@ def run_capture_phase(
         tokenizer=tokenizer,
         device=input_device,
         calibration_config=calibration_config,
-        logger=logger,
         model=model,
+        logger=logger,
     )
 
     # Set up quantizer and get target layers

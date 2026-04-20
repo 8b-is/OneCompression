@@ -220,8 +220,8 @@ def run_quantize_with_qep_arch(
         tokenizer=tokenizer,
         device=torch.device("cpu"),
         calibration_config=calibration_config,
-        logger=logger,
         model=model,
+        logger=logger,
     )
 
     # Setup the quantizer

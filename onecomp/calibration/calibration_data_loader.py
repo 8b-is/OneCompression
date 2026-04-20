@@ -30,8 +30,8 @@ def prepare_calibration_dataset(
     tokenizer,
     device,
     calibration_config: CalibrationConfig,
+    model,
     logger=None,
-    model=None,
 ):
     """Prepare calibration data for quantization methods such as GPTQ.
 
@@ -65,6 +65,7 @@ def prepare_calibration_dataset(
         tokenizer: Tokenizer.
         device (torch.device): Device to place tensors on (CPU or GPU).
         calibration_config (CalibrationConfig): Calibration parameters.
+        model (torch.nn.Module): Model instance. It is used to add model-specific token-type fields to calibration inputs.
         logger: Logger (optional).
 
     Returns:

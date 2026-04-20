@@ -75,8 +75,8 @@ def run_chunked_quantization(
         tokenizer=tokenizer,
         device=torch.device("cpu"),
         calibration_config=calibration_config,
-        logger=logger,
         model=model,
+        logger=logger,
     )
     total_samples = inputs["input_ids"].shape[0]
 
