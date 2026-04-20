@@ -7,6 +7,7 @@ Author: Keiji Kimura
 """
 
 # pylint: disable=too-many-arguments, too-many-positional-arguments
+import copy
 import math
 import gc
 import json
@@ -1567,10 +1568,82 @@ class Runner:
         quant_config["rotated"] = self.model_config.has_additional_data()
         quant_config["fp32_had"] = fp32_had
 
+        # Patch weights and quant config for architectures with shared
+        # K/V projections (e.g. Gemma4 attention_k_eq_v) so that vLLM's
+        # fused qkv_proj consistency check passes.
+        self._patch_k_eq_v_for_vllm(model, quant_config)
+
         # Add quantization config to model config
         model.config.quantization_config = quant_config
 
         return model, tokenizer
+
+    def _patch_k_eq_v_for_vllm(self, model, quant_config: dict) -> None:
+        """Add synthetic v_proj weights and config for attention_k_eq_v layers.
+
+        Gemma4 full-attention layers with attention_k_eq_v=True have no
+        v_proj weight — the model reuses key states as value states.
+        vLLM fuses q/k/v into a single qkv_proj and requires all shards
+        to share the same quantization status.  
+        """
+        text_cfg = getattr(model.config, "text_config", None)
+        if text_cfg is None or not getattr(text_cfg, "attention_k_eq_v", False):
+            return
+        layer_types = getattr(text_cfg, "layer_types", [])
+        k_eq_v_indices = {
+            i for i, lt in enumerate(layer_types) if lt == "full_attention"
+        }
+        if not k_eq_v_indices:
+            return
+
+        # (1) Model weights: duplicate k_proj → v_proj
+        layers = None
+        for name, mod in model.named_modules():
+            if name.endswith("language_model.layers"):
+                layers = mod
+                break
+
+        if layers is not None:
+            weight_count = 0
+            for idx in sorted(k_eq_v_indices):
+                if idx >= len(layers):
+                    continue
+                attn = getattr(layers[idx], "self_attn", None)
+                if attn is None:
+                    continue
+                k_proj = getattr(attn, "k_proj", None)
+                if k_proj is None or getattr(attn, "v_proj", None) is not None:
+                    continue
+                attn.v_proj = copy.deepcopy(k_proj)
+                weight_count += 1
+            if weight_count:
+                self.logger.info(
+                    "Added v_proj weights (copied from k_proj) to %d "
+                    "attention_k_eq_v layers for vLLM compatibility",
+                    weight_count,
+                )
+
+        # (2) Quant config: add v_proj entries cloned from k_proj
+        for idx, layer_cfg in enumerate(quant_config.get("quantization_bits", [])):
+            if (
+                idx in k_eq_v_indices
+                and "self_attn.k_proj" in layer_cfg
+                and "self_attn.v_proj" not in layer_cfg
+            ):
+                layer_cfg["self_attn.v_proj"] = copy.deepcopy(
+                    layer_cfg["self_attn.k_proj"]
+                )
+
+        for key in ("modules_in_block_to_quantize", "quantized_layer_names"):
+            names = quant_config.get(key, [])
+            added = [
+                f"model.language_model.layers.{idx}.self_attn.v_proj"
+                for idx in k_eq_v_indices
+                if f"model.language_model.layers.{idx}.self_attn.k_proj" in names
+                and f"model.language_model.layers.{idx}.self_attn.v_proj" not in names
+            ]
+            if added:
+                quant_config[key] = sorted(names + added)
 
     # ========================================
     # Unified Save/Load Methods (Using quantizer.results)
@@ -1610,6 +1683,18 @@ class Runner:
 
         model.save_pretrained(save_directory)
         tokenizer.save_pretrained(save_directory)
+
+        # Gemma 4 PT models require BOS token for coherent generation but the
+        # upstream tokenizer_config.json omits add_bos_token.  Ensure it is
+        # set so that vLLM (and other runtimes) prepend <bos> automatically.
+        # See: https://github.com/vllm-project/vllm/issues/39827
+        tc_path = Path(save_directory) / "tokenizer_config.json"
+        if tc_path.exists():
+            tc = json.loads(tc_path.read_text())
+            if "add_bos_token" not in tc and tc.get("bos_token"):
+                tc["add_bos_token"] = True
+                tc_path.write_text(json.dumps(tc, indent=2, ensure_ascii=False) + "\n")
+                logger.info("Set add_bos_token=true in tokenizer_config.json")
 
         # Copy processor config from original model (for VLMs with image/audio support)
         import shutil

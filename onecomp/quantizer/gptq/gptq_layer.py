@@ -341,8 +341,12 @@ class GPTQLinear(nn.Module):
         """
         # Fast path when using GemLite
         if self.using_gemlite and self._gemlite_layer is not None:
-            # GemLite handles all quantization internally
-            output = self._gemlite_layer(x)
+            # GemLite is initialized with fp16 weights; cast input to fp16
+            # to avoid Triton dtype mismatch (e.g. bf16 models like Gemma 4),
+            # then restore the original dtype.
+            orig_dtype = x.dtype
+            output = self._gemlite_layer(x.to(torch.float16))
+            output = output.to(orig_dtype)
             if self.bias is not None:
                 output = output + self.bias.to(output.dtype)
             return output
