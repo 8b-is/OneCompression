@@ -110,6 +110,7 @@ def _find_blocks_parent(model, blocks):
     return None
 
 
+@torch.no_grad()
 def _compute_per_layer_inputs(model, blocks, input_ids):
     """Compute per-layer input embeddings for all calibration samples.
 
