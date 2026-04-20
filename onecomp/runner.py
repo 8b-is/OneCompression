@@ -1700,6 +1700,10 @@ class Runner:
         import shutil
 
         src_dir = self.model_config.get_model_id_or_path()
+        if src_dir and not os.path.isdir(src_dir):
+            # when the model_id is specified, the path is modifed to the local directory
+            from huggingface_hub import snapshot_download
+            src_dir = snapshot_download(src_dir, local_files_only=True)
         if src_dir and os.path.isdir(src_dir):
             for fname in ("processor_config.json", "preprocessor_config.json"):
                 src = os.path.join(src_dir, fname)
