@@ -34,6 +34,8 @@ from datasets import load_dataset
 import torch
 from tqdm import tqdm
 
+from .model_inputs import add_model_specific_inputs
+
 
 def calculate_perplexity(
     model=None,
@@ -133,8 +135,11 @@ def calculate_perplexity(
         target_ids = input_ids.clone()
         target_ids[:, :-trg_len] = -100
         with torch.no_grad():
-            token_type_ids = torch.zeros_like(input_ids)
-            outputs = model(input_ids, labels=target_ids, token_type_ids=token_type_ids)
+            inputs = add_model_specific_inputs(
+                inputs={"input_ids": input_ids, "labels": target_ids}, 
+                model=model,
+            )
+            outputs = model(**inputs)
             # loss is calculated using CrossEntropyLoss which averages over valid labels
             # N.B. the model only calculates loss over trg_len - 1 labels,
             # because it internally shifts the labels

@@ -12,7 +12,7 @@
 - Updated `Catcher.forward` to accept `*args` (Gemma 4 passes `per_layer_input` as a positional argument)
 - Added a guard to safely skip KV-shared layers where `k_proj` / `v_proj` are never called during forward and X^TX is not accumulated (`runner_methods/chunked_quantization.py`)
 - Added `token_type_ids` (`mm_token_type_ids`) required by Gemma 4 to calibration data and PPL computation (`utils/calibration.py`, `utils/perplexity.py`)
-  - Added `model` argument to `prepare_calibration_dataset`; model-specific inputs are appended via `finalize_calibration_inputs()`
+  - Added `model` argument to `prepare_calibration_dataset`; model-specific inputs are appended via `add_model_specific_inputs()`
   - Changed `model.device` to `next(model.parameters()).device` to support VLM `device_map="auto"`
 - Fixed MoE block partitioning (`down_proj` and `router.proj` were incorrectly placed in the same block) and relaxed Hessian input shape assertion for 2D tensors after router dispatch
 - Added layer-suffix fallback lookup for Gemma 3's shared sub-modules where `named_modules()` paths differ from `state_dict()` keys (`quantized_model_loader.py`)

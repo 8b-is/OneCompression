@@ -15,9 +15,9 @@ import torch
 from onecomp.calibration import CalibrationConfig
 from onecomp.calibration.calibration_data_loader import (
     prepare_calibration_dataset,
-    finalize_calibration_inputs,
     _KNOWN_DATASET_NAMES,
 )
+from onecomp.utils import add_model_specific_inputs
 from onecomp.calibration.chunking import _VALID_CALIBRATION_STRATEGIES
 
 
@@ -146,7 +146,7 @@ class TestInvalidStrategy:
 
 
 class TestFinalizeCalibrationInputs:
-    """Verify that finalize_calibration_inputs adds model-specific fields."""
+    """Verify that add_model_specific_inputs adds model-specific fields."""
 
     def _make_inputs(self):
         return {
@@ -163,7 +163,7 @@ class TestFinalizeCalibrationInputs:
         inputs = self._make_inputs()
         model = self._make_model("gemma4")
 
-        result = finalize_calibration_inputs(inputs, model)
+        result = add_model_specific_inputs(inputs, model)
 
         assert "mm_token_type_ids" in result
         assert result["mm_token_type_ids"].shape == result["input_ids"].shape
@@ -174,7 +174,7 @@ class TestFinalizeCalibrationInputs:
         inputs = self._make_inputs()
         model = self._make_model("llama")
 
-        result = finalize_calibration_inputs(inputs, model)
+        result = add_model_specific_inputs(inputs, model)
 
         assert "mm_token_type_ids" not in result
 

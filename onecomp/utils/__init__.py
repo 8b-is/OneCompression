@@ -27,6 +27,8 @@ from .vram_estimator import (
     VRAMBitwidthEstimation,
 )
 
+from .model_inputs import add_model_specific_inputs
+
 from .blockwise import (
     get_blocks_and_inputs,
     forward_input,

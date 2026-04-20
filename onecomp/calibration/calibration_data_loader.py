@@ -11,6 +11,7 @@ from logging import getLogger
 
 import torch
 
+from ..utils import add_model_specific_inputs
 from .calibration_config import CalibrationConfig
 from .chunking import _VALID_CALIBRATION_STRATEGIES, prepare_from_texts
 from ._cache import load_or_prepare
@@ -141,7 +142,7 @@ def prepare_calibration_dataset(
             logger=logger,
         )
 
-    return finalize_calibration_inputs(result, model)
+    return add_model_specific_inputs(result, model)
 
 
 _TEXT_COLUMN_CANDIDATES = ("text", "content", "sentence", "document", "body", "input")
@@ -224,25 +225,3 @@ def _load_from_hub(
         calibration_config.seed,
         logger,
     )
-
-
-def finalize_calibration_inputs(inputs, model):
-    """Add model-specific token-type fields to calibration inputs.
-
-    Gemma 4 requires mm_token_type_ids (multimodal token type ids) even
-    for text-only inference.
-    cf) https://huggingface.co/google/gemma-4-31B/discussions/3
-
-    Args:
-        inputs: Calibration input dictionary.
-        model: Model instance.
-
-    Returns:
-        dict: The same inputs dict after modifying based on the model architecture.
-    """
-    config = getattr(model, "config", None)
-    if getattr(config, "model_type", "") == "gemma4":
-        inputs["mm_token_type_ids"] = torch.zeros_like(
-            inputs["input_ids"], dtype=torch.long
-        )
-    return inputs
