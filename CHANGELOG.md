@@ -20,8 +20,8 @@
 - Added skip logic in vLLM plugin to prevent vision / audio encoder layers from being incorrectly matched to language model quantization configs (`vllm_plugins/utils/module.py`)
 - Changed `ModelConfig` default `dtype` from `float16` to `"auto"` so the model's native dtype (e.g. bfloat16) is used, fixing NaN Hessians on Gemma 3 and similar models whose values exceed the float16 range
 - Fixed an issue where non-language-model layers in multi-modal models were included in AutoBit bit allocation
-- Bumped `transformers` requirement from `>= 4.53.0` to `>= 4.55.0` (`pyproject.toml`)
-  - Gemma 4's `model_type: gemma4` is registered in `CONFIG_MAPPING` starting from 4.55.0 (released 2026-04-02); 4.53.0 fails to load it
+- Bumped `transformers` requirement from `>= 5.3.0` to `>= 5.5.0` (`pyproject.toml`)
+  - Gemma 4's `model_type: gemma4` is registered in `CONFIG_MAPPING` starting from 5.5.0 (released 2026-04-02); 5.3.0 fails to load it
 - Added `cu130` extra for the validation environment (NVIDIA B200, CUDA 13.0); under `cu128`, torch (cu130) and torchvision (cu128) had a CUDA version mismatch
 
 ## [v1.1.0] 2026-04-10

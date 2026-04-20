@@ -84,6 +84,8 @@ class Catcher(nn.Module):
         except AttributeError:
             return getattr(self.module, name)
 
+    # *args should be gotten from the model such as per_layer_input for gemma4,
+    # but it is calculated and added in _compute_per_layer_inputs() and prepare_block_kwargs(), respectively.
     def forward(self, inp: torch.Tensor, *args, **kwargs: dict):
         self.inp = inp.clone()
         self.kwargs.update(kwargs)
@@ -253,7 +255,6 @@ def _compute_per_type_attention_masks(blocks_parent, kwargs, unique_layer_types)
 
     Uses create_causal_mask / create_sliding_window_causal_mask
     from transformers to produce the correct mask per layer type.
-    Returns None if the masking utilities are unavailable.
     """
     from transformers.masking_utils import (
         create_causal_mask,
@@ -286,7 +287,7 @@ def _compute_per_type_attention_masks(blocks_parent, kwargs, unique_layer_types)
                 past_key_values=None, position_ids=position_ids,
             )
         else:
-            logger.warning(f"No mask creator found for layer type: {lt}")
+            logger.warning("No mask creator found for layer type: %s", lt)
 
     return mask_map if len(mask_map) > 1 else None
 
@@ -323,6 +324,7 @@ def expand_kwargs_batch(kwargs, batch_size):
         dict: kwargs with expanded tensors.
     """
     if batch_size <= 1:
+        # shallow copy for enabling prepare_block_kwargs to use pop() in safely
         return dict(kwargs)
 
     def _expand(v):

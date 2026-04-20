@@ -33,7 +33,7 @@ class ModelConfig:
         Args:
             model_id (str): Model ID (Hugging Face Hub ID).
             path (str): Path to the saved model and tokenizer.
-            dtype (str, optional): Data type. Defaults to "float16".
+            dtype (str, optional): Data type. Defaults to "auto" (use the model's default dtype).
             device (str, optional): Device to use ("cpu", "cuda", "auto"). Defaults to "auto".
 
         Example:
