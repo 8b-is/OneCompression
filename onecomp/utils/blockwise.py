@@ -111,14 +111,15 @@ def _find_blocks_parent(model, blocks):
 
 
 @torch.no_grad()
-def _compute_per_layer_inputs(model, blocks, input_ids):
+def _compute_per_layer_inputs(model, blocks, input_ids, batch_size):
     """Compute per-layer input embeddings for all calibration samples.
 
     Gemma4 supply a per-layer embedding (per_layer_input) as 
     an extra positional argument to each decoder layer.
-    This function detects such models, computes the full tensor
-    [N, seq, num_layers, hidden_per_layer] from input_ids, and
-    returns it. For models that do not use this mechanism, returns None.
+    This function detects such models, computes the tensor
+    [N, seq, num_layers, hidden_per_layer] from input_ids in
+    batch_size chunks (to limit GPU memory).
+    For models that do not use this mechanism, returns None.
     """
     if not getattr(blocks[0], "hidden_size_per_layer_input", 0):
         return None
@@ -131,9 +132,14 @@ def _compute_per_layer_inputs(model, blocks, input_ids):
             continue
         for child in module.modules():
             if child is blocks:
-                embeds = module.embed_tokens(input_ids)
-                pli = module.get_per_layer_inputs(input_ids, embeds)
-                return module.project_per_layer_inputs(embeds, pli)
+                chunks = []
+                for ids_batch in input_ids.split(batch_size):
+                    embeds = module.embed_tokens(ids_batch)
+                    pli = module.get_per_layer_inputs(ids_batch, embeds)
+                    chunks.append(
+                        module.project_per_layer_inputs(embeds, pli).cpu()
+                    )
+                return torch.cat(chunks)
 
     logger.warning(
         "Blocks expect per_layer_input but no provider module was found. "
@@ -231,7 +237,7 @@ def get_blocks_and_inputs(
     blocks[0] = blocks[0].module
 
     # Pre-compute per-layer inputs for some models (e.g. Gemma4).
-    pli = _compute_per_layer_inputs(model, blocks, inp_ids)
+    pli = _compute_per_layer_inputs(model, blocks, inp_ids, batch_size)
     if pli is not None:
         kwargs[_PER_LAYER_INPUTS_KEY] = pli
 
