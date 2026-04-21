@@ -293,6 +293,43 @@ class Runner:
                     f"CalibrationConfig objects."
                 )
 
+    def _exclude_moe_router_if_needed(self):
+        """Exclude MoE router layers from quantization.
+
+        vLLM's GateLinear (used for MoE routing) hardcodes
+        quant_config=None, so router weights must stay unquantized.
+        """
+        config = self.model_config.load_config()
+        num_experts = (
+            getattr(config, "num_experts", 0)
+            or getattr(
+                getattr(config, "text_config", None), "num_experts", 0
+            )
+        )
+        if num_experts == 0:
+            return
+
+        keyword = "router"
+        target_quantizers = (
+            self.quantizers
+            if self.quantizers is not None
+            else [self.quantizer]
+        )
+        for q in target_quantizers:
+            if q.exclude_layer_keywords is None:
+                q.exclude_layer_keywords = [keyword]
+            elif keyword not in q.exclude_layer_keywords:
+                q.exclude_layer_keywords = list(q.exclude_layer_keywords) + [
+                    keyword
+                ]
+
+        self.logger.info(
+            "MoE model (num_experts=%d): excluding '%s' layers from "
+            "quantization (vLLM GateLinear does not support quantization)",
+            num_experts,
+            keyword,
+        )
+
     def run(self):
         """Execute quantization (and related) processing"""
 
@@ -305,6 +342,7 @@ class Runner:
 
         logger.info("Checking the settings...")
         self.check()
+        self._exclude_moe_router_if_needed()
 
         if self.qep:
             logger.info("Start quantization with error propagation (QEP)")
@@ -1567,6 +1605,28 @@ class Runner:
         )
         quant_config["rotated"] = self.model_config.has_additional_data()
         quant_config["fp32_had"] = fp32_had
+
+        # MoE expert layers are not nn.Linear but fused3d tensors and are skipped by the
+        # quantizer.  vLLM's built-in "gptq" handler still assumes them
+        # GPTQ-quantized.  "mixed_gptq" returns None
+        # and passes the weights to UnquantizedFusedMoEMethod.
+        # cf) https://docs.vllm.ai/en/stable/features/quantization/#implementing-a-quantized-moe-method
+        num_experts = (
+            getattr(model.config, "num_experts", 0)
+            or getattr(
+                getattr(model.config, "text_config", None), "num_experts", 0
+            )
+        )
+        if (
+            quant_config.get("quant_method") == "gptq"
+            and num_experts > 0
+        ):
+            quant_config["quant_method"] = "mixed_gptq"
+            self.logger.info(
+                "MoE model detected (num_experts=%d): "
+                "switching quant_method to mixed_gptq for vLLM compatibility",
+                num_experts,
+            )
 
         # Patch weights and quant config for architectures with shared
         # K/V projections (e.g. Gemma4 attention_k_eq_v) so that vLLM's

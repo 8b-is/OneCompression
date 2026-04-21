@@ -62,6 +62,14 @@ class ModelConfig:
             return self.path
         return None
 
+    def load_config(self):
+        """Load and cache the model config (no weights)."""
+        if not hasattr(self, "_cached_config"):
+            self._cached_config = AutoConfig.from_pretrained(
+                self.get_model_id_or_path(), trust_remote_code=True
+            )
+        return self._cached_config
+
     def load_model(self, device_map=None):
         """Load the model
 
