@@ -26,14 +26,14 @@ class ModelConfig:
         self,
         model_id: str = None,
         path: str = None,
-        dtype: str = "auto",
+        dtype: str = "float16",
         device: str = "auto",
     ):
         """
         Args:
             model_id (str): Model ID (Hugging Face Hub ID).
             path (str): Path to the saved model and tokenizer.
-            dtype (str, optional): Data type. Defaults to "auto" (use the model's default dtype).
+            dtype (str, optional): Data type. Defaults to "float16".
             device (str, optional): Device to use ("cpu", "cuda", "auto"). Defaults to "auto".
 
         Example:
@@ -46,6 +46,11 @@ class ModelConfig:
 
         if model_id is None and path is None:
             raise ValueError("Either model_id or path must be provided")
+
+        _id = model_id or path
+        if _id and "gemma-3" in _id:
+            dtype = "bfloat16"
+            self.logger.warning("Using bfloat16 for Gemma3 models for preventing overflow in calculating Hessian.")
 
         self.model_id = model_id
         self.path = path
