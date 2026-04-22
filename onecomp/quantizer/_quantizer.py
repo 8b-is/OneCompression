@@ -437,12 +437,21 @@ class Quantizer(metaclass=ABCMeta):
         layers are considered for quantization.  Vision / audio encoder
         layers are automatically excluded.
 
+        For MoE models with fused 3D expert parameters (e.g. Gemma4,), 
+        expert tensors are automatically unfused into
+        per-expert nn.Linear layers before the module scan.
+
         Args:
             model: The model to be quantized
 
         """
 
         self.validate_params()
+
+        from onecomp.utils.unfuse_moe import unfuse_moe_experts
+
+        if unfuse_moe_experts(model, self.logger):
+            self.logger.info("Unfused MoE expert tensors into per-expert nn.Linear")
 
         assert len(self.module_to_name) == 0
 

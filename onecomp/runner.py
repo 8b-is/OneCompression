@@ -1567,7 +1567,7 @@ class Runner:
         # Unfuse MoE experts so per-expert result keys can be resolved
         from .utils.unfuse_moe import unfuse_moe_experts
 
-        if unfuse_moe_experts(model):
+        if unfuse_moe_experts(model, self.logger):
             self.logger.info("Unfused MoE expert tensors for quantized model save")
 
         # Replace Linear layers with quantized layers using quantizer.results
