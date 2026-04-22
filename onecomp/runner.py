@@ -304,7 +304,8 @@ class Runner:
             getattr(config, "num_experts", 0)
             or getattr(
                 getattr(config, "text_config", None), "num_experts", 0
-            )
+            ) or 
+            0
         )
         if num_experts == 0:
             return
@@ -1563,6 +1564,12 @@ class Runner:
         model = self.model_config.load_model(device_map="cpu")
         tokenizer = self.model_config.load_tokenizer()
 
+        # Unfuse MoE experts so per-expert result keys can be resolved
+        from .utils.unfuse_moe import unfuse_moe_experts
+
+        if unfuse_moe_experts(model):
+            self.logger.info("Unfused MoE expert tensors for quantized model save")
+
         # Replace Linear layers with quantized layers using quantizer.results
         self.logger.info("Replacing Linear layers with quantized inference layers...")
         quantizer.apply_results_to_model(model, pack_weights=pack_weights, use_gemlite=use_gemlite)
@@ -1612,10 +1619,11 @@ class Runner:
         # and passes the weights to UnquantizedFusedMoEMethod.
         # cf) https://docs.vllm.ai/en/stable/features/quantization/#implementing-a-quantized-moe-method
         num_experts = (
-            getattr(model.config, "num_experts", 0)
+            getattr(model.config, "num_experts", None)
             or getattr(
-                getattr(model.config, "text_config", None), "num_experts", 0
+                getattr(model.config, "text_config", None), "num_experts", None
             )
+            or 0
         )
         if (
             quant_config.get("quant_method") == "gptq"
