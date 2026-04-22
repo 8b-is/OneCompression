@@ -22,6 +22,7 @@ class _ExpertMLP(nn.Module):
         self.gate_proj = gate_proj
         self.up_proj = up_proj
         self.down_proj = down_proj
+        self.act_fn = act_fn
 
 
 class _UnfusedExperts(nn.Module):
@@ -133,7 +134,7 @@ def unfuse_moe_experts(model: nn.Module, logger: logging.Logger) -> bool:
     Returns:
         True if at least one module was unfused, False otherwise.
     """
-    replacements: list[tuple[nn.Module, str, nn.Module]] = []
+    replacements: list[tuple[str, nn.Module]] = []
     for name, module in model.named_modules():
         if _is_fused_experts(module):
             replacements.append((name, module))
