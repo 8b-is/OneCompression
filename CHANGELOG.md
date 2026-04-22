@@ -1,6 +1,11 @@
 # Change log
 
-## [v1.1.0] 2026-04-10
+## [v1.1.0] 2026-04-21
+
+### New Feature: LPCD (Layer-Projected Coordinate Descent)
+
+- Added `onecomp/lpcd/` sub-package implementing the LPCD unified framework (arXiv:2512.01546) that extends layer-wise PTQ by jointly optimising sub-module groups (QK / VO / MLP / residual) with closed-form and gradient-based solvers
+- Added `benchmark/llama3-8b-lpcd-gptq/`: Llama-3-8B LPCD+GPTQ SLURM array benchmark (Hydra config `conf/benchmark_llama3-8b.yaml`, `quant_benchmark.py`, `README.md` with WikiText-2 PPL / lm-eval-harness accuracy / quantization time for 4-bit and 3-bit × {q_proj·k_proj, v_proj·o_proj, up_proj·down_proj, all, residual} on NVIDIA B200)
 
 ### New Feature: BlockWisePTQ
 
@@ -131,6 +136,10 @@
 - Added `test_weight_quantizer.py`: RTN/GPTQ consistency, symmetric/asymmetric, group-wise, MSE, STE
 - Expanded `test_rtn.py`: MSE boundary/abnormal parameters
 - Added vLLM mixed group-size tests (`tests/vllm_plugins/gptq/test_mixed_gptq.py`, `tests/vllm_plugins/gptq/test_mixed_gptq_e2e.py`)
+- Added LPCD tests (`tests/onecomp/lpcd/`, 25 cases)
+  - `test_lpcd_config.py`: `LPCDConfig` default / custom values, dataclass field set, top-level `from onecomp import LPCDConfig` (CPU only)
+  - `test_lpcd_metrics.py`: `make_lpcd_metrics()` dispatch on synthetic Llama / Qwen3 blocks for every `enable_*` flag combination, `NotImplementedError` for unsupported architectures, `LpcdMetricGroup.mark_as_ready` / `is_refineable` state transitions (CPU only, no weight download)
+  - `test_lpcd_runner.py`: end-to-end GPTQ + QEP + LPCD on the first TinyLlama decoder block — smoke (`Runner.run()` completes, all linear layers quantized, dequantized weights finite), QEP + LPCD combination with explicit `QEPConfig`, behavioural checks (residual-only LPCD modifies `o_proj` / `down_proj` beyond the QEP-only baseline while pre-attention `q/k/v_proj` match the baseline bit-for-bit); auto-skipped on non-CUDA hosts via `pytest.mark.skipif`
 
 ## [v1.0.2] 2026-03-31
 

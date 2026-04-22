@@ -674,11 +674,7 @@ class Runner:
             quantizer=self.quantizer,
             qep_config=self.qep_config,
             lpcd_config=self.lpcd_config,
-            calibration_dataset=self.calibration_dataset,
-            max_length=self.max_length,
-            num_calibration_samples=self.num_calibration_samples,
-            calibration_strategy=self.calibration_strategy,
-            calibration_seed=self.calibration_seed,
+            calibration_config=self.calibration_config,
         )
 
     def quantize_with_jointq_error_propagation(

@@ -157,7 +157,10 @@ def refiner(
             # Update the weights of the target layer
             dtype = module_q.weight.data.dtype
             module_q.weight.data = (
-                quantizer.results[name].dequantized_weight.to(device).to(dtype)
+                quantizer.results[name]
+                .compute_dequantized_weight()
+                .to(device)
+                .to(dtype)
             )
 
             # Compute the projected MSE

@@ -16,11 +16,11 @@ from logging import getLogger
 import torch
 from torch import nn
 
+from onecomp.calibration import CalibrationConfig, prepare_calibration_dataset
+from onecomp.lpcd import LPCDConfig
 from onecomp.model_config import ModelConfig
 from onecomp.qep import QEPConfig
-from onecomp.lpcd import LPCDConfig
 from onecomp.quantizer._quantizer import Quantizer
-from onecomp.calibration import prepare_calibration_dataset
 
 from ._refiner import refiner, compute_mse
 from ._metric import make_lpcd_metrics
@@ -43,24 +43,16 @@ def run_quantize_with_lpcd(
     quantizer: Quantizer,
     qep_config: QEPConfig | None,
     lpcd_config: LPCDConfig,
-    calibration_dataset,
-    max_length: int,
-    num_calibration_samples: int,
-    calibration_strategy: str,
-    calibration_seed: int,
+    calibration_config: CalibrationConfig,
 ):
     """ Run quantization with LPCD.
 
     Args:
         model_config (ModelConfig): Model configuration
-        quantizer (Quantizer): Quantizer 
+        quantizer (Quantizer): Quantizer
         qep_config (QEPConfig | None): QEP configuration
         lpcd_config (LPCDConfig): LPCD configuration
-        calibration_dataset (_type_): Calibration dataset
-        max_length (int): Maximum sequence length
-        num_calibration_samples (int): Number of calibration samples
-        calibration_strategy (str): Calibration strategy
-        calibration_seed (int): Calibration seed
+        calibration_config (CalibrationConfig): Calibration configuration
     """
 
     assert not (qep_config is not None and qep_config.general), \
@@ -78,11 +70,7 @@ def run_quantize_with_lpcd(
     model_inputs = prepare_calibration_dataset(
         tokenizer=tokenizer,
         device=torch.device('cpu'),
-        calibration_dataset=calibration_dataset,
-        max_length=max_length,
-        num_calibration_samples=num_calibration_samples,
-        strategy=calibration_strategy,
-        seed=calibration_seed,
+        calibration_config=calibration_config,
         logger=logger,
     )
 
@@ -151,16 +139,20 @@ def run_quantize_with_lpcd(
                 device,
             )
 
+            # Build reverse mapping module_q -> name for logging skipped layers
+            module_q_to_name = {m: n for n, m in name_to_module_q.items()}
+
             # 3-2, For each module in the group, perform weight correction and quantization
             for module in group_q:
 
                 # Skip layers not registered for quantization
                 if module not in quantizer.module_to_name:
-                    name = name_to_module_f[module]
-                    logger.info("Skipping layer (not in quantization targets): %s", name)
+                    skipped_name = module_q_to_name.get(module, "<unknown>")
+                    logger.info(
+                        "Skipping layer (not in quantization targets): %s", skipped_name
+                    )
                     continue
-                else:
-                    name = quantizer.module_to_name[module]
+                name = quantizer.module_to_name[module]
 
 
                 # Fall back to standard quantization if the module is not LPCD targets
@@ -197,7 +189,10 @@ def run_quantize_with_lpcd(
                     # Update the weights of the target layer
                     dtype = module.weight.data.dtype
                     module.weight.data = (
-                        quantizer.results[name].dequantized_weight.to(device).to(dtype)
+                        quantizer.results[name]
+                        .compute_dequantized_weight()
+                        .to(device)
+                        .to(dtype)
                     )
 
                 lpcd_metrics.mark_as_ready(module)
