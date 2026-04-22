@@ -5,6 +5,8 @@
 ### Gemma 3 / Gemma 4 & VLM Support
 
 - Auto-detect `language_model` / `text_model` sub-modules in `setup()` so only the language model is quantized; `vision_tower`, `audio_tower`, etc. are automatically excluded (`quantizer/_quantizer.py`)
+- Added `unfuse_moe.py`: MoE models (e.g. Gemma 4) store all expert weights as fused 3D `nn.Parameter` tensors (`gate_up_proj [E, 2*inter, hidden]`, `down_proj [E, hidden, inter]`), but GPTQ and other layer-wise PTQ methods require 2D `nn.Linear` layers. `unfuse_moe_experts()` splits the fused tensors into per-expert modules, producing paths like `experts.0.gate_proj`, `experts.0.up_proj`, `experts.0.down_proj` (`utils/unfuse_moe.py`)
+- Set `quant_method` to `mixed_gptq` for MoE models during save, enabling vLLM to handle a mix of quantized and unquantized expert layers via `UnquantizedFusedMoEMethod` (`runner.py`)
 - Introduced `prepare_block_kwargs` to reproduce Gemma 4-specific additional inputs during block-wise forward (`runner_methods/chunked_quantization.py`, `qep/_quantize_with_qep_arch.py`)
   - `_per_layer_inputs`: pre-compute per-layer embeddings for all calibration samples
   - `_position_embeddings_map`: hook into `rotary_emb` to capture position embeddings per layer type
