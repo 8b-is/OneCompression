@@ -175,7 +175,7 @@ class Quantizer(metaclass=ABCMeta):
         pass
 
     def quantize(
-        self, module, input, output
+        self, module, input, output, hessian=None
     ):  # pylint: disable=redefined-builtin, unused-argument
         """Quantize the layer
 
@@ -187,10 +187,9 @@ class Quantizer(metaclass=ABCMeta):
 
         self.logger.info("Quantizing layer: %s", name)
         start_time = time.time()
-        if self.flag_hessian:
+        if hessian is None and self.flag_hessian:
             hessian = self.calculate_hessian(module, input)
-        else:
-            hessian = None
+            
         result = self.quantize_layer(module, input, hessian=hessian)
         end_time = time.time()
         if hessian is not None:

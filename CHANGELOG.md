@@ -1,6 +1,6 @@
 # Change log
 
-## [v1.1.0+gemma] 2026-04-16
+## [v1.1.0] 2026-04-16
 
 ### Gemma 3 / Gemma 4 & VLM Support
 
@@ -26,7 +26,12 @@
   - Gemma 4's `model_type: gemma4` is registered in `CONFIG_MAPPING` starting from 5.5.0 (released 2026-04-02); 5.3.0 fails to load it
 - Added `cu130` extra for the validation environment (NVIDIA B200, CUDA 13.0); under `cu128`, torch (cu130) and torchvision (cu128) had a CUDA version mismatch
 
-## [v1.1.0] 2026-04-10
+### New Feature: LPCD (Layer-Projected Coordinate Descent)
+
+- Added `onecomp/lpcd/` sub-package implementing the LPCD unified framework (arXiv:2512.01546) that extends layer-wise PTQ by jointly optimising sub-module groups (QK / VO / MLP / residual) with closed-form and gradient-based solvers
+- Added `benchmark/llama3-8b-lpcd-gptq/`: Llama-3-8B LPCD+GPTQ SLURM array benchmark (Hydra config `conf/benchmark_llama3-8b.yaml`, `quant_benchmark.py`, `README.md` with WikiText-2 PPL / lm-eval-harness accuracy / quantization time for 4-bit and 3-bit × {q_proj·k_proj, v_proj·o_proj, up_proj·down_proj, all, residual} on NVIDIA B200)
+- Added `example/example_lpcd_gptq.py`: TinyLlama GPTQ 3-bit (groupsize=128) + QEP + LPCD end-to-end example with residual-only closed-form refinement (`enable_residual=True`, `use_closed_form=True`) and original / dequantized / quantized perplexity reporting
+- Updated `README.md`: added LPCD to Features, Examples, and Citation sections
 
 ### New Feature: BlockWisePTQ
 
@@ -130,10 +135,15 @@
 
 - Added `example/example_custom_calibration.py`: Demonstrates `CalibrationConfig` with a custom calibration dataset (Python code snippets in `example/data/python_calibration.txt`).  Quantizes TinyLlama with GPTQ 3-bit using both default C4 and custom Python-code calibration, then compares inference outputs across multiple prompts to show how calibration data choice affects quantization quality.
 - Added `example/post_process/example_blockwise_ptq.py`: GPTQ 4-bit quantization + BlockWisePTQ (Phase 1 greedy + Phase 2 CBQ) with PPL comparison
+- Added `example/example_lpcd_gptq.py`: TinyLlama GPTQ 3-bit (groupsize=128) + QEP + LPCD end-to-end example (residual-only closed-form refinement, original / dequantized / quantized perplexity reporting)
 - Updated `example/vllm_inference/example_gptq_vllm_inference.py`: changed model to `TinyLlama-1.1B-Chat-v1.0` (chat model), disabled QEP, added `CalibrationConfig(num_calibration_samples=128, max_length=512)`
+- Added `NOTE` comments across all `example/` scripts (`example_gptq.py`, `example_qep_gptq.py`, `example_jointq.py`, `example_autobit.py`, `example_save_load.py`, `example_lpcd_gptq.py`, `example_custom_calibration.py`, `post_process/example_blockwise_ptq.py`, `post_process/example_lora_sft.py`, `post_process/example_lora_sft_knowledge.py`, `pre_process/example_preprocess_save_load.py`, `vllm_inference/example_gptq_vllm_inference.py`) clarifying that the compact `CalibrationConfig(max_length=512, num_calibration_samples=128)` settings are demo-only and recommending the `CalibrationConfig()` defaults (`max_length=2048`, `num_calibration_samples=512`) for real quantisation; `qep=False` examples additionally recommend setting `batch_size` so that `Runner.quantize_with_calibration_chunked` is used with large calibration data
 
 ### Documentation
 
+- Added `docs/algorithms/lpcd.md`: LPCD overview, motivation, supported submodule groups, usage examples, QEP relationship, parameters, and current support
+- Added `docs/api/lpcd_config.md` and updated `mkdocs.yml` navigation to include LPCD in the Algorithms and API Reference sections
+- Updated LPCD references across docs: `docs/index.md`, `docs/algorithms/overview.md`, `docs/user-guide/basic-usage.md`, `docs/user-guide/configuration.md`, `docs/user-guide/examples.md`, and `docs/getting-started/quickstart.md`
 - Updated `docs/algorithms/rtn.md`: corrected defaults, added MSE parameters, updated algorithm description
 - Updated `docs/user-guide/pre-process.md`: expanded key parameters table, added validation note
 - Added "Chat with Open WebUI" section to `docs/user-guide/vllm-inference.md`: step-by-step guide for connecting Open WebUI to a vLLM server (Docker / pip install with dedicated venv, connection settings, chat usage)
@@ -157,6 +167,10 @@
 - Added `test_weight_quantizer.py`: RTN/GPTQ consistency, symmetric/asymmetric, group-wise, MSE, STE
 - Expanded `test_rtn.py`: MSE boundary/abnormal parameters
 - Added vLLM mixed group-size tests (`tests/vllm_plugins/gptq/test_mixed_gptq.py`, `tests/vllm_plugins/gptq/test_mixed_gptq_e2e.py`)
+- Added LPCD tests (`tests/onecomp/lpcd/`, 25 cases)
+  - `test_lpcd_config.py`: `LPCDConfig` default / custom values, dataclass field set, top-level `from onecomp import LPCDConfig` (CPU only)
+  - `test_lpcd_metrics.py`: `make_lpcd_metrics()` dispatch on synthetic Llama / Qwen3 blocks for every `enable_*` flag combination, `NotImplementedError` for unsupported architectures, `LpcdMetricGroup.mark_as_ready` / `is_refineable` state transitions (CPU only, no weight download)
+  - `test_lpcd_runner.py`: end-to-end GPTQ + QEP + LPCD on the first TinyLlama decoder block — smoke (`Runner.run()` completes, all linear layers quantized, dequantized weights finite), QEP + LPCD combination with explicit `QEPConfig`, behavioural checks (residual-only LPCD modifies `o_proj` / `down_proj` beyond the QEP-only baseline while pre-attention `q/k/v_proj` match the baseline bit-for-bit); auto-skipped on non-CUDA hosts via `pytest.mark.skipif`
 
 ## [v1.0.2] 2026-03-31
 

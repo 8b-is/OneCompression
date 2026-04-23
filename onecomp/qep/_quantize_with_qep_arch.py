@@ -134,7 +134,6 @@ def compute_hessian_and_crossterm(
     def make_hook(name):
         def hook(module, inp, out):
             dest[name] = inp[0] if isinstance(inp, tuple) else inp
-
         return hook
 
     handlers = [
@@ -485,6 +484,19 @@ def run_quantize_with_qep_arch(
         # forward input to the next block
         inps_q = forward_input(inps_q, block_q, kwargs, batch_size, device)
         inps_f = forward_input(inps_f, block_f, kwargs, batch_size, device)
+
+        # Compute MSE between quantized and full-precision outputs
+        from ..lpcd._refiner import compute_mse
+        mse = compute_mse(
+            block_q,
+            block_f,
+            inps_q,
+            inps_f,
+            batch_size,
+            device,
+            kwargs
+        )
+        logger.info(f"[INFO] Layer {block_idx + 1} MSE: {mse:.6e}")
 
         # free memory
         block_q.cpu()
