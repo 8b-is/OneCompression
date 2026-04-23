@@ -105,6 +105,7 @@ class ModelConfig:
             self.logger.info("AutoModelForCausalLM failed; trying AutoModelForImageTextToText.")
             model = _AutoVLM.from_pretrained(self.get_model_id_or_path(), **kwargs)
         model.eval()
+        self.logger.info("Model loaded with dtype=%s", next(model.parameters()).dtype)
         return model
 
     def load_tokenizer(self):
