@@ -47,10 +47,13 @@ class ModelConfig:
         if model_id is None and path is None:
             raise ValueError("Either model_id or path must be provided")
 
-        _id = model_id or path
-        if "gemma-3" in _id:
-            dtype = "bfloat16"
-            self.logger.warning("Using bfloat16 for Gemma3 models for preventing overflow in calculating Hessian.")
+        _id = (model_id or path).lower()
+        override_keywords = ("gemma-3", "gemma3", "gemma-4", "gemma4")
+        for keyword in override_keywords:
+            if keyword in _id:
+                dtype = "bfloat16"
+                self.logger.warning("Using bfloat16 for %s for preventing performance degradation." % keyword)
+                break
 
         self.model_id = model_id
         self.path = path
