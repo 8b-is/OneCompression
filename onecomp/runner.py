@@ -22,6 +22,7 @@ from .__version__ import __version__
 from .calibration import CalibrationConfig, prepare_calibration_dataset
 from .model_config import ModelConfig
 from .qep import QEPConfig
+from .lpcd import LPCDConfig
 from .quantizer import GPTQ, Quantizer
 from .quantizer.autobit import AutoBitQuantizer
 from .utils import calculate_accuracy as calc_accuracy
@@ -79,6 +80,8 @@ class Runner:
         calibration_config=None,
         qep=False,
         qep_config=None,
+        lpcd=False,
+        lpcd_config=None,
         multi_gpu=False,
         gpu_ids=None,
         post_processes=None,
@@ -109,6 +112,11 @@ class Runner:
             qep_config (QEPConfig or None):
                 Configuration for QEP. If None and ``qep=True``,
                 a default ``QEPConfig()`` is used.
+            lpcd (bool):
+                Whether to use LPCD.
+            lpcd_config (LPCDConfig or None):
+                Configuration for LPCD. If None and ``lpcd=True``,
+                a default ``LPCDConfig()`` is used.
             multi_gpu (bool):
                 Whether to use multi-GPU for layer-wise parallel quantization.
                 Default is False.
@@ -200,8 +208,12 @@ class Runner:
         self.gpu_ids = gpu_ids
         self.post_processes = post_processes or []
         self.quantized_model = None
+        self.qep_config = None
         if qep:
             self.qep_config = qep_config if qep_config is not None else QEPConfig()
+        self.lpcd_config = None
+        if lpcd:
+            self.lpcd_config = lpcd_config if lpcd_config is not None else LPCDConfig()
 
     def check(self):
         """Check the settings
@@ -305,7 +317,10 @@ class Runner:
         logger.info("Checking the settings...")
         self.check()
 
-        if self.qep:
+        if self.lpcd_config is not None:
+            logger.info("Start quantization with LPCD")
+            self.quantize_with_lpcd()
+        elif self.qep:
             logger.info("Start quantization with error propagation (QEP)")
             self.quantize_with_qep()
         else:
@@ -647,6 +662,20 @@ class Runner:
             from .qep._quantize_with_qep_arch import run_quantize_with_qep_arch
 
             run_quantize_with_qep_arch(**kwargs)
+
+    def quantize_with_lpcd(self):
+        """Quantize the model with LPCD"""
+        # Lazy import: load submodule only when needed
+        # pylint: disable-next=import-outside-toplevel
+        from .lpcd._lpcd_runner import run_quantize_with_lpcd
+
+        run_quantize_with_lpcd(
+            model_config=self.model_config,
+            quantizer=self.quantizer,
+            qep_config=self.qep_config,
+            lpcd_config=self.lpcd_config,
+            calibration_config=self.calibration_config,
+        )
 
     def quantize_with_jointq_error_propagation(
         self,

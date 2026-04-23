@@ -9,6 +9,7 @@ Full documentation is available at **[https://FujitsuResearch.github.io/OneCompr
 ## 📦 Features
 
 - **Quantization Error Propagation (QEP)**: A post-training quantization method that corrects quantization errors by propagating them to subsequent layers, improving the accuracy of quantized LLMs. See [Arai & Ichikawa, NeurIPS 2025](https://openreview.net/forum?id=a3l3K9khbL) for details. The original reference implementation is available at [FujitsuResearch/qep](https://github.com/FujitsuResearch/qep).
+- **Layer-Projected Coordinate Descent (LPCD)**: A unified PTQ framework that extends layer-wise quantization to arbitrary submodules by optimising relaxed objectives and projecting the solutions with layer-wise quantizers. See [Ichikawa et al., 2025](https://arxiv.org/abs/2512.01546) for details.
 - **vLLM Plugin Integration**: Serve OneComp-quantized models with [vLLM](https://docs.vllm.ai/) via built-in plugins for DBF and Mixed-GPTQ quantization methods. Pair with [Open WebUI](https://github.com/open-webui/open-webui) for a ChatGPT-like chat experience on your local machine.
 - **AutoBit**: Mixed-precision quantization with ILP-based bitwidth assignment. Automatically estimates the target bitwidth from available VRAM and assigns per-layer bitwidths to minimize quantization error under the memory budget.
 - **JointQ**: Joint quantization method that optimizes weight assignments and scale parameters simultaneously for improved quantization accuracy. Supports group-wise quantization (e.g., 4-bit, groupsize=128).
@@ -163,6 +164,7 @@ Then open [http://127.0.0.1:8000](http://127.0.0.1:8000) in your browser.
 |----------|--------|-------------|
 | Quantization | [example_gptq.py](./example/example_gptq.py) | GPTQ quantization |
 | | [example_qep_gptq.py](./example/example_qep_gptq.py) | GPTQ + QEP (error propagation) |
+| | [example_lpcd_gptq.py](./example/example_lpcd_gptq.py) | GPTQ + QEP + LPCD quantization |
 | | [example_jointq.py](./example/example_jointq.py) | JointQ quantization |
 | | [example_autobit.py](./example/example_autobit.py) | AutoBit mixed-precision quantization |
 | | [example_auto_run.py](./example/example_auto_run.py) | AutoBit with automatic VRAM estimation |
@@ -219,5 +221,17 @@ author={Yamato Arai and Yuma Ichikawa},
 booktitle={The Thirty-ninth Annual Conference on Neural Information Processing Systems},
 year={2025},
 url={https://openreview.net/forum?id=a3l3K9khbL}
+}
+```
+
+LPCD (Layer-Projected Coordinate Descent):
+
+```
+@article{ichikawa2025lpcd,
+title={LPCD: Unified Framework from Layer-Wise to Submodule Quantization},
+author={Yuma Ichikawa and Yudai Fujimoto and Akira Sakai},
+journal={arXiv preprint arXiv:2512.01546},
+year={2025},
+url={https://arxiv.org/abs/2512.01546}
 }
 ```

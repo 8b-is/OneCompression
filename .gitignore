@@ -15,8 +15,7 @@ models
 *.err
 md/*.md
 example/run_example.sh
-work/issue-*
-work/open-webui
+work/
 site/
 debug_code/
 .pytest_cache/

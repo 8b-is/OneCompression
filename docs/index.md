@@ -5,12 +5,14 @@
 ---
 
 Fujitsu One Compression (OneComp) is an open-source Python library for post-training quantization of Large Language Models (LLMs).
-It implements state-of-the-art quantization algorithms including GPTQ, DBF, RTN, and the novel
-**Quantization Error Propagation (QEP)** method proposed in our NeurIPS 2025 paper.
+It implements state-of-the-art quantization algorithms including GPTQ, DBF, RTN, and the
+research methods **Quantization Error Propagation (QEP)** and
+**Layer-Projected Coordinate Descent (LPCD)**.
 
 ## Key Features
 
 - **Quantization Error Propagation (QEP)** -- A post-training quantization method that corrects quantization errors by propagating them to subsequent layers, improving the accuracy of quantized LLMs. See [Arai & Ichikawa, NeurIPS 2025](https://openreview.net/forum?id=a3l3K9khbL) for details.
+- **Layer-Projected Coordinate Descent (LPCD)** -- A unified PTQ framework that extends layer-wise quantization to arbitrary submodules by optimising relaxed objectives and projecting the solutions with layer-wise quantizers. See [Ichikawa et al., 2025](https://arxiv.org/abs/2512.01546) for details.
 - **vLLM Plugin Integration** -- Serve OneComp-quantized models with [vLLM](https://docs.vllm.ai/) via built-in plugins for DBF and Mixed-GPTQ quantization methods. Pair with [Open WebUI](https://github.com/open-webui/open-webui) for a ChatGPT-like chat experience on your local machine. See the [setup guide](user-guide/vllm-inference.md#3-chat-with-open-webui-optional).
 - **AutoBit** -- Mixed-precision quantization with ILP-based bitwidth assignment. Automatically estimates the target bitwidth from available VRAM and assigns per-layer bitwidths to minimize quantization error under the memory budget.
 - **JointQ** -- Joint quantization method that optimizes weight assignments and scale parameters simultaneously for improved quantization accuracy. Supports group-wise quantization (e.g., 4-bit, groupsize=128).
@@ -76,7 +78,7 @@ For full control over each step, see the [step-by-step workflow](user-guide/basi
 
 -   **Algorithms**
 
-    Understand the quantization algorithms and QEP.
+    Understand the quantization algorithms, QEP, and LPCD.
 
     [:octicons-arrow-right-24: Algorithm overview](algorithms/overview.md)
 
@@ -107,6 +109,18 @@ author={Yamato Arai and Yuma Ichikawa},
 booktitle={The Thirty-ninth Annual Conference on Neural Information Processing Systems},
 year={2025},
 url={https://openreview.net/forum?id=a3l3K9khbL}
+}
+```
+
+LPCD (Layer-Projected Coordinate Descent):
+
+```bibtex
+@article{ichikawa2025lpcd,
+  title={LPCD: Unified Framework from Layer-Wise to Submodule Quantization},
+  author={Yuma Ichikawa and Yudai Fujimoto and Akira Sakai},
+  journal={arXiv preprint arXiv:2512.01546},
+  year={2025},
+  url={https://arxiv.org/abs/2512.01546}
 }
 ```
 
