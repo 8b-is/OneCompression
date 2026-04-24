@@ -94,7 +94,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 git clone https://github.com/FujitsuResearch/OneCompression.git
 cd OneCompression
 uv sync --extra cu128 --extra dev --extra visualize
-pre-commit install
+uv run pre-commit install
 ```
 
 The `uv sync` command creates a Python virtual environment and installs all dependent libraries.
@@ -111,6 +111,7 @@ After installation, enable the pre-commit hooks so that `black` and `isort` run 
 ```bash
 pre-commit install
 ```
+Note that you need to install pre-commit after activating the python environment.
 
 To use vLLM for serving quantized models, add `--extra vllm`:
 
