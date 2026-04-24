@@ -94,6 +94,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 git clone https://github.com/FujitsuResearch/OneCompression.git
 cd OneCompression
 uv sync --extra cu128 --extra dev --extra visualize
+pre-commit install
 ```
 
 The `uv sync` command creates a Python virtual environment and installs all dependent libraries.
@@ -102,8 +103,14 @@ The `--extra cu128` option installs the CUDA-enabled version of PyTorch (along w
 Replace `cu128` with the appropriate variant for your environment: `cpu`, `cu118`, `cu121`, `cu124`, `cu126`, or `cu128`.
 PyTorch will be automatically downloaded by `uv`, so you do not need to install it beforehand.
 
-Adding `--extra dev` installs development tools (black, pytest, pylint).
+Adding `--extra dev` installs development tools (black, isort, pre-commit, pytest, pylint).
 Adding `--extra visualize` installs matplotlib for visualization features.
+
+After installation, enable the pre-commit hooks so that `black` and `isort` run automatically on every commit:
+
+```bash
+pre-commit install
+```
 
 To use vLLM for serving quantized models, add `--extra vllm`:
 
@@ -144,6 +151,9 @@ cd OneCompression
 pip install torch --index-url https://download.pytorch.org/whl/cu128
 # Then install onecomp with development dependencies
 pip install -e ".[dev]"
+
+# Enable pre-commit hooks (black / isort run automatically on every commit)
+pre-commit install
 ```
 
 Replace `cu128` with the appropriate variant for your environment: `cpu`, `cu118`, `cu121`, `cu124`, `cu126`, or `cu128`.
