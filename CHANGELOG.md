@@ -130,6 +130,7 @@
 ### Bug Fix
 
 - Fixed `TypeError` in `QuantLinear.forward` when `S_qk` scaling was applied to MLP layers (`onecomp/pre_process/quant_models.py`)
+- Fixed wrong module grouping in `make_grouped_module` where GC-driven `id()` reuse caused attention projections (q/k/v) and MLP projections (gate/up) to be merged into the same group.  (`qep/_quantize_with_qep_arch.py`)
 
 ### Examples
 
