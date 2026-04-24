@@ -36,11 +36,6 @@ from onecomp.utils.blockwise import (
 logger = getLogger(__name__)
 
 
-def _make_tensor_id(x: torch.Tensor):
-    ptr = x.untyped_storage().data_ptr()
-    return (id(x), ptr)
-
-
 def make_grouped_module(
     block: nn.Module,
     inps: torch.Tensor,
@@ -59,15 +54,13 @@ def make_grouped_module(
         list[list[nn.Module]]: A list of groups, where each group is a list of modules
         that share the same input activations.
     """
-    groups = OrderedDict()
+    # Store (module, raw_tensor) pairs.
+    captured: list[tuple[nn.Module, torch.Tensor]] = []
 
     def hook(module, inp, _):
         tensor = inp[0] if isinstance(inp, tuple) else inp
-        key = _make_tensor_id(tensor)
-        if key not in groups:
-            groups[key] = [module]
-        else:
-            groups[key].append(module)
+        # Keep the tensor reference alive to prevent GC from reusing its id().
+        captured.append((module, tensor))
 
     handlers = []
     for module in block.modules():
@@ -84,10 +77,25 @@ def make_grouped_module(
     for handler in handlers:
         handler.remove()
 
-    # split groups by in_features so that modules 
-    # with different input dimensions (e.g. MoE router vs expert down_proj)
+    # Group by tensor identity: modules that received the exact same
+    # Python object share one input activation.  This avoids the false
+    # positives that value-based comparison (torch.equal)
+    groups: list[list[nn.Module]] = []
+    tid_to_idx: dict[int, int] = {}
+    for module, tensor in captured:
+        tid = id(tensor)
+        if tid in tid_to_idx:
+            groups[tid_to_idx[tid]].append(module)
+        else:
+            tid_to_idx[tid] = len(groups)
+            groups.append([module])
+
+    del captured
+
+    # Split groups by in_features so that modules with different input
+    # dimensions (e.g. MoE router vs expert down_proj) stay separate.
     result = []
-    for group in groups.values():
+    for group in groups:
         by_dim = OrderedDict()
         for module in group:
             dim = module.in_features
