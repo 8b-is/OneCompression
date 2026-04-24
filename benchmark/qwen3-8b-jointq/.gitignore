@@ -55,3 +55,6 @@ qwen3-8b-fixed-lam0.3/
 qwen3-8b-fixed-lam0.5/
 qwen3-8b-incremental/
 qwen3-8b-incremental-actorder-mse/
+
+run_qwen3-8b_diagonal_lam*_actorder.sh
+qwen3-8b-diagonal-lam*-actorder/

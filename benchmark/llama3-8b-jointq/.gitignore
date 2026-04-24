@@ -54,3 +54,6 @@ llama3-8b-fixed-lam0.3/
 llama3-8b-fixed-lam0.5/
 llama3-8b-incremental/
 llama3-8b-incremental-actorder-mse/
+
+run_llama3-8b_diagonal_lam*_actorder.sh
+llama3-8b-diagonal-lam*-actorder/
