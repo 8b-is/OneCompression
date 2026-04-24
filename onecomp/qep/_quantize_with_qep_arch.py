@@ -19,6 +19,7 @@ from logging import getLogger
 from collections import OrderedDict
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 from onecomp.calibration import CalibrationConfig, prepare_calibration_dataset
 from onecomp.model_config import ModelConfig
@@ -493,17 +494,8 @@ def run_quantize_with_qep_arch(
         inps_q = forward_input(inps_q, block_q, kwargs, batch_size, device)
         inps_f = forward_input(inps_f, block_f, kwargs, batch_size, device)
 
-        # Compute MSE between quantized and full-precision outputs
-        from ..lpcd._refiner import compute_mse
-        mse = compute_mse(
-            block_q,
-            block_f,
-            inps_q,
-            inps_f,
-            batch_size,
-            device,
-            kwargs
-        )
+        # Compute MSE between quantized and full-precision block outputs
+        mse = F.mse_loss(inps_q.float(), inps_f.float()).item()
         logger.info(f"[INFO] Layer {block_idx + 1} MSE: {mse:.6e}")
 
         # free memory
