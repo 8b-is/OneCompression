@@ -13,23 +13,22 @@ input activations, so they can be captured once and reused.
 
 """
 
-import copy
 import math
-from collections import OrderedDict
+import copy
 from logging import getLogger
+from collections import OrderedDict
 
 import torch
 from torch import nn
-
 from onecomp.calibration import CalibrationConfig, prepare_calibration_dataset
 from onecomp.model_config import ModelConfig
 from onecomp.qep._qep_config import QEPConfig
 from onecomp.quantizer._quantizer import Quantizer
 from onecomp.utils.blockwise import (
-    expand_kwargs_batch,
-    forward_input,
     get_blocks_and_inputs,
+    forward_input,
     move_kwargs_to_device,
+    expand_kwargs_batch,
 )
 
 logger = getLogger(__name__)
@@ -111,15 +110,12 @@ def compute_hessian_and_crossterm(
         tuple[torch.Tensor, torch.Tensor]: The Hessian matrix and the cross-term matrix.
     """
 
-    print("tmp")
-
     # set input hook
     dest = {}
 
     def make_hook(name):
         def hook(module, inp, out):
             dest[name] = inp[0] if isinstance(inp, tuple) else inp
-
         return hook
 
     handlers = [
@@ -343,8 +339,15 @@ def run_quantize_with_qep_arch(
 
         # Compute MSE between quantized and full-precision outputs
         from ..lpcd._refiner import compute_mse
-
-        mse = compute_mse(block_q, block_f, inps_q, inps_f, batch_size, device, kwargs)
+        mse = compute_mse(
+            block_q,
+            block_f,
+            inps_q,
+            inps_f,
+            batch_size,
+            device,
+            kwargs
+        )
         logger.info(f"[INFO] Layer {block_idx + 1} MSE: {mse:.6e}")
 
         # free memory
