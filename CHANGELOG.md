@@ -105,6 +105,7 @@
 
 ### Bug Fix
 
+- Fixed `model_config.py`: `load_model()` VLM fallback did not trigger for models raising `"Unrecognized configuration class"` (e.g. Cohere2VisionForConditionalGeneration). Added the error pattern to `_vlm_hints`
 - Fixed `TypeError` in `QuantLinear.forward` when `S_qk` scaling was applied to MLP layers (`onecomp/pre_process/quant_models.py`)
 
 ### Examples
