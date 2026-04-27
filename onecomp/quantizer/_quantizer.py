@@ -143,7 +143,9 @@ class Quantizer(metaclass=ABCMeta):
     include_layer_names: list[str] = None  # Layers to explicitly quantize (exact match)
     exclude_layer_names: list[str] = field(default_factory=lambda: ["lm_head"])
     include_layer_keywords: list[str] = None  # Quantize layers containing these keywords
-    exclude_layer_keywords: list[str] = None  # Exclude layers containing these keywords
+    exclude_layer_keywords: list[str] = field(
+        default_factory=lambda: ["per_layer_model_projection"]
+    )
     target_layer_types: tuple = field(default_factory=lambda: (Linear,))  # Target layer types
 
     # Hessian / statistics precision

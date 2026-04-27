@@ -145,11 +145,6 @@ def collect_activation_stats_blockwise(
     saved_inps = [inps]
 
     for block_idx, block in enumerate(blocks):
-        if _is_kv_shared_block(block):
-            if logger:
-                logger.info("Skipping KV-shared block %d (no independent forward possible)", block_idx)
-            saved_inps.append(inps)
-            continue
 
         block.to(device)
 
@@ -188,9 +183,6 @@ def collect_activation_stats_blockwise(
 
         for block_idx in range(len(blocks) - 1, -1, -1):
             block = blocks[block_idx]
-
-            if _is_kv_shared_block(block):
-                continue
 
             block.to(device)
 
