@@ -131,6 +131,12 @@
 
 - Fixed `TypeError` in `QuantLinear.forward` when `S_qk` scaling was applied to MLP layers (`onecomp/pre_process/quant_models.py`)
 - Fixed wrong module grouping in `make_grouped_module` where GC-driven `id()` reuse caused attention projections (q/k/v) and MLP projections (gate/up) to be merged into the same group.  (`qep/_quantize_with_qep_arch.py`)
+- Fixed silent weight corruption in `GPTQLinear` when `qzero=0` was stored through the GPTQ v1 zero-point path (`onecomp/quantizer/gptq/gptq_layer.py`)
+  - Root cause: AutoGPTQ v1 stores `raw_zero - 1`, so `qzero=0` becomes `-1`; without masking, its sign-extended bits corrupted neighboring packed slots
+  - Pack-side fix (`_pack_rows`): mask each value with `(1 << wbits) - 1` before shift/OR (2/4/8-bit and 3-bit paths)
+  - Forward-side fix (`GPTQLinear.forward`): apply `& wbits_mask` after the v1 `+1` restoration so stored `2^wbits - 1` wraps back to `0`; the `gptq_v2` path remains unchanged
+  - Added regression tests for per-slot pack corruption, packed/unpacked forward paths, the `gptq_v2` branch, and the `from_saved_state` path for GPTQ v1 tensors
+  - **NOTE**: If you have GPTQ models quantized with previous versions, please re-quantize them with this release, as they may contain corrupted internal data.
 
 ### Examples
 
