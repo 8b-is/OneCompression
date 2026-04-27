@@ -183,6 +183,10 @@
 
 - Added `model_validation/basic/`: Hydra-driven AutoBit (`target_bit=4`, `qep=True`) end-to-end validation script (`validate_autobit.py`, `conf/validate.yaml`, `README.md`) that quantizes a single model selected via either `model_id` (Hugging Face Hub) or `model_path` (local directory), saves the quantized model via `runner.save_quantized_model("./quantized")`, and reports original / quantized perplexity. Default validation set covers TinyLlama-1.1B, Llama-2-7B, Llama-3-8B, Qwen3-8B, and gemma-4-E2B. SLURM submission script (`submit.sh`) and runtime artifacts (`logs/`, `outputs/`) are git-ignored so each environment can supply its own partition / paths.
 
+### Packaging
+
+- Added `hydra` extra to `pyproject.toml` so `hydra-core` (used by `example/example_autobit.py` and `model_validation/basic/validate_autobit.py`) installs in one step via `uv sync --extra <cuXXX> --extra hydra` or `pip install "onecomp[hydra]"`, instead of a separate `pip install hydra-core` after sync. Documented the new extra in `README.md` and `model_validation/basic/README.md`.
+
 ## [v1.0.2] 2026-03-31
 
 ### Bug Fix

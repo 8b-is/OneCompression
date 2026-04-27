@@ -13,13 +13,19 @@ Validates OneComp's `AutoBitQuantizer` on multiple models using a fixed
 
 ## Requirements
 
-Hydra is not a dependency of OneComp and must be installed separately
-(same as `benchmark/`). See [benchmark/README.md](../../benchmark/README.md)
-for details.
+Hydra is not part of OneComp's runtime dependencies. Install it via the
+`hydra` extra:
 
 ```bash
-pip install hydra-core
+# uv
+uv sync --extra <cuXXX> --extra hydra
+
+# pip
+pip install "onecomp[hydra]"
 ```
+
+Replace `<cuXXX>` with the CUDA variant matching your environment
+(`cpu`, `cu118`, `cu121`, `cu124`, `cu126`, `cu128`, `cu130`).
 
 ## Usage
 

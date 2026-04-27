@@ -61,6 +61,9 @@ dev = [
 visualize = [
     "matplotlib>=3.10.8",
 ]
+hydra = [
+    "hydra-core",
+]
 vllm = ["vllm"]
 docs = [
     "mkdocs-material",
