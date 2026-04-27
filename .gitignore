@@ -16,9 +16,9 @@ models
 *.err
 md/*.md
 example/run_example.sh
-model_validation/basic/submit.sh
-model_validation/basic/logs/
-model_validation/basic/outputs/
+model_validation/autobit_qep/submit.sh
+model_validation/autobit_qep/logs/
+model_validation/autobit_qep/outputs/
 work/
 site/
 debug_code/

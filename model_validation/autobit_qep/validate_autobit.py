@@ -50,6 +50,7 @@ def main(cfg: DictConfig):
         model_config=ModelConfig(
             model_id=cfg.model_id,
             path=cfg.model_path,
+            device="cuda:0",
         ),
         quantizer=quantizer,
         qep=True,
