@@ -106,6 +106,7 @@
 ### Bug Fix
 
 - Fixed `model_config.py`: `load_model()` VLM fallback did not trigger for models raising `"Unrecognized configuration class"` (e.g. Cohere2VisionForConditionalGeneration). Added the error pattern to `_vlm_hints`
+- Fixed `gptq/_gptq.py`: Cholesky decomposition in `run_gptq` could fail with `LinAlgError` on ill-conditioned Hessians (observed on large VLMs at deeper layers). Extracted `_compute_inverse_hessian()` with progressive damping fallback (up to 5 retries, 10x damping increase per retry). No impact on normal operation
 - Fixed `TypeError` in `QuantLinear.forward` when `S_qk` scaling was applied to MLP layers (`onecomp/pre_process/quant_models.py`)
 
 ### Examples
