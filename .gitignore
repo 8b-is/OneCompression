@@ -15,6 +15,9 @@ models
 *.err
 md/*.md
 example/run_example.sh
+model_validation/basic/submit.sh
+model_validation/basic/logs/
+model_validation/basic/outputs/
 work/
 site/
 debug_code/

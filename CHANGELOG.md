@@ -179,6 +179,10 @@
   - `test_lpcd_metrics.py`: `make_lpcd_metrics()` dispatch on synthetic Llama / Qwen3 blocks for every `enable_*` flag combination, `NotImplementedError` for unsupported architectures, `LpcdMetricGroup.mark_as_ready` / `is_refineable` state transitions (CPU only, no weight download)
   - `test_lpcd_runner.py`: end-to-end GPTQ + QEP + LPCD on the first TinyLlama decoder block — smoke (`Runner.run()` completes, all linear layers quantized, dequantized weights finite), QEP + LPCD combination with explicit `QEPConfig`, behavioural checks (residual-only LPCD modifies `o_proj` / `down_proj` beyond the QEP-only baseline while pre-attention `q/k/v_proj` match the baseline bit-for-bit); auto-skipped on non-CUDA hosts via `pytest.mark.skipif`
 
+### Model Validation
+
+- Added `model_validation/basic/`: Hydra-driven AutoBit (`target_bit=4`, `qep=True`) end-to-end validation script (`validate_autobit.py`, `conf/validate.yaml`, `README.md`) that quantizes a single model selected via either `model_id` (Hugging Face Hub) or `model_path` (local directory), saves the quantized model via `runner.save_quantized_model("./quantized")`, and reports original / quantized perplexity. Default validation set covers TinyLlama-1.1B, Llama-2-7B, Llama-3-8B, Qwen3-8B, and gemma-4-E2B. SLURM submission script (`submit.sh`) and runtime artifacts (`logs/`, `outputs/`) are git-ignored so each environment can supply its own partition / paths.
+
 ## [v1.0.2] 2026-03-31
 
 ### Bug Fix
