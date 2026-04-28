@@ -129,6 +129,8 @@
 
 ### Bug Fix
 
+- Fixed `model_config.py`: `load_model()` VLM fallback did not trigger for models raising `"Unrecognized configuration class"` (e.g. Cohere2VisionForConditionalGeneration). Added the error pattern to `_vlm_hints`
+- Fixed `gptq/_gptq.py`: Cholesky decomposition in `run_gptq` could fail with `LinAlgError` on ill-conditioned Hessians (observed on large VLMs at deeper layers). Extracted `_compute_inverse_hessian()` with progressive damping fallback (up to 5 retries, 10x damping increase per retry). No impact on normal operation
 - Fixed `TypeError` in `QuantLinear.forward` when `S_qk` scaling was applied to MLP layers (`onecomp/pre_process/quant_models.py`)
 - Fixed wrong module grouping in `make_grouped_module` where GC-driven `id()` reuse caused attention projections (q/k/v) and MLP projections (gate/up) to be merged into the same group.  (`qep/_quantize_with_qep_arch.py`)
 - Fixed silent weight corruption in `GPTQLinear` when `qzero=0` was stored through the GPTQ v1 zero-point path (`onecomp/quantizer/gptq/gptq_layer.py`)
@@ -137,6 +139,14 @@
   - Forward-side fix (`GPTQLinear.forward`): apply `& wbits_mask` after the v1 `+1` restoration so stored `2^wbits - 1` wraps back to `0`; the `gptq_v2` path remains unchanged
   - Added regression tests for per-slot pack corruption, packed/unpacked forward paths, the `gptq_v2` branch, and the `from_saved_state` path for GPTQ v1 tensors
   - **NOTE**: If you have GPTQ models quantized with previous versions, please re-quantize them with this release, as they may contain corrupted internal data.
+
+### Packaging
+
+- Bumped minimum `transformers` requirement from `>=5.3.0` to `>=5.5.0` (`pyproject.toml`)
+- Added `cu130` optional-dependency extra and the `pytorch-cu130` wheel index (`https://download.pytorch.org/whl/cu130`) for CUDA 13 hosts (e.g. NVIDIA B200) (`pyproject.toml`)
+- Pinned the `vllm` extra to `vllm>=0.10` to prevent uv from falling back to legacy versions whose source build requires `CUDA_HOME` (`pyproject.toml`)
+- Added uv `conflicts` declarations between the `vllm` extra and the `cpu` / `cu118` / `cu121` / `cu124` / `cu126` / `cu128` extras: vLLM `>=0.20` requires `torch>=2.10`, which is only published for `cu130`. This forces `vllm` to be installed only with `--extra cu130` and prevents silent fallback to a `vllm` version incompatible with `transformers>=5` at runtime (`pyproject.toml`)
+- Restricted `tool.uv.environments` to `sys_platform == 'linux'` and `python_full_version >= '3.12', < '3.14'` to skip lock splits for unused Windows and out-of-range Python versions (`pyproject.toml`)
 
 ### Examples
 
@@ -167,6 +177,7 @@
 - Added `docs/api/quantizers/onebit.md` (OneBit API reference)
 - Updated `mkdocs.yml` nav: added AutoBit/JointQ algorithm pages, OneBit API page; renamed Post-Process nav title to include Block-wise PTQ
 - Added example script links to `docs/user-guide/pre-process.md`
+- Added a Troubleshooting section to `docs/user-guide/vllm-inference.md` describing how to bypass the unconditional DeepGEMM (FP8) kernel warmup for non-FP8 quantization (GPTQ / DBF / Mixed-GPTQ) by setting `VLLM_USE_DEEP_GEMM=0` and `VLLM_DEEP_GEMM_WARMUP=skip`
 
 ### Tests
 

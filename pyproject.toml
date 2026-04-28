@@ -61,10 +61,7 @@ dev = [
 visualize = [
     "matplotlib>=3.10.8",
 ]
-hydra = [
-    "hydra-core",
-]
-vllm = ["vllm"]
+vllm = ["vllm>=0.10"]
 docs = [
     "mkdocs-material",
     "mkdocstrings[python]",
@@ -79,6 +76,20 @@ mixed_gptq = "vllm_plugins.gptq.vllm_plugin:register_vllm_plugin"
 [tool.uv]
 conflicts = [
     [{extra = "cpu"}, {extra = "cu118"}, {extra = "cu121"}, {extra = "cu124"}, {extra = "cu126"}, {extra = "cu128"}, {extra = "cu130"}],
+    # vLLM (latest, >=0.20) requires torch 2.10/2.11, whose wheels are only
+    # published for cu130. Forbid using vllm together with the older CUDA
+    # wheel indices so that uv either picks vllm>=0.20 on cu130 or refuses
+    # the combination, instead of silently falling back to a vllm version
+    # that is incompatible with transformers>=5 at runtime.
+    [{extra = "cpu"}, {extra = "vllm"}],
+    [{extra = "cu118"}, {extra = "vllm"}],
+    [{extra = "cu121"}, {extra = "vllm"}],
+    [{extra = "cu124"}, {extra = "vllm"}],
+    [{extra = "cu126"}, {extra = "vllm"}],
+    [{extra = "cu128"}, {extra = "vllm"}],
+]
+environments = [
+    "sys_platform == 'linux' and python_full_version >= '3.12' and python_full_version < '3.14'",
 ]
 
 [tool.uv.sources]

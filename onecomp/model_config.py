@@ -102,7 +102,7 @@ class ModelConfig:
         try:
             model = AutoModelForCausalLM.from_pretrained(self.get_model_id_or_path(), **kwargs)
         except ValueError as e:
-            _vlm_hints = ("Unrecognized model", "is not supported")
+            _vlm_hints = ("Unrecognized configuration class", "Unrecognized model", "is not supported")
             if not _HAS_VLM_AUTO or not any(h in str(e) for h in _vlm_hints):
                 raise
             self.logger.info("AutoModelForCausalLM failed; trying AutoModelForImageTextToText.")
