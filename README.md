@@ -104,6 +104,7 @@ PyTorch will be automatically downloaded by `uv`, so you do not need to install 
 
 Adding `--extra dev` installs development tools (black, pytest, pylint).
 Adding `--extra visualize` installs matplotlib for visualization features.
+Adding `--extra hydra` installs `hydra-core` for the example scripts and `model_validation/` runners that use Hydra-based configuration.
 
 To use vLLM for serving quantized models, add `--extra vllm`:
 
