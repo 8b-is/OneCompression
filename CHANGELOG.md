@@ -1,6 +1,30 @@
 # Change log
 
-## [v1.1.0] 2026-04-21
+## [v1.1.0] 2026-04-16
+
+### Gemma 3 / Gemma 4 & VLM Support
+
+- Auto-detect `language_model` / `text_model` sub-modules in `setup()` so only the language model is quantized; `vision_tower`, `audio_tower`, etc. are automatically excluded (`quantizer/_quantizer.py`)
+- Added `unfuse_moe.py`: MoE models (e.g. Gemma 4) store all expert weights as fused 3D `nn.Parameter` tensors (`gate_up_proj [E, 2*inter, hidden]`, `down_proj [E, hidden, inter]`), but GPTQ and other layer-wise PTQ methods require 2D `nn.Linear` layers. `unfuse_moe_experts()` splits the fused tensors into per-expert modules, producing paths like `experts.0.gate_proj`, `experts.0.up_proj`, `experts.0.down_proj` (`utils/unfuse_moe.py`)
+- Set `quant_method` to `mixed_gptq` for MoE models during save, enabling vLLM to handle a mix of quantized and unquantized expert layers via `UnquantizedFusedMoEMethod` (`runner.py`)
+- Introduced `prepare_block_kwargs` to reproduce Gemma 4-specific additional inputs during block-wise forward (`runner_methods/chunked_quantization.py`, `qep/_quantize_with_qep_arch.py`)
+  - `_per_layer_inputs`: pre-compute per-layer embeddings for all calibration samples
+  - `_position_embeddings_map`: hook into `rotary_emb` to capture position embeddings per layer type
+  - `_attention_mask_map`: pre-compute masks per layer type via `create_causal_mask` / `create_sliding_window_causal_mask`
+- Updated `Catcher.forward` to accept `*args` (Gemma 4 passes `per_layer_input` as a positional argument)
+- Added a guard to safely skip KV-shared layers where `k_proj` / `v_proj` are never called during forward and X^TX is not accumulated (`runner_methods/chunked_quantization.py`)
+- Added `token_type_ids` (`mm_token_type_ids`) required by Gemma 4 to calibration data and PPL computation (`utils/calibration.py`, `utils/perplexity.py`)
+  - Added `model` argument to `prepare_calibration_dataset`; model-specific inputs are appended via `add_model_specific_inputs()`
+  - Changed `model.device` to `next(model.parameters()).device` to support VLM `device_map="auto"`
+- Fixed MoE block partitioning (`down_proj` and `router.proj` were incorrectly placed in the same block) and relaxed Hessian input shape assertion for 2D tensors after router dispatch
+- Added layer-suffix fallback lookup for Gemma 3's shared sub-modules where `named_modules()` paths differ from `state_dict()` keys (`quantized_model_loader.py`)
+- `save_quantized_model()` now copies `processor_config.json` from the source model so the quantized model directory is self-contained for multi-modal inference (`runner.py`)
+- Added skip logic in vLLM plugin to prevent vision / audio encoder layers from being incorrectly matched to language model quantization configs (`vllm_plugins/utils/module.py`)
+- Override `ModelConfig` `dtype` to `bfloat16` for Gemma 3/4 models whose values exceed the float16 range, preventing performance degradation (`model_config.py`)
+- Fixed an issue where non-language-model layers in multi-modal models were included in AutoBit bit allocation
+- Bumped `transformers` requirement from `>= 5.3.0` to `>= 5.5.0` (`pyproject.toml`)
+  - Gemma 4's `model_type: gemma4` is registered in `CONFIG_MAPPING` starting from 5.5.0 (released 2026-04-02); 5.3.0 fails to load it
+- Added `cu130` extra for the validation environment (NVIDIA B200, CUDA 13.0); under `cu128`, torch (cu130) and torchvision (cu128) had a CUDA version mismatch
 
 ### New Feature: LPCD (Layer-Projected Coordinate Descent)
 
@@ -108,6 +132,7 @@
 - Fixed `model_config.py`: `load_model()` VLM fallback did not trigger for models raising `"Unrecognized configuration class"` (e.g. Cohere2VisionForConditionalGeneration). Added the error pattern to `_vlm_hints`
 - Fixed `gptq/_gptq.py`: Cholesky decomposition in `run_gptq` could fail with `LinAlgError` on ill-conditioned Hessians (observed on large VLMs at deeper layers). Extracted `_compute_inverse_hessian()` with progressive damping fallback (up to 5 retries, 10x damping increase per retry). No impact on normal operation
 - Fixed `TypeError` in `QuantLinear.forward` when `S_qk` scaling was applied to MLP layers (`onecomp/pre_process/quant_models.py`)
+- Fixed wrong module grouping in `make_grouped_module` where GC-driven `id()` reuse caused attention projections (q/k/v) and MLP projections (gate/up) to be merged into the same group.  (`qep/_quantize_with_qep_arch.py`)
 - Fixed silent weight corruption in `GPTQLinear` when `qzero=0` was stored through the GPTQ v1 zero-point path (`onecomp/quantizer/gptq/gptq_layer.py`)
   - Root cause: AutoGPTQ v1 stores `raw_zero - 1`, so `qzero=0` becomes `-1`; without masking, its sign-extended bits corrupted neighboring packed slots
   - Pack-side fix (`_pack_rows`): mask each value with `(1 << wbits) - 1` before shift/OR (2/4/8-bit and 3-bit paths)
@@ -164,6 +189,23 @@
   - `test_lpcd_config.py`: `LPCDConfig` default / custom values, dataclass field set, top-level `from onecomp import LPCDConfig` (CPU only)
   - `test_lpcd_metrics.py`: `make_lpcd_metrics()` dispatch on synthetic Llama / Qwen3 blocks for every `enable_*` flag combination, `NotImplementedError` for unsupported architectures, `LpcdMetricGroup.mark_as_ready` / `is_refineable` state transitions (CPU only, no weight download)
   - `test_lpcd_runner.py`: end-to-end GPTQ + QEP + LPCD on the first TinyLlama decoder block — smoke (`Runner.run()` completes, all linear layers quantized, dequantized weights finite), QEP + LPCD combination with explicit `QEPConfig`, behavioural checks (residual-only LPCD modifies `o_proj` / `down_proj` beyond the QEP-only baseline while pre-attention `q/k/v_proj` match the baseline bit-for-bit); auto-skipped on non-CUDA hosts via `pytest.mark.skipif`
+
+### Model Validation
+
+- Added `model_validation/README.md`: parent overview of the operational validation suite that exercises OneComp's end-to-end quantize → save → load → inference workflow across multiple architectures and sizes. Provides cross-recipe At-a-Glance status tables (per-model × per-recipe quantization status, and per-model × per-recipe `(save, transformers inference, vllm inference)` status), per-recipe result tables, and a Summary section that explicitly cautions against cross-recipe PPL comparison (PPL is reported only as a per-recipe sanity check; the compact calibration in use sits below typical research settings, partly because the calibration size has to fit the DGX Spark 128 GB UMA budget for 7–8B models with QEP on).
+- Added `model_validation/gptq/`: Hydra-driven GPTQ (`wbits=4`, `groupsize=128`, `qep=False`) end-to-end validation across three phases:
+  - Phase 1 — quantize + save (`validate_gptq.py`, `conf/validate.yaml`): `CalibrationConfig(max_length=512, num_calibration_samples=128)`, saved via `runner.save_quantized_model(...)`, reports original / quantized PPL on `wikitext-2-raw-v1`.
+  - Phase 2 — load + greedy generation (`validate_load.py`, `conf/validate_load.yaml`): reloads each saved directory via `load_quantized_model` and runs `"Fujitsu is"` with `max_new_tokens=32`. `torch_dtype` is overridable (`float16` / `bfloat16` / `float32` / `null`); gemma-4-E2B requires `bfloat16` because the loader's default `float16` triggers a `Half` / `BFloat16` mismatch at `lm_head`.
+  - Phase 3 — vLLM offline inference (`validate_vllm.py`, `conf/validate_vllm.yaml`): reloads each saved directory via vLLM's offline `LLM` interface (OneComp's vLLM plugin is auto-registered, so no explicit `quantization=` argument is required) and runs `"Fujitsu is"` with `temperature=0.0`, `max_tokens=32`, `enforce_eager=True`, `max_model_len=512`. `LLM(...)` and `llm.generate(...)` are kept inside `main()` behind `if __name__ == "__main__":` so vLLM worker subprocess re-imports do not recursively spawn new engines. Currently `pending` for all five models.
+- Added `model_validation/qep_gptq/`: Hydra-driven GPTQ (`wbits=4`, `groupsize=128`, `qep=True`) end-to-end validation script (`validate_gptq.py`, `conf/validate.yaml`, `README.md`). Calibration: `max_length=1024`, `num_calibration_samples=128` (reduced from defaults to keep 7–8B models within the DGX Spark 128 GB UMA budget with QEP on). Quantize + save only; load / inference is not exercised in this subdirectory yet.
+- Added `model_validation/autobit/`: Hydra-driven AutoBit (`target_bit=4`, `qep=False`) end-to-end validation script (`validate_autobit.py`, `conf/validate.yaml`, `README.md`). Candidates `GPTQ(wbits=b, groupsize=128) for b in (2, 3, 4, 8)`, `assignment_strategy="activation_aware"`, `CalibrationConfig(max_length=512, num_calibration_samples=128)`. Quantize + save only.
+- Updated `model_validation/autobit_qep/`: AutoBit (`target_bit=4`, `qep=True`) validation. Reduced calibration to `max_length=1024`, `num_calibration_samples=128` to keep 7–8B models within the DGX Spark 128 GB UMA budget. README expanded with per-model bit-assignment counts (`GPTQ_<b>_gs128: <count> layers`) for TinyLlama-1.1B, Llama-2-7B, Llama-3-8B, Qwen3-8B, and gemma-4-E2B; documents the bimodal 8-bit / 2-bit ILP collapse on gemma-4-E2B (every module in the first 15 transformer blocks → 8-bit, remaining 20 blocks → 2-bit; quantized PPL diverges to ~10^14, reproduced after reducing calibration from `max_length=2048, num_calibration_samples=512`) and lists candidate follow-ups (restrict candidate set, disable QEP, switch `assignment_strategy`).
+- Added `model_validation/jointq/`: Hydra-driven JointQ (`bits=4`, `group_size=128`, `symmetric=True`, `qep=False`) end-to-end validation script (`validate_jointq.py`, `conf/validate.yaml`, `README.md`). Calibration: `CalibrationConfig(max_length=512, num_calibration_samples=128)`. JointQ does not currently expose a quantized-inference layer (no `save_quantized_model` / `create_quantized_model` path), so quality is sanity-checked on the dequantized model (weights reconstructed from JointQ's quantization parameters); save / inference are reported as `n/a` in the parent At-a-Glance table.
+- All five recipes share the same model selection contract: a single model selected via either `model_id` (Hugging Face Hub) or `model_path` (local directory), with any field in `conf/validate*.yaml` overridable on the command line. Default validation set across all recipes is TinyLlama-1.1B, gemma-4-E2B (base), Llama-2-7B, Llama-3-8B, and Qwen3-8B.
+
+### Packaging
+
+- Added `hydra` extra to `pyproject.toml` so `hydra-core` (used by `example/example_autobit.py` and the `model_validation/{gptq,qep_gptq,autobit,autobit_qep,jointq}/validate_*.py` scripts) installs in one step via `uv sync --extra <cuXXX> --extra hydra` or `pip install "onecomp[hydra]"`, instead of a separate `pip install hydra-core` after sync. Documented the new extra in `README.md` and the `model_validation/*/README.md` files. The `model_validation/gptq/` Phase 3 (vLLM inference) additionally requires the `vllm` extra (`uv sync --extra <cuXXX> --extra hydra --extra vllm` or `pip install "onecomp[hydra]" vllm`).
 
 ## [v1.0.2] 2026-03-31
 

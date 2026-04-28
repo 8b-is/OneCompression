@@ -75,6 +75,7 @@ def run_chunked_quantization(
         tokenizer=tokenizer,
         device=torch.device("cpu"),
         calibration_config=calibration_config,
+        model=model,
         logger=logger,
     )
     total_samples = inputs["input_ids"].shape[0]
@@ -275,6 +276,10 @@ def quantize_group(quantizer, group, xtx_dict, nsamples):
     """
 
     for module, name in group:
+        if name not in xtx_dict and (quantizer.flag_hessian or quantizer.flag_xtx):
+            logger.warning("Skipping %s: no activations captured (unused during forward)", name)
+            continue
+
         logger.info("Quantizing layer: %s", name)
         start_time = time.time()
 
@@ -330,6 +335,9 @@ def record_quantization_errors(quantizer, group, xtx_dict, nsamples):
     """
 
     for module, name in group:
+        if name not in quantizer.results or name not in xtx_dict:
+            continue
+
         result = quantizer.results[name]
         dequantized_weight = result.compute_dequantized_weight()
 
