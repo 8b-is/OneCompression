@@ -11,6 +11,8 @@ from logging import getLogger
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 import torch
 
+from .utils.dtype import needs_bfloat16
+
 try:
     from transformers import AutoModelForImageTextToText as _AutoVLM
 
@@ -47,13 +49,14 @@ class ModelConfig:
         if model_id is None and path is None:
             raise ValueError("Either model_id or path must be provided")
 
-        _id = (model_id or path).lower()
-        override_keywords = ("gemma-3", "gemma3", "gemma_3", "gemma-4", "gemma4", "gemma_4")
-        for keyword in override_keywords:
-            if keyword in _id:
-                dtype = "bfloat16"
-                self.logger.warning("Using bfloat16 for %s for preventing performance degradation." % keyword)
-                break
+        if needs_bfloat16(model_id or path):
+            if dtype != "bfloat16":
+                self.logger.warning(
+                    "Overriding dtype to bfloat16 for %s "
+                    "to prevent performance degradation.",
+                    model_id or path,
+                )
+            dtype = "bfloat16"
 
         self.model_id = model_id
         self.path = path

@@ -22,6 +22,7 @@ from .quantizer.dbf.config import resolve_dbf_layer_bits
 from .quantizer.dbf.dbf_layer import DoubleBinaryLinear
 from .quantizer.gptq.config import resolve_gptq_layer_wbits, resolve_gptq_layer_group_size
 from .quantizer.gptq.gptq_layer import GPTQLinear
+from .utils.dtype import needs_bfloat16
 from .utils.quant_config import get_quant_param
 
 logger = getLogger(__name__)
@@ -72,6 +73,8 @@ class QuantizedModelLoader:
             raise FileNotFoundError(f"Saved model directory not found: {save_directory}")
 
         config_dict, quant_config = cls._load_config_and_quant_config(save_directory)
+        if needs_bfloat16(save_directory):
+            torch_dtype = torch.bfloat16
         model = cls._build_empty_model_from_config(config_dict, torch_dtype)
 
         # Load state_dict from safetensors
