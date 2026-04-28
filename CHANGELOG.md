@@ -146,6 +146,7 @@
 - Added `docs/api/quantizers/onebit.md` (OneBit API reference)
 - Updated `mkdocs.yml` nav: added AutoBit/JointQ algorithm pages, OneBit API page; renamed Post-Process nav title to include Block-wise PTQ
 - Added example script links to `docs/user-guide/pre-process.md`
+- Added a Troubleshooting section to `docs/user-guide/vllm-inference.md` describing how to bypass the unconditional DeepGEMM (FP8) kernel warmup for non-FP8 quantization (GPTQ / DBF / Mixed-GPTQ) by setting `VLLM_USE_DEEP_GEMM=0` and `VLLM_DEEP_GEMM_WARMUP=skip`
 
 ### Tests
 
