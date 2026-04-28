@@ -55,6 +55,7 @@ cu128 = ["torch", "torchvision"]
 cu130 = ["torch", "torchvision"]
 dev = [
     "black",
+    "hydra-core",
     "pylint",
     "pytest",
 ]

@@ -132,7 +132,7 @@ Adding `--extra dev` installs development tools (black, pytest, pylint).
 Adding `--extra visualize` installs matplotlib for visualization features.
 Adding `--extra hydra` installs `hydra-core` for the example scripts and `model_validation/` runners that use Hydra-based configuration.
 
-To use vLLM for serving quantized models, add `--extra vllm`:
+To use vLLM for serving quantized models, add `--extra vllm` together with `--extra cu130`:
 
 ```bash
 uv sync --extra cu130 --extra dev --extra visualize --extra vllm
