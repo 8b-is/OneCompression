@@ -166,6 +166,11 @@ class Quantizer:
         if Y_sq_norms.dtype != self.dtype:
             raise ValueError(f"Y_sq_norms must have dtype {self.dtype}.")
 
+        # Max safe scale value to avoid FP16 overflow in dequantized weights.
+        # dequantized = scale * assignment, so scale must satisfy:
+        #   |scale| * max(|assignment|) < FP16_MAX (65504)
+        self.scale_threshold = torch.finfo(torch.float16).max / max(abs(self.lower_bound), abs(self.upper_bound))
+
     def set_begin_time(self):
         """Set the begin time."""
 
@@ -653,38 +658,31 @@ class Quantizer:
         """
 
         try:
-            # Try fast solve first
-            return torch.linalg.solve(GG_all, GY_all.unsqueeze(-1)).squeeze(-1)
+            scales_new = torch.linalg.solve(GG_all, GY_all.unsqueeze(-1)).squeeze(-1)
         except torch._C._LinAlgError as e:
-            # If singular matrices are included, process individually
+            # Singular matrices detected — re-solve all rows with damping
             print(f"Warning: Singular matrix detected: {e}")
-            print("Processing each matrix individually...")
+            print("Re-solving all rows with diagonal damping...")
+            diag_max = GG_all.diagonal(dim1=-2, dim2=-1).max(dim=-1).values
+            damping = (diag_max * 0.01).clamp(min=1e-6)
+            GG_damped = GG_all.clone()
+            GG_damped.diagonal(dim1=-2, dim2=-1).add_(damping.unsqueeze(-1))
+            scales_new = torch.linalg.solve(GG_damped, GY_all.unsqueeze(-1)).squeeze(-1)
 
-            num_rows = GG_all.shape[0]
-            scales_new = torch.zeros(
-                num_rows,
-                self.num_groups,
-                dtype=self.dtype,
-                device=self.device,
-            )
+        # Re-solve rows where scales exploded (ill-conditioned but not singular)
+        exploded = scales_new.abs().max(dim=-1).values > self.scale_threshold
+        if exploded.any():
+            n_exploded = int(exploded.sum().item())
+            print(f"Warning: {n_exploded} rows have exploded scales (>{self.scale_threshold:.0f}), re-solving with damping")
+            diag_max = GG_all[exploded].diagonal(dim1=-2, dim2=-1).max(dim=-1).values
+            damping = (diag_max * 0.01).clamp(min=1e-6)
+            GG_damped = GG_all[exploded].clone()
+            GG_damped.diagonal(dim1=-2, dim2=-1).add_(damping.unsqueeze(-1))
+            scales_new[exploded] = torch.linalg.solve(
+                GG_damped, GY_all[exploded].unsqueeze(-1)
+            ).squeeze(-1)
 
-            solved_count = 0
-            pinv_count = 0
-
-            for i in range(num_rows):
-                try:
-                    # Try solve first (fast)
-                    scales_new[i] = torch.linalg.solve(GG_all[i], GY_all[i].unsqueeze(-1)).squeeze(
-                        -1
-                    )
-                    solved_count += 1
-                except torch._C._LinAlgError:
-                    # If solve fails, use pinv (reliable)
-                    scales_new[i] = torch.linalg.pinv(GG_all[i]) @ GY_all[i]
-                    pinv_count += 1
-
-            print(f"Solved {solved_count} matrices normally, {pinv_count} with pinv")
-            return scales_new
+        return scales_new
 
     def _group_local_search_all(self, solution, group_index):
         """Perform local search for a specific group in the solution.
