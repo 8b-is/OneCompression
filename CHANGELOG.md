@@ -127,6 +127,8 @@
 - Added initialization strategy control: `enable_clip_optimize`, `enable_clip_optimize_ep`, `enable_gptq` parameters to `JointQ` class
 - Added `gptq` attribute (`GPTQ` instance) to `JointQ` class for customizing GPTQ parameters (`blocksize`, `percdamp`, `mse`, `q_grid`, `q_norm`). Default GPTQ is auto-created from `bits`/`group_size`/`symmetric`
 - Replaced JointQ internal GPTQ module (`jointq/core/gptq.py`) with OneComp GPTQ (`onecomp.quantizer.gptq.GPTQ`); GPTQ initial solution is now generated via the shared GPTQ implementation
+- Improved numerical stability of scale optimization for ill-conditioned matrices
+- Fixed potential division-by-zero in scale computation
 
 ### Breaking Changes
 
@@ -202,6 +204,15 @@
 - Expanded `test_rtn.py`: MSE boundary/abnormal parameters
 - Added vLLM mixed group-size tests (`tests/vllm_plugins/gptq/test_mixed_gptq.py`, `tests/vllm_plugins/gptq/test_mixed_gptq_e2e.py`)
 - Updated `regression_quantize_helper.py`: updated `EXPECTED_MSE` baseline for OneComp GPTQ integration
+
+### Benchmarking
+
+- Updated all benchmark directories for v1.1.0
+- **Results will be added after benchmark runs complete.**
+
+### Dependencies
+
+- Updated `pyproject.toml` and `uv.lock`: added `hydra-core` to `dev` optional dependencies
 - Added LPCD tests (`tests/onecomp/lpcd/`, 25 cases)
   - `test_lpcd_config.py`: `LPCDConfig` default / custom values, dataclass field set, top-level `from onecomp import LPCDConfig` (CPU only)
   - `test_lpcd_metrics.py`: `make_lpcd_metrics()` dispatch on synthetic Llama / Qwen3 blocks for every `enable_*` flag combination, `NotImplementedError` for unsupported architectures, `LpcdMetricGroup.mark_as_ready` / `is_refineable` state transitions (CPU only, no weight download)
