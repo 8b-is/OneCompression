@@ -2,6 +2,31 @@
 
 Fujitsu One Compression (OneComp) is a Python package for LLM compression.
 
+<p align="center">
+  <img src="figs/onecomp.gif" alt="OneComp" />
+</p>
+
+## ⚡ Just one line.
+
+```bash
+onecomp <generative AI>
+```
+
+**That's all you need.** OneComp detects your GPU VRAM, picks the best bit-width per layer, quantizes with error propagation, evaluates, and saves — fully automatic.
+
+```bash
+# Example
+onecomp meta-llama/Llama-2-7b-hf
+```
+
+Or from Python:
+
+```python
+from onecomp import Runner
+
+Runner.auto_run(model_id="meta-llama/Llama-2-7b-hf")
+```
+
 ## 📖 Documentation
 
 Full documentation is available at **[https://FujitsuResearch.github.io/OneCompression/](https://FujitsuResearch.github.io/OneCompression/)**.
@@ -9,7 +34,7 @@ Full documentation is available at **[https://FujitsuResearch.github.io/OneCompr
 ## 📦 Features
 
 - **Quantization Error Propagation (QEP)**: A post-training quantization method that corrects quantization errors by propagating them to subsequent layers, improving the accuracy of quantized LLMs. See [Arai & Ichikawa, NeurIPS 2025](https://openreview.net/forum?id=a3l3K9khbL) for details. The original reference implementation is available at [FujitsuResearch/qep](https://github.com/FujitsuResearch/qep).
-- **Layer-Projected Coordinate Descent (LPCD)**: A unified PTQ framework that extends layer-wise quantization to arbitrary submodules by optimising relaxed objectives and projecting the solutions with layer-wise quantizers. See [Ichikawa et al., 2025](https://arxiv.org/abs/2512.01546) for details.
+- **Layer-Projected Coordinate Descent (LPCD)**: A unified Post Training Quantization (PTQ) framework that extends layer-wise quantization to arbitrary submodules by optimising relaxed objectives and projecting the solutions with layer-wise quantizers. See [Ichikawa et al., 2025](https://arxiv.org/abs/2512.01546) for details.
 - **vLLM Plugin Integration**: Serve OneComp-quantized models with [vLLM](https://docs.vllm.ai/) via built-in plugins for DBF and Mixed-GPTQ quantization methods. Pair with [Open WebUI](https://github.com/open-webui/open-webui) for a ChatGPT-like chat experience on your local machine.
 - **AutoBit**: Mixed-precision quantization with ILP-based bitwidth assignment. Automatically estimates the target bitwidth from available VRAM and assigns per-layer bitwidths to minimize quantization error under the memory budget.
 - **JointQ**: Joint quantization method that optimizes weight assignments and scale parameters simultaneously for improved quantization accuracy. Supports group-wise quantization (e.g., 4-bit, groupsize=128).
