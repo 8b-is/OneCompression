@@ -1,3 +1,7 @@
+"""
+Copyright 2025-2026 Fujitsu Ltd.
+
+"""
 from abc import ABC, abstractmethod
 
 import torch

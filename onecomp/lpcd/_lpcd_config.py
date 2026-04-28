@@ -1,6 +1,6 @@
 """LPCD configuration dataclass.
 
-Copyright 2026 Fujitsu Ltd.
+Copyright 2025-2026 Fujitsu Ltd.
 
 Author: Yudai Fujimoto
 
