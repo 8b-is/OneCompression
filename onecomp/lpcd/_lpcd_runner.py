@@ -71,6 +71,7 @@ def run_quantize_with_lpcd(
         tokenizer=tokenizer,
         device=torch.device('cpu'),
         calibration_config=calibration_config,
+        model=model,
         logger=logger,
     )
 
