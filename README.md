@@ -54,6 +54,7 @@ Choose the appropriate CUDA version for your system:
 | CUDA 12.4    | `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124` |
 | CUDA 12.6    | `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126` |
 | CUDA 12.8    | `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128` |
+| CUDA 13.0    | `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130` |
 
 Check your CUDA version:
 ```bash
@@ -99,17 +100,19 @@ uv sync --extra cu128 --extra dev --extra visualize
 The `uv sync` command creates a Python virtual environment and installs all dependent libraries.
 
 The `--extra cu128` option installs the CUDA-enabled version of PyTorch (along with `torchvision` from the same CUDA index).
-Replace `cu128` with the appropriate variant for your environment: `cpu`, `cu118`, `cu121`, `cu124`, `cu126`, or `cu128`.
+Replace `cu128` with the appropriate variant for your environment: `cpu`, `cu118`, `cu121`, `cu124`, `cu126`, `cu128`, or `cu130`.
 PyTorch will be automatically downloaded by `uv`, so you do not need to install it beforehand.
 
 Adding `--extra dev` installs development tools (black, pytest, pylint).
 Adding `--extra visualize` installs matplotlib for visualization features.
 
-To use vLLM for serving quantized models, add `--extra vllm`:
+To use vLLM for serving quantized models, add `--extra vllm` together with `--extra cu130`:
 
 ```bash
-uv sync --extra cu128 --extra dev --extra visualize --extra vllm
+uv sync --extra cu130 --extra dev --extra visualize --extra vllm
 ```
+
+> **Note:** `--extra vllm` is only compatible with `--extra cu130`. Recent vLLM releases require `torch>=2.10`, whose wheels are only published for the `cu130` index. Combining `--extra vllm` with `cpu` / `cu118` / `cu121` / `cu124` / `cu126` / `cu128` is rejected by `uv` at lock time.
 
 > **Note:** `--extra vllm` may take a long time on the first run if a pre-built `xformers` wheel is not available for your Python/CUDA combination (e.g. Python 3.13). Using Python 3.12 typically avoids this.
 
@@ -146,7 +149,7 @@ pip install torch --index-url https://download.pytorch.org/whl/cu128
 pip install -e ".[dev]"
 ```
 
-Replace `cu128` with the appropriate variant for your environment: `cpu`, `cu118`, `cu121`, `cu124`, `cu126`, or `cu128`.
+Replace `cu128` with the appropriate variant for your environment: `cpu`, `cu118`, `cu121`, `cu124`, `cu126`, `cu128`, or `cu130`.
 
 
 ### Building Documentation Locally
@@ -184,8 +187,8 @@ OneComp-quantized models can be served with [vLLM](https://docs.vllm.ai/) via bu
 Combined with [Open WebUI](https://github.com/open-webui/open-webui), you can chat with your quantized model through a ChatGPT-like browser interface — entirely on your local machine.
 
 ```bash
-# uv users
-uv sync --extra cu128 --extra vllm
+# uv users (vLLM requires cu130; see Installation for details)
+uv sync --extra cu130 --extra vllm
 
 # pip users
 pip install vllm
