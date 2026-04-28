@@ -2,6 +2,31 @@
 
 Fujitsu One Compression (OneComp) is a Python package for LLM compression.
 
+<p align="center">
+  <img src="figs/onecomp.gif" alt="OneComp" />
+</p>
+
+## ⚡ Just one line.
+
+```bash
+onecomp <generative AI>
+```
+
+**That's all you need.** OneComp detects your GPU VRAM, picks the best bit-width per layer, quantizes with error propagation, evaluates, and saves — fully automatic.
+
+```bash
+# Example
+onecomp meta-llama/Llama-2-7b-hf
+```
+
+Or from Python:
+
+```python
+from onecomp import Runner
+
+Runner.auto_run(model_id="meta-llama/Llama-2-7b-hf")
+```
+
 ## 📖 Documentation
 
 Full documentation is available at **[https://FujitsuResearch.github.io/OneCompression/](https://FujitsuResearch.github.io/OneCompression/)**.
@@ -9,7 +34,7 @@ Full documentation is available at **[https://FujitsuResearch.github.io/OneCompr
 ## 📦 Features
 
 - **Quantization Error Propagation (QEP)**: A post-training quantization method that corrects quantization errors by propagating them to subsequent layers, improving the accuracy of quantized LLMs. See [Arai & Ichikawa, NeurIPS 2025](https://openreview.net/forum?id=a3l3K9khbL) for details. The original reference implementation is available at [FujitsuResearch/qep](https://github.com/FujitsuResearch/qep).
-- **Layer-Projected Coordinate Descent (LPCD)**: A unified PTQ framework that extends layer-wise quantization to arbitrary submodules by optimising relaxed objectives and projecting the solutions with layer-wise quantizers. See [Ichikawa et al., 2025](https://arxiv.org/abs/2512.01546) for details.
+- **Layer-Projected Coordinate Descent (LPCD)**: A unified Post Training Quantization (PTQ) framework that extends layer-wise quantization to arbitrary submodules by optimising relaxed objectives and projecting the solutions with layer-wise quantizers. See [Ichikawa et al., 2025](https://arxiv.org/abs/2512.01546) for details.
 - **vLLM Plugin Integration**: Serve OneComp-quantized models with [vLLM](https://docs.vllm.ai/) via built-in plugins for DBF and Mixed-GPTQ quantization methods. Pair with [Open WebUI](https://github.com/open-webui/open-webui) for a ChatGPT-like chat experience on your local machine.
 - **AutoBit**: Mixed-precision quantization with ILP-based bitwidth assignment. Automatically estimates the target bitwidth from available VRAM and assigns per-layer bitwidths to minimize quantization error under the memory budget.
 - **JointQ**: Joint quantization method that optimizes weight assignments and scale parameters simultaneously for improved quantization accuracy. Supports group-wise quantization (e.g., 4-bit, groupsize=128).
@@ -54,6 +79,7 @@ Choose the appropriate CUDA version for your system:
 | CUDA 12.4    | `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124` |
 | CUDA 12.6    | `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126` |
 | CUDA 12.8    | `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128` |
+| CUDA 13.0    | `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130` |
 
 Check your CUDA version:
 ```bash
@@ -100,11 +126,12 @@ uv run pre-commit install
 The `uv sync` command creates a Python virtual environment and installs all dependent libraries.
 
 The `--extra cu128` option installs the CUDA-enabled version of PyTorch (along with `torchvision` from the same CUDA index).
-Replace `cu128` with the appropriate variant for your environment: `cpu`, `cu118`, `cu121`, `cu124`, `cu126`, or `cu128`.
+Replace `cu128` with the appropriate variant for your environment: `cpu`, `cu118`, `cu121`, `cu124`, `cu126`, `cu128`, or `cu130`.
 PyTorch will be automatically downloaded by `uv`, so you do not need to install it beforehand.
 
 Adding `--extra dev` installs development tools (black, isort, pre-commit, pytest, pylint).
 Adding `--extra visualize` installs matplotlib for visualization features.
+Adding `--extra hydra` installs `hydra-core` for the example scripts and `model_validation/` runners that use Hydra-based configuration.
 
 After installation, enable the pre-commit hooks so that `black` and `isort` run automatically on every commit:
 
@@ -113,11 +140,13 @@ pre-commit install
 ```
 Note that you need to install pre-commit after activating the python environment.
 
-To use vLLM for serving quantized models, add `--extra vllm`:
+To use vLLM for serving quantized models, add `--extra vllm` together with `--extra cu130`:
 
 ```bash
-uv sync --extra cu128 --extra dev --extra visualize --extra vllm
+uv sync --extra cu130 --extra dev --extra visualize --extra vllm
 ```
+
+> **Note:** `--extra vllm` is only compatible with `--extra cu130`. Recent vLLM releases require `torch>=2.10`, whose wheels are only published for the `cu130` index. Combining `--extra vllm` with `cpu` / `cu118` / `cu121` / `cu124` / `cu126` / `cu128` is rejected by `uv` at lock time.
 
 > **Note:** `--extra vllm` may take a long time on the first run if a pre-built `xformers` wheel is not available for your Python/CUDA combination (e.g. Python 3.13). Using Python 3.12 typically avoids this.
 
@@ -157,7 +186,7 @@ pip install -e ".[dev]"
 pre-commit install
 ```
 
-Replace `cu128` with the appropriate variant for your environment: `cpu`, `cu118`, `cu121`, `cu124`, `cu126`, or `cu128`.
+Replace `cu128` with the appropriate variant for your environment: `cpu`, `cu118`, `cu121`, `cu124`, `cu126`, `cu128`, or `cu130`.
 
 
 ### Building Documentation Locally
@@ -195,8 +224,8 @@ OneComp-quantized models can be served with [vLLM](https://docs.vllm.ai/) via bu
 Combined with [Open WebUI](https://github.com/open-webui/open-webui), you can chat with your quantized model through a ChatGPT-like browser interface — entirely on your local machine.
 
 ```bash
-# uv users
-uv sync --extra cu128 --extra vllm
+# uv users (vLLM requires cu130; see Installation for details)
+uv sync --extra cu130 --extra vllm
 
 # pip users
 pip install vllm
