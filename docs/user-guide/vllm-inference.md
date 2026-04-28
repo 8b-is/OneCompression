@@ -20,10 +20,11 @@ vLLM is available as an optional dependency:
 === "uv (recommended)"
 
     ```bash
-    uv sync --extra cu128 --extra vllm
+    uv sync --extra cu130 --extra vllm
     ```
 
-    Replace `cu128` with your CUDA variant (`cu118`, `cu121`, `cu124`, `cu126`, or `cu128`).
+    !!! note "Use `cu130`; older CUDA extras are rejected"
+        Recent vLLM releases depend on `torch>=2.10`, whose wheels are only published for the `cu130` PyTorch index. `pyproject.toml` therefore declares `--extra vllm` as conflicting with `cpu`, `cu118`, `cu121`, `cu124`, `cu126`, and `cu128`; combining any of those with `--extra vllm` will fail at lock time. Use `--extra cu130` for vLLM workflows.
 
 === "pip"
 

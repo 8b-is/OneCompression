@@ -109,6 +109,14 @@
 - Fixed `gptq/_gptq.py`: Cholesky decomposition in `run_gptq` could fail with `LinAlgError` on ill-conditioned Hessians (observed on large VLMs at deeper layers). Extracted `_compute_inverse_hessian()` with progressive damping fallback (up to 5 retries, 10x damping increase per retry). No impact on normal operation
 - Fixed `TypeError` in `QuantLinear.forward` when `S_qk` scaling was applied to MLP layers (`onecomp/pre_process/quant_models.py`)
 
+### Packaging
+
+- Bumped minimum `transformers` requirement from `>=5.3.0` to `>=5.5.0` (`pyproject.toml`)
+- Added `cu130` optional-dependency extra and the `pytorch-cu130` wheel index (`https://download.pytorch.org/whl/cu130`) for CUDA 13 hosts (e.g. NVIDIA B200) (`pyproject.toml`)
+- Pinned the `vllm` extra to `vllm>=0.10` to prevent uv from falling back to legacy versions whose source build requires `CUDA_HOME` (`pyproject.toml`)
+- Added uv `conflicts` declarations between the `vllm` extra and the `cpu` / `cu118` / `cu121` / `cu124` / `cu126` / `cu128` extras: vLLM `>=0.20` requires `torch>=2.10`, which is only published for `cu130`. This forces `vllm` to be installed only with `--extra cu130` and prevents silent fallback to a `vllm` version incompatible with `transformers>=5` at runtime (`pyproject.toml`)
+- Restricted `tool.uv.environments` to `sys_platform == 'linux'` and `python_full_version >= '3.12', < '3.14'` to skip lock splits for unused Windows and out-of-range Python versions (`pyproject.toml`)
+
 ### Examples
 
 - Added `example/example_custom_calibration.py`: Demonstrates `CalibrationConfig` with a custom calibration dataset (Python code snippets in `example/data/python_calibration.txt`).  Quantizes TinyLlama with GPTQ 3-bit using both default C4 and custom Python-code calibration, then compares inference outputs across multiple prompts to show how calibration data choice affects quantization quality.
