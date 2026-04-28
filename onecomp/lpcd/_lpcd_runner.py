@@ -4,7 +4,7 @@ Iterates over decoder blocks and applies LPCD group optimisation where
 enabled (QK, VO, MLP).  Designed to be called from ``Runner`` after
 the base quantiser has already been set up.
 
-Copyright 2026 Fujitsu Ltd.
+Copyright 2025-2026 Fujitsu Ltd.
 
 Author: Yudai Fujimoto
 

@@ -1,3 +1,7 @@
+"""
+Copyright 2025-2026 Fujitsu Ltd.
+
+"""
 import torch
 from torch import nn
 from transformers.models.llama.modeling_llama import LlamaDecoderLayer

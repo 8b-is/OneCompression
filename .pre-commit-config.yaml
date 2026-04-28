@@ -9,3 +9,25 @@ repos:
     rev: 6.0.1
     hooks:
       - id: isort
+
+  - repo: local
+    hooks:
+      - id: no-japanese
+        name: Forbid Japanese characters
+        language: system
+        entry: python3 scripts/check_no_japanese.py
+        exclude: '\.md$|\.gitignore$'
+        types: [text]
+
+      - id: copyright-header
+        name: Check Fujitsu copyright header
+        language: system
+        entry: python3 scripts/check_copyright_header.py
+        types: [python]
+        exclude: '(__init__|__main__)\.py$|^tests/|^benchmark/'
+
+      - id: no-email-address
+        name: Forbid email addresses
+        language: pygrep
+        entry: '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+        types: [python]
