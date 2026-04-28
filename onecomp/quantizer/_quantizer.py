@@ -74,6 +74,21 @@ class QuantizationResult:
         # If not overridden, it returns the weight of the dequantized_weight field.
         return self.dequantized_weight.to(torch.float16).cpu()
 
+    def get_statistics(self) -> dict:
+        """Return quantization statistics as a dict for JSON serialization.
+
+        Subclasses can override this to include method-specific statistics.
+        """
+        return {
+            "quantization_time": self.quantization_time,
+            "output_squared_error": self.output_squared_error,
+            "mean_output_squared_error": self.mean_output_squared_error,
+            "weight_squared_error": self.weight_squared_error,
+            "mean_weight_squared_error": self.mean_weight_squared_error,
+            "relative_output_squared_error": self.relative_output_squared_error,
+            "relative_weight_squared_error": self.relative_weight_squared_error,
+        }
+
 
 @dataclass
 class Quantizer(metaclass=ABCMeta):

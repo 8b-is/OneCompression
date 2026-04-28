@@ -116,6 +116,18 @@
   - `chunking.py`: shared chunking strategies (`concat_chunk`, `concat_chunk_align`, `concat_rand`, `drop_head`, `drop_rand`) extracted as reusable helpers
 - Added `calibration_dataset` parameter to `AutoBitQuantizer` to specify the calibration data source (`onecomp/quantizer/autobit/_autobit.py`)
 
+### JointQ:
+
+- Added `incremental_lambda` regularization mode (`lambda_mode="incremental_lambda"`): for each layer, tries increasing lambda values from `lambda_list` with warm start, accepting candidates that improve weight error without substantially degrading output error. Stops at the first rejection. Controlled by `lambda_list`, `incremental_eps_y`, `incremental_eps_w` parameters
+- Added `incremental_initial_skip_ew_threshold` to skip an unstable initial `lambda=0.0` candidate when its relative weight error is excessively large
+- Added `accepted_lambda` field to `JointQResult` to record the per-layer lambda chosen in incremental mode
+- Added `execute_post_processing` override to log accepted lambda statistics (mean, median, min, max, per-value counts) after all layers are quantized
+- Added `regularization_mode` parameter: `"identity"` (standard Tikhonov λI) or `"diagonal"` (default, importance-aware λ·diag(a) where a_i scales with activation magnitude). Diagonal mode reduces over-regularization of less important columns. Only supported with `fixed_lambda` mode
+- Added `regularization_gamma` parameter (default 0.5): exponent for diagonal weights in `"diagonal"` mode; smaller values reduce the spread between weak and strong columns
+- Added initialization strategy control: `enable_clip_optimize`, `enable_clip_optimize_ep`, `enable_gptq` parameters to `JointQ` class
+- Added `gptq` attribute (`GPTQ` instance) to `JointQ` class for customizing GPTQ parameters (`blocksize`, `percdamp`, `mse`, `q_grid`, `q_norm`). Default GPTQ is auto-created from `bits`/`group_size`/`symmetric`
+- Replaced JointQ internal GPTQ module (`jointq/core/gptq.py`) with OneComp GPTQ (`onecomp.quantizer.gptq.GPTQ`); GPTQ initial solution is now generated via the shared GPTQ implementation
+
 ### Breaking Changes
 
 - **`AutoBitQuantizer.enable_fused_groups` now defaults to `True`** (`onecomp/quantizer/autobit/_autobit.py`)
@@ -126,12 +138,21 @@
 - Quantisation levels unified to unsigned `[0, 2^b − 1]` (symmetric uses centred zero point); rounding order changed from `round(x/s + z)` to `round(x/s) + z`. Outputs are not bit-exact with prior RTN versions
 - Changed `prepare_rotated_model` defaults: `rotation_mode` `"random"` → `"random_hadamard"`, `num_calibration_samples` `128` → `512`
 - Introduced `CalibrationConfig` dataclass; see CalibrationConfig section above for migration details
+- `JointQ` class: removed `batch_size` parameter (use `onecomp.quantizer.jointq.core.quantize()` directly if batch processing is needed)
+- `JointQ`: GPTQ initial solution is now generated via OneComp GPTQ instead of the internal implementation. Quantization results are not bit-exact with prior versions (quality is equivalent or improved)
+- **`JointQ` regularization defaults changed** (`onecomp/quantizer/jointq/_jointq.py`)
+  - `regularization_lambda`: `0.2` → `0.1`
+  - `regularization_mode`: `"identity"` → `"diagonal"`
+  - Quantization results are not bit-exact with prior versions.
+  - **Migration:** to reproduce the previous behavior, pass
+    `JointQ(..., regularization_lambda=0.2, regularization_mode="identity")` explicitly.
 
 ### Bug Fix
 
 - Fixed `model_config.py`: `load_model()` VLM fallback did not trigger for models raising `"Unrecognized configuration class"` (e.g. Cohere2VisionForConditionalGeneration). Added the error pattern to `_vlm_hints`
 - Fixed `gptq/_gptq.py`: Cholesky decomposition in `run_gptq` could fail with `LinAlgError` on ill-conditioned Hessians (observed on large VLMs at deeper layers). Extracted `_compute_inverse_hessian()` with progressive damping fallback (up to 5 retries, 10x damping increase per retry). No impact on normal operation
 - Fixed `TypeError` in `QuantLinear.forward` when `S_qk` scaling was applied to MLP layers (`onecomp/pre_process/quant_models.py`)
+- Fixed `JointQ` `group_size=None` (per-channel quantization) raising `TypeError`
 - Fixed wrong module grouping in `make_grouped_module` where GC-driven `id()` reuse caused attention projections (q/k/v) and MLP projections (gate/up) to be merged into the same group.  (`qep/_quantize_with_qep_arch.py`)
 - Fixed silent weight corruption in `GPTQLinear` when `qzero=0` was stored through the GPTQ v1 zero-point path (`onecomp/quantizer/gptq/gptq_layer.py`)
   - Root cause: AutoGPTQ v1 stores `raw_zero - 1`, so `qzero=0` becomes `-1`; without masking, its sign-extended bits corrupted neighboring packed slots
@@ -139,14 +160,6 @@
   - Forward-side fix (`GPTQLinear.forward`): apply `& wbits_mask` after the v1 `+1` restoration so stored `2^wbits - 1` wraps back to `0`; the `gptq_v2` path remains unchanged
   - Added regression tests for per-slot pack corruption, packed/unpacked forward paths, the `gptq_v2` branch, and the `from_saved_state` path for GPTQ v1 tensors
   - **NOTE**: If you have GPTQ models quantized with previous versions, please re-quantize them with this release, as they may contain corrupted internal data.
-
-### Packaging
-
-- Bumped minimum `transformers` requirement from `>=5.3.0` to `>=5.5.0` (`pyproject.toml`)
-- Added `cu130` optional-dependency extra and the `pytorch-cu130` wheel index (`https://download.pytorch.org/whl/cu130`) for CUDA 13 hosts (e.g. NVIDIA B200) (`pyproject.toml`)
-- Pinned the `vllm` extra to `vllm>=0.10` to prevent uv from falling back to legacy versions whose source build requires `CUDA_HOME` (`pyproject.toml`)
-- Added uv `conflicts` declarations between the `vllm` extra and the `cpu` / `cu118` / `cu121` / `cu124` / `cu126` / `cu128` extras: vLLM `>=0.20` requires `torch>=2.10`, which is only published for `cu130`. This forces `vllm` to be installed only with `--extra cu130` and prevents silent fallback to a `vllm` version incompatible with `transformers>=5` at runtime (`pyproject.toml`)
-- Restricted `tool.uv.environments` to `sys_platform == 'linux'` and `python_full_version >= '3.12', < '3.14'` to skip lock splits for unused Windows and out-of-range Python versions (`pyproject.toml`)
 
 ### Examples
 
@@ -158,6 +171,7 @@
 
 ### Documentation
 
+- Updated `docs/algorithms/jointq.md`: added incremental lambda mode description, acceptance criteria, diagonal regularization mode, new parameters (`lambda_mode`, `lambda_list`, `incremental_eps_y`, `incremental_eps_w`, `incremental_initial_skip_ew_threshold`, `regularization_mode`, `regularization_gamma`), and usage examples
 - Added `docs/algorithms/lpcd.md`: LPCD overview, motivation, supported submodule groups, usage examples, QEP relationship, parameters, and current support
 - Added `docs/api/lpcd_config.md` and updated `mkdocs.yml` navigation to include LPCD in the Algorithms and API Reference sections
 - Updated LPCD references across docs: `docs/index.md`, `docs/algorithms/overview.md`, `docs/user-guide/basic-usage.md`, `docs/user-guide/configuration.md`, `docs/user-guide/examples.md`, and `docs/getting-started/quickstart.md`
@@ -177,14 +191,17 @@
 - Added `docs/api/quantizers/onebit.md` (OneBit API reference)
 - Updated `mkdocs.yml` nav: added AutoBit/JointQ algorithm pages, OneBit API page; renamed Post-Process nav title to include Block-wise PTQ
 - Added example script links to `docs/user-guide/pre-process.md`
+- Updated `docs/algorithms/jointq.md`: added initialization strategy parameters, GPTQ customization examples, removed `batch_size` from parameter table, added `group_size=None` per-channel documentation
 - Added a Troubleshooting section to `docs/user-guide/vllm-inference.md` describing how to bypass the unconditional DeepGEMM (FP8) kernel warmup for non-FP8 quantization (GPTQ / DBF / Mixed-GPTQ) by setting `VLLM_USE_DEEP_GEMM=0` and `VLLM_DEEP_GEMM_WARMUP=skip`
 
 ### Tests
 
+- Updated `test_jointq.py`: added `incremental_lambda` boundary parameters (`lambda_mode`, `lambda_list`, `incremental_eps_y`, `incremental_eps_w`, `incremental_initial_skip_ew_threshold`), abnormal parameter cases (invalid mode, empty list, negative values), GPU integration tests (`test_incremental_lambda_basic`, `test_incremental_lambda_single_step`), `_accept_candidate` unit tests covering all acceptance rules and edge cases; removed `batch_size` from boundary/abnormal parameter tests
 - Added `test_prepare_rotated_model.py`: validation, E2E pipeline, output threshold (80 combinations), save/load round-trip
 - Added `test_weight_quantizer.py`: RTN/GPTQ consistency, symmetric/asymmetric, group-wise, MSE, STE
 - Expanded `test_rtn.py`: MSE boundary/abnormal parameters
 - Added vLLM mixed group-size tests (`tests/vllm_plugins/gptq/test_mixed_gptq.py`, `tests/vllm_plugins/gptq/test_mixed_gptq_e2e.py`)
+- Updated `regression_quantize_helper.py`: updated `EXPECTED_MSE` baseline for OneComp GPTQ integration
 - Added LPCD tests (`tests/onecomp/lpcd/`, 25 cases)
   - `test_lpcd_config.py`: `LPCDConfig` default / custom values, dataclass field set, top-level `from onecomp import LPCDConfig` (CPU only)
   - `test_lpcd_metrics.py`: `make_lpcd_metrics()` dispatch on synthetic Llama / Qwen3 blocks for every `enable_*` flag combination, `NotImplementedError` for unsupported architectures, `LpcdMetricGroup.mark_as_ready` / `is_refineable` state transitions (CPU only, no weight download)
@@ -205,6 +222,11 @@
 
 ### Packaging
 
+- Bumped minimum `transformers` requirement from `>=5.3.0` to `>=5.5.0` (`pyproject.toml`)
+- Added `cu130` optional-dependency extra and the `pytorch-cu130` wheel index (`https://download.pytorch.org/whl/cu130`) for CUDA 13 hosts (e.g. NVIDIA B200) (`pyproject.toml`)
+- Pinned the `vllm` extra to `vllm>=0.10` to prevent uv from falling back to legacy versions whose source build requires `CUDA_HOME` (`pyproject.toml`)
+- Added uv `conflicts` declarations between the `vllm` extra and the `cpu` / `cu118` / `cu121` / `cu124` / `cu126` / `cu128` extras: vLLM `>=0.20` requires `torch>=2.10`, which is only published for `cu130`. This forces `vllm` to be installed only with `--extra cu130` and prevents silent fallback to a `vllm` version incompatible with `transformers>=5` at runtime (`pyproject.toml`)
+- Restricted `tool.uv.environments` to `sys_platform == 'linux'` and `python_full_version >= '3.12', < '3.14'` to skip lock splits for unused Windows and out-of-range Python versions (`pyproject.toml`)
 - Added `hydra` extra to `pyproject.toml` so `hydra-core` (used by `example/example_autobit.py` and the `model_validation/{gptq,qep_gptq,autobit,autobit_qep,jointq}/validate_*.py` scripts) installs in one step via `uv sync --extra <cuXXX> --extra hydra` or `pip install "onecomp[hydra]"`, instead of a separate `pip install hydra-core` after sync. Documented the new extra in `README.md` and the `model_validation/*/README.md` files. The `model_validation/gptq/` Phase 3 (vLLM inference) additionally requires the `vllm` extra (`uv sync --extra <cuXXX> --extra hydra --extra vllm` or `pip install "onecomp[hydra]" vllm`).
 
 ## [v1.0.2] 2026-03-31

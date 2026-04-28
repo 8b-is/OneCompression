@@ -984,15 +984,7 @@ class Runner:
         logger.info("Saving the quantization statistics to %s", path)
 
         statistics = {
-            key: {
-                "quantization_time": result.quantization_time,
-                "output_squared_error": result.output_squared_error,
-                "mean_output_squared_error": result.mean_output_squared_error,
-                "weight_squared_error": result.weight_squared_error,
-                "mean_weight_squared_error": result.mean_weight_squared_error,
-                "relative_output_squared_error": result.relative_output_squared_error,
-                "relative_weight_squared_error": result.relative_weight_squared_error,
-            }
+            key: result.get_statistics()
             for key, result in quantizer.results.items()
         }
 
