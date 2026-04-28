@@ -48,7 +48,7 @@ class ModelConfig:
             raise ValueError("Either model_id or path must be provided")
 
         _id = (model_id or path).lower()
-        override_keywords = ("gemma-3", "gemma3", "gemma-4", "gemma4")
+        override_keywords = ("gemma-3", "gemma3", "gemma_3", "gemma-4", "gemma4", "gemma_4")
         for keyword in override_keywords:
             if keyword in _id:
                 dtype = "bfloat16"

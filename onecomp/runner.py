@@ -496,23 +496,47 @@ class Runner:
                 result.total_vram_gb,
             )
 
-        if save_dir == "auto":
-            model_name = model_id.rstrip("/").split("/")[-1]
-            save_dir = f"{model_name}-autobit-{wbits}bit"
-
-        from .quantizer.autobit import AutoBitQuantizer
-
+        _id_lower = model_id.lower()
+        is_gemma4 = any(key in _id_lower for key in ("gemma-4", "gemma4", "gemma_4"))
         model_config = ModelConfig(model_id=model_id, device=device)
-        candidate_quantizers = [
-            GPTQ(wbits=b, groupsize=groupsize, **kwargs) for b in candidate_bits
-        ]
-        quantizer = AutoBitQuantizer(
-            assignment_strategy="activation_aware",
-            quantizers=candidate_quantizers,
-            target_bit=wbits,
-            save_path=save_dir if save_dir is not None else None,
-            enable_fused_groups=True,
-        )
+
+        if is_gemma4:
+            valid_wbits = [b for b in candidate_bits if b <= wbits]
+            if not valid_wbits:
+                raise ValueError(
+                    f"target wbits={wbits:.2f} is below all candidate "
+                    f"bit-widths {candidate_bits}; cannot select a "
+                    f"uniform GPTQ configuration for Gemma 4"
+                )
+            uniform_bit = max(valid_wbits)
+            if save_dir == "auto":
+                model_name = model_id.rstrip("/").split("/")[-1]
+                save_dir = (
+                    f"{model_name}-gptq-{uniform_bit}bit"
+                )
+            logger.warning(
+                "Gemma 4 detected → falling back to uniform GPTQ %d-bit "
+                "(target wbits=%.2f)",
+                uniform_bit,
+                wbits,
+            )
+            quantizer = GPTQ(wbits=uniform_bit, groupsize=groupsize, **kwargs)
+        else:
+            if save_dir == "auto":
+                model_name = model_id.rstrip("/").split("/")[-1]
+                save_dir = f"{model_name}-autobit-{wbits}bit"
+
+            from .quantizer.autobit import AutoBitQuantizer
+            candidate_quantizers = [
+                GPTQ(wbits=b, groupsize=groupsize, **kwargs) for b in candidate_bits
+            ]
+            quantizer = AutoBitQuantizer(
+                assignment_strategy="activation_aware",
+                quantizers=candidate_quantizers,
+                target_bit=wbits,
+                save_path=save_dir if save_dir is not None else None,
+                enable_fused_groups=True,
+            )
         runner = cls(model_config=model_config, quantizer=quantizer, qep=qep)
         runner.run()
 
