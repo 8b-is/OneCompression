@@ -2,6 +2,10 @@
 
 **Open-source Python library for post-training quantization of Large Language Models**
 
+<p align="center">
+  <img src="../figs/onecomp.gif" alt="OneComp" />
+</p>
+
 ---
 
 Fujitsu One Compression (OneComp) is an open-source Python library for post-training quantization of Large Language Models (LLMs).
@@ -9,10 +13,34 @@ It implements state-of-the-art quantization algorithms including GPTQ, DBF, RTN,
 research methods **Quantization Error Propagation (QEP)** and
 **Layer-Projected Coordinate Descent (LPCD)**.
 
+## Just one line.
+
+```bash
+onecomp <generative AI>
+```
+
+**That's all you need.** OneComp detects your GPU VRAM, picks the best bit-width per layer, quantizes with error propagation, evaluates, and saves — fully automatic.
+
+=== "CLI"
+
+    ```bash
+    onecomp meta-llama/Llama-2-7b-hf
+    ```
+
+=== "Python"
+
+    ```python
+    from onecomp import Runner
+
+    Runner.auto_run(model_id="meta-llama/Llama-2-7b-hf")
+    ```
+
+For full control over each step, see the [step-by-step workflow](user-guide/basic-usage.md#detailed-workflow).
+
 ## Key Features
 
 - **Quantization Error Propagation (QEP)** -- A post-training quantization method that corrects quantization errors by propagating them to subsequent layers, improving the accuracy of quantized LLMs. See [Arai & Ichikawa, NeurIPS 2025](https://openreview.net/forum?id=a3l3K9khbL) for details.
-- **Layer-Projected Coordinate Descent (LPCD)** -- A unified PTQ framework that extends layer-wise quantization to arbitrary submodules by optimising relaxed objectives and projecting the solutions with layer-wise quantizers. See [Ichikawa et al., 2025](https://arxiv.org/abs/2512.01546) for details.
+- **Layer-Projected Coordinate Descent (LPCD)** -- A unified Post Training Quantization (PTQ) framework that extends layer-wise quantization to arbitrary submodules by optimising relaxed objectives and projecting the solutions with layer-wise quantizers. See [Ichikawa et al., 2025](https://arxiv.org/abs/2512.01546) for details.
 - **vLLM Plugin Integration** -- Serve OneComp-quantized models with [vLLM](https://docs.vllm.ai/) via built-in plugins for DBF and Mixed-GPTQ quantization methods. Pair with [Open WebUI](https://github.com/open-webui/open-webui) for a ChatGPT-like chat experience on your local machine. See the [setup guide](user-guide/vllm-inference.md#3-chat-with-open-webui-optional).
 - **AutoBit** -- Mixed-precision quantization with ILP-based bitwidth assignment. Automatically estimates the target bitwidth from available VRAM and assigns per-layer bitwidths to minimize quantization error under the memory budget.
 - **JointQ** -- Joint quantization method that optimizes weight assignments and scale parameters simultaneously for improved quantization accuracy. Supports group-wise quantization (e.g., 4-bit, groupsize=128).
@@ -91,11 +119,14 @@ If you use OneComp in your research, please cite our paper:
 OneComp technical report (coming soon on ArXiv):
 
 ```bibtex
-@misc{onecomp2026,
-  title={TBD},
-  author={TBD},
-  year={2026},
-  note={arXiv preprint coming soon}
+@misc{ichikawa2026onecomponelinerevolutiongenerative,
+      title={OneComp: One-Line Revolution for Generative AI Model Compression}, 
+      author={Yuma Ichikawa and Keiji Kimura and Akihiro Yoshida and Yudai Fujimoto and Hiroki Tokura and Yamato Arai and Yoshiyuki Ishii and Yusei Kawakami and Genki Shikada and Achille Jacquemond and Yoshihiko Fujisawa and Katsuki Fujisawa and Takumi Honda and Akira Sakai},
+      year={2026},
+      eprint={2603.28845},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2603.28845}, 
 }
 ```
 
