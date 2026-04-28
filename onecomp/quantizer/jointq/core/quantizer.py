@@ -12,7 +12,6 @@ import torch
 from .clip import clip
 from .solution import Solution
 from .local_search import LocalSearchSolver
-from .gptq import run_gptq
 
 
 # pylint: disable=too-many-arguments,too-many-positional-arguments, too-few-public-methods
@@ -172,7 +171,7 @@ class Quantizer:
 
         self.begin_time = time.time()
 
-    def initialize_solution_1(self, matrix_W):
+    def initialize_solution_clip_optimize(self, matrix_W):
         """Initialize the solution.
 
         Parameters
@@ -251,7 +250,7 @@ class Quantizer:
 
         return solution
 
-    def initialize_solution_2(self, matrix_W):  # pylint: disable=too-many-locals
+    def initialize_solution_clip_optimize_ep(self, matrix_W):  # pylint: disable=too-many-locals
         """Initialize the solution with error propagation.
 
         Parameters
@@ -397,7 +396,7 @@ class Quantizer:
     def __current_error(self, tilde_W):
         """Compute the current error.
         Compute ||Y - tilde_W @ X^T||_F^2 using precomputed matrices.
-        Debug function for initialize_solution_2.
+        Debug function for initialize_solution_clip_optimize_ep.
         """
         # Sum of ||Y_i||^2 - 2(YX)_i · W_i + W_i (X^TX) W_i^T
         return (
@@ -405,81 +404,6 @@ class Quantizer:
             - 2 * (self.matrix_YX * tilde_W).sum()
             + ((tilde_W @ self.matrix_XX) * tilde_W).sum()
         )
-
-    def initialize_solution_3(self, matrix_W):
-        """Initialize the solution by GPTQ.
-
-        Parameters
-        ----------
-        matrix_W : torch.Tensor
-            The initial real-valued weight matrix (tilde_W), shape (p, m).
-            - classic mode: matrix_W is the original weight matrix W
-            - Y mode: matrix_W is computed via least squares from target_matrix Y
-
-        # TODO: hessian should be reused
-        """
-
-        if self.log_level >= 2:
-            print(f"<{self.device}>: <Quantize (GPTQ)>")
-
-        # hessian = (2/n) * X^T X
-        hessian = (2.0 / self.dim_n) * self.matrix_XX.float()
-
-        result = run_gptq(
-            weight=matrix_W,
-            hessian=hessian,
-            blocksize=128,
-            percdamp=0.01,
-            wbits=self.bits,
-            groupsize=self.group_size,
-            actorder=False,
-            mse=False,
-            sym=self.symmetric,
-            q_grid=600,
-            q_norm=2.4,
-        )
-        del hessian
-
-        scale = result["scale"]
-        zero_point = result["zero_point"]
-        q_int = result["q_int"]  # (dim_p, dim_m)
-        q_int = q_int.reshape(self.dim_p, self.num_groups, self.group_size)
-
-        if self.symmetric:
-            midpoint = 2 ** (self.bits - 1)
-            assert (zero_point == midpoint).all()
-            # Since zero_point = midpoint, convert to 0
-            zero_point = zero_point - midpoint
-            # Subtract midpoint from q_int as well
-            q_int = q_int - midpoint
-
-        # check
-        assert scale.shape == (self.dim_p, self.num_groups)
-        assert zero_point.shape == (self.dim_p, self.num_groups)
-        assert q_int.shape == (self.dim_p, self.num_groups, self.group_size)
-        # check: zero_point = 0 for symmetric case
-        # check: lower_bound <= zero_point <= upper_bound for asymmetric case
-        if self.symmetric:
-            assert (zero_point == 0).all()
-        else:
-            assert (self.lower_bound <= zero_point).all()
-            assert (zero_point <= self.upper_bound).all()
-        # check: verify q_int values are correct
-        assert (q_int >= self.lower_bound).all()
-        assert (q_int <= self.upper_bound).all()
-
-        # Create solution
-        solution = Solution(scale, q_int, zero_point)
-        solution.compute_objective_value(**self.objective_args)
-        self.display_log(solution, "GPTQ")
-
-        # optimize all scales
-        result = self._optimize_scales(solution)
-        self.display_log(solution, f"OptS ({result}/{self.dim_p})")
-        if self.log_level == 1:
-            self.display_log(solution, "GPTQ", ignore_log_level=True)
-
-        return solution
 
     def set_modified_lower_and_upper_bounds(self, solution):
         """Set the modified lower and upper bounds."""
