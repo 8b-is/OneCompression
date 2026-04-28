@@ -20,6 +20,7 @@ from omegaconf import DictConfig, OmegaConf
 
 from onecomp import (
     AutoBitQuantizer,
+    CalibrationConfig,
     GPTQ,
     ModelConfig,
     Runner,
@@ -53,6 +54,9 @@ def main(cfg: DictConfig):
             device="cuda:0",
         ),
         quantizer=quantizer,
+        calibration_config=CalibrationConfig(
+            max_length=1024, num_calibration_samples=128
+        ),
         qep=True,
     )
 

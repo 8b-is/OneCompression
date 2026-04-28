@@ -16,12 +16,6 @@ models
 *.err
 md/*.md
 example/run_example.sh
-model_validation/autobit_qep/submit.sh
-model_validation/autobit_qep/logs/
-model_validation/autobit_qep/outputs/
-model_validation/gptq/submit.sh
-model_validation/gptq/logs/
-model_validation/gptq/outputs/
 work/
 site/
 debug_code/
@@ -31,3 +25,6 @@ debug_code/
 tests/onecomp/quantizer/jointq/data/model_layers_0_self_attn_k_proj.pth
 .uv-sync.lock
 .uv-sync.done
+.uv-sync-vllm.lock
+.uv-sync-vllm.done
+.venv-vllm/
