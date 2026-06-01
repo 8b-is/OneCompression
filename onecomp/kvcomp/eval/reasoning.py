@@ -219,3 +219,60 @@ def math500_pass_at_1(
         k, max_new_tokens, do_sample, temperature, top_p, system, verbose,
         attn_capture=attn_capture,
     )
+
+
+def aime_pass_at_1(
+    model, tokenizer,
+    cache_factory: Optional[Callable[[], object]] = None,
+    year: int = 2024,
+    limit: int = 30,
+    k: int = 8,
+    max_new_tokens: int = 8192,
+    do_sample: bool = True,
+    temperature: float = 0.6,
+    top_p: float = 0.95,
+    system: Optional[str] = "Please reason step by step, and put your final answer within \\boxed{}.",
+    verbose: bool = False,
+    attn_capture: bool = False,
+) -> ReasoningResult:
+    """AIME pass@1 under ``cache_factory``.
+
+    Evaluates on AIME competition problems.  Default settings follow the
+    ThinKV paper (Ramachandran et al., ICLR 2026): k=8 independent samples per
+    question, temperature=0.6, top_p=0.95, max_new_tokens=8192.  The PM-KVQ
+    paper (arXiv:2505.18610) uses k=16.  AIME answers are integers in [0, 999].
+
+    Datasets used:
+      - year=2024: AI-MO/aimo-validation-aime (filtered to 2024 problems)
+      - year=2025: yentinglin/aime_2025
+    """
+    from datasets import load_dataset  # pylint: disable=import-outside-toplevel
+
+    if year == 2024:
+        ds_all = load_dataset("AI-MO/aimo-validation-aime", split="train")
+        items = [
+            (row["problem"], str(row["answer"]))
+            for row in ds_all
+            if "2024" in row.get("url", "")
+        ]
+    elif year == 2025:
+        ds = load_dataset("yentinglin/aime_2025", split="train")
+        items = [(row["problem"], str(row["answer"])) for row in ds]
+    else:
+        raise ValueError(f"Unsupported AIME year={year}; use 2024 or 2025")
+
+    items = items[:limit]
+
+    def _aime_gold(answer_str: str) -> Optional[str]:
+        """AIME answers are integers 000-999; normalise to plain int string."""
+        s = answer_str.strip().lstrip("0") or "0"
+        try:
+            return str(int(float(s)))
+        except ValueError:
+            return s
+
+    return _eval_dataset(
+        model, tokenizer, items, _aime_gold, f"aime{year}", cache_factory,
+        k, max_new_tokens, do_sample, temperature, top_p, system, verbose,
+        attn_capture=attn_capture,
+    )

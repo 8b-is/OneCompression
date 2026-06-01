@@ -47,7 +47,7 @@ from onecomp.kvcomp import (
 from onecomp.kvcomp.recipe.thinkv import ThinKVPolicy
 from onecomp.kvcomp.eval import (
     needle_in_haystack, ruler_multikey, gsm8k_pass_at_1, math500_pass_at_1,
-    wikitext2_perplexity,
+    aime_pass_at_1, wikitext2_perplexity,
 )
 
 
@@ -242,6 +242,20 @@ def main(cfg: DictConfig):
             entry["math500"] = rm.as_dict()
             print("  math500:", rm.as_dict(), flush=True)
 
+        # AIME-2024 / AIME-2025: paper-level competition math evaluation.
+        # ThinKV paper uses k=8 samples; PM-KVQ paper uses k=16 samples.
+        # Default: k=8 (ThinKV setting) with temperature=0.6, top_p=0.95.
+        for aime_year in cfg.get("aime_years", []):
+            ra = aime_pass_at_1(
+                model, tok, cache_factory=spec["reason"],
+                year=int(aime_year),
+                limit=cfg.get("aime_limit", 30),
+                k=cfg.get("aime_k", 8),
+                max_new_tokens=cfg.get("max_new_aime", 8192),
+                attn_capture=cap)
+            entry[f"aime{aime_year}"] = ra.as_dict()
+            print(f"  aime{aime_year}:", ra.as_dict(), flush=True)
+
         if cfg.run_ppl:
             pp = wikitext2_perplexity(
                 model, tok, cache_factory=spec["reason"],
@@ -273,9 +287,17 @@ def _save(cfg, results) -> str:
 
 
 def _markdown_table(model_tag, results) -> str:
+    # Detect which AIME years are present
+    aime_years = sorted({
+        k.replace("aime", "") for e in results.values() for k in e
+        if k.startswith("aime")
+    })
+    aime_cols = [f"AIME-{y} p@1" for y in aime_years]
+    header = (["Method", "Needle acc", "RULER acc", "Mem", "GSM8K p@1", "MATH p@1"]
+              + aime_cols + ["PPL"])
     lines = [f"\n### {model_tag}", "",
-             "| Method | Needle acc | RULER acc | Mem | GSM8K p@1 | MATH p@1 | PPL |",
-             "|---|---:|---:|---:|---:|---:|---:|"]
+             "| " + " | ".join(header) + " |",
+             "| " + " | ".join(["---"] + ["---:"] * (len(header) - 1)) + " |"]
     for name, e in results.items():
         nd = e.get("needle", {})
         ru = e.get("ruler", {})
@@ -284,9 +306,11 @@ def _markdown_table(model_tag, results) -> str:
         pp = e.get("ppl", {})
         ppl_val = pp.get("perplexity") or pp.get("ppl") or next(iter(pp.values()), "")
         mem = nd.get("mem_fraction", ru.get("mem_fraction", ""))
-        lines.append(
-            f"| {name} | {nd.get('accuracy','')} | {ru.get('accuracy','')} "
-            f"| {mem} | {gs.get('pass@1','')} | {ma.get('pass@1','')} | {ppl_val} |")
+        aime_vals = [str(e.get(f"aime{y}", {}).get("pass@1", "")) for y in aime_years]
+        row = [name, str(nd.get("accuracy", "")), str(ru.get("accuracy", "")),
+               str(mem), str(gs.get("pass@1", "")), str(ma.get("pass@1", ""))]
+        row += aime_vals + [str(ppl_val)]
+        lines.append("| " + " | ".join(row) + " |")
     return "\n".join(lines)
 
 

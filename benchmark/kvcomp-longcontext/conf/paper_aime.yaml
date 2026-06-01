@@ -1,0 +1,91 @@
+# Paper-faithful AIME benchmark configuration.
+#
+# Reproduces the evaluation protocol of the competing papers:
+#   - ThinKV (Ramachandran et al., ICLR 2026): k=8 samples on AIME-2024, GSM8K,
+#     MATH-500; models: DeepSeek-R1-Distill-Llama-8B, Qwen-14B, QwQ-32B.
+#   - PM-KVQ (arXiv:2505.18610): k=16 samples on AIME-2024/2025, CMIMC, LC-Bench;
+#     models: DeepSeek-R1-Distill-Qwen-7B/14B/32B, LLaMA-8B/70B, QwQ-32B.
+#
+# This config skips needle/RULER (long-context retrieval), focusing only on
+# competition math reasoning -- the primary claim of both papers.
+#
+# Usage:
+#   srun --gres=gpu:1 python kv_benchmark.py --config-name paper_aime \
+#       model_path=.../DeepSeek-R1-Distill-Llama-8B
+#
+# To use PM-KVQ sampling (k=16):
+#   python kv_benchmark.py --config-name paper_aime aime_k=16
+#
+# Estimated wall-clock with k=8, 30 AIME problems, 6 methods: ~6 h on A100.
+
+defaults:
+  - benchmark_longcontext
+  - _self_
+
+model_path: ???
+device: cuda:0
+
+# Disable long-context retrieval (uninformative for reasoning model benchmarks)
+run_needle: false
+run_ruler: false
+run_ppl: true
+ppl_max_length: 2048
+ppl_stride: 1024
+ppl_windows: 16
+
+# GSM8K: included as a sanity check (matches both papers)
+run_gsm8k: true
+gsm8k_limit: 100
+max_new_reason: 8192
+
+# MATH-500: included (ThinKV main eval)
+run_math: true
+math_limit: 100
+max_new_math: 8192
+
+# AIME-2024 and AIME-2025: primary evaluation axis for both papers.
+# k=8 matches ThinKV; set aime_k=16 to match PM-KVQ (doubles compute).
+aime_years: [2024, 2025]
+aime_k: 8
+aime_limit: 30               # all 30 AIME problems per year
+max_new_aime: 8192
+
+# ThinKV: paper-faithful settings (R4E4T2, auto-calibrated L*)
+thinkv:
+  group_size: 16
+  precision: {R: 4, E: 4, T: 2}
+  auto_configure: true
+  calib_max_new: 300          # more tokens → better calibration on reasoning models
+  capture_long: false
+
+# PM-KVQ: paper-faithful settings (progressive 16→4→2 bit, recent window 128)
+# Note: our implementation is a faithful online approximation of the paper's
+# algorithm.  The original PM-KVQ adds: (a) offline block-wise IP allocation
+# via sensitivity profiling + CVXPY, (b) channel-wise reparameterization with
+# positional interpolation for calibration.  These offline steps are expensive
+# (requires full-model forward passes on a calibration set); we approximate
+# block sensitivity with a uniform layout.  Results may differ from the paper
+# by ~1-3% on AIME; see ichikawa_works/kvcomp_verification for analysis.
+pmkvq:
+  key_bits: 8                 # initial high-precision window
+  value_bits: 4
+  final_bits: 2               # paper Fbit for Qwen-7B/14B/32B, QwQ-32B
+  key_final_bits: 4           # keeps K >= V to reduce perplexity loss
+  ladder_span: 256
+
+# TaperKV: proposed method (static age-graded, no eviction)
+taperkv:
+  key_bits: 8
+  value_bits: 4
+  b_min: 4
+  b_min_value: 2
+
+# TaperKV Pareto sweep (optional: disable for faster runs)
+taperkv_sweep: []
+
+# Other: disable Uniform-INT2 (not in baseline comparison for reasoning models)
+# and StreamingLLM (not relevant to competition math)
+uniform_bits: [4]             # keep Uniform-INT4 only
+sink_tokens: 4
+recent_tokens: 128
+target_mem: 0.25

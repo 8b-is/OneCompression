@@ -44,15 +44,23 @@ ruler_keys: 4
 ruler_seeds: 5
 
 # --------------------------------------------------------------------------
-# Reasoning: GSM8K + MATH-500
+# Reasoning: GSM8K + MATH-500 + AIME-2024
 # --------------------------------------------------------------------------
 run_gsm8k: true
 gsm8k_limit: 100             # 100 samples for tighter estimate
-max_new_reason: 2048         # long chain-of-thought models need headroom
+max_new_reason: 8192         # long chain-of-thought models need headroom (paper: 32K)
 
 run_math: true
 math_limit: 50
-max_new_math: 3072
+max_new_math: 8192
+
+# AIME evaluation (competition math -- both ThinKV and PM-KVQ evaluate this).
+# ThinKV paper: k=8 samples, PM-KVQ paper: k=16 samples.
+# We use k=8 (ThinKV faithful setting) for paper-level comparison.
+aime_years: [2024]           # add 2025 for PM-KVQ-level comparison
+aime_k: 8                    # ThinKV uses 8; PM-KVQ uses 16
+aime_limit: 30               # all 30 AIME-2024 problems
+max_new_aime: 8192           # paper uses 32768 but 8192 is feasible per-GPU
 
 # --------------------------------------------------------------------------
 # Perplexity sanity (WikiText-2 sliding window)

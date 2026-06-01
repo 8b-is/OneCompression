@@ -29,7 +29,7 @@ from .metrics import (
 )
 from .ppl import wikitext2_perplexity, perplexity_over_text
 from .zeroshot import zeroshot_accuracy, ZeroShotResult
-from .reasoning import gsm8k_pass_at_1, math500_pass_at_1, ReasoningResult
+from .reasoning import gsm8k_pass_at_1, math500_pass_at_1, aime_pass_at_1, ReasoningResult
 from .longcontext import (
     needle_in_haystack,
     ruler_multikey,
@@ -50,6 +50,7 @@ __all__ = [
     "ZeroShotResult",
     "gsm8k_pass_at_1",
     "math500_pass_at_1",
+    "aime_pass_at_1",
     "ReasoningResult",
     "needle_in_haystack",
     "ruler_multikey",
