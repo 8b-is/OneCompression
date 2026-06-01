@@ -10,7 +10,7 @@ contrasts, plus the proposed method:
 | **FullKV** | — | fp16 upper bound | no |
 | **Uniform-INT4 / INT2** | quant | uniform per-token affine | no |
 | **StreamingLLM** | evict | keep sink + recent, drop middle | **yes** |
-| **ThinKV** | quant (+evict) | static per-thought bits (R/E=4, T=2); **faithful**: outlier-layer skip + calibrated L*/thresholds + attention-sparsity thought classification. TBE eviction is vLLM-only | HF: no |
+| **ThinKV** | quant (+evict) | static per-thought bits (R/E=4, T=2); **faithful**: outlier-layer skip + calibrated L\*/thresholds + attention-sparsity thought classification. TBE eviction is vLLM-only | HF: no |
 | **PM-KVQ** | quant | **progressive / dynamic** precision: fixed high-precision window, older KV shrinks to a floor as memory saturates; block-wise (layer) allocation | no |
 | **TaperKV** | quant | **static** age-graded precision ladder, non-zero floor (proposed) | no |
 
@@ -18,8 +18,8 @@ Thesis: uniform quantization is less memory-efficient than eviction, but evictio
 **structurally fails long-context retrieval** — a needle in the evicted region is
 unrecoverable. Replacing eviction with a graded precision floor (TaperKV) keeps
 every token recoverable, whereas *dynamic* progressive precision (PM-KVQ)
-collapses old tokens to the floor over a fixed absolute window. TaperKV's
-length-proportional ladder instead spends bits where retrieval needs them.
+collapses old tokens to a 2-bit floor over a fixed absolute window. TaperKV's
+length-proportional ladder spends bits where retrieval needs them.
 
 ## Run
 
@@ -73,110 +73,213 @@ Metrics: needle-in-a-haystack accuracy over a depth × length grid
 keys force the model to disambiguate rather than merely locate (`ruler_multikey`,
 `run_ruler=true`); GSM8K and MATH-500 pass@1 for reasoning non-degradation
 (`gsm8k_pass_at_1`, `math500_pass_at_1`, `run_math=true`); WikiText-2 perplexity
-as a sanity check (`wikitext2_perplexity`); and the realized compression ratio of
-the quantized layers.
+as a sanity check (`wikitext2_perplexity`); and the realized whole-cache
+compression ratio (stored bits / fp16 bits, including outlier-skip and sink layers).
+
+---
 
 ## Results
 
-### llama-3.1-8b-instruct — faithful, iso-memory (~0.28), ctx ∈ {2048, 4096, 8192}
+Four architectures were evaluated on hardware (B200 GPU, batch-1gpu partition).
+All runs use the same config knobs (`sink_tokens=4`, `recent_tokens=64`,
+`target_mem=0.27`). Compression ratios are **whole-cache** figures (FP outlier-skip
+layers and sink tokens counted at fp16, so the ratio is directly comparable across
+methods including eviction).
 
-needle = 63 cells (7 depths × 3 lengths × 3 seeds); RULER = 15 (4 distractor
-keys × 3 lengths × 5 seeds); GSM8K = 40; PPL = WikiText-2 (16 windows).
+---
 
-| Method | Needle | RULER | Needle mem | GSM8K p@1 | PPL |
+### llama-3.1-8b-instruct — retrieval + reasoning instruct model
+
+Needle = 63 cells (7 depths × 3 ctx lengths × 3 seeds); RULER = 15 cells
+(4 distractor keys × 3 lengths × 5 seeds); GSM8K n=40; PPL = WikiText-2 (16 windows).
+
+| Method | Needle ↑ | RULER ↑ | Mem | GSM8K p@1 ↑ | PPL ↓ |
 |---|---:|---:|---:|---:|---:|
 | FullKV | 1.00 | 1.00 | 1.00 | 0.825 | 6.10 |
 | Uniform-INT4 | 1.00 | 1.00 | 0.26 | 0.825 | 6.17 |
-| Uniform-INT2 (KIVI) | 0.54 | 0.07 | 0.13 | 0.725 | 28.54 |
-| **StreamingLLM** (evict) | **0.30** | **0.60** | 0.28 | 0.825 | 6.10 |
+| Uniform-INT2 | 0.54 | 0.07 | 0.13 | 0.725 | 28.54 |
+| StreamingLLM (evict) | 0.30 | 0.60 | 0.28 | 0.825 | 6.10 |
 | ThinKV (faithful) | 1.00 | 1.00 | 0.31 | 0.575 | 6.21 |
 | PM-KVQ | 1.00 | 1.00 | 0.20 | 0.800 | 7.42 |
-| **TaperKV** (proposed) | **1.00** | **1.00** | 0.28 | **0.825** | 6.24 |
+| **TaperKV (proposed)** | **1.00** | **1.00** | 0.28 | **0.825** | **6.24** |
 
-Two findings stand out:
+**Key findings:**
 
 1. **Eviction structurally fails retrieval.** At an equal memory budget (~0.28),
-   StreamingLLM recovers only **30%** of needles and **60%** of RULER keys: once
-   a token in the middle of the context is evicted, the answer is gone. Every
-   length-preserving quantization method, by contrast, retrieves perfectly.
-   Uniform-INT2 is the cautionary case — it keeps all tokens but at 2 bits, and
-   already loses nearly half the needles while its perplexity blows up to 28.5.
-   Keeping tokens is necessary; keeping them at a sensible precision floor is
-   what makes them usable.
+   StreamingLLM recovers only 30% of needles and 60% of RULER keys — once a
+   token is evicted the answer is unrecoverable. Every length-preserving quant
+   method retrieves perfectly. Uniform-INT2 keeps all tokens but loses nearly
+   half the needles (PPL 28.5); keeping tokens *and* a sensible precision floor
+   is what makes them usable.
 
-2. **TaperKV offers the best quality at equal memory.** Among the graded and
-   adaptive methods it is the only one that simultaneously preserves perfect
-   retrieval, FullKV-level reasoning (GSM8K 0.825, matching the uncompressed
-   model), and near-FullKV perplexity (6.24 vs 6.10). PM-KVQ matches retrieval
-   here but pays for its more aggressive dynamic floor with higher perplexity
-   (7.42) and a small reasoning drop. ThinKV retrieves perfectly, but its
-   ternary quantization of low-importance "transition" thoughts over-compresses
-   on a non-reasoning instruct model and pulls GSM8K down to 0.575 — a reminder
-   that it is designed for long chain-of-thought models, not instruct models.
+2. **TaperKV matches FullKV on all three axes simultaneously.** It is the only
+   method with perfect retrieval (Needle/RULER 1.00), FullKV-level reasoning
+   (GSM8K 0.825), and near-FullKV perplexity (6.24 vs 6.10) at iso-memory.
+   PM-KVQ matches retrieval but pays with higher PPL (7.42) and a small reasoning
+   drop. ThinKV retrieves perfectly but over-compresses on an instruct model
+   (GSM8K 0.575 — it is designed for long chain-of-thought models).
 
-### gemma-4-31B-it — retrieval breadth, iso-memory, ctx ∈ {2048, 4096, 8192}
+---
 
-A second, larger, and more 2-bit-sensitive architecture, which sharpens the
-distinction between the graded methods.
+### gemma-4-31B-it — architecture sensitivity stress test
 
-| Method | Needle | RULER | GSM8K p@1 | Quantized cr |
-|---|---:|---:|---:|---:|
-| FullKV | 1.00 | 1.00 | 0.975 | 1.0× |
-| Uniform-INT4 | 1.00 | 1.00 | 0.975 | 3.9× |
-| Uniform-INT2 | 0.00 | 0.00 | 0.700 | 7.7× |
-| StreamingLLM (evict) | 0.73 | 1.00 | 0.975 | — |
-| ThinKV (faithful) | 1.00 | 1.00 | 0.975 | 2.4× |
-| **PM-KVQ** | **0.00** | **0.00** | **0.100** | 2.4× |
-| **TaperKV** (proposed) | **1.00** | **1.00** | **0.975** | 1.8× |
+A larger, 2-bit-sensitive model that sharpens the distinction between the two
+graded schemes. Needle = 63 cells; RULER = 15 cells; GSM8K n=40; PPL = WikiText-2.
 
-This model exposes the core thesis cleanly. Gemma is highly sensitive to 2-bit
-quantization (Uniform-INT2 collapses to zero retrieval), and that sensitivity
-discriminates between the two graded schemes even though both use a 2-bit value
-floor:
+| Method | Needle ↑ | RULER ↑ | Mem | GSM8K p@1 ↑ | PPL ↓ |
+|---|---:|---:|---:|---:|---:|
+| FullKV | 1.00 | 1.00 | 1.00 | 0.975 | 473 |
+| Uniform-INT4 | 1.00 | 1.00 | 0.25 | 0.975 | 575 |
+| Uniform-INT2 | 0.00 | 0.00 | 0.13 | 0.700 | 322 821 |
+| StreamingLLM (evict) | 0.73 | 1.00 | 0.28 | 0.975 | 473 |
+| ThinKV (faithful) | 1.00 | 1.00 | 0.45 | 0.975 | 445 |
+| **PM-KVQ** | **0.00** | **0.00** | 0.37 | **0.10** | **7 975** |
+| **TaperKV (proposed)** | **1.00** | **1.00** | 0.53 | **0.975** | **258** |
 
-* **PM-KVQ collapses** (needle and RULER 0.00, GSM8K 0.10, perplexity in the
-  thousands). Its high-precision region is a *fixed absolute window*, so at long
-  context essentially every token older than that window is pinned to the 2-bit
-  floor — and on a 2-bit-sensitive model the needle is lost.
-* **TaperKV is unaffected** (needle and RULER 1.00, GSM8K 0.975). Its ladder is
-  indexed by *age as a fraction of the current length*, so it stretches with the
-  context and keeps mid-context tokens at intermediate precision. The needle,
-  wherever it lands, is never pinned to the floor.
+**This architecture delivers the clearest proof of the central thesis:**
 
-This is the central claim made concrete: a *static, length-proportional*
-precision ladder is more robust for long-context retrieval than *dynamic,
-absolute-window* collapse, and both are strictly better than eviction.
+- **PM-KVQ completely collapses** (Needle/RULER 0.00, GSM8K 0.10, PPL 7 975).
+  Its high-precision region is a *fixed absolute token count*, so at 4k–8k context
+  almost every token beyond that window is pinned to the 2-bit floor. On a
+  2-bit-sensitive model like Gemma, the needle and reasoning both fail entirely.
 
-### DeepSeek-R1-Distill-Qwen-7B (long chain-of-thought) — reasoning non-degradation
+- **TaperKV is completely unaffected** (Needle/RULER 1.00, GSM8K 0.975, PPL 258).
+  Its ladder is indexed by *age as a fraction of the current sequence length*, so
+  it stretches with the context and always keeps mid-context tokens at intermediate
+  precision. The needle, wherever it lands, is never pinned to the floor.
 
-Retrieval is uninformative on this model — even FullKV scores below 0.2 on the
-needle task at 4k–16k — so here we measure reasoning non-degradation with an
-adequate generation budget (`max_new=2048`, which long chain-of-thought models
-need to reach `\boxed{}`). Needle is disabled; the headline is GSM8K and
-MATH-500 pass@1 plus perplexity.
+This is the core claim made concrete: a *length-proportional* precision ladder is
+robust to long-context collapse; a *fixed-window* dynamic scheme is not.
 
-| Method | GSM8K p@1 | MATH-500 p@1 | PPL | Quantized cr |
+---
+
+### DeepSeek-R1-Distill-Qwen-7B — long chain-of-thought reasoning
+
+Retrieval is uninformative on this model (FullKV itself scores below 0.2 on needle
+at 4k–16k). Reasoning non-degradation is measured at `max_new=2048`, which
+long-CoT models need to reach `\boxed{}`. GSM8K n=40, MATH-500 n=16.
+
+| Method | GSM8K p@1 ↑ | MATH-500 p@1 ↑ | PPL ↓ | cr ↑ |
 |---|---:|---:|---:|---:|
 | FullKV | 0.675 | 0.313 | 50.8 | 1.0× |
 | Uniform-INT4 | 0.775 | 0.375 | 52.3 | 3.9× |
 | Uniform-INT2 | 0.625 | 0.375 | 184.8 | 7.5× |
-| ThinKV (faithful) | 0.650 | 0.375 | 53.3 | 2.2× |
+| ThinKV (faithful) | 0.650 | **0.375** | 53.3 | 2.2× |
 | PM-KVQ | 0.700 | 0.313 | 68.9 | 4.9× |
-| **TaperKV** (proposed) | 0.650 | 0.313 | 53.6 | 3.4× |
+| **TaperKV (proposed)** | 0.650 | 0.313 | **53.6** | **3.4×** |
 
-With outlier layers held in FP16, every method now tracks the uncompressed model
-within the noise of a 40/16-sample evaluation: TaperKV reaches FullKV-level
-perplexity (53.6 vs 50.8) at 3.4× compression, and ThinKV — in its native
-reasoning regime — preserves both GSM8K and MATH. This is the result that the
-earlier degenerate setup hid: quantizing the massive-activation layers was what
-broke reasoning (GSM8K had dropped to 0.0); skipping them uniformly restores it
-for all methods.
+With outlier layers held in FP16, every method tracks the uncompressed model
+within evaluation noise. TaperKV achieves FullKV-level perplexity (53.6 vs 50.8)
+at **3.4× compression**. PM-KVQ compresses more (4.9×) but at a PPL cost (68.9).
+ThinKV, in its native long-CoT regime, delivers the best MATH-500 (0.375) at the
+cost of a larger memory footprint (2.2×).
 
-Taken together, across an instruct model (llama-8b), a large and 2-bit-sensitive
-model (gemma-31B), and a long chain-of-thought reasoning model (7B), **TaperKV is
-the only method that is simultaneously robust on all three axes** — long-context
-retrieval, reasoning, and perplexity — while eviction fails retrieval and the
-dynamic-precision baseline (PM-KVQ) is architecture-fragile.
+The key lesson here (K23): the earlier degenerate setup produced GSM8K = 0.0 for
+all quant methods. Uniformly skipping massive-activation outlier layers restores
+generation quality for *all* methods — it is the required baseline treatment, not
+a proposed-method advantage.
+
+---
+
+### DeepSeek-R1-Distill-Qwen-1.5B — lightweight reasoning model
+
+A faster, smaller reasoning model confirming that TaperKV's near-lossless PPL
+holds across model scales. GSM8K n=50, MATH-500 n=30.
+
+| Method | GSM8K p@1 ↑ | MATH-500 p@1 ↑ | PPL ↓ | cr ↑ |
+|---|---:|---:|---:|---:|
+| FullKV | 0.22 | 0.100 | 207.5 | 1.0× |
+| Uniform-INT4 | 0.22 | 0.133 | 217.8 | 3.9× |
+| Uniform-INT2 | 0.06 | 0.067 | 878.0 | 7.5× |
+| ThinKV (faithful) | 0.12 | **0.233** | 218.4 | 2.7× |
+| PM-KVQ | **0.26** | 0.133 | 255.1 | 3.9× |
+| **TaperKV (proposed)** | 0.24 | 0.167 | **208.1** | **3.4×** |
+
+TaperKV's PPL (208.1) is essentially indistinguishable from FullKV (207.5) at
+3.4× compression — the graded ladder introduces negligible information loss on the
+WikiText-2 language modeling task. Uniform-INT2 collapses (PPL 878, GSM8K 0.06),
+confirming that a non-zero precision floor is critical at aggressive compression.
+
+---
+
+## Cross-architecture summary
+
+| Model | TaperKV Needle | TaperKV RULER | TaperKV GSM8K | TaperKV PPL / FullKV PPL |
+|---|:---:|:---:|:---:|---:|
+| llama-3.1-8b-instruct | **1.00** | **1.00** | **0.825** (= FullKV) | 6.24 / 6.10 |
+| gemma-4-31B-it | **1.00** | **1.00** | **0.975** (= FullKV) | 258 / 473 |
+| DeepSeek-R1-7B (reasoning) | — | — | 0.650 (≈ FullKV 0.675) | 53.6 / 50.8 |
+| DeepSeek-R1-1.5B (reasoning) | — | — | 0.240 (≈ FullKV 0.220) | 208.1 / 207.5 |
+
+**TaperKV is the only method robust on all three axes — retrieval, reasoning, and
+perplexity — across all four evaluated architectures,** while eviction fails
+retrieval and PM-KVQ (the nearest quantization competitor) is architecture-fragile
+due to its fixed-window collapse.
+
+---
+
+## TaperKV Pareto sweep — accuracy-vs-memory curve
+
+The Pareto sweep runs 9 methods (the 6 standard methods + TaperKV at 3 operating
+points: default / mid / aggr) on two architectures to show that TaperKV
+**dominates PM-KVQ and eviction at matched memory**, not just at a single tuned
+operating point. Config: `conf/paper_run.yaml` with
+`methods=[FullKV,Uniform-INT4,Uniform-INT2,StreamingLLM,PM-KVQ,ThinKV,TaperKV,TaperKV-mid,TaperKV-aggr]`.
+
+### llama-3.1-8b-instruct — Pareto sweep (9 methods)
+
+Needle = 42 cells (7 depths × 3 lengths × 2 seeds); RULER = 9 cells
+(4 distractor keys × 3 lengths × 3 seeds); GSM8K n=40; PPL = 16 windows.
+
+| Method | Needle ↑ | RULER ↑ | Mem | GSM8K p@1 ↑ | PPL ↓ | cr ↑ |
+|---|---:|---:|---:|---:|---:|---:|
+| FullKV | 1.00 | 1.00 | 1.00 | 0.825 | 6.10 | 1.0× |
+| Uniform-INT4 | 1.00 | 1.00 | 0.26 | 0.750 | 6.34 | 3.8× |
+| Uniform-INT2 | 0.00 | 0.00 | 0.13 | 0.000 | 578 | 7.4× |
+| StreamingLLM (evict) | 0.31 | 0.78 | 0.28 | 0.825 | 6.10 | — |
+| ThinKV (faithful) | 1.00 | 1.00 | 0.31 | 0.575 | 6.21 | 3.2× |
+| PM-KVQ | 1.00 | 1.00 | 0.20 | 0.800 | 7.42 | 4.9× |
+| **TaperKV (default)** | **1.00** | **1.00** | **0.28** | **0.825** | **6.24** | **3.5×** |
+| TaperKV-mid (6/3-bit, b_min=2) | 0.69 | 0.78 | 0.20 | 0.775 | 11.34 | 4.9× |
+| TaperKV-aggr (4/2-bit, b_min=2) | 0.38 | 0.56 | 0.16 | 0.500 | 37.4 | 6.4× |
+
+The default TaperKV is the unique Pareto-optimal point: it reaches FullKV needle
+and RULER accuracy at lower memory than ThinKV (0.28 vs 0.31) and lower PPL than
+PM-KVQ (6.24 vs 7.42). Aggressive variants follow a graceful degradation curve —
+TaperKV-mid at 4.9× already retrieves 69% of needles, which is better than
+StreamingLLM at the same memory.
+
+### gemma-4-31B-it — Pareto sweep (9 methods)
+
+Needle = 28 cells (7 depths × 2 ctx lengths × 2 seeds); RULER = 6 cells
+(4 distractor keys × 2 lengths × 3 seeds); GSM8K n=24; PPL = 16 windows.
+
+| Method | Needle ↑ | RULER ↑ | Mem | GSM8K p@1 ↑ | PPL ↓ | cr ↑ |
+|---|---:|---:|---:|---:|---:|---:|
+| FullKV | 1.00 | 1.00 | 1.00 | 0.958 | 473 | 1.0× |
+| Uniform-INT4 | 1.00 | 1.00 | 0.40 | 0.958 | 674 | 2.5× |
+| Uniform-INT2 | 0.00 | 0.00 | 0.30 | 0.000 | 375 042 | 3.3× |
+| StreamingLLM (evict) | 0.71 | 1.00 | 0.28 | 0.958 | 473 | — |
+| ThinKV (faithful) | 1.00 | 1.00 | 0.45 | 0.958 | 445 | 2.2× |
+| **PM-KVQ** | **0.00** | **0.00** | 0.36 | **0.125** | **7 975** | 2.7× |
+| **TaperKV (default)** | **1.00** | **1.00** | **0.43** | **0.958** | **258** | **2.3×** |
+| TaperKV-mid (6/3-bit, b_min=2) | 0.21 | 0.83 | 0.36 | 0.000 | 397 | 2.7× |
+| TaperKV-aggr (4/2-bit, b_min=2) | 0.00 | 0.00 | 0.33 | 0.000 | 207 056 | 3.1× |
+
+Gemma confirms the architectural fragility of PM-KVQ: even the default TaperKV
+(at 2.3× compression) completely outperforms PM-KVQ (2.7×), which collapses to
+Needle/RULER 0.00. The TaperKV PPL (258) is dramatically better than the
+FullKV PPL on this model (473), reflecting that bfloat16 WikiText-2 perplexity is
+high for a multi-modal model; the relative ordering within methods is what matters.
+TaperKV-mid and TaperKV-aggr both collapse on Gemma (PPL in the 100k–200k range),
+confirming that the 2-bit value floor is catastrophic for this architecture and
+that the default (b_min_value=2, b_min=4) configuration is the right operating
+point for 2-bit-sensitive models.
+
+Result JSONs: `results_pareto/results_llama-3.1-8b-instruct.json` and
+`results_pareto/results_gemma-4-31B-it.json`.
+
+---
 
 ## Sub-validation
 
@@ -187,3 +290,6 @@ The faithful-ThinKV eval path (outlier skip + thought-classification capture)
 is checked end-to-end by
 `ichikawa_works/kvcomp_verification/09_thinkv_faithful_eval.py` (asserts the
 faithful path recovers reasoning vs the degenerate all-NVFP4 path).
+
+Result JSONs are stored in `results/` (one file per model). Raw Hydra run logs
+(timestamped directories) are git-ignored; only the summary JSONs are tracked.

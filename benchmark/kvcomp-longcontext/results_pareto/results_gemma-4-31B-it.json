@@ -1,0 +1,419 @@
+{
+  "model": "gemma-4-31B-it",
+  "config": {
+    "model_path": "/lustre/home/frj/yuma-ichikawa/conference/models/gemma-4-31B-it",
+    "device": "cuda:0",
+    "dtype": "bfloat16",
+    "attn_implementation": "eager",
+    "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_pareto",
+    "methods": [
+      "FullKV",
+      "Uniform-INT4",
+      "Uniform-INT2",
+      "StreamingLLM",
+      "PM-KVQ",
+      "ThinKV",
+      "TaperKV",
+      "TaperKV-mid",
+      "TaperKV-aggr"
+    ],
+    "sink_tokens": 4,
+    "recent_tokens": 64,
+    "requant_stride": 16,
+    "target_mem": 0.27,
+    "uniform_bits": [
+      4,
+      2
+    ],
+    "skip_outliers": true,
+    "outlier_ratio": 50.0,
+    "thinkv": {
+      "group_size": 16,
+      "precision": {
+        "R": 4,
+        "E": 4,
+        "T": 2
+      },
+      "auto_configure": true,
+      "calib_max_new": 200,
+      "capture_long": false
+    },
+    "pmkvq": {
+      "key_bits": 8,
+      "value_bits": 4,
+      "final_bits": 2,
+      "key_final_bits": 4,
+      "ladder_span": 256
+    },
+    "taperkv": {
+      "key_bits": 8,
+      "value_bits": 4,
+      "b_min": 4,
+      "b_min_value": 2
+    },
+    "taperkv_sweep": [
+      {
+        "label": "TaperKV-aggr",
+        "key_bits": 4,
+        "value_bits": 2,
+        "b_min": 2,
+        "b_min_value": 2,
+        "recent_tokens": 32
+      },
+      {
+        "label": "TaperKV-mid",
+        "key_bits": 6,
+        "value_bits": 3,
+        "b_min": 2,
+        "b_min_value": 2,
+        "recent_tokens": 48
+      }
+    ],
+    "context_lens": [
+      4096,
+      8192
+    ],
+    "depths": [
+      0.1,
+      0.25,
+      0.4,
+      0.5,
+      0.6,
+      0.75,
+      0.9
+    ],
+    "seeds": 2,
+    "max_new_needle": 64,
+    "run_ruler": true,
+    "ruler_keys": 4,
+    "ruler_seeds": 3,
+    "run_needle": true,
+    "run_gsm8k": true,
+    "gsm8k_limit": 24,
+    "max_new_reason": 1024,
+    "run_math": false,
+    "math_limit": 50,
+    "max_new_math": 3072,
+    "run_ppl": true,
+    "ppl_max_length": 2048,
+    "ppl_stride": 1024,
+    "ppl_windows": 16
+  },
+  "results": {
+    "FullKV": {
+      "needle": {
+        "accuracy": 1.0,
+        "mem_fraction": 1.0,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0
+        },
+        "n": 28
+      },
+      "ruler": {
+        "accuracy": 1.0,
+        "mem_fraction": 1.0,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0
+        },
+        "n": 6
+      },
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 24,
+        "k": 1,
+        "pass@1": 0.9583,
+        "avg_gen_len": 317.4,
+        "compression_ratio": 1.0
+      },
+      "ppl": {
+        "ppl": 473.3594,
+        "nll": 6.1599,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "compression_ratio": 1.0
+      }
+    },
+    "Uniform-INT4": {
+      "needle": {
+        "accuracy": 1.0,
+        "mem_fraction": 0.4042,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0
+        },
+        "n": 28
+      },
+      "ruler": {
+        "accuracy": 1.0,
+        "mem_fraction": 0.4042,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0
+        },
+        "n": 6
+      },
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 24,
+        "k": 1,
+        "pass@1": 0.9583,
+        "avg_gen_len": 318.1,
+        "compression_ratio": 2.439
+      },
+      "ppl": {
+        "ppl": 673.6699,
+        "nll": 6.5127,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "compression_ratio": 2.4695
+      }
+    },
+    "Uniform-INT2": {
+      "needle": {
+        "accuracy": 0.0,
+        "mem_fraction": 0.3039,
+        "by_length": {
+          "4096": 0.0,
+          "8192": 0.0
+        },
+        "n": 28
+      },
+      "ruler": {
+        "accuracy": 0.0,
+        "mem_fraction": 0.3039,
+        "by_length": {
+          "4096": 0.0,
+          "8192": 0.0
+        },
+        "n": 6
+      },
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 24,
+        "k": 1,
+        "pass@1": 0.0,
+        "avg_gen_len": 1024.0,
+        "compression_ratio": 3.269
+      },
+      "ppl": {
+        "ppl": 375041.9375,
+        "nll": 12.8348,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "compression_ratio": 3.2813
+      }
+    },
+    "StreamingLLM": {
+      "needle": {
+        "accuracy": 0.7143,
+        "mem_fraction": 0.2758,
+        "by_length": {
+          "4096": 0.7143,
+          "8192": 0.7143
+        },
+        "n": 28
+      },
+      "ruler": {
+        "accuracy": 1.0,
+        "mem_fraction": 0.2801,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0
+        },
+        "n": 6
+      },
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 24,
+        "k": 1,
+        "pass@1": 0.9583,
+        "avg_gen_len": 317.4,
+        "compression_ratio": 1000000000.0
+      },
+      "ppl": {
+        "ppl": 473.3594,
+        "nll": 6.1599,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "compression_ratio": 1000000000.0
+      }
+    },
+    "ThinKV": {
+      "needle": {
+        "accuracy": 1.0,
+        "mem_fraction": 0.4509,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0
+        },
+        "n": 28
+      },
+      "ruler": {
+        "accuracy": 1.0,
+        "mem_fraction": 0.4509,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0
+        },
+        "n": 6
+      },
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 24,
+        "k": 1,
+        "pass@1": 0.9583,
+        "avg_gen_len": 310.5,
+        "compression_ratio": 2.349
+      },
+      "ppl": {
+        "ppl": 445.3219,
+        "nll": 6.0988,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "compression_ratio": 2.2169
+      }
+    },
+    "PM-KVQ": {
+      "needle": {
+        "accuracy": 0.0,
+        "mem_fraction": 0.3553,
+        "by_length": {
+          "4096": 0.0,
+          "8192": 0.0
+        },
+        "n": 28
+      },
+      "ruler": {
+        "accuracy": 0.0,
+        "mem_fraction": 0.3554,
+        "by_length": {
+          "4096": 0.0,
+          "8192": 0.0
+        },
+        "n": 6
+      },
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 24,
+        "k": 1,
+        "pass@1": 0.125,
+        "avg_gen_len": 951.9,
+        "compression_ratio": 2.613
+      },
+      "ppl": {
+        "ppl": 7975.2437,
+        "nll": 8.9841,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "compression_ratio": 2.7465
+      }
+    },
+    "TaperKV": {
+      "needle": {
+        "accuracy": 1.0,
+        "mem_fraction": 0.426,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0
+        },
+        "n": 28
+      },
+      "ruler": {
+        "accuracy": 1.0,
+        "mem_fraction": 0.4262,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0
+        },
+        "n": 6
+      },
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 24,
+        "k": 1,
+        "pass@1": 0.9583,
+        "avg_gen_len": 321.4,
+        "compression_ratio": 2.269
+      },
+      "ppl": {
+        "ppl": 257.6617,
+        "nll": 5.5516,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "compression_ratio": 2.3392
+      }
+    },
+    "TaperKV-aggr": {
+      "needle": {
+        "accuracy": 0.0,
+        "mem_fraction": 0.3252,
+        "by_length": {
+          "4096": 0.0,
+          "8192": 0.0
+        },
+        "n": 28
+      },
+      "ruler": {
+        "accuracy": 0.0,
+        "mem_fraction": 0.3252,
+        "by_length": {
+          "4096": 0.0,
+          "8192": 0.0
+        },
+        "n": 6
+      },
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 24,
+        "k": 1,
+        "pass@1": 0.0,
+        "avg_gen_len": 1024.0,
+        "compression_ratio": 3.069
+      },
+      "ppl": {
+        "ppl": 207056.2031,
+        "nll": 12.2407,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "compression_ratio": 3.0727
+      }
+    },
+    "TaperKV-mid": {
+      "needle": {
+        "accuracy": 0.2143,
+        "mem_fraction": 0.3632,
+        "by_length": {
+          "4096": 0.4286,
+          "8192": 0.0
+        },
+        "n": 28
+      },
+      "ruler": {
+        "accuracy": 0.8333,
+        "mem_fraction": 0.3632,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 0.6667
+        },
+        "n": 6
+      },
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 24,
+        "k": 1,
+        "pass@1": 0.0,
+        "avg_gen_len": 1024.0,
+        "compression_ratio": 2.736
+      },
+      "ppl": {
+        "ppl": 396.6719,
+        "nll": 5.9831,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "compression_ratio": 2.7464
+      }
+    }
+  }
+}
