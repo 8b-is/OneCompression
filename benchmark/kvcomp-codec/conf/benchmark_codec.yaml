@@ -1,0 +1,29 @@
+# KV codec (HALO vs TurboQuant) speed-quality benchmark config (Hydra).
+#   python codec_benchmark.py model_path=/lustre/.../models/llama-3.1-8b-instruct
+
+model_path: ???
+device: cuda:0
+dtype: bfloat16
+
+output_dir: ${hydra:runtime.cwd}/results
+
+bits: [4, 3, 2]
+sink_tokens: 4
+
+capture_tokens: 2048        # real-KV capture length for distortion
+
+# overhead measurement (synthetic tensor at the model's head dim)
+timing_heads: 8
+timing_seq: 1024
+timing_iters: 50
+
+run_ppl: true
+ppl_max_length: 2048
+ppl_stride: 1024
+ppl_windows: 8
+
+hydra:
+  run:
+    dir: ${output_dir}/${now:%Y-%m-%d_%H-%M-%S}
+  job:
+    chdir: false

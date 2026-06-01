@@ -88,6 +88,7 @@ class Runner:
         gpu_ids=None,
         post_processes=None,
         report_progress=True,
+        kv_config=None,
     ):
         """__init__ method
 
@@ -137,6 +138,14 @@ class Runner:
                 completed steps, elapsed time, and a linear ETA estimate
                 during long quantization (calibration, chunked, multi-GPU,
                 QEP).  Set to ``False`` for quiet runs (e.g. CI).
+            kv_config (KVCompressionConfig or None):
+                Optional KV cache compression recipe
+                (:class:`onecomp.kvcomp.KVCompressionConfig`).  KV compression
+                is orthogonal to weight quantization and applied at inference
+                time; when set, its serialised recipe is written to the saved
+                model's ``config.json`` as ``kv_compression_config``, coexisting
+                with the weight ``quantization_config`` ("two-panel" config).
+                Default is None.
 
         Note:
             For zero-config quantization (VRAM auto-estimation +
@@ -223,6 +232,7 @@ class Runner:
         if lpcd:
             self.lpcd_config = lpcd_config if lpcd_config is not None else LPCDConfig()
         self.report_progress = report_progress
+        self.kv_config = kv_config
 
     def check(self):
         """Check the settings
@@ -1718,6 +1728,16 @@ class Runner:
 
         # Add quantization config to model config
         model.config.quantization_config = quant_config
+
+        # KV cache compression is orthogonal to weight quantization: record its
+        # recipe alongside ``quantization_config`` so a serving runtime can load
+        # both ("two-panel" config).  No weight transformation is performed here.
+        if self.kv_config is not None:
+            model.config.kv_compression_config = self.kv_config.to_dict()
+            self.logger.info(
+                "Attached kv_compression_config (codec=%s) to model config",
+                getattr(self.kv_config.codec, "name", None),
+            )
 
         return model, tokenizer
 

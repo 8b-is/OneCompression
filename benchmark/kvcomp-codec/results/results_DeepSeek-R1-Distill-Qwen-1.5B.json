@@ -1,0 +1,95 @@
+{
+  "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+  "head_dim": 128,
+  "config": {
+    "model_path": "/lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Qwen-1.5B",
+    "device": "cuda:0",
+    "dtype": "bfloat16",
+    "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-codec/results",
+    "bits": [
+      4,
+      3,
+      2
+    ],
+    "sink_tokens": 4,
+    "capture_tokens": 2048,
+    "timing_heads": 8,
+    "timing_seq": 1024,
+    "timing_iters": 50,
+    "run_ppl": true,
+    "ppl_max_length": 2048,
+    "ppl_stride": 1024,
+    "ppl_windows": 6
+  },
+  "results": {
+    "4": {
+      "TurboQuant-hadamard": {
+        "distortion_key": 0.00827,
+        "distortion_value": 0.00915,
+        "ms_per_encode": 1.0237,
+        "throughput_Melem_s": 1024.3,
+        "ppl": 23466.8926
+      },
+      "TurboQuant-dense": {
+        "distortion_key": 0.00899,
+        "distortion_value": 0.00925,
+        "ms_per_encode": 0.3576,
+        "throughput_Melem_s": 2932.5,
+        "ppl": 23142.9414
+      },
+      "HALO-auto": {
+        "distortion_key": 0.00899,
+        "distortion_value": 0.00925,
+        "ms_per_encode": 0.3545,
+        "throughput_Melem_s": 2958.1,
+        "ppl": 23142.9414
+      }
+    },
+    "3": {
+      "TurboQuant-hadamard": {
+        "distortion_key": 0.03043,
+        "distortion_value": 0.03323,
+        "ms_per_encode": 1.029,
+        "throughput_Melem_s": 1019.0,
+        "ppl": 40312.1914
+      },
+      "TurboQuant-dense": {
+        "distortion_key": 0.03229,
+        "distortion_value": 0.03352,
+        "ms_per_encode": 0.3563,
+        "throughput_Melem_s": 2943.1,
+        "ppl": 38306.2227
+      },
+      "HALO-auto": {
+        "distortion_key": 0.03229,
+        "distortion_value": 0.03352,
+        "ms_per_encode": 0.3542,
+        "throughput_Melem_s": 2960.0,
+        "ppl": 38306.2227
+      }
+    },
+    "2": {
+      "TurboQuant-hadamard": {
+        "distortion_key": 0.09668,
+        "distortion_value": 0.113,
+        "ms_per_encode": 1.0306,
+        "throughput_Melem_s": 1017.5,
+        "ppl": 46844.6016
+      },
+      "TurboQuant-dense": {
+        "distortion_key": 0.11263,
+        "distortion_value": 0.1148,
+        "ms_per_encode": 0.3553,
+        "throughput_Melem_s": 2950.9,
+        "ppl": 58067.1055
+      },
+      "HALO-auto": {
+        "distortion_key": 0.11263,
+        "distortion_value": 0.1148,
+        "ms_per_encode": 0.355,
+        "throughput_Melem_s": 2953.9,
+        "ppl": 58067.1055
+      }
+    }
+  }
+}
