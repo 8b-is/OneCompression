@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import contextlib
 import random
+import re
 from dataclasses import dataclass, field
 from logging import getLogger
 from typing import Callable, List, Optional
@@ -29,6 +30,15 @@ from typing import Callable, List, Optional
 import torch
 
 logger = getLogger(__name__)
+
+
+def _number_hit(gold: str, text: str) -> bool:
+    """True iff ``gold`` appears in ``text`` as a standalone integer.
+
+    Uses digit boundaries so e.g. gold ``1234`` is not falsely matched inside
+    ``91234`` / ``12345`` -- a substring check would inflate accuracy.
+    """
+    return re.search(rf"(?<!\d){re.escape(gold)}(?!\d)", text) is not None
 
 _CITIES = ["Paris", "Tokyo", "Cairo", "Lima", "Oslo", "Delhi", "Quito", "Accra",
            "Hanoi", "Sofia", "Riga", "Bern", "Doha", "Kyiv", "Amman", "Dakar"]
@@ -174,7 +184,7 @@ def needle_in_haystack(
                 gen = greedy_answer(model, ids, cache, max_new_tokens, post_prefill=pp,
                                     eos=eos, attn_capture=attn_capture)
                 txt = tokenizer.decode(gen[0], skip_special_tokens=True)
-                ok = gold in txt
+                ok = _number_hit(gold, txt)
                 hit += int(ok); n += 1
                 by_len_hit[ctx][0] += int(ok); by_len_hit[ctx][1] += 1
                 if hasattr(cache, "mem_fraction"):
@@ -258,7 +268,7 @@ def ruler_multikey(
             gen = greedy_answer(model, ids, cache, max_new_tokens, post_prefill=pp,
                                 eos=eos, attn_capture=attn_capture)
             txt = tokenizer.decode(gen[0], skip_special_tokens=True)
-            ok = gold in txt
+            ok = _number_hit(gold, txt)
             hit += int(ok); n += 1
             by_len_hit[ctx][0] += int(ok); by_len_hit[ctx][1] += 1
             if hasattr(cache, "mem_fraction"):

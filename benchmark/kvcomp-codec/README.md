@@ -41,8 +41,16 @@ reconstruction quality.
 
 ## Run
 
+**Standard run:**
 ```bash
-srun --gres=gpu:1 .../python -u codec_benchmark.py \
+srun --gres=gpu:1 .venv/bin/python -u codec_benchmark.py \
+    model_path=/lustre/.../models/llama-3.1-8b-instruct
+```
+
+**Paper-level run** (100 timing iterations, 32 PPL windows):
+```bash
+srun --gres=gpu:1 .venv/bin/python -u codec_benchmark.py \
+    --config-name paper_run \
     model_path=/lustre/.../models/llama-3.1-8b-instruct
 ```
 

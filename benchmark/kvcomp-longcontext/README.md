@@ -23,11 +23,26 @@ length-proportional ladder instead spends bits where retrieval needs them.
 
 ## Run
 
+**Quick run** (single method, short context):
 ```bash
-srun --gres=gpu:1 .../python -u kv_benchmark.py \
-    model_path=/lustre/.../models/llama-3.1-8b-instruct run_ruler=true
-# subset / quick:
-#   methods='[StreamingLLM,TaperKV]' context_lens='[8192]' run_gsm8k=false
+srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py \
+    model_path=/lustre/.../models/llama-3.1-8b-instruct \
+    'methods=[StreamingLLM,TaperKV]' 'context_lens=[8192]' run_gsm8k=false
+```
+
+**Paper-level run** (all methods, all metrics, full context grid):
+```bash
+srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py \
+    --config-name paper_run \
+    model_path=/lustre/.../models/llama-3.1-8b-instruct
+```
+
+**Reasoning model** (ThinKV native regime; disable needle which is uninformative at long CoT):
+```bash
+srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py \
+    --config-name paper_run \
+    model_path=/lustre/.../models/DeepSeek-R1-Distill-Qwen-7B \
+    run_needle=false run_ruler=false max_new_reason=2048 gsm8k_limit=100
 ```
 
 Config: `conf/benchmark_longcontext.yaml`. Knobs are kept identical across

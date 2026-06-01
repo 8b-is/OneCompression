@@ -1,0 +1,101 @@
+# Paper-level run preset for kvcomp-longcontext benchmark.
+#
+# Extends the default benchmark_longcontext.yaml with settings needed to
+# reproduce the results reported in the paper, in particular:
+#   - RULER multi-key retrieval (run_ruler: true)
+#   - MATH-500 pass@1 (run_math: true)
+#   - Extended context lengths up to 16k
+#   - Larger evaluation samples for tighter confidence intervals
+#   - Sufficient generation budget for long chain-of-thought models
+#
+# Usage:
+#   python kv_benchmark.py --config-name paper_run \
+#       model_path=/lustre/.../models/llama-3.1-8b-instruct
+#   # Reasoning model (disable needle which is uninformative at long CoT):
+#   python kv_benchmark.py --config-name paper_run \
+#       model_path=/lustre/.../models/DeepSeek-R1-Distill-Qwen-7B \
+#       run_needle=false run_ruler=false max_new_reason=2048 gsm8k_limit=100
+#
+# Estimated wall-clock: ~4-8 h per model on a single NVIDIA B200 (all methods).
+
+# ---- inherit shared base settings ----------------------------------------
+defaults:
+  - benchmark_longcontext
+  - _self_
+
+model_path: ???
+device: cuda:0
+
+# --------------------------------------------------------------------------
+# Context lengths and evaluation grid
+# --------------------------------------------------------------------------
+context_lens: [2048, 4096, 8192, 16384]
+depths: [0.1, 0.25, 0.4, 0.5, 0.6, 0.75, 0.9]   # 7 depths (full grid)
+seeds: 5                                            # 5 seeds per cell
+
+# --------------------------------------------------------------------------
+# Retrieval: Needle-in-a-Haystack + RULER multi-key
+# --------------------------------------------------------------------------
+run_needle: true
+max_new_needle: 256          # adequate for long chain-of-thought models
+
+run_ruler: true              # RULER multi-key retrieval (harder disambiguation task)
+ruler_keys: 4
+ruler_seeds: 5
+
+# --------------------------------------------------------------------------
+# Reasoning: GSM8K + MATH-500
+# --------------------------------------------------------------------------
+run_gsm8k: true
+gsm8k_limit: 100             # 100 samples for tighter estimate
+max_new_reason: 2048         # long chain-of-thought models need headroom
+
+run_math: true
+math_limit: 50
+max_new_math: 3072
+
+# --------------------------------------------------------------------------
+# Perplexity sanity (WikiText-2 sliding window)
+# --------------------------------------------------------------------------
+run_ppl: true
+ppl_max_length: 2048
+ppl_stride: 1024
+ppl_windows: 32
+
+# --------------------------------------------------------------------------
+# ThinKV: faithful paper settings (Ramachandran et al., ICLR 2026)
+# R=4, E=4, T=2; KDE-calibrated L* + threshold; outlier-layer skip
+# --------------------------------------------------------------------------
+thinkv:
+  group_size: 16
+  precision: {R: 4, E: 4, T: 2}
+  auto_configure: true
+  calib_max_new: 200
+  capture_long: false        # output_attentions OOMs at long context (K25)
+
+# --------------------------------------------------------------------------
+# PM-KVQ: paper settings (arXiv:2505.18610)
+# Key >= value floor; key floor >= 4 (per-token 2-bit keys are catastrophic)
+# --------------------------------------------------------------------------
+pmkvq:
+  key_bits: 8
+  value_bits: 4
+  final_bits: 2
+  key_final_bits: 4
+  ladder_span: 256
+
+# --------------------------------------------------------------------------
+# TaperKV: proposed — length-proportional age-graded precision
+# --------------------------------------------------------------------------
+taperkv:
+  key_bits: 8
+  value_bits: 4
+  b_min: 4
+  b_min_value: 2
+
+# TaperKV Pareto sweep: traces the accuracy-vs-memory curve to show dominance
+# at *multiple* operating points, not just the default configuration.
+taperkv_sweep:
+  - {label: TaperKV-aggr,  key_bits: 4, value_bits: 2, b_min: 2, b_min_value: 2, recent_tokens: 32}
+  - {label: TaperKV-mid,   key_bits: 6, value_bits: 3, b_min: 2, b_min_value: 2, recent_tokens: 48}
+  - {label: TaperKV-light, key_bits: 8, value_bits: 6, b_min: 4, b_min_value: 4, recent_tokens: 96}

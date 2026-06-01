@@ -75,21 +75,41 @@ class CompressedDynamicCache(DynamicCache):
                 compressed = self.codec.encode(k_quant, v_quant)
                 key_q, value_q = self.codec.decode(compressed)
                 stored = compressed.numel_bits()
-                if stored:
-                    self.stored_bits += stored
-                self.fp16_bits += (k_quant.numel() + v_quant.numel()) * 16
+                fp16q = (k_quant.numel() + v_quant.numel()) * 16
+                self.stored_bits += stored if stored else fp16q
+                self.fp16_bits += fp16q
                 if sink_in_block > 0:
+                    # sink tokens kept in FP: counted equally in stored and fp16
+                    sink_bits = (key_states[:, :, :sink_in_block].numel()
+                                 + value_states[:, :, :sink_in_block].numel()) * 16
+                    self._count_fp(sink_bits)
                     kq_in = torch.cat([key_states[:, :, :sink_in_block], key_q.to(key_states.dtype)], dim=2)
                     vq_in = torch.cat([value_states[:, :, :sink_in_block], value_q.to(value_states.dtype)], dim=2)
                 else:
                     kq_in = key_q.to(key_states.dtype)
                     vq_in = value_q.to(value_states.dtype)
+            else:
+                # entire block falls in the sink region: kept in full precision
+                self._count_fp((key_states.numel() + value_states.numel()) * 16)
             key_states, value_states = kq_in, vq_in
             self._seen[layer_idx] = seen + q_len
+        elif self.codec is not None:
+            # outlier-skip layer kept in full precision; count it in the ratio
+            self._count_fp((key_states.numel() + value_states.numel()) * 16)
         return super().update(key_states, value_states, layer_idx, *args, **kwargs)
 
+    def _count_fp(self, bits: int) -> None:
+        """Account full-precision (sink / skip-layer) KV equally in stored & fp16."""
+        self.stored_bits += bits
+        self.fp16_bits += bits
+
     def compression_ratio(self) -> float:
-        """Realised compression ratio (fp16 bits / stored bits) so far."""
+        """Whole-cache compression ratio (fp16 bits / stored bits) so far.
+
+        Includes the full-precision sink tokens and outlier-skip layers, so the
+        figure is an honest whole-cache ratio that is directly comparable to the
+        eviction and FullKV baselines (not a quantized-portion-only ratio).
+        """
         if self.stored_bits == 0:
             return 1.0
         return self.fp16_bits / self.stored_bits

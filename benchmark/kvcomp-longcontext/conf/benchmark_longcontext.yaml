@@ -46,6 +46,12 @@ taperkv:
   b_min: 4                  # key floor (keys deserve more bits; needle survives)
   b_min_value: 2            # value floor
 
+# Optional TaperKV memory sweep: extra TaperKV operating points to trace the
+# accuracy-vs-memory Pareto curve (enable by selecting them in `methods`).
+taperkv_sweep:
+  - {label: TaperKV-aggr, key_bits: 4, value_bits: 2, b_min: 2, b_min_value: 2, recent_tokens: 32}
+  - {label: TaperKV-mid,  key_bits: 6, value_bits: 3, b_min: 2, b_min_value: 2, recent_tokens: 48}
+
 # --- needle-in-a-haystack grid ---
 context_lens: [2048, 4096, 8192]
 depths: [0.1, 0.25, 0.4, 0.5, 0.6, 0.75, 0.9]

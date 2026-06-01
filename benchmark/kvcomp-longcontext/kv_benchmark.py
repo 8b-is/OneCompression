@@ -86,7 +86,10 @@ def build_methods(cfg: DictConfig, model, tok):
         reason=lambda: DynamicCache(config=mc))
 
     for b in cfg.uniform_bits:
-        codec = build_codec(f"int{b}", skip_layers=skip)
+        # Per-token axis for both K and V: a well-defined "uniform per-token"
+        # baseline whose online scales are faithful under the incremental cache
+        # (per-channel keys would need block granularity; that is the KIVI codec).
+        codec = build_codec(f"int{b}", skip_layers=skip, key_axis="token", value_axis="token")
         methods[f"Uniform-INT{b}"] = dict(
             make=lambda ctx, c=codec: CompressedDynamicCache(codec=c, config=mc, sink_tokens=sink),
             evict=False,
@@ -143,6 +146,25 @@ def build_methods(cfg: DictConfig, model, tok):
     methods["TaperKV"] = dict(
         make=lambda ctx: TaperKVCache(tap, config=mc, requant_stride=cfg.requant_stride), evict=False,
         reason=lambda: TaperKVCache(tap, config=mc, requant_stride=cfg.requant_stride))
+
+    # Optional TaperKV memory sweep: register one method per (label, overrides)
+    # so a single run traces TaperKV's accuracy-vs-memory Pareto curve and we can
+    # show it dominates PM-KVQ / eviction *at matched memory*, not just at one
+    # operating point.
+    for variant in (cfg.get("taperkv_sweep", None) or []):
+        v = dict(variant)
+        label = v.pop("label")
+        vp = TaperKVPolicy(
+            key_bits=v.get("key_bits", cfg.taperkv.key_bits),
+            value_bits=v.get("value_bits", cfg.taperkv.value_bits),
+            b_min=v.get("b_min", cfg.taperkv.b_min),
+            b_min_value=v.get("b_min_value", cfg.taperkv.b_min_value),
+            sink_tokens=sink, recent_tokens=v.get("recent_tokens", recent),
+            skip_layers=skip)
+        methods[label] = dict(
+            make=lambda ctx, p=vp: TaperKVCache(p, config=mc, requant_stride=cfg.requant_stride),
+            evict=False,
+            reason=lambda p=vp: TaperKVCache(p, config=mc, requant_stride=cfg.requant_stride))
 
     return methods
 
@@ -230,15 +252,24 @@ def main(cfg: DictConfig):
             print("  ppl:", entry["ppl"], flush=True)
 
         results[name] = entry
+        # Persist after every method so a long multi-method sweep is crash-safe
+        # (a failure late in the run still leaves the completed methods on disk).
+        _save(cfg, results)
 
+    model_tag = os.path.basename(str(cfg.model_path).rstrip("/"))
+    out_json = _save(cfg, results)
+    print(f"\nWrote {out_json}")
+    print(_markdown_table(model_tag, results))
+
+
+def _save(cfg, results) -> str:
     os.makedirs(cfg.output_dir, exist_ok=True)
     model_tag = os.path.basename(str(cfg.model_path).rstrip("/"))
     out_json = os.path.join(cfg.output_dir, f"results_{model_tag}.json")
     with open(out_json, "w") as f:
         json.dump({"model": model_tag, "config": OmegaConf.to_container(cfg, resolve=True),
                    "results": results}, f, indent=2)
-    print(f"\nWrote {out_json}")
-    print(_markdown_table(model_tag, results))
+    return out_json
 
 
 def _markdown_table(model_tag, results) -> str:

@@ -74,7 +74,8 @@ class GradedQuantCache(DynamicCache):
         self.skip_layers = set(skip_layers or [])
         self.requant_stride = max(1, int(requant_stride))
         self._since = 0
-        self._layer_bits: dict = {}
+        self._layer_bits: dict = {}    # layer_idx -> stored bits (graded, or FP for skipped)
+        self._layer_fp16: dict = {}    # layer_idx -> fp16 reference bits
         self.fp16_bits_layer = 0
 
     # --- subclass hook -----------------------------------------------------
@@ -97,11 +98,17 @@ class GradedQuantCache(DynamicCache):
 
     def update(self, key_states, value_states, layer_idx, *args, **kwargs):
         out_k, out_v = super().update(key_states, value_states, layer_idx, *args, **kwargs)
-        if layer_idx in self.skip_layers:
-            return out_k, out_v
         q_len = key_states.shape[2]
         if layer_idx == 0:
             self._since += 1
+        # Outlier-skip layers stay in full precision, but are still counted (at
+        # fp16) so the reported memory is the honest *whole-cache* figure and is
+        # directly comparable to the eviction baseline.
+        if layer_idx in self.skip_layers:
+            fp = (out_k.numel() + out_v.numel()) * 16
+            self._layer_bits[layer_idx] = fp
+            self._layer_fp16[layer_idx] = fp
+            return out_k, out_v
         regrade = q_len > 1 or (self._since % self.requant_stride == 0)
         if not regrade:
             return out_k, out_v
@@ -113,22 +120,24 @@ class GradedQuantCache(DynamicCache):
         layer.keys = kq.to(layer.keys.dtype)
         layer.values = vq.to(layer.values.dtype)
         self._layer_bits[layer_idx] = bits
-        self.fp16_bits_layer = (layer.keys.numel() + layer.values.numel()) * 16
+        self._layer_fp16[layer_idx] = (layer.keys.numel() + layer.values.numel()) * 16
+        self.fp16_bits_layer = self._layer_fp16[layer_idx]
         return layer.keys, layer.values
 
     # --- reporting ---------------------------------------------------------
     def compression_ratio(self) -> float:
-        """Compression ratio (fp16 bits / stored bits) over the *quantized* layers.
+        """Whole-cache compression ratio (fp16 bits / stored bits).
 
-        Outlier-skip layers are kept at FP16 and excluded from this ratio, so it
-        reports the compression of the quantized portion of the cache (the skip
-        set is small and identical across methods, keeping comparisons fair).
+        Includes the full-precision outlier-skip layers, so the figure is an
+        honest whole-cache ratio that is directly comparable across methods
+        (quantized, eviction, and FullKV) rather than a quantized-layers-only
+        ratio that would understate memory.
         """
         lb = self._layer_bits
         if not lb:
             return 1.0
         stored = sum(lb.values())
-        fp16 = self.fp16_bits_layer * len(lb)
+        fp16 = sum(self._layer_fp16.get(i, 0) for i in lb)
         return float(fp16 / max(1, stored)) if stored else 1.0
 
     def avg_bits(self) -> float:
