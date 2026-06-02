@@ -119,6 +119,19 @@ longbench_tasks: []         # empty = all 13 English LongBench-E tasks
 longbench_max_length: 7500  # prompt budget; longer prompts middle-truncated
 longbench_limit: 20         # samples per task
 
+# --- LiveCodeBench functional pass@1 (ThinKV code axis) ---
+# Either point lcb_problems_path at a local JSONL of {prompt, entry_point, test}
+# (the reproducible offline path) or let lcb_dataset load the HF set. Generated
+# code runs in a sandboxed subprocess (rlimits + timeout); use an isolated node.
+run_livecodebench: false
+lcb_problems_path: null     # local JSONL; null -> load lcb_dataset from HF
+lcb_dataset: livecodebench/code_generation_lite
+lcb_split: test
+lcb_limit: 50
+lcb_k: 1
+lcb_timeout: 6.0            # per-sample wall-clock seconds in the sandbox
+max_new_code: 4096
+
 # --- perplexity sanity ---
 run_ppl: true
 ppl_max_length: 2048

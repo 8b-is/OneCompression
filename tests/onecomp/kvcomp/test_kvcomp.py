@@ -693,3 +693,70 @@ def test_markdown_ci_formatting():
                       "accuracy", "accuracy_ci95") == "0.9\u00b10.060"
     assert kb._fmt_ci({}) == ""               # missing metric -> blank cell
     assert kb._fmt_ci({"pass@1": 0.3}) == "0.3"  # no CI -> bare value
+
+
+# --- LiveCodeBench functional pass@1 sandbox (ThinKV code axis) -------------
+def test_code_sandbox_executor():
+    from onecomp.kvcomp.eval.code import run_code, _build_program
+
+    test = "def check(c):\n    assert c(2, 3) == 5\n    assert c(-1, 1) == 0"
+    ok, _ = run_code(_build_program("def add(a, b):\n    return a + b", test, "add"))
+    assert ok is True
+    bad, detail = run_code(_build_program("def add(a, b):\n    return a - b", test, "add"))
+    assert bad is False and "AssertionError" in detail
+    loop, det2 = run_code(
+        _build_program("def add(a, b):\n    while True:\n        pass", test, "add"),
+        timeout=2)
+    assert loop is False and det2 == "timeout"
+
+
+def test_extract_code_variants():
+    from onecomp.kvcomp.eval.code import extract_code
+
+    fenced = "Reasoning...\n```python\ndef f(x):\n    return x\n```\nok"
+    assert extract_code(fenced, "f") == "def f(x):\n    return x"
+    # picks the block that defines the requested entry point
+    multi = "```python\ndef g():\n    pass\n```\n```python\ndef f(x):\n    return x*2\n```"
+    assert "return x*2" in extract_code(multi, "f")
+    # bare code (no fences): from first def to end
+    bare = "Here:\ndef f(x):\n    return x + 1"
+    assert extract_code(bare, "f").startswith("def f(x):")
+
+
+def test_code_pass_at_1_fake_model():
+    """End-to-end code_pass_at_1 loop with a stub model that emits a fixed solution."""
+    from types import SimpleNamespace
+    from onecomp.kvcomp.eval.code import code_pass_at_1
+
+    solution = "```python\ndef add(a, b):\n    return a + b\n```"
+
+    class _Tok:
+        eos_token_id = 0
+        pad_token_id = 0
+
+        def apply_chat_template(self, msgs, **kw):
+            return {"input_ids": torch.zeros(1, 4, dtype=torch.long)}
+
+        def __call__(self, text, return_tensors=None):
+            return SimpleNamespace(input_ids=torch.zeros(1, 4, dtype=torch.long))
+
+        def decode(self, ids, skip_special_tokens=True):
+            return solution  # model "wrote" the right function
+
+    class _Model:
+        device = "cpu"
+
+        def generate(self, input_ids, **kw):
+            # return prompt (4 toks) + 3 "generated" toks
+            return torch.zeros(1, 7, dtype=torch.long)
+
+    problems = [{
+        "prompt": "Write add(a, b) returning the sum.",
+        "entry_point": "add",
+        "test": "def check(c):\n    assert c(2, 3) == 5",
+    }]
+    res = code_pass_at_1(_Model(), _Tok(), problems, cache_factory=None,
+                         k=1, max_new_tokens=8)
+    d = res.as_dict()
+    assert d["task"] == "livecodebench" and d["pass@1"] == 1.0
+    assert "pass@1_ci95" in d and d["n"] == 1

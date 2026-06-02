@@ -19,13 +19,13 @@
 > | **proposed: HALO** (codec `halo`, preconditioning off by default; `auto` rotation + skip-preconditioning is 2.9× faster than TurboQuant at equal quality) | done (wins on speed-quality) | `01`, `speed_halo`, `codec_benchmark` |
 > | HF integration `CompressedDynamicCache` + `ThinKVCache` (live TBQ) + `StreamingLLMEvictCache` (eviction baseline) | done | `02`, `05`, `07`, `08`, `kv_benchmark` |
 > | eval: `eval/{metrics,ppl,zeroshot,reasoning,longcontext}` (PPL / 0-shot / GSM8K · MATH500 / **Needle/RULER**) | done | `08`, `09`, `kv_benchmark` |
-> | **main experiment `benchmark/kvcomp-longcontext/`** (Full/uniform/evict/ThinKV/PM-KVQ/TaperKV, iso-memory) | done | llama-8b, gemma-31B, 7B |
+> | **main experiment `benchmark/kvcomp-longcontext/`** (Full/uniform/evict/ThinKV/PM-KVQ/TaperKV, iso-memory) | done | llama-3.1-8b, R1-Distill-Qwen-7B/1.5B |
 > | **main experiment `benchmark/kvcomp-codec/`** (HALO vs TurboQuant: distortion/PPL/overhead) | done | llama-8b / Qwen-1.5B |
 > | Runner `kv_config` -> `config.json` dual-config | done | `03` |
 > | vLLM plugin: FP8 -> native `kv_cache_dtype` mapping + entry-point (`vllm.general_plugins`) | done | `10` |
 > | Custom AttentionBackend for low-bit/eviction in vLLM, LongBench, Triton kernels, ILP bit allocation | todo | roadmap |
 >
-> Verification scripts live in `ichikawa_works/kvcomp_verification/` (llama-3.1-8b / gemma-4-31B / DeepSeek-R1-Distill-Qwen-1.5B, on B200).
+> Verification scripts live in `ichikawa_works/kvcomp_verification/` (llama-3.1-8b / DeepSeek-R1-Distill-Qwen-7B / 1.5B, on B200). Benchmark models follow the competing papers (TurboQuant: Llama-3.1-8B-Instruct + Ministral-8B; ThinKV/PM-KVQ: DeepSeek-R1-Distill family). Gemma is intentionally excluded — no KV-cache-compression baseline reports Gemma KV-cache results.
 >
 > ThinKV is mapped directly onto the paper (Ramachandran et al., ICLR 2026 submission):
 > its generation-loop code listing, problem formulation (TBQ/TBE), and Algorithm 1
@@ -65,9 +65,6 @@
 > - **llama-3.1-8b-instruct** (Needle depth7 × seed3 × ctx{2048,4096,8192}, iso-mem ~0.28):
 >   FullKV=1.00, StreamingLLM (evict, same mem)=0.30, **TaperKV=1.00**; RULER multi-key:
 >   eviction=0.60 vs **TaperKV=1.00**; GSM8K p@1: FullKV=0.825 = **TaperKV=0.825**; PPL 6.24 vs 6.10.
-> - **gemma-4-31B-it** (retrieval breadth): PM-KVQ collapses (Needle/RULER 0.00, GSM8K 0.10,
->   PPL in the thousands) while **TaperKV holds (Needle/RULER 1.00, GSM8K 0.975)** — the
->   clean separation between a length-proportional ladder and a fixed-window dynamic collapse.
 > - **DeepSeek-R1-Distill-Qwen-7B** (long chain-of-thought, max_new=2048): with outlier
 >   layers held in FP16, every method tracks FullKV within evaluation noise; **TaperKV reaches
 >   FullKV-level PPL (53.6 vs 50.8) at 3.4× compression**.

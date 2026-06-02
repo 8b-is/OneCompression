@@ -48,7 +48,7 @@ from onecomp.kvcomp import (
 from onecomp.kvcomp.recipe.thinkv import ThinKVPolicy
 from onecomp.kvcomp.eval import (
     needle_in_haystack, ruler_multikey, gsm8k_pass_at_1, math500_pass_at_1,
-    aime_pass_at_1, wikitext2_perplexity, longbench_e,
+    aime_pass_at_1, wikitext2_perplexity, longbench_e, livecodebench_pass_at_1,
 )
 from onecomp.kvcomp.eval.longcontext import proportion_stats
 
@@ -408,6 +408,21 @@ def main(cfg: DictConfig):
             entry[f"aime{aime_year}"] = ra.as_dict()
             print(f"  aime{aime_year}:", ra.as_dict(), flush=True)
 
+        # LiveCodeBench (functional subset): ThinKV's code axis. Either a local
+        # JSONL of {prompt, entry_point, test} (lcb_problems_path) or the HF
+        # dataset (lcb_dataset). pass@1 with the same CI as the math evals.
+        if cfg.get("run_livecodebench", False):
+            problems = _load_lcb_problems(cfg)
+            rc = livecodebench_pass_at_1(
+                model, tok, cache_factory=spec["reason"],
+                dataset=cfg.get("lcb_dataset", "livecodebench/code_generation_lite"),
+                split=cfg.get("lcb_split", "test"),
+                limit=cfg.get("lcb_limit", 50), problems=problems,
+                k=cfg.get("lcb_k", 1), max_new_tokens=cfg.get("max_new_code", 4096),
+                timeout=cfg.get("lcb_timeout", 6.0), attn_capture=cap)
+            entry["livecodebench"] = rc.as_dict()
+            print("  livecodebench:", rc.as_dict(), flush=True)
+
         if cfg.run_ppl:
             pp = wikitext2_perplexity(
                 model, tok, cache_factory=spec["reason"],
@@ -426,6 +441,25 @@ def main(cfg: DictConfig):
     out_json = _save(cfg, results)
     print(f"\nWrote {out_json}")
     print(_markdown_table(model_tag, results))
+
+
+def _load_lcb_problems(cfg):
+    """Local LiveCodeBench problems (JSONL of {prompt, entry_point, test}) or None.
+
+    Returning ``None`` lets ``livecodebench_pass_at_1`` load the HF dataset itself.
+    A local file is the reproducible path for the functional subset on an offline
+    GPU node.
+    """
+    path = cfg.get("lcb_problems_path", None)
+    if not path:
+        return None
+    problems = []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                problems.append(json.loads(line))
+    return problems
 
 
 def _save(cfg, results) -> str:
@@ -459,8 +493,10 @@ def _markdown_table(model_tag, results) -> str:
     aime_cols = [f"AIME-{y} p@1" for y in aime_years]
     has_lb = any("longbench" in e for e in results.values())
     lb_cols = ["LongBench-E"] if has_lb else []
+    has_lcb = any("livecodebench" in e for e in results.values())
+    lcb_cols = ["LiveCodeBench p@1"] if has_lcb else []
     header = (["Method", "Needle acc", "RULER acc"] + lb_cols
-              + ["Mem", "GSM8K p@1", "MATH p@1"] + aime_cols + ["PPL"])
+              + ["Mem", "GSM8K p@1", "MATH p@1"] + aime_cols + lcb_cols + ["PPL"])
     lines = [f"\n### {model_tag}", "",
              "| " + " | ".join(header) + " |",
              "| " + " | ".join(["---"] + ["---:"] * (len(header) - 1)) + " |"]
@@ -480,7 +516,10 @@ def _markdown_table(model_tag, results) -> str:
         if has_lb:
             row.append(str(lb.get("score", "")))
         row += [str(mem), _fmt_ci(gs), _fmt_ci(ma)]
-        row += aime_vals + [str(ppl_val)]
+        row += aime_vals
+        if has_lcb:
+            row.append(_fmt_ci(e.get("livecodebench", {})))
+        row += [str(ppl_val)]
         lines.append("| " + " | ".join(row) + " |")
     return "\n".join(lines)
 

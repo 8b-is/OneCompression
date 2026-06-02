@@ -21,6 +21,23 @@ every token recoverable, whereas *dynamic* progressive precision (PM-KVQ)
 collapses old tokens to a 2-bit floor over a fixed absolute window. TaperKV's
 length-proportional ladder spends bits where retrieval needs them.
 
+### Models and benchmarks (aligned with the competing papers)
+
+The model/benchmark grid mirrors the papers we compete against, so the numbers are
+directly comparable (no off-target architectures):
+
+| Proposed method | Competitor | Models | Benchmarks |
+|---|---|---|---|
+| **HALO** (codec) | TurboQuant (arXiv:2504.19874) | Llama-3.1-8B-Instruct, Ministral-8B-Instruct-2410 | Needle-in-a-Haystack, RULER, LongBench-E, WikiText-2 PPL |
+| **TaperKV / TurboTaper** (recipe) | ThinKV (ICLR 2026), PM-KVQ | DeepSeek-R1-Distill-Llama-8B / Qwen-14B / Qwen-7B / 1.5B, QwQ-32B | GSM8K, MATH-500, AIME-2024/2025, **LiveCodeBench**, PPL |
+
+The retrieval grid (`conf/turboquant_paper.yaml`, `conf/turboquant_paper_ministral.yaml`)
+runs HALO against TurboQuant's full bit-grid on **both** TurboQuant models. The
+reasoning grid (`conf/paper_aime.yaml`) runs TaperKV/TurboTaper/HALO against
+ThinKV/PM-KVQ/KIVI on the R1-Distill family with the four ThinKV benchmarks. Gemma
+is intentionally excluded: no KV-cache-compression baseline (TurboQuant, ThinKV,
+PM-KVQ, KIVI, R-KV) reports Gemma KV-cache results, so it adds no comparable point.
+
 ## Run
 
 **Quick run** (single method, short context):
@@ -49,12 +66,23 @@ MODEL=/.../models/DeepSeek-R1-Distill-Qwen-1.5B sbatch ichikawa_works/kvcomp_ver
 sbatch ichikawa_works/kvcomp_verification/run_turboquant_bench.sh
 ```
 
-**Reasoning model** (ThinKV native regime; disable needle which is uninformative at long CoT):
+**Reasoning headline** (`conf/paper_aime.yaml`, ThinKV/PM-KVQ turf; GSM8K + MATH-500
++ AIME-2024/2025 + LiveCodeBench, carrying TaperKV + TurboTaper + HALO):
 ```bash
 srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py \
-    --config-name paper_run \
-    model_path=/lustre/.../models/DeepSeek-R1-Distill-Qwen-7B \
-    run_needle=false run_ruler=false max_new_reason=2048 gsm8k_limit=100
+    --config-name paper_aime \
+    model_path=/lustre/.../models/DeepSeek-R1-Distill-Qwen-14B \
+    lcb_problems_path=/lustre/.../livecodebench_functional.jsonl
+```
+`lcb_problems_path` is a JSONL of `{prompt, entry_point, test}` (functional /
+HumanEval protocol); omit it to load `lcb_dataset` from HF. Generated code runs in
+a sandboxed subprocess (CPU/memory rlimits + timeout) — use an isolated node.
+
+**Retrieval second model** (`conf/turboquant_paper_ministral.yaml`, HALO vs
+TurboQuant on TurboQuant's Ministral model):
+```bash
+srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py \
+    --config-name turboquant_paper_ministral
 ```
 
 ## Ablations (paper)
@@ -174,38 +202,6 @@ Needle = 63 cells (7 depths × 3 ctx lengths × 3 seeds); RULER = 15 cells
 
 ---
 
-### gemma-4-31B-it — architecture sensitivity stress test
-
-A larger, 2-bit-sensitive model that sharpens the distinction between the two
-graded schemes. Needle = 63 cells; RULER = 15 cells; GSM8K n=40; PPL = WikiText-2.
-
-| Method | Needle ↑ | RULER ↑ | Mem | GSM8K p@1 ↑ | PPL ↓ |
-|---|---:|---:|---:|---:|---:|
-| FullKV | 1.00 | 1.00 | 1.00 | 0.975 | 473 |
-| Uniform-INT4 | 1.00 | 1.00 | 0.25 | 0.975 | 575 |
-| Uniform-INT2 | 0.00 | 0.00 | 0.13 | 0.700 | 322 821 |
-| StreamingLLM (evict) | 0.73 | 1.00 | 0.28 | 0.975 | 473 |
-| ThinKV (faithful) | 1.00 | 1.00 | 0.45 | 0.975 | 445 |
-| **PM-KVQ** | **0.00** | **0.00** | 0.37 | **0.10** | **7 975** |
-| **TaperKV (proposed)** | **1.00** | **1.00** | 0.53 | **0.975** | **258** |
-
-**This architecture delivers the clearest proof of the central thesis:**
-
-- **PM-KVQ completely collapses** (Needle/RULER 0.00, GSM8K 0.10, PPL 7 975).
-  Its high-precision region is a *fixed absolute token count*, so at 4k–8k context
-  almost every token beyond that window is pinned to the 2-bit floor. On a
-  2-bit-sensitive model like Gemma, the needle and reasoning both fail entirely.
-
-- **TaperKV is completely unaffected** (Needle/RULER 1.00, GSM8K 0.975, PPL 258).
-  Its ladder is indexed by *age as a fraction of the current sequence length*, so
-  it stretches with the context and always keeps mid-context tokens at intermediate
-  precision. The needle, wherever it lands, is never pinned to the floor.
-
-This is the core claim made concrete: a *length-proportional* precision ladder is
-robust to long-context collapse; a *fixed-window* dynamic scheme is not.
-
----
-
 ### DeepSeek-R1-Distill-Qwen-7B — long chain-of-thought reasoning
 
 Retrieval is uninformative on this model (FullKV itself scores below 0.2 on needle
@@ -260,21 +256,21 @@ confirming that a non-zero precision floor is critical at aggressive compression
 | Model | TaperKV Needle | TaperKV RULER | TaperKV GSM8K | TaperKV PPL / FullKV PPL |
 |---|:---:|:---:|:---:|---:|
 | llama-3.1-8b-instruct | **1.00** | **1.00** | **0.825** (= FullKV) | 6.24 / 6.10 |
-| gemma-4-31B-it | **1.00** | **1.00** | **0.975** (= FullKV) | 258 / 473 |
 | DeepSeek-R1-7B (reasoning) | — | — | 0.650 (≈ FullKV 0.675) | 53.6 / 50.8 |
 | DeepSeek-R1-1.5B (reasoning) | — | — | 0.240 (≈ FullKV 0.220) | 208.1 / 207.5 |
 
-**TaperKV is the only method robust on all three axes — retrieval, reasoning, and
-perplexity — across all four evaluated architectures,** while eviction fails
-retrieval and PM-KVQ (the nearest quantization competitor) is architecture-fragile
-due to its fixed-window collapse.
+**TaperKV is robust on all three axes — retrieval, reasoning, and perplexity —
+across every evaluated architecture,** matching FullKV retrieval while eviction
+fails it. Against the nearest quantization competitor PM-KVQ, TaperKV reaches the
+same retrieval at lower perplexity (6.24 vs 7.42 on Llama-3.1-8B); the Pareto sweep
+below traces the accuracy-vs-memory dominance at multiple operating points.
 
 ---
 
 ## TaperKV Pareto sweep — accuracy-vs-memory curve
 
 The Pareto sweep runs 9 methods (the 6 standard methods + TaperKV at 3 operating
-points: default / mid / aggr) on two architectures to show that TaperKV
+points: default / mid / aggr) to show that TaperKV
 **dominates PM-KVQ and eviction at matched memory**, not just at a single tuned
 operating point. Config: `conf/paper_run.yaml` with
 `methods=[FullKV,Uniform-INT4,Uniform-INT2,StreamingLLM,PM-KVQ,ThinKV,TaperKV,TaperKV-mid,TaperKV-aggr]`.
@@ -302,35 +298,7 @@ PM-KVQ (6.24 vs 7.42). Aggressive variants follow a graceful degradation curve �
 TaperKV-mid at 4.9× already retrieves 69% of needles, which is better than
 StreamingLLM at the same memory.
 
-### gemma-4-31B-it — Pareto sweep (9 methods)
-
-Needle = 28 cells (7 depths × 2 ctx lengths × 2 seeds); RULER = 6 cells
-(4 distractor keys × 2 lengths × 3 seeds); GSM8K n=24; PPL = 16 windows.
-
-| Method | Needle ↑ | RULER ↑ | Mem | GSM8K p@1 ↑ | PPL ↓ | cr ↑ |
-|---|---:|---:|---:|---:|---:|---:|
-| FullKV | 1.00 | 1.00 | 1.00 | 0.958 | 473 | 1.0× |
-| Uniform-INT4 | 1.00 | 1.00 | 0.40 | 0.958 | 674 | 2.5× |
-| Uniform-INT2 | 0.00 | 0.00 | 0.30 | 0.000 | 375 042 | 3.3× |
-| StreamingLLM (evict) | 0.71 | 1.00 | 0.28 | 0.958 | 473 | — |
-| ThinKV (faithful) | 1.00 | 1.00 | 0.45 | 0.958 | 445 | 2.2× |
-| **PM-KVQ** | **0.00** | **0.00** | 0.36 | **0.125** | **7 975** | 2.7× |
-| **TaperKV (default)** | **1.00** | **1.00** | **0.43** | **0.958** | **258** | **2.3×** |
-| TaperKV-mid (6/3-bit, b_min=2) | 0.21 | 0.83 | 0.36 | 0.000 | 397 | 2.7× |
-| TaperKV-aggr (4/2-bit, b_min=2) | 0.00 | 0.00 | 0.33 | 0.000 | 207 056 | 3.1× |
-
-Gemma confirms the architectural fragility of PM-KVQ: even the default TaperKV
-(at 2.3× compression) completely outperforms PM-KVQ (2.7×), which collapses to
-Needle/RULER 0.00. The TaperKV PPL (258) is dramatically better than the
-FullKV PPL on this model (473), reflecting that bfloat16 WikiText-2 perplexity is
-high for a multi-modal model; the relative ordering within methods is what matters.
-TaperKV-mid and TaperKV-aggr both collapse on Gemma (PPL in the 100k–200k range),
-confirming that the 2-bit value floor is catastrophic for this architecture and
-that the default (b_min_value=2, b_min=4) configuration is the right operating
-point for 2-bit-sensitive models.
-
-Result JSONs: `results_pareto/results_llama-3.1-8b-instruct.json` and
-`results_pareto/results_gemma-4-31B-it.json`.
+Result JSON: `results_pareto/results_llama-3.1-8b-instruct.json`.
 
 ---
 

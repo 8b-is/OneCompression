@@ -50,6 +50,25 @@ aime_k: 8
 aime_limit: 30               # all 30 AIME problems per year
 max_new_aime: 8192
 
+# LiveCodeBench (functional subset): ThinKV's code axis. Supply a local JSONL of
+# {prompt, entry_point, test} (functional/HumanEval-style) for an offline run, or
+# leave lcb_problems_path null to load lcb_dataset from HF. Generated code is
+# executed in a sandboxed subprocess (rlimits + timeout) -- run on an isolated node.
+run_livecodebench: true
+lcb_problems_path: null
+lcb_limit: 50
+lcb_k: 1
+max_new_code: 4096
+
+# Both proposed methods evaluated on the reasoning models, not just TaperKV:
+#   - HALO (proposed codec, beats TurboQuant): static rotated Lloyd-Max at 3/4-bit.
+#   - TurboTaper (proposed recipe): TaperKV age-ladder + HALO/TurboQuant core.
+# So the reasoning table carries HALO + TaperKV + TurboTaper vs ThinKV/PM-KVQ/KIVI.
+halo_variants:
+  - {label: "HALO-4bit", bits: 4}
+  - {label: "HALO-3bit", bits: 3}
+kivi_bits: [2]
+
 # ThinKV: paper-faithful settings (R4E4T2, auto-calibrated L*)
 thinkv:
   group_size: 16

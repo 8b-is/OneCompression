@@ -115,8 +115,9 @@ GSM8K = 40 samples; PPL = WikiText-2 (16 windows).
 | PM-KVQ | 1.00 | 1.00 | 0.800 | 7.42 |
 | **TaperKV** (proposed) | **1.00** | **1.00** | **0.825** | 6.24 |
 
-Full results including gemma-4-31B-it and DeepSeek-R1-Distill-Qwen-7B:
-`benchmark/kvcomp-longcontext/README.md`.
+Full results, including the DeepSeek-R1-Distill reasoning models (GSM8K / MATH-500 /
+AIME / LiveCodeBench, the ThinKV/PM-KVQ benchmark suite) and the Ministral-8B
+retrieval model (the second TurboQuant model): `benchmark/kvcomp-longcontext/README.md`.
 
 ### KV codec speed-quality — HALO vs TurboQuant
 

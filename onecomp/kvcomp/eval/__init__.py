@@ -30,6 +30,7 @@ from .metrics import (
 from .ppl import wikitext2_perplexity, perplexity_over_text
 from .zeroshot import zeroshot_accuracy, ZeroShotResult
 from .reasoning import gsm8k_pass_at_1, math500_pass_at_1, aime_pass_at_1, ReasoningResult
+from .code import code_pass_at_1, livecodebench_pass_at_1, extract_code
 from .longcontext import (
     needle_in_haystack,
     ruler_multikey,
@@ -53,6 +54,9 @@ __all__ = [
     "math500_pass_at_1",
     "aime_pass_at_1",
     "ReasoningResult",
+    "code_pass_at_1",
+    "livecodebench_pass_at_1",
+    "extract_code",
     "needle_in_haystack",
     "ruler_multikey",
     "make_needle_prompt",
