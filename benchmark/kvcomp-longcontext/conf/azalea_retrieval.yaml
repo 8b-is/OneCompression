@@ -1,0 +1,66 @@
+# CPU-feasible retrieval run on azalea (no GPU): HALO vs TurboQuant turf.
+# Small grid/contexts so it finishes on CPU; produces every retrieval metric
+# (Needle, RULER, PPL) for the full codec method set with error bars.
+defaults:
+  - benchmark_longcontext
+  - _self_
+
+model_path: /home/frj/yuma-ichikwa1/models/Qwen--Qwen3-0.6B
+device: cpu
+dtype: float32
+attn_implementation: sdpa
+output_dir: ${hydra:runtime.cwd}/results_azalea_retrieval
+
+thinkv:
+  auto_configure: false
+
+methods:
+  - FullKV
+  - Uniform-INT4
+  - KIVI-INT2
+  - StreamingLLM
+  - TurboQuant-4bit
+  - TurboQuant-3bit
+  - TurboQuant-2bit
+  - HALO-4bit
+  - HALO-3bit
+  - HALO-2bit
+  - FP8
+  - NVFP4
+  - TaperKV
+  - TurboTaper
+
+uniform_bits: [4]
+kivi_bits: [2]
+turboquant_variants:
+  - {label: TurboQuant-4bit, bits: 4}
+  - {label: TurboQuant-3bit, bits: 3}
+  - {label: TurboQuant-2bit, bits: 2}
+halo_variants:
+  - {label: HALO-4bit, bits: 4}
+  - {label: HALO-3bit, bits: 3}
+  - {label: HALO-2bit, bits: 2}
+codec_variants:
+  - {label: FP8, codec: fp8}
+  - {label: NVFP4, codec: nvfp4}
+
+# retrieval grid (CPU-sized)
+context_lens: [1024, 2048]
+depths: [0.25, 0.5, 0.75]
+seeds: 2
+max_new_needle: 32
+run_needle: true
+run_ruler: true
+ruler_keys: 4
+ruler_seeds: 2
+
+# reasoning/code off here (covered by azalea_reasoning.yaml)
+run_gsm8k: false
+run_math: false
+run_longbench: false
+run_livecodebench: false
+
+run_ppl: true
+ppl_max_length: 1024
+ppl_stride: 512
+ppl_windows: 8

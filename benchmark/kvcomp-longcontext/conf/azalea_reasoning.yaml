@@ -1,0 +1,78 @@
+# CPU-feasible reasoning run on azalea (no GPU): TaperKV vs ThinKV/PM-KVQ turf.
+# Small limits/generation so it finishes on CPU; produces every reasoning metric
+# (GSM8K, MATH-500, LiveCodeBench, PPL) for the full method set with error bars.
+defaults:
+  - benchmark_longcontext
+  - _self_
+
+model_path: /home/frj/yuma-ichikwa1/models/Qwen--Qwen3-0.6B
+device: cpu
+dtype: float32
+attn_implementation: eager      # ThinKV thought classification reads attn weights
+output_dir: ${hydra:runtime.cwd}/results_azalea_reasoning
+
+methods:
+  - FullKV
+  - Uniform-INT4
+  - KIVI-INT2
+  - ThinKV
+  - PM-KVQ
+  - TaperKV
+  - TurboTaper
+  - HALO-4bit
+  - HALO-3bit
+
+uniform_bits: [4]
+kivi_bits: [2]
+halo_variants:
+  - {label: HALO-4bit, bits: 4}
+  - {label: HALO-3bit, bits: 3}
+
+thinkv:
+  group_size: 16
+  precision: {R: 4, E: 4, T: 2}
+  auto_configure: true
+  calib_max_new: 80             # short CoT for CPU calibration
+  capture_long: false
+
+pmkvq:
+  key_bits: 8
+  value_bits: 4
+  final_bits: 2
+  key_final_bits: 4
+  ladder_span: 256
+  block_allocation: false       # skip heavy offline IP calibration on CPU
+  channel_reparam: false
+
+taperkv:
+  key_bits: 8
+  value_bits: 4
+  b_min: 4
+  b_min_value: 2
+
+# retrieval off here
+run_needle: false
+run_ruler: false
+
+run_gsm8k: true
+gsm8k_limit: 12
+max_new_reason: 512
+
+run_math: true
+math_limit: 6
+max_new_math: 512
+
+run_livecodebench: true
+# Point at a local functional JSONL ({prompt, entry_point, test}) on the CLI, e.g.:
+#   lcb_problems_path=/path/to/lcb_functional.jsonl
+# null -> load lcb_dataset from HF (functional rows only).
+lcb_problems_path: null
+lcb_limit: 12
+lcb_k: 1
+lcb_timeout: 6.0
+max_new_code: 384
+
+run_ppl: true
+ppl_max_length: 1024
+ppl_stride: 512
+ppl_windows: 8

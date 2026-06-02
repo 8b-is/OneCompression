@@ -283,7 +283,12 @@ def gsm8k_pass_at_1(
     """
     from datasets import load_dataset  # pylint: disable=import-outside-toplevel
 
-    ds = load_dataset("gsm8k", "main", split="test")
+    # "gsm8k" (legacy script id) raises HfUriError on datasets >= 4; the canonical
+    # repo id is "openai/gsm8k".
+    try:
+        ds = load_dataset("openai/gsm8k", "main", split="test")
+    except Exception:  # noqa: BLE001 - legacy fallback
+        ds = load_dataset("gsm8k", "main", split="test")
     items = [(ds[i]["question"], ds[i]["answer"]) for i in range(min(limit, len(ds)))]
     return _eval_dataset(
         model, tokenizer, items, gsm8k_gold, "gsm8k", cache_factory,

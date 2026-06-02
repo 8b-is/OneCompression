@@ -33,11 +33,21 @@ logger = getLogger(__name__)
 
 
 def _load_wikitext2_text() -> str:
-    """Return the concatenated WikiText-2 raw test text (requires ``datasets``)."""
+    """Return the concatenated WikiText-2 raw test text (requires ``datasets``).
+
+    The legacy ``wikitext`` builder script is broken on ``datasets`` >= 4 (it
+    raises ``HfUriError`` resolving ``.huggingface.yaml``); fall back to the
+    parquet mirror ``Salesforce/wikitext`` which loads without a script.
+    """
     from datasets import load_dataset  # pylint: disable=import-outside-toplevel
 
-    ds = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")
-    return "\n\n".join(ds["text"])
+    for repo in ("wikitext", "Salesforce/wikitext"):
+        try:
+            ds = load_dataset(repo, "wikitext-2-raw-v1", split="test")
+            return "\n\n".join(ds["text"])
+        except Exception:  # noqa: BLE001 - try the next mirror
+            continue
+    raise RuntimeError("Could not load WikiText-2 from 'wikitext' or 'Salesforce/wikitext'.")
 
 
 @torch.no_grad()

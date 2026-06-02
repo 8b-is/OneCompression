@@ -117,6 +117,18 @@ def make_needle_prompt(tokenizer, context_tokens: int, depth: float = 0.5, seed:
 
 
 def _encode(tokenizer, messages) -> torch.Tensor:
+    # Retrieval answers are a single short number, so disable chain-of-thought for
+    # thinking models (Qwen3/QwQ): with reasoning on, a short max_new budget is
+    # consumed entirely inside the <think> block and the model never emits the
+    # answer (FullKV would score ~0). enable_thinking is ignored by non-thinking
+    # templates (Llama/Mistral), so this is safe across model families.
+    try:
+        enc = tokenizer.apply_chat_template(
+            messages, add_generation_prompt=True, return_tensors="pt",
+            return_dict=True, enable_thinking=False)
+        return enc["input_ids"]
+    except Exception:  # template rejects the kwarg -> retry without it
+        pass
     try:
         enc = tokenizer.apply_chat_template(
             messages, add_generation_prompt=True, return_tensors="pt", return_dict=True)
