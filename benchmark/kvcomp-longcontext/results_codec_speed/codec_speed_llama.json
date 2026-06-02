@@ -1,0 +1,131 @@
+{
+  "meta": {
+    "device": "cuda",
+    "layers": 8,
+    "heads": 8,
+    "seq": 2048,
+    "dim": 128,
+    "bits": [
+      2,
+      3,
+      4
+    ],
+    "repeats": 30,
+    "seed": 0,
+    "model": "/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct",
+    "out": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_codec_speed/codec_speed_llama.json"
+  },
+  "results": {
+    "2": {
+      "TurboQuant-hadamard": {
+        "enc_ms": 0.5015945062041283,
+        "dec_ms": 0.43688848381862044,
+        "kv_mse": 0.30513234906356956,
+        "attn_err": 0.2319522760808468,
+        "bits_per_el": 2.125
+      },
+      "HALO-hadamard-noLS": {
+        "enc_ms": 0.5189789808355272,
+        "dec_ms": 0.4391254624351859,
+        "kv_mse": 0.3052446172632699,
+        "attn_err": 0.23086573742330074,
+        "bits_per_el": 2.125
+      },
+      "HALO-hadamard_gemm-noLS": {
+        "enc_ms": 0.17837173072621226,
+        "dec_ms": 0.11255289427936077,
+        "kv_mse": 0.30524461723598506,
+        "attn_err": 0.23086542449891567,
+        "bits_per_el": 2.125
+      },
+      "HALO-hadamard_gemm-LS": {
+        "enc_ms": 0.260768283624202,
+        "dec_ms": 0.11143065057694912,
+        "kv_mse": 0.30311146415715484,
+        "attn_err": 0.23007981851696968,
+        "bits_per_el": 2.125
+      },
+      "HALO-dense-LS": {
+        "enc_ms": 0.2520988928154111,
+        "dec_ms": 0.09909947402775288,
+        "kv_mse": 0.30977562066254904,
+        "attn_err": 0.23391682468354702,
+        "bits_per_el": 2.125
+      }
+    },
+    "3": {
+      "TurboQuant-hadamard": {
+        "enc_ms": 0.5012830370105803,
+        "dec_ms": 0.43878337601199746,
+        "kv_mse": 0.08891661877123624,
+        "attn_err": 0.10928237438201904,
+        "bits_per_el": 3.125
+      },
+      "HALO-hadamard-noLS": {
+        "enc_ms": 0.5155787221156061,
+        "dec_ms": 0.43733062921091914,
+        "kv_mse": 0.08909150767317442,
+        "attn_err": 0.10825624410063028,
+        "bits_per_el": 3.125
+      },
+      "HALO-hadamard_gemm-noLS": {
+        "enc_ms": 0.1775745186023414,
+        "dec_ms": 0.11138932313770056,
+        "kv_mse": 0.08909150580302594,
+        "attn_err": 0.10825635120272636,
+        "bits_per_el": 3.125
+      },
+      "HALO-hadamard_gemm-LS": {
+        "enc_ms": 0.2609502407722175,
+        "dec_ms": 0.11107366299256682,
+        "kv_mse": 0.08788167964553395,
+        "attn_err": 0.10723922494798899,
+        "bits_per_el": 3.125
+      },
+      "HALO-dense-LS": {
+        "enc_ms": 0.2531540230847895,
+        "dec_ms": 0.1008612453006208,
+        "kv_mse": 0.08960313157717792,
+        "attn_err": 0.10710854083299637,
+        "bits_per_el": 3.125
+      }
+    },
+    "4": {
+      "TurboQuant-hadamard": {
+        "enc_ms": 0.5016098730266094,
+        "dec_ms": 0.43826299952343106,
+        "kv_mse": 0.024505589351747403,
+        "attn_err": 0.050087334122508764,
+        "bits_per_el": 4.125
+      },
+      "HALO-hadamard-noLS": {
+        "enc_ms": 0.5162064917385578,
+        "dec_ms": 0.43736089719459414,
+        "kv_mse": 0.02451993017410814,
+        "attn_err": 0.04944253247231245,
+        "bits_per_el": 4.125
+      },
+      "HALO-hadamard_gemm-noLS": {
+        "enc_ms": 0.17784623196348548,
+        "dec_ms": 0.11139264097437263,
+        "kv_mse": 0.02451993040705247,
+        "attn_err": 0.04944249847903848,
+        "bits_per_el": 4.125
+      },
+      "HALO-hadamard_gemm-LS": {
+        "enc_ms": 0.26112765772268176,
+        "dec_ms": 0.11132238432765007,
+        "kv_mse": 0.024083582560024297,
+        "attn_err": 0.04854256613180041,
+        "bits_per_el": 4.125
+      },
+      "HALO-dense-LS": {
+        "enc_ms": 0.2530187484808266,
+        "dec_ms": 0.1007281243801117,
+        "kv_mse": 0.024538805490180948,
+        "attn_err": 0.04902929300442338,
+        "bits_per_el": 4.125
+      }
+    }
+  }
+}

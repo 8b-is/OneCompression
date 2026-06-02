@@ -31,3 +31,6 @@ tests/onecomp/quantizer/jointq/data/model_layers_0_self_attn_k_proj.pth
 .venv-vllm/
 # Hydra per-run log directories under benchmark results (keep the summary JSONs)
 benchmark/*/results/2[0-9][0-9][0-9]-*/
+benchmark/*/results_*/2[0-9][0-9][0-9]-*/
+# Paper-battery SLURM stdout logs (keep configs/scripts/summary JSONs)
+benchmark/kvcomp-longcontext/paper/logs/

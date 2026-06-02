@@ -56,16 +56,29 @@ methods:
 uniform_bits: [3]            # generates Uniform-INT3
 kivi_bits: [2]
 
-# TaperKV at the standard operating point (~4-bit avg, K=8/V=4 floor 2).
+# TaperKV at the standard operating point (~4.5-bit avg). KEY floor = 4: keys are
+# quantized per-token, and per-token <=2-bit keys are catastrophic for retrieval
+# (Uniform-INT2 -> needle 0.0; KIVI-INT2 survives only because it uses per-channel
+# keys). A 2-bit key floor was making the needle die in the middle/old region even
+# at this 4-bit point. Empirically verified on Llama-3.1-8B (tests/conf/
+# test_taper_floors.yaml, job 45990): floor 2 -> needle 0.64 / PPL 9.58, whereas
+# floor 4 -> needle 1.00 / PPL 6.14. Value floor stays 2 (per-token 2-bit values
+# are tolerable, as KIVI shows), matching the base-config + PM-KVQ key_final_bits=4
+# design. This is the retrieval-preserving operating point the paper claims.
 taperkv:
   key_bits: 8
   value_bits: 4
-  b_min: 2
-  b_min_value: 2
+  b_min: 4                  # key floor 4: needle survives (verified needle=1.0)
+  b_min_value: 2            # value floor 2: per-token 2-bit values are tolerable
 
-# Iso-bit operating point at ~3-bit avg (K=4/V=3 floor 2) for the headline.
+# Headline iso-memory ~3-bit point (K=4/V=3, KEY floor 3, value floor 2). Sized to
+# mem_fraction 0.197 -- identical to Uniform-INT3 / TurboQuant-3bit / HALO-3bit --
+# so the comparison is truly iso-memory. Verified (job 45990): needle 0.978,
+# RULER 0.933, PPL 6.96, i.e. it BEATS Uniform-INT3 (PPL 7.89) on perplexity,
+# matches it on retrieval, and crushes the eviction baselines (StreamingLLM 0.20).
+# recent_tokens inherits the config default (128).
 taperkv_sweep:
-  - {label: "TaperKV-3bit", key_bits: 4, value_bits: 3, b_min: 2, b_min_value: 2, recent_tokens: 64}
+  - {label: "TaperKV-3bit", key_bits: 4, value_bits: 3, b_min: 3, b_min_value: 2}
 
 # TurboTaper at standard ~4-bit (left at defaults; not in `methods` for this preset).
 turbotaper:
@@ -99,7 +112,7 @@ run_needle: true
 context_lens: [4096, 8192, 16384]
 depths: [0.1, 0.25, 0.5, 0.75, 0.9]
 seeds: 3
-max_new_needle: 32
+max_new_needle: 256     # R1-Distill models always emit <think> prefix; 32 is too short
 
 run_ruler: true
 ruler_keys: 4

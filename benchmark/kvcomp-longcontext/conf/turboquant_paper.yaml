@@ -46,8 +46,8 @@ methods:
   - HALO-2bit
   - FP8
   - NVFP4
-  - TaperKV            # K=8/V=4 floor 2 (~4-bit avg)
-  - TaperKV-3bit       # K=4/V=3 floor 2 (~3-bit avg, proposed recipe at iso-bit to HALO-3bit)
+  - TaperKV            # K=8/V=4, key floor 4 / value floor 2 (~4.5-bit, retrieval-safe)
+  - TaperKV-3bit       # K=4/V=3, key floor 3 / value floor 2 (~3-bit iso-memory to HALO-3bit)
   - TurboTaper
 
 uniform_bits: [4, 3, 2]
@@ -65,16 +65,19 @@ codec_variants:
   - {label: "FP8", codec: fp8}
   - {label: "NVFP4", codec: nvfp4}
 
-# TaperKV: K=8/V=4 high, floor 2-bit (~4-bit avg). The TaperKV-3bit operating
-# point in the sweep below targets the same average bit-width as HALO/Uniform-3bit
-# for a true iso-bit comparison.
+# TaperKV baseline (recipe paper's method, shown here as a HALO-paper baseline).
+# KEY floor = 4: per-token <=2-bit keys are catastrophic for retrieval (verified
+# on Llama, job 45990: key floor 2 -> needle 0.64; key floor 4 -> needle 1.00).
+# A 2-bit key floor would be an unfair strawman here, so the baseline uses its
+# proper retrieval-safe floor. The TaperKV-3bit sweep point (key floor 3, value
+# floor 2) sits at mem_fraction 0.197 -- iso-memory to HALO-3bit / Uniform-INT3.
 taperkv:
   key_bits: 8
   value_bits: 4
-  b_min: 2
+  b_min: 4
   b_min_value: 2
 taperkv_sweep:
-  - {label: "TaperKV-3bit", key_bits: 4, value_bits: 3, b_min: 2, b_min_value: 2, recent_tokens: 64}
+  - {label: "TaperKV-3bit", key_bits: 4, value_bits: 3, b_min: 3, b_min_value: 2}
 
 turbotaper:
   dist: gaussian

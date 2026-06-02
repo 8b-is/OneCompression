@@ -148,3 +148,4 @@ Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF
 [2026-06-02 09:37:52,119][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/yentinglin/aime_2025/tree/6f71d77b0b89b9dabe07ab466c51df33f514df7f/data?recursive=true&expand=false "HTTP/1.1 200 OK"
 [2026-06-02 09:37:52,301][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/yentinglin/aime_2025/tree/6f71d77b0b89b9dabe07ab466c51df33f514df7f?recursive=false&expand=false "HTTP/1.1 200 OK"
 [2026-06-02 09:37:52,489][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/yentinglin/aime_2025/resolve/6f71d77b0b89b9dabe07ab466c51df33f514df7f/dataset_infos.json "HTTP/1.1 404 Not Found"
+[2026-06-02T12:39:50.259] error: *** JOB 45705 ON kagura-gpu06 CANCELLED AT 2026-06-02T12:39:50 DUE to SIGNAL Terminated ***

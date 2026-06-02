@@ -1,0 +1,477 @@
+{
+  "model": "llama-3.1-8b-instruct",
+  "config": {
+    "model_path": "/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct",
+    "device": "cuda:0",
+    "dtype": "bfloat16",
+    "attn_implementation": "sdpa",
+    "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_test_floors",
+    "methods": [
+      "FullKV",
+      "Uniform-INT3",
+      "Uniform-INT2",
+      "TK-cur-8422",
+      "TK-f3v2-8432",
+      "TK-f4v2-8442",
+      "TK-3bit-4332",
+      "TK-3bit-4333"
+    ],
+    "sink_tokens": 4,
+    "recent_tokens": 128,
+    "requant_stride": 16,
+    "target_mem": 0.2,
+    "uniform_bits": [
+      3,
+      2
+    ],
+    "turboquant_variants": [],
+    "kivi_bits": [],
+    "halo_variants": [],
+    "codec_variants": [],
+    "turbotaper": {
+      "dist": "gaussian",
+      "rotation_mode": "hadamard",
+      "n_outlier_floor": 0
+    },
+    "skip_outliers": true,
+    "outlier_ratio": 50.0,
+    "thinkv": {
+      "group_size": 16,
+      "precision": {
+        "R": 4,
+        "E": 4,
+        "T": 2
+      },
+      "auto_configure": false,
+      "calib_max_new": 200,
+      "capture_long": false
+    },
+    "pmkvq": {
+      "key_bits": 8,
+      "value_bits": 4,
+      "final_bits": 2,
+      "key_final_bits": 4,
+      "ladder_span": 256,
+      "block_allocation": false,
+      "channel_reparam": false,
+      "bit_options": [
+        2,
+        4,
+        8
+      ],
+      "avg_bit_budget": null,
+      "pos_scale": 4
+    },
+    "taperkv": {
+      "key_bits": 8,
+      "value_bits": 4,
+      "b_min": 4,
+      "b_min_value": 2
+    },
+    "taperkv_sweep": [
+      {
+        "label": "TK-cur-8422",
+        "key_bits": 8,
+        "value_bits": 4,
+        "b_min": 2,
+        "b_min_value": 2,
+        "recent_tokens": 128
+      },
+      {
+        "label": "TK-f3v2-8432",
+        "key_bits": 8,
+        "value_bits": 4,
+        "b_min": 3,
+        "b_min_value": 2,
+        "recent_tokens": 128
+      },
+      {
+        "label": "TK-f4v2-8442",
+        "key_bits": 8,
+        "value_bits": 4,
+        "b_min": 4,
+        "b_min_value": 2,
+        "recent_tokens": 128
+      },
+      {
+        "label": "TK-3bit-4332",
+        "key_bits": 4,
+        "value_bits": 3,
+        "b_min": 3,
+        "b_min_value": 2,
+        "recent_tokens": 128
+      },
+      {
+        "label": "TK-3bit-4333",
+        "key_bits": 4,
+        "value_bits": 3,
+        "b_min": 3,
+        "b_min_value": 3,
+        "recent_tokens": 128
+      }
+    ],
+    "turbotaper_sweep": [],
+    "context_lens": [
+      4096,
+      8192,
+      16384
+    ],
+    "depths": [
+      0.1,
+      0.25,
+      0.5,
+      0.75,
+      0.9
+    ],
+    "seeds": 3,
+    "max_new_needle": 32,
+    "run_ruler": true,
+    "ruler_keys": 4,
+    "ruler_seeds": 5,
+    "run_needle": true,
+    "run_gsm8k": false,
+    "gsm8k_limit": 50,
+    "max_new_reason": 1024,
+    "run_math": false,
+    "math_limit": 50,
+    "max_new_math": 3072,
+    "run_longbench": false,
+    "longbench_tasks": [],
+    "longbench_max_length": 7500,
+    "longbench_limit": 20,
+    "run_livecodebench": false,
+    "lcb_problems_path": null,
+    "lcb_dataset": "livecodebench/code_generation_lite",
+    "lcb_split": "test",
+    "lcb_limit": 50,
+    "lcb_k": 1,
+    "lcb_timeout": 6.0,
+    "max_new_code": 4096,
+    "run_ppl": true,
+    "ppl_max_length": 4096,
+    "ppl_stride": 2048,
+    "ppl_windows": 8
+  },
+  "results": {
+    "FullKV": {
+      "needle": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.9213,
+          1.0
+        ],
+        "mem_fraction": 1.0,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.7961,
+          1.0
+        ],
+        "mem_fraction": 1.0,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 6.0155,
+        "nll": 1.7943,
+        "n_tokens": 18431.0,
+        "n_windows": 8.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 1.0
+      }
+    },
+    "Uniform-INT3": {
+      "needle": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.9213,
+          1.0
+        ],
+        "mem_fraction": 0.1973,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.8667,
+        "accuracy_stderr": 0.0878,
+        "accuracy_ci95": [
+          0.6212,
+          0.9626
+        ],
+        "mem_fraction": 0.1972,
+        "by_length": {
+          "4096": 0.8,
+          "8192": 1.0,
+          "16384": 0.8
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 7.8894,
+        "nll": 2.0655,
+        "n_tokens": 18431.0,
+        "n_windows": 8.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 5.0617
+      }
+    },
+    "Uniform-INT2": {
+      "needle": {
+        "accuracy": 0.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.0,
+          0.0787
+        ],
+        "mem_fraction": 0.1343,
+        "by_length": {
+          "4096": 0.0,
+          "8192": 0.0,
+          "16384": 0.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.0,
+          0.2039
+        ],
+        "mem_fraction": 0.1343,
+        "by_length": {
+          "4096": 0.0,
+          "8192": 0.0,
+          "16384": 0.0
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 456.035,
+        "nll": 6.1226,
+        "n_tokens": 18431.0,
+        "n_windows": 8.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 7.4275
+      }
+    },
+    "TK-cur-8422": {
+      "needle": {
+        "accuracy": 0.6444,
+        "accuracy_stderr": 0.0714,
+        "accuracy_ci95": [
+          0.4984,
+          0.7678
+        ],
+        "mem_fraction": 0.2623,
+        "by_length": {
+          "4096": 0.8,
+          "8192": 0.6,
+          "16384": 0.5333
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.7333,
+        "accuracy_stderr": 0.1142,
+        "accuracy_ci95": [
+          0.4805,
+          0.891
+        ],
+        "mem_fraction": 0.2622,
+        "by_length": {
+          "4096": 0.8,
+          "8192": 0.6,
+          "16384": 0.8
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 9.578,
+        "nll": 2.2595,
+        "n_tokens": 18431.0,
+        "n_windows": 8.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 3.7899
+      }
+    },
+    "TK-f3v2-8432": {
+      "needle": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.9213,
+          1.0
+        ],
+        "mem_fraction": 0.2777,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.7961,
+          1.0
+        ],
+        "mem_fraction": 0.2777,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 6.259,
+        "nll": 1.834,
+        "n_tokens": 18431.0,
+        "n_windows": 8.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 3.5831
+      }
+    },
+    "TK-f4v2-8442": {
+      "needle": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.9213,
+          1.0
+        ],
+        "mem_fraction": 0.2931,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.7961,
+          1.0
+        ],
+        "mem_fraction": 0.2931,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 6.142,
+        "nll": 1.8152,
+        "n_tokens": 18431.0,
+        "n_windows": 8.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 3.3976
+      }
+    },
+    "TK-3bit-4332": {
+      "needle": {
+        "accuracy": 0.9778,
+        "accuracy_stderr": 0.022,
+        "accuracy_ci95": [
+          0.8843,
+          0.9961
+        ],
+        "mem_fraction": 0.1974,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 0.9333,
+          "16384": 1.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.9333,
+        "accuracy_stderr": 0.0644,
+        "accuracy_ci95": [
+          0.7018,
+          0.9881
+        ],
+        "mem_fraction": 0.1974,
+        "by_length": {
+          "4096": 0.8,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 6.9604,
+        "nll": 1.9402,
+        "n_tokens": 18431.0,
+        "n_windows": 8.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 5.0558
+      }
+    },
+    "TK-3bit-4333": {
+      "needle": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.9213,
+          1.0
+        ],
+        "mem_fraction": 0.2128,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.7961,
+          1.0
+        ],
+        "mem_fraction": 0.2128,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 6.717,
+        "nll": 1.9046,
+        "n_tokens": 18431.0,
+        "n_windows": 8.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 4.6941
+      }
+    }
+  }
+}

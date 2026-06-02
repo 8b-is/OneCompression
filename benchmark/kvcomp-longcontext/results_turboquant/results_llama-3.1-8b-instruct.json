@@ -9,6 +9,7 @@
     "methods": [
       "FullKV",
       "Uniform-INT4",
+      "Uniform-INT3",
       "Uniform-INT2",
       "KIVI-INT2",
       "StreamingLLM",
@@ -18,10 +19,12 @@
       "TurboQuant-2.5bit",
       "TurboQuant-2bit",
       "HALO-4bit",
+      "HALO-3bit",
       "HALO-2bit",
       "FP8",
       "NVFP4",
       "TaperKV",
+      "TaperKV-3bit",
       "TurboTaper"
     ],
     "sink_tokens": 4,
@@ -30,6 +33,7 @@
     "target_mem": 0.27,
     "uniform_bits": [
       4,
+      3,
       2
     ],
     "turboquant_variants": [
@@ -70,6 +74,10 @@
       {
         "label": "HALO-4bit",
         "bits": 4
+      },
+      {
+        "label": "HALO-3bit",
+        "bits": 3
       },
       {
         "label": "HALO-2bit",
@@ -128,22 +136,15 @@
     },
     "taperkv_sweep": [
       {
-        "label": "TaperKV-aggr",
+        "label": "TaperKV-3bit",
         "key_bits": 4,
-        "value_bits": 2,
-        "b_min": 2,
-        "b_min_value": 2,
-        "recent_tokens": 32
-      },
-      {
-        "label": "TaperKV-mid",
-        "key_bits": 6,
         "value_bits": 3,
         "b_min": 2,
         "b_min_value": 2,
-        "recent_tokens": 48
+        "recent_tokens": 64
       }
     ],
+    "turbotaper_sweep": [],
     "context_lens": [
       4096,
       8192,
@@ -284,6 +285,60 @@
         "n_tokens": 34815.0,
         "n_windows": 16.0,
         "compression_ratio": 3.8389
+      }
+    },
+    "Uniform-INT3": {
+      "needle": {
+        "accuracy": 1.0,
+        "mem_fraction": 0.1973,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.9333,
+        "mem_fraction": 0.1973,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 0.8
+        },
+        "n": 15
+      },
+      "longbench": {
+        "n": 130,
+        "score": 28.33,
+        "per_task": {
+          "qasper": 8.75,
+          "multifieldqa_en": 32.0,
+          "hotpotqa": 15.66,
+          "2wikimqa": 21.88,
+          "gov_report": 18.37,
+          "multi_news": 11.53,
+          "trec": 38.33,
+          "triviaqa": 15.41,
+          "samsum": 11.35,
+          "passage_count": 10.0,
+          "passage_retrieval_en": 100.0,
+          "lcc": 38.17,
+          "repobench-p": 46.91
+        },
+        "by_length": {
+          "0-4k": 26.01,
+          "4-8k": 30.39,
+          "8k+": 0.0
+        },
+        "mem_fraction": 0.1978
+      },
+      "ppl": {
+        "ppl": 8.5433,
+        "nll": 2.1451,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "compression_ratio": 5.0617
       }
     },
     "Uniform-INT2": {
@@ -500,6 +555,60 @@
         "n_tokens": 34815.0,
         "n_windows": 16.0,
         "compression_ratio": 3.9099
+      }
+    },
+    "TaperKV-3bit": {
+      "needle": {
+        "accuracy": 0.5333,
+        "mem_fraction": 0.1724,
+        "by_length": {
+          "4096": 0.4667,
+          "8192": 0.5333,
+          "16384": 0.6
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.2,
+        "mem_fraction": 0.1724,
+        "by_length": {
+          "4096": 0.4,
+          "8192": 0.2,
+          "16384": 0.0
+        },
+        "n": 15
+      },
+      "longbench": {
+        "n": 130,
+        "score": 13.5,
+        "per_task": {
+          "qasper": 4.97,
+          "multifieldqa_en": 11.72,
+          "hotpotqa": 12.57,
+          "2wikimqa": 7.51,
+          "gov_report": 12.88,
+          "multi_news": 5.07,
+          "trec": 25.0,
+          "triviaqa": 14.32,
+          "samsum": 10.49,
+          "passage_count": 0.0,
+          "passage_retrieval_en": 0.0,
+          "lcc": 27.21,
+          "repobench-p": 43.77
+        },
+        "by_length": {
+          "0-4k": 14.57,
+          "4-8k": 12.56,
+          "8k+": 0.0
+        },
+        "mem_fraction": 0.1729
+      },
+      "ppl": {
+        "ppl": 21.1339,
+        "nll": 3.0509,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "compression_ratio": 5.7917
       }
     },
     "TurboQuant-4bit": {
@@ -878,6 +987,60 @@
         "n_tokens": 34815.0,
         "n_windows": 16.0,
         "compression_ratio": 3.8679
+      }
+    },
+    "HALO-3bit": {
+      "needle": {
+        "accuracy": 1.0,
+        "mem_fraction": 0.1958,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.9333,
+        "mem_fraction": 0.1958,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 0.8,
+          "16384": 1.0
+        },
+        "n": 15
+      },
+      "longbench": {
+        "n": 130,
+        "score": 26.58,
+        "per_task": {
+          "qasper": 12.04,
+          "multifieldqa_en": 32.98,
+          "hotpotqa": 23.11,
+          "2wikimqa": 24.05,
+          "gov_report": 19.44,
+          "multi_news": 13.63,
+          "trec": 45.0,
+          "triviaqa": 15.28,
+          "samsum": 13.42,
+          "passage_count": 10.0,
+          "passage_retrieval_en": 60.0,
+          "lcc": 40.38,
+          "repobench-p": 36.22
+        },
+        "by_length": {
+          "0-4k": 24.27,
+          "4-8k": 28.62,
+          "8k+": 0.0
+        },
+        "mem_fraction": 0.1963
+      },
+      "ppl": {
+        "ppl": 6.9486,
+        "nll": 1.9385,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "compression_ratio": 5.0995
       }
     },
     "HALO-2bit": {

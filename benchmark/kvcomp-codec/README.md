@@ -44,23 +44,33 @@ reconstruction quality.
 After the **device-resident orthogonal cache** fix the gap widens further (a
 single dense GEMM with no per-call host→device copy):
 
-| model | bits | TurboQuant-hadamard | **HALO-auto** | speedup | quality (relMSE) |
-|---|---:|---:|---:|---:|---:|
-| Llama-3.1-8B-Instruct | 4 | 1.070 ms | **0.284 ms** | **3.76×** | identical |
-| Llama-3.1-8B-Instruct | 3 | 1.081 ms | **0.286 ms** | **3.78×** | identical |
-| Llama-3.1-8B-Instruct | 2 | 1.084 ms | **0.285 ms** | **3.81×** | identical |
-| DeepSeek-R1-Distill-Qwen-7B | 4 | 1.067 ms | **0.290 ms** | **3.68×** | identical |
-| DeepSeek-R1-Distill-Qwen-7B | 3 | 1.141 ms | **0.291 ms** | **3.92×** | identical |
-| DeepSeek-R1-Distill-Qwen-7B | 2 | 1.142 ms | **0.292 ms** | **3.91×** | identical |
-| DeepSeek-R1-Distill-Qwen-1.5B | 4 | 0.950 ms | **0.284 ms** | **3.34×** | identical |
-| DeepSeek-R1-Distill-Qwen-1.5B | 3 | 1.091 ms | **0.285 ms** | **3.83×** | identical |
-| DeepSeek-R1-Distill-Qwen-1.5B | 2 | 1.106 ms | **0.285 ms** | **3.88×** | identical |
+| model | bits | TurboQuant-hadamard | TurboQuant-dense | **HALO-auto** | speedup vs Had. | HALO==dense? |
+|---|---:|---:|---:|---:|---:|:---:|
+| Llama-3.1-8B-Instruct | 4 | 1.070 ms (PPL 6.786) | 0.286 ms (PPL 6.783) | **0.284 ms** (PPL 6.783) | **3.76×** | ✓ |
+| Llama-3.1-8B-Instruct | 3 | 1.081 ms (PPL 7.097) | 0.286 ms (PPL 7.144) | **0.286 ms** (PPL 7.144) | **3.78×** | ✓ |
+| Llama-3.1-8B-Instruct | 2 | 1.084 ms (PPL 10.161) | 0.284 ms (PPL 9.942) | **0.285 ms** (PPL 9.942) | **3.81×** | ✓ |
+| DeepSeek-R1-Distill-Qwen-7B | 4 | 1.067 ms | 0.290 ms | **0.290 ms** | **3.68×** | ✓ |
+| DeepSeek-R1-Distill-Qwen-7B | 3 | 1.141 ms | 0.290 ms | **0.291 ms** | **3.92×** | ✓ |
+| DeepSeek-R1-Distill-Qwen-7B | 2 | 1.142 ms | 0.290 ms | **0.292 ms** | **3.91×** | ✓ |
+| DeepSeek-R1-Distill-Qwen-1.5B | 4 | 0.950 ms | 0.283 ms | **0.284 ms** | **3.34×** | ✓ |
+| DeepSeek-R1-Distill-Qwen-1.5B | 3 | 1.091 ms | 0.286 ms | **0.285 ms** | **3.83×** | ✓ |
+| DeepSeek-R1-Distill-Qwen-1.5B | 2 | 1.106 ms | 0.285 ms | **0.285 ms** | **3.88×** | ✓ |
 
-PPL under `CompressedDynamicCache` is **identical to 4 decimals** between
-HALO-auto and TurboQuant-dense at every bit-width and model — the win is purely
-the cheaper transform selection + zero-overhead skipped preconditioning + the
-device-resident rotation cache. The Hadamard default that the TurboQuant paper
-ships is both slower **and** no better in quality.
+**Precise quality relationship (Llama-3.1-8B, 3-bit):**
+
+| codec | distortion K | PPL | Δ vs Hadamard |
+|---|---:|---:|---:|
+| TurboQuant-hadamard | 0.03205 | 7.0972 | reference |
+| TurboQuant-dense    | 0.03441 | 7.1438 | +0.65% PPL |
+| **HALO-auto**       | 0.03441 | 7.1438 | +0.65% PPL, **3.78× faster** |
+
+**HALO-auto is bit-identical to TurboQuant-dense** (same dense rotation, same
+codebook) — the speedup vs Hadamard (3.8×) comes at a cost of +0.65% PPL at
+3-bit.  The trade-off: Hadamard's structured butterfly gives marginally better
+Gaussianisation of the activations (better codebook fit) but costs 3.8× more
+wall-clock.  HALO's claim is that the speed:quality trade-off favours dense at
+every realistic head_dim (≤ 512) because the absolute PPL gap is tiny (<1%)
+and the wall-clock saving is consistent across all bit-widths and model families.
 
 ## Run
 
