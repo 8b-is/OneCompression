@@ -307,9 +307,34 @@ def main(cfg: DictConfig):
                 f"Unknown method(s) in cfg.methods: {sorted(unknown)}. "
                 f"Available: {sorted(methods)}.  Add the codec to the registry "
                 f"and/or the corresponding sweep section in the YAML.")
-    results = {}
+
+    # Resume: load existing results so we can (a) skip already-done methods in a
+    # normal run (if cfg.resume=true), or (b) merge a targeted re-run of specific
+    # methods (cfg.methods=[...]) into the existing JSON without losing other results.
+    existing_results: dict = {}
+    model_tag_pre = os.path.basename(str(cfg.model_path).rstrip("/"))
+    existing_json = os.path.join(cfg.output_dir, f"results_{model_tag_pre}.json")
+    if os.path.exists(existing_json):
+        try:
+            existing_results = json.load(open(existing_json)).get("results", {})
+            loaded_n = len(existing_results)
+            if only is not None:
+                print(f"[resume] loaded {loaded_n} existing method(s); "
+                      f"will re-run and merge: {sorted(only)}", flush=True)
+            elif cfg.get("resume", False):
+                print(f"[resume] loaded {loaded_n} existing method(s); "
+                      f"will skip already-done methods", flush=True)
+        except Exception as exc:
+            print(f"[resume] WARNING: could not load {existing_json}: {exc}", flush=True)
+            existing_results = {}
+
+    results = dict(existing_results)  # start from existing; overwritten per method below
     for name, spec in methods.items():
         if only is not None and name not in only:
+            continue
+        # Skip already-done methods when cfg.resume=true and no explicit filter.
+        if only is None and cfg.get("resume", False) and name in existing_results:
+            print(f"\n===== {name} [SKIP – already in results] =====", flush=True)
             continue
         print(f"\n===== {name} =====", flush=True)
         entry = {}
