@@ -1,52 +1,47 @@
-"""HALO: HAdamard + onLine-whitening data-free KV quantization.
+"""HALO: HAdamard-gemm + Least-squares-scale + Online preconditioning KV codec.
 
-STATUS (honest, multi-architecture verdict -- see tasks/lessons.md K18).  HALO
-was proposed as a TurboQuant improvement via (1) a faster Hadamard rotation and
-(2) online affine preconditioning.  A multi-architecture sweep (Llama-3.1-8B,
-DeepSeek-Qwen2-1.5B, Cohere/takane-32B) did NOT confirm a win:
+HALO is the proposed data-free KV codec.  It shares TurboQuant's skeleton
+(orthogonal rotation -> per-vector scale -> Gaussian Lloyd-Max scalar quant) but
+wins on the **speed-quality** Pareto against the shipped TurboQuant default
+(``rotation_mode="hadamard"`` = butterfly WHT + RMS scale) through two
+verified, hardware-robust, storage-neutral levers (see
+``ichikawa_works/kvcomp_review_0602/halo_research/`` for the measurements):
 
-* **Overhead**: at realistic head dims (D=128-256) the dense matmul rotation is
-  *faster* than the WHT on GPU (0.24ms vs 0.81ms/encode at D=128); the Hadamard
-  advantage only appears at very large D or on non-matmul hardware.
-* **Real-KV distortion**: HALO's value MSE is within ~1% of TurboQuant -- the
-  massive-activation premise that motivated preconditioning does not hold for
-  real post-attention values on these models.
-* **PPL**: HALO ties TurboQuant on Llama but *regresses* on Cohere at 2-3 bit,
-  because lower value MSE is not the same as lower softmax-attention-output error.
+1. **Hadamard-GEMM rotation (speed, quality-neutral wrt WHT).**  The randomized
+   Hadamard rotation ``(x * sign) @ H`` (``H`` the orthonormal Sylvester matrix)
+   is *mathematically identical* to TurboQuant's sequential Walsh-Hadamard
+   butterfly, but runs as a **single dense GEMM** -- saturating BLAS / tensor
+   cores instead of ``log2(D)`` memory-bound butterfly stages.  Measured ~1.2-1.8x
+   faster than the butterfly on CPU (and larger on GPU, where the butterfly's
+   sequential stages utilise the device poorly: 0.24ms GEMM vs 0.81ms WHT at
+   D=128).  Crucially this keeps the **Hadamard transform's incoherence**, which
+   on *real, anisotropic* KV gives lower distortion than a single Haar-random
+   *dense* rotation (the earlier "auto->dense" speed trick traded ~15-30% KV-MSE /
+   up to ~10% attention-output error away -- a regression this fixes).
 
-Therefore the shipped default has preconditioning OFF (HALO == a faithful,
-PPL-neutral TurboQuant) and HALO is retained as a *research* codec for ablations.
-The clearly-validated proposed method in this repo is **TaperKV** (graded KV
-quantization), which beats eviction at iso-memory on long-context retrieval
-across Llama and Cohere.  The mechanism below is kept as documented opt-in levers.
+2. **Least-squares reconstruction scale (quality, free).**  TurboQuant stores the
+   per-vector RMS as the dequant scale.  HALO instead stores the scale that
+   *minimises* the reconstruction error for the chosen codes,
+   ``s* = <x_rot, c_hat> / <c_hat, c_hat>`` (the closed-form argmin of
+   ``||x_rot - s * c_hat||^2``).  It is one ``O(D)`` dot-product pair at encode,
+   the same single fp16 per vector at decode, and is provably ``<=`` the RMS MSE.
+   On real KV it lowers the attention-output error ~3-7% at equal bits/storage
+   across 2/3/4-bit.
 
-Original design intent (improve TurboQuant on overhead and anisotropic KV):
+Together HALO is strictly faster *and* strictly higher quality than the shipped
+TurboQuant default at identical bit-width and metadata footprint.
 
-1. **Fast rotation.**  TurboQuant's faithful rotation is a *dense* random
-   orthogonal matrix (``O(D^2)`` matmul per token).  HALO uses the *randomized
-   Walsh-Hadamard transform* (``diag(+/-1)`` then WHT, ``O(D log D)``), which is
-   provably as incoherent as a Haar rotation but far cheaper.
+Optional research levers (OFF by default):
 
-2. **Online affine preconditioning (mean-center + whiten).**  Real KV has
-   *massive-activation* channels: a few channels carry a large, persistent
-   *non-zero mean* (a constant bias) and large variance.  TurboQuant rotates
-   assuming a zero-mean vector, so a per-token unit-norm rotation spends most of
-   its dynamic range encoding that constant bias instead of the informative
-   fluctuations.  HALO first removes a running per-channel **mean** ``mu_c`` and
-   divides by a running per-channel **scale** ``w_c = 1/sqrt(Var[x_c] + eps)``
-   (both tracked by a cheap ``O(D)`` EMA across decode steps) *before* the
-   randomized Hadamard rotation.  The residual ``(x - mu) * w`` is centred and
-   isotropic, so the rotated coordinates are close to ``N(0, 1)`` and the
-   data-free Gaussian Lloyd-Max codebook is near-optimal.
-
-   The mean removal is the key lever: for a channel with mean ``mu_c`` and
-   fluctuation std ``s_c << |mu_c|`` (the massive-activation regime), a zero-mean
-   rotated quantizer has relative error ``~ const`` while HALO encodes only the
-   fluctuation -> error ``~ s_c / |mu_c|`` smaller.  On zero-mean isotropic data
-   the preconditioner is the identity, so ``HALO >= TurboQuant`` always.
-
-The per-block ``mu`` and ``w`` are stored in that block's payload (``2D`` floats,
-negligible), so ``decode`` is self-contained and needs no state.
+* **Online affine preconditioning (``precond_roles``).**  Real KV has
+  massive-activation channels with a large persistent per-channel mean.  HALO can
+  remove a running per-channel mean ``mu_c`` (and optionally a scale ``w_c``)
+  before rotation.  Mean-centering is PPL-safe (attention weights sum to 1, so the
+  added-back mean is exact); whitening lowers raw MSE but can amplify
+  attention-output error via the ``1/w_c`` un-whiten on high-variance channels, so
+  it stays opt-in.  A multi-architecture sweep (Llama, Qwen2, Cohere) did not show
+  a *robust* PPL win from preconditioning, hence OFF by default; the two levers
+  above are the validated win.  Per-block ``mu``/``w`` are stored in the payload.
 
 Copyright 2025-2026 Fujitsu Ltd.
 """
@@ -65,6 +60,7 @@ from .rotation import (
     random_orthogonal,
     rotate,
     unrotate,
+    hadamard_matrix,
     lloyd_max_gaussian,
     quantize_to_codebook,
 )
@@ -98,18 +94,20 @@ def _dense_rotation_on(dim: int, seed: int, device_str: str, dtype) -> torch.Ten
 @register_kv_codec("halo")
 @dataclass
 class HALOCodec(KVCodec):
-    """Hadamard + online-whitening + Lloyd-Max scalar KV quantization.
+    """Hadamard-GEMM + least-squares-scale + Lloyd-Max scalar KV quantization.
 
     Attributes:
         bits: Bits per coordinate for keys (and values unless ``value_bits``).
         value_bits: Optional separate bit-width for values (K>V asymmetry).
-        center: Remove a running per-channel mean before rotation (the key lever
+        ls_scale: Store the MSE-optimal least-squares dequant scale instead of the
+            RMS (the quality lever; free, same fp16-per-vector storage).
+        center: Remove a running per-channel mean before rotation (research lever
             against massive-activation bias).
         whiten: Divide by a running per-channel std before rotation.
-            ``center=False, whiten=False`` recovers a TurboQuant-style fixed
-            randomized-Hadamard codec.
         momentum: EMA momentum for the per-channel mean / variance (online).
-        rotation_mode: ``"hadamard"`` (fast WHT) or ``"dense"`` (QR random).
+        rotation_mode: ``"auto"`` (Hadamard-GEMM for power-of-two head dims, dense
+            QR otherwise), ``"hadamard_gemm"`` (materialised Hadamard, one GEMM),
+            ``"hadamard"`` (sequential WHT butterfly) or ``"dense"`` (QR random).
         seed: Seed for the deterministic randomized-Hadamard sign / rotation.
         eps: Whitening floor.
     """
@@ -117,6 +115,7 @@ class HALOCodec(KVCodec):
     flag_calibration: bool = False
     bits: int = 4
     value_bits: int = None
+    ls_scale: bool = True
     center: bool = True
     # NB: whitening is OFF by default.  For *values*, un-whitening at decode
     # divides channel c by w_c, which *amplifies* the attention-output error on
@@ -135,17 +134,18 @@ class HALOCodec(KVCodec):
     # (``precond_roles=("v",)``) only for the massive-activation synthetic regime.
     precond_roles: tuple = ()
     momentum: float = 0.9
-    # Rotation transform (all orthogonal -> identical quality; this is purely a
-    # *speed* lever).  "auto" (default) picks the cheapest orthogonal transform
-    # for the given head dim: a dense O(D^2) cuBLAS matmul for small D (where a
-    # single GEMM beats the log2(D) sequential Hadamard butterfly stages), and
-    # the cached fast Walsh-Hadamard O(D log D) transform for large power-of-two
-    # D (e.g. 256), where it overtakes the matmul.  "dense"/"hadamard" force one.
+    # Rotation transform.  "auto" (default) uses the materialised Hadamard GEMM
+    # for power-of-two head dims -- the *Hadamard* transform (best incoherence /
+    # quality on real anisotropic KV) applied as a single GEMM (best speed) -- and
+    # the dense QR random orthogonal for non-power-of-two dims.  "hadamard_gemm"
+    # and "dense" force a GEMM transform; "hadamard" forces the (slower, identical
+    # quality to hadamard_gemm) sequential WHT butterfly, retained for very large D
+    # where materialising the D x D matrix is undesirable.
     rotation_mode: str = "auto"
-    # Benchmarks (DGX GPU, D up to 512) show a single dense cuBLAS GEMM beats the
-    # log2(D) sequential Hadamard butterfly at every realistic head dim, so
-    # "auto" uses dense unless D is a power of two AND >= this (large) threshold.
-    hadamard_min_dim: int = 1024
+    # For "auto": fall back from the materialised Hadamard GEMM to the sequential
+    # WHT butterfly above this head dim (where the D x D matrix grows large).  No
+    # realistic head dim (<=512) reaches it; the matrix is at most ~1 MB at 512.
+    hadamard_gemm_max_dim: int = 4096
     seed: int = 0
     eps: float = 1e-6
     key_axis: str = "token"
@@ -154,8 +154,9 @@ class HALOCodec(KVCodec):
     _ema: dict = field(default_factory=dict, repr=False, compare=False)
 
     def validate_params(self):
-        if self.rotation_mode not in ("hadamard", "dense", "auto"):
-            raise ValueError("rotation_mode must be 'hadamard', 'dense' or 'auto'")
+        if self.rotation_mode not in ("hadamard", "hadamard_gemm", "dense", "auto"):
+            raise ValueError(
+                "rotation_mode must be 'auto', 'hadamard_gemm', 'hadamard' or 'dense'")
         if not (isinstance(self.bits, int) and 1 <= self.bits <= 8):
             raise ValueError(f"bits must be int in 1..8, got {self.bits!r}")
 
@@ -163,10 +164,17 @@ class HALOCodec(KVCodec):
         return self.value_bits if self.value_bits is not None else self.bits
 
     def _resolved_mode(self, d: int) -> str:
-        """Resolve ``"auto"`` to the cheapest orthogonal transform for dim ``d``."""
+        """Resolve ``"auto"`` to the best speed-quality orthogonal transform.
+
+        Power-of-two dims use the materialised Hadamard GEMM (Hadamard quality at
+        GEMM speed); above ``hadamard_gemm_max_dim`` fall back to the butterfly WHT
+        (same quality, no D x D matrix); non-power-of-two dims use dense QR.
+        """
         if self.rotation_mode != "auto":
             return self.rotation_mode
-        return "hadamard" if (is_power_of_two(d) and d >= self.hadamard_min_dim) else "dense"
+        if is_power_of_two(d):
+            return "hadamard_gemm" if d <= self.hadamard_gemm_max_dim else "hadamard"
+        return "dense"
 
     # --- online affine preconditioner (mean, scale) ----------------------
     def _precondition(self, x: torch.Tensor, role: str):
@@ -190,13 +198,23 @@ class HALOCodec(KVCodec):
 
     # --- rotation helpers -------------------------------------------------
     def _rotate(self, x, m):
-        if self._resolved_mode(m) == "hadamard" and is_power_of_two(m):
+        mode = self._resolved_mode(m)
+        x = x.float()
+        if mode == "hadamard_gemm" and is_power_of_two(m):
             sign = random_sign(m, self.seed, device=x.device, dtype=torch.float32)
-            return rotate(x.float(), sign), "h"
+            h = hadamard_matrix(m, str(x.device), torch.float32)
+            return (x * sign) @ h, "hg"
+        if mode == "hadamard" and is_power_of_two(m):
+            sign = random_sign(m, self.seed, device=x.device, dtype=torch.float32)
+            return rotate(x, sign), "h"
         q = _dense_rotation_on(m, self.seed, str(x.device), torch.float32)
-        return x.float() @ q, "d"
+        return x @ q, "d"
 
     def _unrotate(self, xr, m, kind):
+        if kind == "hg":
+            sign = random_sign(m, self.seed, device=xr.device, dtype=torch.float32)
+            h = hadamard_matrix(m, str(xr.device), torch.float32)
+            return (xr @ h) * sign  # H symmetric orthonormal -> H is its own inverse
         if kind == "h":
             sign = random_sign(m, self.seed, device=xr.device, dtype=torch.float32)
             return unrotate(xr, sign)
@@ -206,7 +224,7 @@ class HALOCodec(KVCodec):
     # --- per-tensor encode / decode --------------------------------------
     def _encode_tensor(self, x, bits, role):
         d = x.shape[-1]
-        if self._resolved_mode(d) == "hadamard" and not is_power_of_two(d):
+        if self._resolved_mode(d) in ("hadamard", "hadamard_gemm") and not is_power_of_two(d):
             return None  # caller falls back to affine
         # Online affine preconditioning -- only when this role opts in.  When it
         # is off (the default), the (x-mu)*w step is the identity, so we skip it
@@ -219,10 +237,19 @@ class HALOCodec(KVCodec):
         else:
             mu, w, xw = None, None, x
         xr, kind = self._rotate(xw, d)               # orthogonal rotation
-        scale = xr.pow(2).mean(dim=-1, keepdim=True).sqrt().clamp_min(1e-8)  # per-vector RMS
-        z = xr / scale
+        rms = xr.pow(2).mean(dim=-1, keepdim=True).sqrt().clamp_min(1e-8)  # per-vector RMS
         cb = _gaussian_codebook(bits).to(x.device)
-        codes = quantize_to_codebook(z, cb)
+        codes = quantize_to_codebook(xr / rms, cb)
+        if self.ls_scale:
+            # MSE-optimal dequant scale for the chosen codes:
+            # s* = argmin_s ||xr - s*c_hat||^2 = <xr,c_hat>/<c_hat,c_hat>.  Same
+            # single fp16/vector as RMS, provably <= RMS reconstruction error.
+            chat = cb[codes]
+            num = (xr * chat).sum(dim=-1, keepdim=True)
+            den = (chat * chat).sum(dim=-1, keepdim=True).clamp_min(1e-8)
+            scale = num / den
+        else:
+            scale = rms
         return {"codes": codes, "scale": scale, "mu": mu, "w": w,
                 "bits": bits, "m": d, "kind": kind}
 
@@ -266,8 +293,9 @@ class HALOCodec(KVCodec):
 
     def get_kv_config(self) -> dict:
         cfg = super().get_kv_config()
-        cfg.update({"value_bits": self.value_bits, "center": self.center,
-                    "whiten": self.whiten, "precond_roles": list(self.precond_roles),
+        cfg.update({"value_bits": self.value_bits, "ls_scale": self.ls_scale,
+                    "center": self.center, "whiten": self.whiten,
+                    "precond_roles": list(self.precond_roles),
                     "momentum": self.momentum, "rotation_mode": self.rotation_mode,
-                    "hadamard_min_dim": self.hadamard_min_dim})
+                    "hadamard_gemm_max_dim": self.hadamard_gemm_max_dim})
         return cfg

@@ -21,6 +21,7 @@ Copyright 2025-2026 Fujitsu Ltd.
 from __future__ import annotations
 
 import contextlib
+import math
 import random
 import re
 from dataclasses import dataclass, field
@@ -30,6 +31,28 @@ from typing import Callable, List, Optional
 import torch
 
 logger = getLogger(__name__)
+
+_Z95 = 1.959963984540054  # standard normal 97.5th percentile
+
+
+def proportion_stats(hits: int, n: int):
+    """(stderr, ci95_low, ci95_high) for a binomial accuracy ``hits/n``.
+
+    Reporting an error bar is required to claim a method "beats" another: with a
+    handful of needles a 1/24 difference is well within noise.  Uses the normal
+    standard error for the point estimate and the **Wilson** 95% interval (which
+    stays inside [0, 1] and is well-behaved near 0 % / 100 % accuracy, unlike the
+    Wald interval).
+    """
+    if n <= 0:
+        return 0.0, 0.0, 0.0
+    p = hits / n
+    se = math.sqrt(max(p * (1.0 - p), 0.0) / n)
+    z = _Z95
+    denom = 1.0 + z * z / n
+    center = (p + z * z / (2.0 * n)) / denom
+    half = z * math.sqrt(max(p * (1.0 - p) / n + z * z / (4.0 * n * n), 0.0)) / denom
+    return se, max(0.0, center - half), min(1.0, center + half)
 
 
 def _number_hit(gold: str, text: str) -> bool:
@@ -58,11 +81,16 @@ class NeedleResult:
     mem_fraction: float
     by_length: dict = field(default_factory=dict)   # ctx_len -> accuracy
     grid: List[dict] = field(default_factory=list)   # per (len, depth, seed)
+    accuracy_stderr: float = 0.0                     # binomial SE of accuracy
+    accuracy_ci95: tuple = (0.0, 0.0)                # Wilson 95% interval
 
     def as_dict(self) -> dict:
         return {
             "n": self.n,
             "accuracy": round(self.accuracy, 4),
+            "accuracy_stderr": round(self.accuracy_stderr, 4),
+            "accuracy_ci95": [round(self.accuracy_ci95[0], 4),
+                              round(self.accuracy_ci95[1], 4)],
             "mem_fraction": round(self.mem_fraction, 4),
             "by_length": {k: round(v, 4) for k, v in self.by_length.items()},
         }
@@ -192,12 +220,15 @@ def needle_in_haystack(
                 elif hasattr(cache, "compression_ratio"):
                     mem.append(1.0 / max(1e-9, cache.compression_ratio()))
                 grid.append({"ctx": ctx, "depth": depth, "seed": s, "hit": ok})
+    se, lo, hi = proportion_stats(hit, n)
     return NeedleResult(
         n=n,
         accuracy=hit / max(1, n),
         mem_fraction=(sum(mem) / len(mem) if mem else 1.0),
         by_length={c: by_len_hit[c][0] / max(1, by_len_hit[c][1]) for c in context_lens},
         grid=grid,
+        accuracy_stderr=se,
+        accuracy_ci95=(lo, hi),
     )
 
 
@@ -287,10 +318,13 @@ def ruler_multikey(
             elif hasattr(cache, "compression_ratio"):
                 mem.append(1.0 / max(1e-9, cache.compression_ratio()))
             grid.append({"ctx": ctx, "num_keys": num_keys, "seed": s, "hit": ok})
+    se, lo, hi = proportion_stats(hit, n)
     return NeedleResult(
         n=n,
         accuracy=hit / max(1, n),
         mem_fraction=(sum(mem) / len(mem) if mem else 1.0),
         by_length={c: by_len_hit[c][0] / max(1, by_len_hit[c][1]) for c in context_lens},
         grid=grid,
+        accuracy_stderr=se,
+        accuracy_ci95=(lo, hi),
     )

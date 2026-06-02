@@ -14,6 +14,7 @@ Copyright 2025-2026 Fujitsu Ltd.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 from logging import getLogger
@@ -22,6 +23,8 @@ from typing import Callable, List, Optional
 import torch
 
 logger = getLogger(__name__)
+
+_Z95 = 1.959963984540054
 
 _BOXED = re.compile(r"\\boxed\{([^{}]*)\}")
 _HASH = re.compile(r"####\s*(.+)")
@@ -37,6 +40,9 @@ class ReasoningResult:
     avg_gen_len: float
     compression_ratio: float = 1.0
     per_question: List[dict] = field(default_factory=list)
+    pass_at_1_stderr: float = 0.0          # SE of the mean over questions
+    pass_at_1_ci95: tuple = (0.0, 0.0)     # normal 95% interval
+    eviction_fired: bool = True            # False if an eviction cache never trimmed
 
     def as_dict(self) -> dict:
         return {
@@ -44,9 +50,26 @@ class ReasoningResult:
             "n": self.n,
             "k": self.k,
             "pass@1": round(self.pass_at_1, 4),
+            "pass@1_stderr": round(self.pass_at_1_stderr, 4),
+            "pass@1_ci95": [round(self.pass_at_1_ci95[0], 4),
+                            round(self.pass_at_1_ci95[1], 4)],
             "avg_gen_len": round(self.avg_gen_len, 1),
             "compression_ratio": round(self.compression_ratio, 3),
+            "eviction_fired": self.eviction_fired,
         }
+
+
+def _mean_stderr_ci(values: List[float]):
+    """Mean, standard error of the mean, and normal 95% CI of ``values``."""
+    n = len(values)
+    if n == 0:
+        return 0.0, 0.0, (0.0, 0.0)
+    mean = sum(values) / n
+    if n == 1:
+        return mean, 0.0, (mean, mean)
+    var = sum((v - mean) ** 2 for v in values) / (n - 1)
+    se = math.sqrt(var / n)
+    return mean, se, (mean - _Z95 * se, mean + _Z95 * se)
 
 
 def _normalize_number(s: str) -> Optional[str]:
@@ -96,10 +119,68 @@ def _build_prompt(tokenizer, question: str, system: Optional[str]) -> torch.Tens
     return ids
 
 
+def _sample_next(logits, do_sample, temperature, top_p):
+    """Greedy or nucleus (top-p) sample of the next token from ``logits`` (1, V)."""
+    if not do_sample:
+        return logits.argmax(-1, keepdim=True)
+    logits = logits / max(temperature, 1e-6)
+    probs = torch.softmax(logits, dim=-1)
+    sorted_probs, sorted_idx = torch.sort(probs, descending=True, dim=-1)
+    cdf = torch.cumsum(sorted_probs, dim=-1)
+    keep = cdf - sorted_probs <= top_p  # keep tokens up to and incl. the one crossing top_p
+    sorted_probs = sorted_probs * keep
+    sorted_probs = sorted_probs / sorted_probs.sum(-1, keepdim=True).clamp_min(1e-12)
+    choice = torch.multinomial(sorted_probs, 1)
+    return sorted_idx.gather(-1, choice)
+
+
+@torch.no_grad()
+def _eviction_decode(model, input_ids, cache, max_new_tokens, eos,
+                     do_sample, temperature, top_p):
+    """Manual decode that fires ``cache.evict_now()`` after prefill AND each step.
+
+    HF ``model.generate`` cannot trim a cache mid-forward (mask/position
+    bookkeeping breaks), so an eviction cache passed to ``generate`` would *never*
+    evict during a long reasoning rollout -- it would silently behave like FullKV
+    (benchmark bug B-5).  This loop drives ``cache_position`` explicitly and
+    re-applies eviction every step, so the StreamingLLM sink+recent window is
+    maintained throughout the (long) generation, exactly as deployed.
+    """
+    dev = model.device
+    n = input_ids.shape[1]
+    pos = torch.arange(n, device=dev)
+    out = model(input_ids.to(dev), past_key_values=cache, use_cache=True, cache_position=pos)
+    cache.evict_now()
+    nxt = _sample_next(out.logits[:, -1], do_sample, temperature, top_p)
+    toks, cur = [nxt], n
+    for _ in range(max_new_tokens - 1):
+        cp = torch.tensor([cur], device=dev)
+        out = model(nxt, past_key_values=cache, use_cache=True,
+                    cache_position=cp, position_ids=cp.unsqueeze(0))
+        cache.evict_now()
+        nxt = _sample_next(out.logits[:, -1], do_sample, temperature, top_p)
+        toks.append(nxt)
+        cur += 1
+        if eos is not None and nxt.item() == eos:
+            break
+    return torch.cat(toks, dim=1)[0]  # (T,) to match the generate path
+
+
 @torch.no_grad()
 def _generate(model, tokenizer, input_ids, cache_factory, max_new_tokens, do_sample,
               temperature, top_p, attn_capture=False):
     past = cache_factory() if cache_factory is not None else None
+    # Eviction caches must be trimmed via evict_now(); HF generate never calls it,
+    # so route them through the explicit eviction-aware loop (B-5).  This keeps the
+    # StreamingLLM window enforced for the whole rollout instead of silently
+    # degenerating to FullKV.
+    if past is not None and hasattr(past, "evict_now"):
+        eos = tokenizer.eos_token_id
+        gen = _eviction_decode(model, input_ids, past, max_new_tokens, eos,
+                               do_sample, temperature, top_p)
+        ratio = past.compression_ratio() if hasattr(past, "compression_ratio") else 1.0
+        fired = getattr(past, "kept", 0) and getattr(past, "total", 0) and past.kept < past.total
+        return gen, ratio, bool(fired)
     gen_kwargs = dict(
         max_new_tokens=max_new_tokens,
         do_sample=do_sample,
@@ -121,7 +202,7 @@ def _generate(model, tokenizer, input_ids, cache_factory, max_new_tokens, do_sam
         out = model.generate(input_ids.to(model.device), **gen_kwargs)
     gen = out[0, input_ids.shape[1]:]
     ratio = past.compression_ratio() if (past is not None and hasattr(past, "compression_ratio")) else 1.0
-    return gen, ratio
+    return gen, ratio, True
 
 
 @torch.no_grad()
@@ -131,16 +212,18 @@ def _eval_dataset(
     attn_capture=False,
 ):
     n = 0
-    pass_sum = 0.0
+    p1_values: List[float] = []
     gen_lens: List[int] = []
     ratios: List[float] = []
     per_q: List[dict] = []
+    fired_all = True
+    saw_eviction = False
     for question, gold_raw in items:
         gold = gold_fn(gold_raw)
         ids = _build_prompt(tokenizer, question, system)
         correct = 0
         for _ in range(k):
-            gen, ratio = _generate(
+            gen, ratio, fired = _generate(
                 model, tokenizer, ids, cache_factory,
                 max_new_tokens, do_sample or k > 1, temperature, top_p,
                 attn_capture=attn_capture,
@@ -151,17 +234,32 @@ def _eval_dataset(
             pred = extract_answer(text)
             correct += int(pred is not None and gold is not None and pred == gold)
         p1 = correct / k
-        pass_sum += p1
+        p1_values.append(p1)
         n += 1
         per_q.append({"gold": gold, "pass@1": p1})
         if verbose:
             logger.info("[%s] q%d gold=%s pass@1=%.2f", task, n, gold, p1)
+    # Detect whether an eviction cache actually trimmed (else its result is FullKV).
+    probe = cache_factory() if cache_factory is not None else None
+    if probe is not None and hasattr(probe, "evict_now"):
+        saw_eviction = True
+        fired_all = ratios and (sum(ratios) / len(ratios)) > 1.0 + 1e-6
+        if not fired_all:
+            logger.warning(
+                "[%s] eviction cache did not trim (compression_ratio~1): the "
+                "context is shorter than sink+recent, so this row equals FullKV.",
+                task,
+            )
+    mean_p1, se, ci = _mean_stderr_ci(p1_values)
     return ReasoningResult(
         task=task, n=n, k=k,
-        pass_at_1=pass_sum / max(n, 1),
+        pass_at_1=mean_p1,
         avg_gen_len=sum(gen_lens) / max(len(gen_lens), 1),
         compression_ratio=float(sum(ratios) / len(ratios)) if ratios else 1.0,
         per_question=per_q,
+        pass_at_1_stderr=se,
+        pass_at_1_ci95=ci,
+        eviction_fired=(fired_all if saw_eviction else True),
     )
 
 

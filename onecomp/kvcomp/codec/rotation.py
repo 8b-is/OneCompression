@@ -45,6 +45,37 @@ def walsh_hadamard_transform(x: torch.Tensor) -> torch.Tensor:
     return y.reshape(orig_shape).to(x.dtype)
 
 
+@lru_cache(maxsize=32)
+def _hadamard_cpu(dim: int) -> torch.Tensor:
+    """Orthonormal Sylvester-Hadamard matrix ``H / sqrt(dim)`` (power-of-two dim).
+
+    ``H`` has entries ``+/-1`` and ``H H^T = dim * I``; the returned matrix is
+    symmetric and orthonormal (its own inverse).  Built once per ``dim`` and
+    cached.
+    """
+    if not is_power_of_two(dim):
+        raise ValueError(f"Hadamard matrix requires power-of-two dim, got {dim}")
+    h = torch.ones(1, 1, dtype=torch.float32)
+    while h.shape[0] < dim:
+        h = torch.cat([torch.cat([h, h], 1), torch.cat([h, -h], 1)], 0)
+    return h / math.sqrt(dim)
+
+
+@lru_cache(maxsize=64)
+def hadamard_matrix(dim: int, device_str: str, dtype) -> torch.Tensor:
+    """Device-resident orthonormal Hadamard matrix, cached per (dim, device, dtype).
+
+    Applying the randomized Hadamard rotation as a single dense GEMM
+    ``(x * sign) @ hadamard_matrix(d)`` is mathematically identical to the
+    sequential Walsh-Hadamard butterfly :func:`walsh_hadamard_transform` but maps
+    to one matmul -- GEMM-friendly (saturates tensor cores / BLAS) instead of
+    ``log2(d)`` memory-bound butterfly stages, so it is faster while keeping the
+    Hadamard transform's superior incoherence (and thus quantization quality on
+    real, anisotropic KV) over a single Haar-random dense rotation.
+    """
+    return _hadamard_cpu(dim).to(device=torch.device(device_str), dtype=dtype)
+
+
 @lru_cache(maxsize=64)
 def _cached_sign(dim: int, seed: int, device_str: str, dtype) -> torch.Tensor:
     gen = torch.Generator(device="cpu").manual_seed(seed)

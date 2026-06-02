@@ -577,20 +577,49 @@ _CALIB_PROMPTS = (
 
 
 @torch.no_grad()
-def detect_outlier_layers(model, input_ids, ratio_thresh: float = 50.0) -> list:
+def detect_outlier_layers(model, input_ids, ratio_thresh: float = 50.0,
+                          agg: str = "mean") -> list:
     """Layers whose per-channel key range >> median (massive activations).
 
     These are left un-quantized by every KV-quant method (StreamingLLM/KIVI
     robustness); quantizing them with low-bit NVFP4 is what breaks reasoning
     models, so detecting + skipping them is part of a *faithful* ThinKV setup.
+
+    ``input_ids`` may be a single tensor (one probe) **or a list/tuple of probe
+    tensors**.  Aggregating the per-layer range-ratio across several diverse
+    probes makes the skip set reproducible instead of hostage to one short prompt
+    (benchmark review B-6):
+
+    * ``agg="mean"`` (default): skip a layer if its *mean* ratio across probes
+      exceeds ``ratio_thresh``.
+    * ``agg="vote"``: skip a layer if it is an outlier in a *majority* of probes.
+
+    A single-tensor argument reproduces the original single-probe behaviour.
     """
-    out = model(input_ids.to(model.device), use_cache=True)
-    layers = out.past_key_values.layers
+    probes = list(input_ids) if isinstance(input_ids, (list, tuple)) else [input_ids]
+    if not probes:
+        return []
+    per_probe = []
+    for ids in probes:
+        out = model(ids.to(model.device), use_cache=True)
+        layers = out.past_key_values.layers
+        ratios = []
+        for layer in layers:
+            k = layer.keys.float()[0]
+            ratios.append(
+                float((k.abs().amax(dim=-1)
+                       / k.abs().median(dim=-1).values.clamp_min(1e-6)).mean()))
+        per_probe.append(ratios)
+
+    n_layers = len(per_probe[0])
     skip = []
-    for li, layer in enumerate(layers):
-        k = layer.keys.float()[0]
-        ratio = float((k.abs().amax(dim=-1) / k.abs().median(dim=-1).values.clamp_min(1e-6)).mean())
-        if ratio > ratio_thresh:
+    for li in range(n_layers):
+        vals = [p[li] for p in per_probe]
+        if agg == "vote":
+            is_outlier = sum(v > ratio_thresh for v in vals) >= (len(vals) + 1) // 2
+        else:  # mean
+            is_outlier = (sum(vals) / len(vals)) > ratio_thresh
+        if is_outlier:
             skip.append(li)
     return skip
 

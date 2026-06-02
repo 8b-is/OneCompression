@@ -66,6 +66,30 @@ def plan_for_model(model_path: str, requested_kv_cache_dtype: str = "auto") -> K
     return plan_from_kv_config(read_kv_compression_config(model_path), requested_kv_cache_dtype)
 
 
+def _vllm_accepts_dtype(dtype: Optional[str]) -> bool:
+    """Best-effort: does the installed vLLM accept this ``kv_cache_dtype``?
+
+    The native TurboQuant / NVFP4 / int8-per-token-head dtypes only exist on
+    recent vLLM.  We introspect the ``CacheDType`` literal so an older vLLM falls
+    back gracefully (leave ``auto``) instead of erroring at engine start.  When
+    the literal cannot be located we are optimistic (return ``True``) and let
+    vLLM validate.
+    """
+    if dtype in (None, "auto"):
+        return True
+    import typing  # pylint: disable=import-outside-toplevel
+    for modname, attr in (("vllm.config.cache", "CacheDType"),
+                          ("vllm.config", "CacheDType")):
+        try:
+            mod = __import__(modname, fromlist=[attr])
+            choices = set(typing.get_args(getattr(mod, attr)))
+            if choices:
+                return dtype in choices
+        except Exception:  # pragma: no cover - version dependent
+            continue
+    return True
+
+
 def apply_to_engine_args(engine_args, model_path: Optional[str] = None):
     """Set ``kv_cache_dtype`` on a vLLM ``EngineArgs`` from its model's config.
 
@@ -84,6 +108,12 @@ def apply_to_engine_args(engine_args, model_path: Optional[str] = None):
     for msg in plan.warnings:
         logger.warning("[kvcomp] %s", msg)
     if plan.native_supported and plan.kv_cache_dtype != "auto":
+        if not _vllm_accepts_dtype(plan.kv_cache_dtype):
+            logger.warning(
+                "[kvcomp] installed vLLM does not support kv_cache_dtype='%s' "
+                "(needs a newer vLLM); leaving 'auto'. Upgrade vLLM or use the HF "
+                "cache path.", plan.kv_cache_dtype)
+            return engine_args
         engine_args.kv_cache_dtype = plan.kv_cache_dtype
         if plan.calculate_kv_scales and hasattr(engine_args, "calculate_kv_scales"):
             engine_args.calculate_kv_scales = True
@@ -98,21 +128,74 @@ def apply_to_engine_args(engine_args, model_path: Optional[str] = None):
     return engine_args
 
 
-def register_vllm_plugin():
-    """Entry point for ``vllm.general_plugins``.
+_PATCHED = False
 
-    vLLM calls this once per engine process.  We only announce availability and
-    validate the environment here; the actual ``kv_cache_dtype`` is applied via
-    :func:`engine_kwargs_from_kv_config` / :func:`apply_to_engine_args` when the
-    engine args are constructed.  This keeps the plugin non-invasive (it never
-    hijacks the platform), matching how the weight plugins register.
+
+def _install_engine_args_hook(logger) -> bool:
+    """Wrap ``EngineArgs.create_engine_config`` to auto-apply the KV-comp plan.
+
+    Unlike weight quantization (which vLLM discovers from
+    ``quantization_config`` via ``register_quantization_config``), vLLM has *no*
+    hook that reads a ``kv_compression_config`` and configures the KV cache.  So
+    to make an OneComp FP8 model "just work" under a plain
+    ``LLM(model=...)`` / ``vllm serve``, we idempotently wrap
+    ``EngineArgs.create_engine_config`` and call :func:`apply_to_engine_args`
+    just before the engine config is built -- this sets ``kv_cache_dtype`` (and
+    ``calculate_kv_scales``) from the model's config.json.  Non-FP8 codecs are
+    only *warned* about (never silently mis-applied).
+
+    Returns ``True`` if the hook is installed (or already was).
+    """
+    global _PATCHED
+    if _PATCHED:
+        return True
+    from vllm.engine.arg_utils import EngineArgs  # pylint: disable=import-outside-toplevel
+
+    if getattr(EngineArgs, "_onecomp_kvcomp_patched", False):
+        _PATCHED = True
+        return True
+
+    _orig_create = EngineArgs.create_engine_config
+
+    def _patched_create(self, *args, **kwargs):
+        try:
+            apply_to_engine_args(self)
+        except Exception as exc:  # pragma: no cover - never block engine start
+            _get_logger().warning(
+                "[kvcomp] auto-apply skipped (%s); call apply_to_engine_args() "
+                "or engine_kwargs_from_kv_config() manually.", exc)
+        return _orig_create(self, *args, **kwargs)
+
+    _patched_create._onecomp_orig = _orig_create  # introspection / un-patch
+    EngineArgs.create_engine_config = _patched_create
+    EngineArgs._onecomp_kvcomp_patched = True
+    _PATCHED = True
+    return True
+
+
+def register_vllm_plugin():
+    """Entry point for ``vllm.general_plugins`` (called once per engine process).
+
+    Installs a non-invasive ``EngineArgs`` hook that auto-applies the FP8 ->
+    ``kv_cache_dtype`` mapping for models carrying a ``kv_compression_config``,
+    so the FP8 path needs no manual launcher call.  If the hook cannot be
+    installed (unexpected vLLM version), the plugin degrades gracefully: the
+    explicit :func:`apply_to_engine_args` / :func:`engine_kwargs_from_kv_config`
+    helpers still work.
     """
     logger = _get_logger()
-    logger.info(
-        "Registered OneComp KV compression plugin '%s' (FP8 -> native "
-        "kv_cache_dtype; low-bit/eviction via experimental backend).",
-        _PLUGIN_NAME,
-    )
+    try:
+        _install_engine_args_hook(logger)
+        logger.info(
+            "Registered OneComp KV compression plugin '%s' (FP8 auto-applied to "
+            "kv_cache_dtype; low-bit/eviction require the HF cache path or the "
+            "experimental attention backend).",
+            _PLUGIN_NAME,
+        )
+    except Exception as exc:  # pragma: no cover - vLLM internals changed
+        logger.warning(
+            "[kvcomp] could not install EngineArgs hook (%s); use "
+            "apply_to_engine_args()/engine_kwargs_from_kv_config() manually.", exc)
 
 
 __all__ = [

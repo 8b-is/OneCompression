@@ -74,10 +74,26 @@ def build_methods(cfg: DictConfig, model, tok):
     # robustness every KV-quant method relies on, so it must be applied uniformly
     # for a fair comparison (not just to ThinKV).
     if cfg.get("skip_outliers", True):
-        probe = tok.apply_chat_template(
-            [{"role": "user", "content": "Solve: what is 17 times 23? Reason step by step."}],
-            add_generation_prompt=True, return_tensors="pt", return_dict=True)["input_ids"].to(model.device)
-        skip = detect_outlier_layers(model, probe, ratio_thresh=cfg.get("outlier_ratio", 50.0))
+        # Several diverse probes (math / retrieval / code / narrative) instead of a
+        # single short prompt: the massive-activation layer set is then aggregated
+        # (mean ratio) across probes, so it is reproducible rather than hostage to
+        # one prompt's tokenisation (benchmark review B-6).
+        _probe_texts = cfg.get("outlier_probes", [
+            "Solve: what is 17 times 23? Reason step by step.",
+            "Repeat the following key exactly: the passcode is QH-4821-ZX. What is the passcode?",
+            "Write a Python function that returns the n-th Fibonacci number.",
+            "Summarize in one sentence why the sky appears blue during the day.",
+        ])
+        probes = [
+            tok.apply_chat_template(
+                [{"role": "user", "content": t}],
+                add_generation_prompt=True, return_tensors="pt",
+                return_dict=True)["input_ids"].to(model.device)
+            for t in _probe_texts
+        ]
+        skip = detect_outlier_layers(
+            model, probes, ratio_thresh=cfg.get("outlier_ratio", 50.0),
+            agg=cfg.get("outlier_agg", "mean"))
     else:
         skip = []
     print(f"  [outlier] skip_layers (all quant methods) = {skip}", flush=True)

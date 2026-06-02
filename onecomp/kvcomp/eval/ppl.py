@@ -5,6 +5,20 @@
 ``cache_factory`` so a codec is measured exactly the way it is used at decode
 time.  This is the KV analogue of the weight side's perplexity validation.
 
+Measurement-validity guards (see ichikawa_works review B-2)
+-----------------------------------------------------------
+* **Non-finite windows.**  A window whose summed loss is ``NaN``/``inf`` (e.g. a
+  numerically unstable layer, logit overflow before soft-capping) is *excluded*
+  from the average and counted in ``n_skipped_nonfinite`` instead of poisoning
+  the whole PPL.  A run with any skipped window is flagged.
+* **Instruct / multimodal models.**  Raw-text WikiText PPL is only meaningful for
+  a *base* causal LM.  On instruction-tuned or multimodal (``*ForConditional
+  Generation``) checkpoints scored on raw text, the absolute PPL is unreliable
+  and KV quantization can even appear to *lower* it (a physical impossibility for
+  lossy compression) -- prefer the base model, or compare codecs only relative to
+  the *same* model's FullKV (never across models).  This is why a compressed PPL
+  below the FullKV PPL should be treated as a measurement artefact, not a result.
+
 Copyright 2025-2026 Fujitsu Ltd.
 """
 
@@ -61,6 +75,7 @@ def perplexity_over_text(
     ratios = []
     prev_end = 0
     n_win = 0
+    n_skipped = 0
     for begin in range(0, seq_len, stride):
         end = min(begin + max_length, seq_len)
         trg_len = end - prev_end  # number of newly-scored targets
@@ -77,22 +92,41 @@ def perplexity_over_text(
             reduction="sum",
         )
         valid = (tgt != -100).sum().item()
-        if valid > 0:
-            nlls.append(loss)
-            n_tokens += valid
-        if past is not None and hasattr(past, "compression_ratio"):
-            ratios.append(past.compression_ratio())
         prev_end = end
         n_win += 1
+        # Exclude non-finite windows (NaN/inf loss) rather than poisoning the mean.
+        if valid > 0 and torch.isfinite(loss):
+            nlls.append(loss)
+            n_tokens += valid
+        elif valid > 0:
+            n_skipped += 1
+            logger.warning(
+                "Skipping window [%d:%d] with non-finite loss (NaN/inf); "
+                "excluded from perplexity.", begin, end,
+            )
+        if past is not None and hasattr(past, "compression_ratio"):
+            ratios.append(past.compression_ratio())
         if end == seq_len or (max_windows is not None and n_win >= max_windows):
             break
 
+    if not nlls:
+        raise ValueError(
+            "No finite-loss windows scored; perplexity is undefined "
+            f"({n_skipped} non-finite windows skipped). The model/text combination "
+            "is numerically unstable (e.g. raw text on an instruct/multimodal model)."
+        )
+    if n_skipped:
+        logger.warning(
+            "%d/%d windows had non-finite loss and were excluded; treat the PPL "
+            "as approximate and check the model/text suitability.", n_skipped, n_win,
+        )
     total_nll = torch.stack(nlls).sum() / max(n_tokens, 1)
     return {
         "ppl": float(torch.exp(total_nll)),
         "nll": float(total_nll),
         "n_tokens": n_tokens,
         "n_windows": n_win,
+        "n_skipped_nonfinite": n_skipped,
         "compression_ratio": float(sum(ratios) / len(ratios)) if ratios else 1.0,
     }
 

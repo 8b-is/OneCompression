@@ -5,16 +5,23 @@ This module is the *pure-Python* bridge between
 ``kv_compression_config`` block by :class:`onecomp.runner.Runner`) and the
 arguments that configure vLLM's KV cache.
 
-Design (see ``docs/design/kvcomp-architecture.md`` section 11):
+Design (see ``docs/design/kvcomp-architecture.md`` section 11).  Recent vLLM
+ships native KV-cache dtypes well beyond FP8, so the bridge maps onto them:
 
-* **FP8** is representable by vLLM *natively* via the ``kv_cache_dtype`` engine
-  argument (``"fp8_e4m3"`` / ``"fp8_e5m2"``).  This is the recommended 2026
-  baseline and needs no custom attention backend, so it is fully supported here.
-* Low-bit / asymmetric / rotated codecs (INT4, KIVI, TurboQuant, NVFP4, ...) and
-  token-eviction selectors (SnapKV, ThinKV TBE) are *not* expressible as a
-  ``kv_cache_dtype`` and require a custom ``AttentionBackend`` (the experimental
-  platform path).  For those this module returns ``native_supported=False`` with
-  an explicit reason rather than silently downgrading.
+* **FP8** -> ``"fp8_e4m3"`` / ``"fp8_e5m2"`` (data-free, ``calculate_kv_scales``).
+* **TurboQuant** (and the TurboQuant-family **HALO**) -> the native
+  ``turboquant_*`` presets (``turboquant_k8v4``, ``turboquant_4bit_nc``,
+  ``turboquant_k3v4_nc``, ``turboquant_3bit_nc``) chosen by ``(key_bits,
+  value_bits)`` -- vLLM runs Hadamard rotation + Lloyd-Max keys + uniform values
+  with automatic boundary-layer protection (FlashAttention-2).
+* **NVFP4** -> ``"nvfp4"``; **INT8** -> ``"int8_per_token_head"``.
+* Remaining low-bit/asymmetric codecs (INT4/INT3/INT2, KIVI, Ternary) and
+  token-eviction selectors (SnapKV, ThinKV TBE) / adaptive per-token policies
+  (TaperKV, ThinKV) are not expressible as one ``kv_cache_dtype`` and require the
+  custom attention-backend / HF cache path.  For those the module returns
+  ``native_supported=False`` with an explicit reason rather than silently
+  downgrading.  Native dtypes added only in recent vLLM are validated at
+  apply-time so an older vLLM falls back gracefully.
 
 The module deliberately imports neither ``vllm`` nor ``torch`` so it can be
 unit-tested on a CPU-only login node.
@@ -28,27 +35,48 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 # OneComp codec name -> vLLM native ``kv_cache_dtype`` value.
-# vLLM natively supports only FP8 KV cache dtypes; everything else needs a
-# custom attention backend.
 _NATIVE_FP8 = {
     "fp8": "fp8_e4m3",
     "fp8_e4m3": "fp8_e4m3",
     "fp8_e5m2": "fp8_e5m2",
 }
 
-# Codecs that are implemented in OneComp but require the (experimental) custom
-# attention-backend path to run *inside vLLM*.  They still work in the HF cache.
+# vLLM (recent main) ships a native TurboQuant KV cache (Hadamard rotation +
+# Lloyd-Max keys + uniform values, with boundary-layer protection and a
+# dedicated attention impl).  Its named presets map onto OneComp's TurboQuant
+# (and the TurboQuant-family HALO) by (key_bits, value_bits).  Source of truth:
+# ``vllm/model_executor/layers/quantization/turboquant/config.py`` (TQ_PRESETS).
+_TURBOQUANT_PRESETS = {
+    (8, 4): "turboquant_k8v4",      # FP8 keys + 4-bit values   (~2.6x)
+    (4, 4): "turboquant_4bit_nc",   # 4-bit MSE keys + 4-bit V  (~3.8x)
+    (3, 4): "turboquant_k3v4_nc",   # 3-bit MSE keys + 4-bit V  (~3.5x)
+    (3, 3): "turboquant_3bit_nc",   # 3-bit keys + 3-bit values (~4.9x)
+}
+
+# Other native (non-FP8) KV cache dtypes vLLM accepts.
+_NATIVE_OTHER = {
+    "nvfp4": "nvfp4",
+    "int8": "int8_per_token_head",
+}
+
+# Codecs implemented in OneComp with no native vLLM kv_cache_dtype; they require
+# the (experimental) custom attention-backend path to run *inside* vLLM, but work
+# in the HF cache path today.
 _NEEDS_CUSTOM_BACKEND = {
-    "int8",
     "int4",
     "int3",
     "int2",
     "kivi",
-    "turboquant",
-    "halo",
-    "nvfp4",
     "ternary",
 }
+
+
+def _turboquant_preset(codec: dict):
+    """Return (preset_name or None, key_bits, value_bits) for a TQ-family codec."""
+    bits = int(codec.get("bits", 4))
+    vbits = codec.get("value_bits")
+    vbits = int(vbits) if vbits is not None else bits
+    return _TURBOQUANT_PRESETS.get((bits, vbits)), bits, vbits
 
 
 @dataclass
@@ -131,25 +159,69 @@ def plan_from_kv_config(
             "the custom attention backend (use the HF cache path today)."
         )
 
+    # If the recipe already needs the custom backend (token eviction or an
+    # adaptive per-token policy), no single ``kv_cache_dtype`` can express it --
+    # the codec's native dtype is irrelevant.  Finalise as custom-backend.
+    if plan.needs_custom_backend:
+        plan.native_supported = False
+        plan.kv_cache_dtype = "auto"
+        if codec is not None:
+            plan.notes.append(
+                f"Codec '{plan.codec_name}' is part of an eviction/adaptive recipe; "
+                "the whole recipe needs the custom attention backend (HF cache path)."
+            )
+        return plan
+
     if codec is None:
-        # Eviction-only recipe: dtype unchanged.
+        # Eviction-only recipe handled above; here: nothing to compress.
         plan.kv_cache_dtype = requested_kv_cache_dtype
-        plan.native_supported = not plan.needs_custom_backend
+        plan.native_supported = True
         return plan
 
     name = plan.codec_name
-    if name in _NATIVE_FP8:
-        dtype = _NATIVE_FP8[name]
+
+    def _set_native(dtype: str, note: str):
         plan.kv_cache_dtype = dtype
         plan.native_supported = True
-        # OneComp FP8 is data-free / online -> let vLLM compute scales online.
-        plan.calculate_kv_scales = True
-        plan.notes.append(f"Codec '{name}' -> native vLLM kv_cache_dtype='{dtype}'.")
+        plan.notes.append(note)
         if requested_kv_cache_dtype not in ("auto", dtype):
             plan.warnings.append(
                 f"Requested kv_cache_dtype='{requested_kv_cache_dtype}' conflicts "
                 f"with codec '{name}' -> '{dtype}'; using the codec's dtype."
             )
+
+    if name in _NATIVE_FP8:
+        dtype = _NATIVE_FP8[name]
+        # OneComp FP8 is data-free / online -> let vLLM compute scales online.
+        plan.calculate_kv_scales = True
+        _set_native(dtype, f"Codec '{name}' -> native vLLM kv_cache_dtype='{dtype}'.")
+    elif name in ("turboquant", "halo"):
+        preset, kb, vb = _turboquant_preset(codec)
+        if preset is not None:
+            _set_native(
+                preset,
+                f"Codec '{name}' (k{kb}v{vb}) -> native vLLM kv_cache_dtype="
+                f"'{preset}' (requires a vLLM build with native TurboQuant KV "
+                "cache + FlashAttention-2; boundary layers auto-protected).",
+            )
+            if name == "halo":
+                plan.warnings.append(
+                    "HALO maps to vLLM's faithful TurboQuant kernel (Lloyd-Max "
+                    "keys + uniform values + norm-correction); HALO's "
+                    "Hadamard-GEMM / least-squares-scale refinements run only in "
+                    "the HF cache path."
+                )
+        else:
+            plan.needs_custom_backend = True
+            plan.kv_cache_dtype = "auto"
+            plan.notes.append(
+                f"Codec '{name}' k{kb}v{vb} has no native TurboQuant preset "
+                "(vLLM presets: k8v4, 4bit_nc, k3v4_nc, 3bit_nc); use the HF "
+                "cache path or one of those bit-widths."
+            )
+    elif name in _NATIVE_OTHER:
+        dtype = _NATIVE_OTHER[name]
+        _set_native(dtype, f"Codec '{name}' -> native vLLM kv_cache_dtype='{dtype}'.")
     elif name in _NEEDS_CUSTOM_BACKEND:
         plan.needs_custom_backend = True
         plan.native_supported = False

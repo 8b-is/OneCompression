@@ -23,6 +23,7 @@ from onecomp.kvcomp.codec.rotation import (
     rotate,
     unrotate,
     random_orthogonal,
+    hadamard_matrix,
     lloyd_max_gaussian,
     lloyd_max_beta,
     quantize_to_codebook,
@@ -184,6 +185,58 @@ def test_halo_non_pow2_hadamard_falls_back():
     enc = h.encode(x, x)
     assert enc.meta.get("fallback") or enc.meta.get("passthrough")
     assert h.decode(enc)[0].shape == x.shape
+
+
+def test_hadamard_matrix_orthonormal():
+    for d in (8, 64, 128, 256):
+        h = hadamard_matrix(d, "cpu", torch.float32)
+        assert torch.allclose(h @ h.t(), torch.eye(d), atol=1e-5)
+
+
+def test_hadamard_gemm_equals_wht():
+    # (x*sign) @ H is mathematically the randomized Walsh-Hadamard transform.
+    for d in (64, 128, 256):
+        x = torch.randn(50, d)
+        sign = random_sign(d, 0, dtype=torch.float32)
+        h = hadamard_matrix(d, "cpu", torch.float32)
+        assert torch.allclose((x * sign) @ h, rotate(x, sign), atol=1e-4)
+
+
+def test_halo_auto_resolves_hadamard_gemm_for_pow2():
+    h = HALOCodec(bits=4, rotation_mode="auto")
+    assert h._resolved_mode(128) == "hadamard_gemm"
+    assert h._resolved_mode(256) == "hadamard_gemm"
+    assert h._resolved_mode(96) == "dense"  # non power of two
+    # Above the matrix-size guard it falls back to the butterfly WHT.
+    assert HALOCodec(bits=4, hadamard_gemm_max_dim=64)._resolved_mode(128) == "hadamard"
+
+
+def test_halo_hadamard_gemm_matches_wht_quality():
+    # The GEMM Hadamard must reconstruct identically to the butterfly WHT and to
+    # TurboQuant's hadamard mode (it is the SAME transform): a speed lever only.
+    x, _ = _kv()
+    hg = HALOCodec(bits=4, rotation_mode="hadamard_gemm", ls_scale=False)
+    hw = HALOCodec(bits=4, rotation_mode="hadamard", ls_scale=False)
+    tq = TurboQuantCodec(bits=4, rotation_mode="hadamard")
+    m_hg = float((hg.decode(hg.encode(x, x))[0] - x).pow(2).mean())
+    m_hw = float((hw.decode(hw.encode(x, x))[0] - x).pow(2).mean())
+    m_tq = float((tq.decode(tq.encode(x, x))[0] - x).pow(2).mean())
+    assert abs(m_hg - m_hw) / max(m_hg, m_hw) < 1e-3
+    assert abs(m_hg - m_tq) / max(m_hg, m_tq) < 1e-3
+
+
+def test_halo_ls_scale_reduces_mse_and_is_storage_neutral():
+    # The least-squares dequant scale minimises ||xr - s*c_hat||^2, so it can only
+    # lower reconstruction MSE; storage (one fp16/vector) is unchanged.
+    x, _ = _kv()
+    for bits in (2, 3, 4):
+        ls = HALOCodec(bits=bits, rotation_mode="hadamard_gemm", ls_scale=True)
+        rms = HALOCodec(bits=bits, rotation_mode="hadamard_gemm", ls_scale=False)
+        e_ls, e_rms = ls.encode(x, x), rms.encode(x, x)
+        m_ls = float((ls.decode(e_ls)[0] - x).pow(2).mean())
+        m_rms = float((rms.decode(e_rms)[0] - x).pow(2).mean())
+        assert m_ls <= m_rms + 1e-9
+        assert e_ls.meta["stored_bits"] == e_rms.meta["stored_bits"]
 
 
 @pytest.mark.parametrize(
@@ -386,3 +439,204 @@ def test_vllm_mapping_fp8_native_and_int3_custom():
     assert p_fp8.native_supported and p_fp8.kv_cache_dtype.startswith("fp8")
     p_int3 = plan_from_kv_config({"codec": {"name": "int3"}})
     assert p_int3.needs_custom_backend and not p_int3.warnings
+
+
+@pytest.mark.parametrize("name,dtype", [
+    ("fp8", "fp8_e4m3"), ("fp8_e4m3", "fp8_e4m3"), ("fp8_e5m2", "fp8_e5m2"),
+])
+def test_vllm_mapping_fp8_variants(name, dtype):
+    from vllm_plugins.kvcomp.mapping import plan_from_kv_config, engine_kwargs_from_kv_config
+
+    p = plan_from_kv_config({"codec": {"name": name}})
+    assert p.native_supported and not p.needs_custom_backend
+    assert p.kv_cache_dtype == dtype and p.calculate_kv_scales
+    kw = engine_kwargs_from_kv_config({"codec": {"name": name}})
+    assert kw == {"kv_cache_dtype": dtype, "calculate_kv_scales": True}
+
+
+@pytest.mark.parametrize("name", ["int4", "int3", "int2", "kivi", "ternary"])
+def test_vllm_mapping_lowbit_needs_custom_backend(name):
+    from vllm_plugins.kvcomp.mapping import plan_from_kv_config
+
+    p = plan_from_kv_config({"codec": {"name": name}})
+    assert p.needs_custom_backend and not p.native_supported
+    assert p.kv_cache_dtype == "auto" and not p.warnings  # warned via notes, no silent downgrade
+
+
+@pytest.mark.parametrize("bits,vbits,preset", [
+    (8, 4, "turboquant_k8v4"),
+    (4, None, "turboquant_4bit_nc"),
+    (4, 4, "turboquant_4bit_nc"),
+    (3, 4, "turboquant_k3v4_nc"),
+    (3, None, "turboquant_3bit_nc"),
+    (3, 3, "turboquant_3bit_nc"),
+])
+def test_vllm_mapping_turboquant_native_presets(bits, vbits, preset):
+    from vllm_plugins.kvcomp.mapping import plan_from_kv_config
+
+    codec = {"name": "turboquant", "bits": bits}
+    if vbits is not None:
+        codec["value_bits"] = vbits
+    p = plan_from_kv_config({"codec": codec})
+    assert p.native_supported and not p.needs_custom_backend
+    assert p.kv_cache_dtype == preset
+
+
+def test_vllm_mapping_turboquant_unsupported_bits_custom():
+    from vllm_plugins.kvcomp.mapping import plan_from_kv_config
+
+    # 2-bit has no native preset -> custom backend.
+    p = plan_from_kv_config({"codec": {"name": "turboquant", "bits": 2}})
+    assert p.needs_custom_backend and p.kv_cache_dtype == "auto"
+
+
+def test_vllm_mapping_halo_maps_to_turboquant_with_warning():
+    from vllm_plugins.kvcomp.mapping import plan_from_kv_config
+
+    p = plan_from_kv_config({"codec": {"name": "halo", "bits": 4}})
+    assert p.native_supported and p.kv_cache_dtype == "turboquant_4bit_nc"
+    # honestly warns that vLLM runs faithful TurboQuant (no HALO LS/hadamard-gemm)
+    assert any("HALO" in w for w in p.warnings)
+
+
+@pytest.mark.parametrize("name,dtype", [("nvfp4", "nvfp4"),
+                                        ("int8", "int8_per_token_head")])
+def test_vllm_mapping_other_native(name, dtype):
+    from vllm_plugins.kvcomp.mapping import plan_from_kv_config
+
+    p = plan_from_kv_config({"codec": {"name": name}})
+    assert p.native_supported and p.kv_cache_dtype == dtype
+
+
+def test_vllm_mapping_eviction_only_and_policy():
+    from vllm_plugins.kvcomp.mapping import plan_from_kv_config
+
+    # Eviction selector, no codec -> custom backend, dtype unchanged.
+    p = plan_from_kv_config({"selector": {"name": "snapkv"}})
+    assert p.needs_custom_backend and p.kv_cache_dtype == "auto" and p.codec_name is None
+    # Non-static adaptive policy needs the custom backend even with FP8 codec.
+    p2 = plan_from_kv_config({"codec": {"name": "fp8"}, "policy": {"name": "taperkv"}})
+    assert p2.needs_custom_backend
+    # static policy + fp8 stays native.
+    p3 = plan_from_kv_config({"codec": {"name": "fp8"}, "policy": {"name": "static"}})
+    assert p3.native_supported and not p3.needs_custom_backend
+
+
+def test_vllm_mapping_conflict_and_unknown():
+    from vllm_plugins.kvcomp.mapping import plan_from_kv_config
+
+    p = plan_from_kv_config({"codec": {"name": "fp8"}}, requested_kv_cache_dtype="fp8_e5m2")
+    assert p.kv_cache_dtype == "fp8_e4m3" and p.warnings  # codec dtype wins, warns
+    p2 = plan_from_kv_config({"codec": {"name": "mystery"}})
+    assert not p2.native_supported and p2.warnings
+
+
+def test_vllm_apply_to_engine_args_fp8_and_lowbit(tmp_path):
+    """apply_to_engine_args mutates a (mock) EngineArgs from a model config.json.
+
+    Uses a SimpleNamespace mock -- apply_to_engine_args never imports vLLM, so
+    the FP8 auto-apply logic is fully testable on a CPU-only node.
+    """
+    import json
+    from types import SimpleNamespace
+    from vllm_plugins.kvcomp.vllm_plugin import apply_to_engine_args
+
+    def model_dir(kv_cfg):
+        d = tmp_path / ("m" + str(abs(hash(str(kv_cfg)))))
+        d.mkdir()
+        (d / "config.json").write_text(json.dumps({"kv_compression_config": kv_cfg}))
+        return str(d)
+
+    fp8_dir = model_dir({"codec": {"name": "fp8"}, "policy": {"name": "static"}})
+    ea = SimpleNamespace(model=fp8_dir, kv_cache_dtype="auto", calculate_kv_scales=False)
+    apply_to_engine_args(ea)
+    assert ea.kv_cache_dtype == "fp8_e4m3" and ea.calculate_kv_scales is True
+
+    int4_dir = model_dir({"codec": {"name": "int4"}, "policy": {"name": "static"}})
+    ea2 = SimpleNamespace(model=int4_dir, kv_cache_dtype="auto", calculate_kv_scales=False)
+    apply_to_engine_args(ea2)
+    assert ea2.kv_cache_dtype == "auto"  # low-bit not auto-applied (needs custom backend)
+
+    # No kv_compression_config -> no-op.
+    plain = tmp_path / "plain"; plain.mkdir()
+    (plain / "config.json").write_text(json.dumps({"model_type": "llama"}))
+    ea3 = SimpleNamespace(model=str(plain), kv_cache_dtype="auto")
+    apply_to_engine_args(ea3)
+    assert ea3.kv_cache_dtype == "auto"
+
+
+# --- PPL harness non-finite guard (B-2) -----------------------------------
+def test_ppl_skips_nonfinite_windows():
+    from types import SimpleNamespace
+    from onecomp.kvcomp.eval.ppl import perplexity_over_text
+
+    class _Tok:
+        def __call__(self, text, return_tensors=None):
+            return SimpleNamespace(input_ids=(torch.arange(60) % 7).unsqueeze(0))
+
+    class _Model:
+        device = "cpu"
+        def __init__(self, bad):
+            self.bad = bad
+        def __call__(self, ids, past_key_values=None, use_cache=False):
+            v, L = 7, ids.shape[1]
+            logits = torch.zeros(1, L, v)
+            logits[..., 0] = 2.0
+            if self.bad:
+                logits = logits + float("inf")
+            return SimpleNamespace(logits=logits)
+
+    out = perplexity_over_text(_Model(False), _Tok(), "x", max_length=20, stride=10, max_windows=3)
+    assert out["n_skipped_nonfinite"] == 0 and out["ppl"] > 0
+    # every window non-finite -> perplexity undefined -> raises (no silent NaN).
+    with pytest.raises(ValueError):
+        perplexity_over_text(_Model(True), _Tok(), "x", max_length=20, stride=10, max_windows=3)
+
+
+# --- outlier-layer detection: multi-probe aggregation (B-6) ----------------
+def _outlier_fake_model(schedule):
+    """Fake model whose per-call key tensors mark the layers flagged in ``schedule``.
+
+    ``schedule`` is a list over probes; each entry is a list over layers of bools
+    (True => inject a massive-activation channel => range/median ratio ~ 1000).
+    """
+    from types import SimpleNamespace
+
+    class _FakeModel:
+        device = "cpu"
+
+        def __init__(self, sched):
+            self.sched = sched
+            self.i = 0
+
+        def __call__(self, ids, use_cache=True):
+            flags = self.sched[self.i]
+            self.i += 1
+            layers = []
+            for is_out in flags:
+                k = torch.ones(1, 4, 8)
+                if is_out:
+                    k[..., 0] = 1000.0
+                layers.append(SimpleNamespace(keys=k))
+            return SimpleNamespace(past_key_values=SimpleNamespace(layers=layers))
+
+    return _FakeModel([list(p) for p in schedule])
+
+
+def test_detect_outlier_layers_multiprobe_agg():
+    from onecomp.kvcomp.recipe.thinkv import detect_outlier_layers
+
+    ids = torch.zeros(1, 4, dtype=torch.long)
+    # 3 probes, 2 layers: layer0 outlier always, layer1 outlier in only 1/3 probes.
+    sched = [[True, True], [True, False], [True, False]]
+
+    # single-tensor arg reproduces single-probe behaviour (uses probe 0 -> [0, 1]).
+    assert detect_outlier_layers(_outlier_fake_model([sched[0]]), ids) == [0, 1]
+
+    # mean: layer1's one huge probe dominates the average -> both skipped.
+    assert detect_outlier_layers(
+        _outlier_fake_model(sched), [ids, ids, ids], agg="mean") == [0, 1]
+
+    # vote: layer1 is a minority outlier (1/3) -> only layer0 skipped (stable).
+    assert detect_outlier_layers(
+        _outlier_fake_model(sched), [ids, ids, ids], agg="vote") == [0]
