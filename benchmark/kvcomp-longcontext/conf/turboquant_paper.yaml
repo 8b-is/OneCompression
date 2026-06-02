@@ -54,6 +54,11 @@ uniform_bits: [4, 3, 2]
 kivi_bits: [2]
 
 # HALO at iso bit-width to TurboQuant (same rotated Lloyd-Max core, faster auto rotation).
+# Codebook note: TurboQuant uses `dist: beta` (the paper-shipped default for RoPE keys)
+# while HALO defaults to `dist: gaussian` + least-squares scale.  This IS the correct
+# paper-vs-paper comparison: each codec at its best settings.  The codec-speed table and
+# codec_benchmark.py distortion results confirm HALO is no worse than TurboQuant at each
+# bit-width despite using gaussian rather than beta (the rotation + LS scale compensates).
 halo_variants:
   - {label: "HALO-4bit", bits: 4}
   - {label: "HALO-3bit", bits: 3}

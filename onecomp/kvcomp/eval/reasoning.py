@@ -222,6 +222,7 @@ def _eval_dataset(
         gold = gold_fn(gold_raw)
         ids = _build_prompt(tokenizer, question, system)
         correct = 0
+        any_correct = False
         for _ in range(k):
             gen, ratio, fired = _generate(
                 model, tokenizer, ids, cache_factory,
@@ -232,11 +233,21 @@ def _eval_dataset(
             ratios.append(ratio)
             text = tokenizer.decode(gen, skip_special_tokens=True)
             pred = extract_answer(text)
-            correct += int(pred is not None and gold is not None and pred == gold)
-        p1 = correct / k
+            is_correct = pred is not None and gold is not None and pred == gold
+            correct += int(is_correct)
+            any_correct = any_correct or is_correct
+        # pass@k: 1 if any of the k samples is correct (standard competition-math
+        # metric used by ThinKV and PM-KVQ); stored alongside avg_sample_acc for
+        # reference. For k=1 the two are identical.
+        avg_sample_acc = correct / k
+        pass_at_k = float(any_correct)
+        # Metric reported: pass@k when k>1 (matches ThinKV/PM-KVQ protocol),
+        # avg_sample_acc for k=1 (identical to pass@1 in that case).
+        p1 = pass_at_k if k > 1 else avg_sample_acc
         p1_values.append(p1)
         n += 1
-        per_q.append({"gold": gold, "pass@1": p1})
+        per_q.append({"gold": gold, "pass@k": pass_at_k,
+                      "avg_sample_acc": avg_sample_acc, "k": k})
         if verbose:
             logger.info("[%s] q%d gold=%s pass@1=%.2f", task, n, gold, p1)
     # Detect whether an eviction cache actually trimmed (else its result is FullKV).

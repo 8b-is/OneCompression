@@ -87,8 +87,12 @@ turbotaper:
   n_outlier_floor: 32
 
 # Companion rotated-codec variant of TaperKV at the 3-bit headline budget.
+# MUST be iso-memory to TaperKV-3bit so the comparison isolates the codec
+# (plain affine vs rotated Lloyd-Max) rather than the schedule.  Align b_min=3,
+# b_min_value=2, and inherit recent_tokens=128 from the config default.
+# (Old b_min:2/recent_tokens:64 caused needle failure and was not iso-memory.)
 turbotaper_sweep:
-  - {label: "TurboTaper-3bit", key_bits: 4, value_bits: 3, b_min: 2, b_min_value: 2, recent_tokens: 64}
+  - {label: "TurboTaper-3bit", key_bits: 4, value_bits: 3, b_min: 3, b_min_value: 2}
 
 # Single TurboQuant variant at 3-bit (paper-faithful Beta + Hadamard rotation).
 turboquant_variants:
