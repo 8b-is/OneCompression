@@ -53,7 +53,11 @@ def taper_bits(age: torch.Tensor, total: int, sink_tokens: int, recent_tokens: i
         band = (frac * nb).long().clamp(0, nb - 1)
         ladder_t = torch.tensor(ladder, device=age.device, dtype=torch.int64)
         bits[mid] = ladder_t[band]
-    return bits
+    # An explicitly-supplied ``ladder`` may hold values outside this role's
+    # [b_min, hi_bits] range (e.g. a key ladder reused for values).  Clamp so no
+    # token exceeds this role's high bit-width (preserving KVTuner K>=V) or drops
+    # below its floor.  With the default ladder this is a no-op.
+    return bits.clamp(min=b_min, max=hi_bits)
 
 
 class TaperKVCache(GradedQuantCache):

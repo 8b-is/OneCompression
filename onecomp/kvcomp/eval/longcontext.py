@@ -215,18 +215,29 @@ def make_multikey_prompt(tokenizer, context_tokens: int, num_keys: int = 4,
     cities = rng.sample(_CITIES, k=min(num_keys, len(_CITIES)))
     facts = {c: rng.randint(1000, 9999) for c in cities}
     target = rng.choice(cities)
-    needles = [f" The magic number for {c} is {v}. " for c, v in facts.items()]
 
     filler_tok = max(1, len(tokenizer(_FILLER).input_ids))
     reps = max(2, context_tokens // filler_tok)
-    # Interleave needles evenly across the filler body.
-    segs = max(len(needles) + 1, 2)
-    per = max(1, int(reps / segs))
+
+    # Place each needle at a fractional position in [0, 1): the *target* sits at
+    # ``depth`` (so retrieval can be probed at a controlled context depth) and the
+    # distractors are spread evenly across the remaining context, forcing the
+    # model to disambiguate the queried key from look-alikes at known separations.
+    pos = {target: float(min(max(depth, 0.0), 0.999))}
+    others = [c for c in cities if c != target]
+    for i, c in enumerate(others):
+        pos[c] = (i + 0.5) / max(1, len(others))
+    ordered = sorted(cities, key=lambda c: pos[c])
+
     body = ""
-    for i, nd in enumerate(needles):
-        # nudge the target toward fractional ``depth`` ordering for reproducibility
-        body += _FILLER * per + nd
-    body += _FILLER * per
+    prev = 0.0
+    for c in ordered:
+        f = pos[c]
+        body += _FILLER * max(0, int(round((f - prev) * reps)))
+        body += f" The magic number for {c} is {facts[c]}. "
+        prev = f
+    body += _FILLER * max(0, int(round((1.0 - prev) * reps)))
+
     question = (f"\n\nQuestion: What is the magic number for {target}? "
                 f"Answer with only the number.\nAnswer:")
     return [{"role": "user", "content": body + question}], str(facts[target])

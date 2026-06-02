@@ -94,5 +94,7 @@ class PMKVQCache(GradedQuantCache):
         kq = scl.float() * fake_quant_tokens(keys.float() * inv.float(), kbits)
         vq = fake_quant_tokens(values, vbits)
         per = keys.shape[1] * keys.shape[-1]
-        bits = int(kbits.sum() * per + vbits.sum() * per)
+        heads = keys.shape[1]
+        bits = int(kbits.sum() * per + vbits.sum() * per
+                   + self._meta_bits(kbits, heads) + self._meta_bits(vbits, heads))
         return kq, vq, bits

@@ -88,12 +88,41 @@ class GradedQuantCache(DynamicCache):
         raise NotImplementedError
 
     # --- internals ---------------------------------------------------------
+    @staticmethod
+    def _affine_meta_bits(bits_vec, heads):
+        """Per-(token, head) quantization metadata for an affine codec.
+
+        Each quantized vector (per-token bit-width ``b < 16``) stores an fp16
+        ``scale`` (16 bits) and an integer ``zero`` (``b`` bits) -- exactly the
+        overhead the baseline path accounts via
+        :func:`onecomp.kvcomp.codec._quant_primitives.effective_bits`.  Counting
+        it keeps the graded compression ratio an honest whole-cache figure that is
+        directly comparable to the per-token codec baselines
+        (``CompressedDynamicCache``), which already include it.
+        """
+        q = bits_vec < 16
+        n_quant = int(q.sum())
+        if n_quant == 0:
+            return 0
+        return int(heads) * (16 * n_quant + int(bits_vec[q].sum()))
+
+    def _meta_bits(self, bits_vec, heads):
+        """Quantization-metadata bits for one role (key or value).
+
+        Defaults to affine ``scale + zero`` accounting; codecs whose per-vector
+        metadata differs (e.g. TurboTaper's rotated Lloyd-Max, a per-vector norm
+        and no zero point) override this.
+        """
+        return self._affine_meta_bits(bits_vec, heads)
+
     def _grade_layer(self, keys, values, layer_idx):
         kbits, vbits = self.token_bits(keys.shape[2], keys.device, layer_idx)
         kq = fake_quant_tokens(keys, kbits)
         vq = fake_quant_tokens(values, vbits)
         per = keys.shape[1] * keys.shape[-1]
-        bits = int(kbits.sum() * per + vbits.sum() * per)
+        heads = keys.shape[1]
+        bits = int(kbits.sum() * per + vbits.sum() * per
+                   + self._meta_bits(kbits, heads) + self._meta_bits(vbits, heads))
         return kq, vq, bits
 
     def update(self, key_states, value_states, layer_idx, *args, **kwargs):

@@ -115,6 +115,10 @@ class KVCodec:
         if self.name is None:
             self.name = getattr(type(self), "_registry_name", type(self).__name__)
         self.logger = getLogger(__name__)
+        # Fail fast on invalid parameters at construction (mirrors the weight-side
+        # Quantizer): callers that build codecs directly (e.g. the benchmark
+        # harness) get the same validation the Runner performs.
+        self.validate_params()
 
     def validate_params(self):
         """Validate codec parameters.  Override in subclasses as needed."""
@@ -196,6 +200,7 @@ class KVSelector:
         if self.name is None:
             self.name = getattr(type(self), "_registry_name", type(self).__name__)
         self.logger = getLogger(__name__)
+        self.validate_params()
 
     def validate_params(self):
         """Validate selector parameters.  Override as needed."""

@@ -72,18 +72,38 @@ class TurboTaperCache(TaperKVCache):
                 out[:, :, mask, :] = codec._decode_tensor(payload, torch.float32)
         return out
 
+    def _meta_bits(self, bits_vec, heads):
+        """Rotated Lloyd-Max metadata: one fp16 per-vector norm per quantized
+        token (no zero point, unlike affine).  The outlier-protected *floor* band
+        stores a second per-vector norm (inner + outlier subset), matching
+        :meth:`TurboQuantCodec._stored_bits` (``vecs * 2 * 16`` for the split).
+        """
+        q = bits_vec < 16
+        n_quant = int(q.sum())
+        if n_quant == 0:
+            return 0
+        meta = int(heads) * 16 * n_quant
+        if self.policy.n_outlier_floor:
+            quant = [int(b) for b in torch.unique(bits_vec).tolist() if b < 16]
+            if quant:
+                floor_bit = min(quant)
+                n_floor = int((bits_vec == floor_bit).sum())
+                meta += int(heads) * 16 * n_floor
+        return meta
+
     def _grade_layer(self, keys, values, layer_idx):
         kbits, vbits = self.token_bits(keys.shape[2], keys.device, layer_idx)
         kq = self._rot_quant(keys, kbits)
         vq = self._rot_quant(values, vbits)
         per = keys.shape[1] * keys.shape[-1]
-        # Nominal per-token bits; floor outlier channels add a small overhead that
-        # we account for so the reported compression ratio stays honest.
-        bits = int(kbits.sum() * per + vbits.sum() * per)
+        heads = keys.shape[1]
+        # Payload + per-vector rotated-codec norm metadata (see _meta_bits) so the
+        # reported ratio is an honest whole-cache figure, comparable to the
+        # TurboQuant codec baseline which also counts its per-vector norm.
+        bits = int(kbits.sum() * per + vbits.sum() * per
+                   + self._meta_bits(kbits, heads) + self._meta_bits(vbits, heads))
         n_out = self.policy.n_outlier_floor
         if n_out:
-            d = keys.shape[-1]
-            heads = keys.shape[1]
             for bt in (kbits, vbits):
                 quant = [int(b) for b in torch.unique(bt).tolist() if b < 16]
                 if not quant:

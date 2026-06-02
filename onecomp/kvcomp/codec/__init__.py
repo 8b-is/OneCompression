@@ -8,7 +8,7 @@ distinguished by ``flag_calibration``, mirroring how RTN and GPTQ coexist in
 Copyright 2025-2026 Fujitsu Ltd.
 """
 
-from .affine import AffineKVCodec, Int8Codec, Int4Codec, Int2Codec, KIVICodec
+from .affine import AffineKVCodec, Int8Codec, Int4Codec, Int3Codec, Int2Codec, KIVICodec
 from .fp8 import FP8Codec
 from .turboquant import TurboQuantCodec
 from .halo import HALOCodec
@@ -18,6 +18,7 @@ __all__ = [
     "AffineKVCodec",
     "Int8Codec",
     "Int4Codec",
+    "Int3Codec",
     "Int2Codec",
     "KIVICodec",
     "FP8Codec",

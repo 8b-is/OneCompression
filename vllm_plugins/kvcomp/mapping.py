@@ -41,6 +41,7 @@ _NATIVE_FP8 = {
 _NEEDS_CUSTOM_BACKEND = {
     "int8",
     "int4",
+    "int3",
     "int2",
     "kivi",
     "turboquant",
