@@ -1,0 +1,181 @@
+{
+  "model": "QwQ-32B",
+  "config": {
+    "model_path": "/lustre/home/frj/yuma-ichikawa/conference/models/QwQ-32B",
+    "device": "cuda:0",
+    "dtype": "bfloat16",
+    "attn_implementation": "eager",
+    "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_aime_comp_qwq_24",
+    "methods": [
+      "FullKV",
+      "KIVI-INT2",
+      "ThinKV",
+      "PM-KVQ",
+      "TaperKV",
+      "TurboTaper",
+      "HALO-3bit"
+    ],
+    "sink_tokens": 4,
+    "recent_tokens": 128,
+    "requant_stride": 16,
+    "target_mem": 0.25,
+    "uniform_bits": [
+      4
+    ],
+    "turboquant_variants": [],
+    "kivi_bits": [
+      2
+    ],
+    "halo_variants": [
+      {
+        "label": "HALO-4bit",
+        "bits": 4
+      },
+      {
+        "label": "HALO-3bit",
+        "bits": 3
+      }
+    ],
+    "codec_variants": [],
+    "turbotaper": {
+      "dist": "gaussian",
+      "rotation_mode": "hadamard",
+      "n_outlier_floor": 0
+    },
+    "skip_outliers": true,
+    "outlier_ratio": 50.0,
+    "thinkv": {
+      "group_size": 16,
+      "precision": {
+        "R": 4,
+        "E": 4,
+        "T": 2
+      },
+      "auto_configure": true,
+      "calib_max_new": 300,
+      "capture_long": false
+    },
+    "pmkvq": {
+      "key_bits": 8,
+      "value_bits": 4,
+      "final_bits": 2,
+      "key_final_bits": 4,
+      "ladder_span": 256,
+      "block_allocation": true,
+      "channel_reparam": true,
+      "bit_options": [
+        2,
+        4,
+        8
+      ],
+      "avg_bit_budget": 2.5,
+      "pos_scale": 4
+    },
+    "taperkv": {
+      "key_bits": 8,
+      "value_bits": 4,
+      "b_min": 4,
+      "b_min_value": 2
+    },
+    "taperkv_sweep": [],
+    "turbotaper_sweep": [],
+    "context_lens": [
+      2048,
+      4096,
+      8192
+    ],
+    "depths": [
+      0.1,
+      0.25,
+      0.4,
+      0.5,
+      0.6,
+      0.75,
+      0.9
+    ],
+    "seeds": 3,
+    "max_new_needle": 64,
+    "run_ruler": false,
+    "ruler_keys": 4,
+    "ruler_seeds": 5,
+    "run_needle": false,
+    "run_gsm8k": false,
+    "gsm8k_limit": 100,
+    "max_new_reason": 8192,
+    "run_math": false,
+    "math_limit": 100,
+    "max_new_math": 8192,
+    "run_longbench": false,
+    "longbench_tasks": [],
+    "longbench_max_length": 7500,
+    "longbench_limit": 20,
+    "run_livecodebench": false,
+    "lcb_problems_path": null,
+    "lcb_dataset": "livecodebench/code_generation_lite",
+    "lcb_split": "test",
+    "lcb_limit": 50,
+    "lcb_k": 1,
+    "lcb_timeout": 6.0,
+    "max_new_code": 4096,
+    "run_ppl": false,
+    "ppl_max_length": 2048,
+    "ppl_stride": 1024,
+    "ppl_windows": 16,
+    "aime_years": [
+      2024
+    ],
+    "aime_k": 1,
+    "aime_limit": 30,
+    "max_new_aime": 6144
+  },
+  "results": {
+    "FullKV": {
+      "aime2024": {
+        "task": "aime2024",
+        "n": 30,
+        "k": 1,
+        "pass@1": 0.3,
+        "pass@1_stderr": 0.0851,
+        "pass@1_ci95": [
+          0.1332,
+          0.4668
+        ],
+        "avg_gen_len": 5956.6,
+        "compression_ratio": 1.0,
+        "eviction_fired": true
+      }
+    },
+    "ThinKV": {
+      "aime2024": {
+        "task": "aime2024",
+        "n": 30,
+        "k": 1,
+        "pass@1": 0.0,
+        "pass@1_stderr": 0.0,
+        "pass@1_ci95": [
+          0.0,
+          0.0
+        ],
+        "avg_gen_len": 6144.0,
+        "compression_ratio": 5.177,
+        "eviction_fired": true
+      }
+    },
+    "PM-KVQ": {
+      "aime2024": {
+        "task": "aime2024",
+        "n": 30,
+        "k": 1,
+        "pass@1": 0.0,
+        "pass@1_stderr": 0.0,
+        "pass@1_ci95": [
+          0.0,
+          0.0
+        ],
+        "avg_gen_len": 5715.3,
+        "compression_ratio": 4.535,
+        "eviction_fired": true
+      }
+    }
+  }
+}

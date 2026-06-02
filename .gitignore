@@ -34,3 +34,6 @@ benchmark/*/results/2[0-9][0-9][0-9]-*/
 benchmark/*/results_*/2[0-9][0-9][0-9]-*/
 # Paper-battery SLURM stdout logs (keep configs/scripts/summary JSONs)
 benchmark/kvcomp-longcontext/paper/logs/
+# SLURM stdout/stderr logs stored inside results directories (not repo data)
+benchmark/*/results_*/slurm_*.log
+benchmark/*/results_*/slurm_*.out

@@ -1,0 +1,237 @@
+{
+  "model": "DeepSeek-R1-Distill-Llama-8B",
+  "config": {
+    "model_path": "/lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Llama-8B",
+    "device": "cuda:0",
+    "dtype": "bfloat16",
+    "attn_implementation": "eager",
+    "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_aime_basic_r1l8",
+    "methods": null,
+    "sink_tokens": 4,
+    "recent_tokens": 128,
+    "requant_stride": 16,
+    "target_mem": 0.25,
+    "uniform_bits": [
+      4
+    ],
+    "turboquant_variants": [],
+    "kivi_bits": [
+      2
+    ],
+    "halo_variants": [
+      {
+        "label": "HALO-4bit",
+        "bits": 4
+      },
+      {
+        "label": "HALO-3bit",
+        "bits": 3
+      }
+    ],
+    "codec_variants": [],
+    "turbotaper": {
+      "dist": "gaussian",
+      "rotation_mode": "hadamard",
+      "n_outlier_floor": 0
+    },
+    "skip_outliers": true,
+    "outlier_ratio": 50.0,
+    "thinkv": {
+      "group_size": 16,
+      "precision": {
+        "R": 4,
+        "E": 4,
+        "T": 2
+      },
+      "auto_configure": true,
+      "calib_max_new": 300,
+      "capture_long": false
+    },
+    "pmkvq": {
+      "key_bits": 8,
+      "value_bits": 4,
+      "final_bits": 2,
+      "key_final_bits": 4,
+      "ladder_span": 256,
+      "block_allocation": true,
+      "channel_reparam": true,
+      "bit_options": [
+        2,
+        4,
+        8
+      ],
+      "avg_bit_budget": 2.5,
+      "pos_scale": 4
+    },
+    "taperkv": {
+      "key_bits": 8,
+      "value_bits": 4,
+      "b_min": 4,
+      "b_min_value": 2
+    },
+    "taperkv_sweep": [],
+    "turbotaper_sweep": [],
+    "context_lens": [
+      2048,
+      4096,
+      8192
+    ],
+    "depths": [
+      0.1,
+      0.25,
+      0.4,
+      0.5,
+      0.6,
+      0.75,
+      0.9
+    ],
+    "seeds": 3,
+    "max_new_needle": 64,
+    "run_ruler": false,
+    "ruler_keys": 4,
+    "ruler_seeds": 5,
+    "run_needle": false,
+    "run_gsm8k": true,
+    "gsm8k_limit": 100,
+    "max_new_reason": 8192,
+    "run_math": true,
+    "math_limit": 100,
+    "max_new_math": 8192,
+    "run_longbench": false,
+    "longbench_tasks": [],
+    "longbench_max_length": 7500,
+    "longbench_limit": 20,
+    "run_livecodebench": false,
+    "lcb_problems_path": null,
+    "lcb_dataset": "livecodebench/code_generation_lite",
+    "lcb_split": "test",
+    "lcb_limit": 50,
+    "lcb_k": 1,
+    "lcb_timeout": 6.0,
+    "max_new_code": 4096,
+    "run_ppl": true,
+    "ppl_max_length": 2048,
+    "ppl_stride": 1024,
+    "ppl_windows": 16,
+    "aime_years": [],
+    "aime_k": 8,
+    "aime_limit": 30,
+    "max_new_aime": 8192
+  },
+  "results": {
+    "FullKV": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.63,
+        "pass@1_stderr": 0.0485,
+        "pass@1_ci95": [
+          0.5349,
+          0.7251
+        ],
+        "avg_gen_len": 433.4,
+        "compression_ratio": 1.0,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.61,
+        "pass@1_stderr": 0.049,
+        "pass@1_ci95": [
+          0.5139,
+          0.7061
+        ],
+        "avg_gen_len": 2711.5,
+        "compression_ratio": 1.0,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 23.4957,
+        "nll": 3.1568,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 1.0
+      }
+    },
+    "Uniform-INT4": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.66,
+        "pass@1_stderr": 0.0476,
+        "pass@1_ci95": [
+          0.5667,
+          0.7533
+        ],
+        "avg_gen_len": 450.4,
+        "compression_ratio": 3.763,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.57,
+        "pass@1_stderr": 0.0498,
+        "pass@1_ci95": [
+          0.4725,
+          0.6675
+        ],
+        "avg_gen_len": 2727.6,
+        "compression_ratio": 3.808,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 24.7905,
+        "nll": 3.2105,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 3.8283
+      }
+    },
+    "StreamingLLM": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.17,
+        "pass@1_stderr": 0.0378,
+        "pass@1_ci95": [
+          0.096,
+          0.244
+        ],
+        "avg_gen_len": 2287.2,
+        "compression_ratio": 1.012,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.15,
+        "pass@1_stderr": 0.0359,
+        "pass@1_ci95": [
+          0.0797,
+          0.2203
+        ],
+        "avg_gen_len": 4313.6,
+        "compression_ratio": 1.058,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 23.4957,
+        "nll": 3.1568,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 1000000000.0
+      }
+    }
+  }
+}

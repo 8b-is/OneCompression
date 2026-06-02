@@ -1,0 +1,273 @@
+{
+  "model": "DeepSeek-R1-Distill-Qwen-14B",
+  "config": {
+    "model_path": "/lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Qwen-14B",
+    "device": "cuda:0",
+    "dtype": "bfloat16",
+    "attn_implementation": "eager",
+    "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_taperkv",
+    "methods": [
+      "FullKV",
+      "Uniform-INT3",
+      "KIVI-INT2",
+      "StreamingLLM",
+      "ThinKV",
+      "PM-KVQ",
+      "TurboQuant-3bit",
+      "HALO-3bit",
+      "TaperKV",
+      "TaperKV-3bit",
+      "TurboTaper-3bit"
+    ],
+    "sink_tokens": 4,
+    "recent_tokens": 128,
+    "requant_stride": 16,
+    "target_mem": 0.2,
+    "uniform_bits": [
+      3
+    ],
+    "turboquant_variants": [
+      {
+        "label": "TurboQuant-3bit",
+        "bits": 3,
+        "dist": "beta"
+      }
+    ],
+    "kivi_bits": [
+      2
+    ],
+    "halo_variants": [
+      {
+        "label": "HALO-3bit",
+        "bits": 3
+      }
+    ],
+    "codec_variants": [],
+    "turbotaper": {
+      "dist": "gaussian",
+      "rotation_mode": "hadamard",
+      "n_outlier_floor": 32
+    },
+    "skip_outliers": true,
+    "outlier_ratio": 50.0,
+    "thinkv": {
+      "group_size": 16,
+      "precision": {
+        "R": 4,
+        "E": 4,
+        "T": 2
+      },
+      "auto_configure": true,
+      "calib_max_new": 200,
+      "capture_long": false
+    },
+    "pmkvq": {
+      "key_bits": 8,
+      "value_bits": 4,
+      "final_bits": 2,
+      "key_final_bits": 4,
+      "ladder_span": 256,
+      "block_allocation": false,
+      "channel_reparam": false,
+      "bit_options": [
+        2,
+        4,
+        8
+      ],
+      "avg_bit_budget": null,
+      "pos_scale": 4
+    },
+    "taperkv": {
+      "key_bits": 8,
+      "value_bits": 4,
+      "b_min": 4,
+      "b_min_value": 2
+    },
+    "taperkv_sweep": [
+      {
+        "label": "TaperKV-3bit",
+        "key_bits": 4,
+        "value_bits": 3,
+        "b_min": 3,
+        "b_min_value": 2
+      }
+    ],
+    "turbotaper_sweep": [
+      {
+        "label": "TurboTaper-3bit",
+        "key_bits": 4,
+        "value_bits": 3,
+        "b_min": 3,
+        "b_min_value": 2
+      }
+    ],
+    "context_lens": [
+      4096,
+      8192,
+      16384
+    ],
+    "depths": [
+      0.1,
+      0.25,
+      0.5,
+      0.75,
+      0.9
+    ],
+    "seeds": 3,
+    "max_new_needle": 256,
+    "run_ruler": false,
+    "ruler_keys": 4,
+    "ruler_seeds": 5,
+    "run_needle": false,
+    "run_gsm8k": true,
+    "gsm8k_limit": 50,
+    "max_new_reason": 4096,
+    "run_math": true,
+    "math_limit": 50,
+    "max_new_math": 4096,
+    "run_longbench": true,
+    "longbench_tasks": [],
+    "longbench_max_length": 7500,
+    "longbench_limit": 10,
+    "run_livecodebench": false,
+    "lcb_problems_path": null,
+    "lcb_dataset": "livecodebench/code_generation_lite",
+    "lcb_split": "test",
+    "lcb_limit": 50,
+    "lcb_k": 1,
+    "lcb_timeout": 6.0,
+    "max_new_code": 4096,
+    "run_ppl": true,
+    "ppl_max_length": 4096,
+    "ppl_stride": 2048,
+    "ppl_windows": 16
+  },
+  "results": {
+    "FullKV": {
+      "longbench": {
+        "n": 130,
+        "score": 4.26,
+        "per_task": {
+          "qasper": 0.0,
+          "multifieldqa_en": 0.0,
+          "hotpotqa": 0.0,
+          "2wikimqa": 0.0,
+          "gov_report": 0.0,
+          "multi_news": 0.0,
+          "trec": 20.0,
+          "triviaqa": 0.0,
+          "samsum": 0.0,
+          "passage_count": 0.0,
+          "passage_retrieval_en": 0.0,
+          "lcc": 14.61,
+          "repobench-p": 20.71
+        },
+        "by_length": {
+          "0-4k": 5.93,
+          "4-8k": 2.99,
+          "8k+": 0.0
+        },
+        "mem_fraction": 1.0
+      },
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 50,
+        "k": 1,
+        "pass@1": 0.88,
+        "pass@1_stderr": 0.0464,
+        "pass@1_ci95": [
+          0.789,
+          0.971
+        ],
+        "avg_gen_len": 491.0,
+        "compression_ratio": 1.0,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 50,
+        "k": 1,
+        "pass@1": 0.66,
+        "pass@1_stderr": 0.0677,
+        "pass@1_ci95": [
+          0.5274,
+          0.7926
+        ],
+        "avg_gen_len": 1527.5,
+        "compression_ratio": 1.0,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 11.6076,
+        "nll": 2.4517,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 1.0
+      }
+    },
+    "Uniform-INT3": {
+      "longbench": {
+        "n": 130,
+        "score": 3.73,
+        "per_task": {
+          "qasper": 0.0,
+          "multifieldqa_en": 0.0,
+          "hotpotqa": 0.0,
+          "2wikimqa": 0.0,
+          "gov_report": 0.0,
+          "multi_news": 0.0,
+          "trec": 20.0,
+          "triviaqa": 0.0,
+          "samsum": 0.0,
+          "passage_count": 0.0,
+          "passage_retrieval_en": 0.0,
+          "lcc": 11.89,
+          "repobench-p": 16.64
+        },
+        "by_length": {
+          "0-4k": 5.21,
+          "4-8k": 2.62,
+          "8k+": 0.0
+        },
+        "mem_fraction": 0.3147
+      },
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 50,
+        "k": 1,
+        "pass@1": 0.6,
+        "pass@1_stderr": 0.07,
+        "pass@1_ci95": [
+          0.4628,
+          0.7372
+        ],
+        "avg_gen_len": 824.8,
+        "compression_ratio": 3.144,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 50,
+        "k": 1,
+        "pass@1": 0.48,
+        "pass@1_stderr": 0.0714,
+        "pass@1_ci95": [
+          0.3401,
+          0.6199
+        ],
+        "avg_gen_len": 2109.7,
+        "compression_ratio": 3.162,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 21.1715,
+        "nll": 3.0527,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 3.1788
+      }
+    }
+  }
+}
