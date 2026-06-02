@@ -1,0 +1,150 @@
+==============================
+TurboQuant paper benchmark
+Model: /lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct
+Started: Mon Jun  1 21:06:23 JST 2026
+==============================
+model_path: /lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct
+device: cuda:0
+dtype: bfloat16
+attn_implementation: sdpa
+output_dir: /lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_turboquant
+methods:
+- FullKV
+- Uniform-INT4
+- Uniform-INT2
+- KIVI-INT2
+- StreamingLLM
+- TurboQuant-4bit
+- TurboQuant-3.5bit
+- TurboQuant-3bit
+- TurboQuant-2.5bit
+- TurboQuant-2bit
+sink_tokens: 4
+recent_tokens: 64
+requant_stride: 16
+target_mem: 0.27
+uniform_bits:
+- 4
+- 2
+turboquant_variants:
+- label: TurboQuant-4bit
+  bits: 4
+  dist: beta
+- label: TurboQuant-3.5bit
+  bits: 3
+  n_outlier: 32
+  outlier_bits: 4
+  dist: beta
+- label: TurboQuant-3bit
+  bits: 3
+  dist: beta
+- label: TurboQuant-2.5bit
+  bits: 2
+  n_outlier: 32
+  outlier_bits: 3
+  dist: beta
+- label: TurboQuant-2bit
+  bits: 2
+  dist: beta
+kivi_bits:
+- 2
+skip_outliers: true
+outlier_ratio: 50.0
+thinkv:
+  group_size: 16
+  precision:
+    R: 4
+    E: 4
+    T: 2
+  auto_configure: true
+  calib_max_new: 200
+  capture_long: false
+pmkvq:
+  key_bits: 8
+  value_bits: 4
+  final_bits: 2
+  key_final_bits: 4
+  ladder_span: 256
+  block_allocation: false
+  channel_reparam: false
+  bit_options:
+  - 2
+  - 4
+  - 8
+  avg_bit_budget: null
+  pos_scale: 4
+taperkv:
+  key_bits: 8
+  value_bits: 4
+  b_min: 4
+  b_min_value: 2
+taperkv_sweep:
+- label: TaperKV-aggr
+  key_bits: 4
+  value_bits: 2
+  b_min: 2
+  b_min_value: 2
+  recent_tokens: 32
+- label: TaperKV-mid
+  key_bits: 6
+  value_bits: 3
+  b_min: 2
+  b_min_value: 2
+  recent_tokens: 48
+context_lens:
+- 4096
+- 8192
+- 16384
+depths:
+- 0.1
+- 0.25
+- 0.5
+- 0.75
+- 0.9
+seeds: 3
+max_new_needle: 32
+run_ruler: true
+ruler_keys: 4
+ruler_seeds: 5
+run_needle: true
+run_gsm8k: false
+gsm8k_limit: 50
+max_new_reason: 1024
+run_math: false
+math_limit: 50
+max_new_math: 3072
+run_longbench: true
+longbench_tasks: []
+longbench_max_length: 7500
+longbench_limit: 20
+run_ppl: true
+ppl_max_length: 4096
+ppl_stride: 2048
+ppl_windows: 16
+
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 1/291 [00:00<01:46,  2.71it/s]Loading weights:   1%|          | 2/291 [00:00<01:48,  2.66it/s]Loading weights:   2%|▏         | 6/291 [00:00<00:31,  9.01it/s]Loading weights:   5%|▍         | 14/291 [00:01<00:13, 20.62it/s]Loading weights:   7%|▋         | 21/291 [00:01<00:09, 29.94it/s]Loading weights:  11%|█         | 31/291 [00:01<00:07, 36.97it/s]Loading weights:  13%|█▎        | 39/291 [00:01<00:05, 44.67it/s]Loading weights:  17%|█▋        | 49/291 [00:01<00:04, 55.21it/s]Loading weights:  19%|█▉        | 56/291 [00:01<00:04, 56.67it/s]Loading weights:  22%|██▏       | 63/291 [00:01<00:04, 52.27it/s]Loading weights:  24%|██▎       | 69/291 [00:02<00:04, 48.29it/s]Loading weights:  27%|██▋       | 78/291 [00:02<00:04, 52.59it/s]Loading weights:  30%|██▉       | 87/291 [00:02<00:03, 55.92it/s]Loading weights:  33%|███▎      | 95/291 [00:02<00:03, 52.93it/s]Loading weights:  35%|███▌      | 103/291 [00:02<00:03, 58.66it/s]Loading weights:  38%|███▊      | 111/291 [00:02<00:03, 56.71it/s]Loading weights:  42%|████▏     | 121/291 [00:02<00:03, 54.37it/s]Loading weights:  45%|████▌     | 131/291 [00:03<00:02, 62.24it/s]Loading weights:  48%|████▊     | 139/291 [00:03<00:02, 54.28it/s]Loading weights:  51%|█████     | 149/291 [00:03<00:02, 55.70it/s]Loading weights:  55%|█████▍    | 159/291 [00:03<00:02, 59.81it/s]Loading weights:  57%|█████▋    | 167/291 [00:03<00:01, 62.40it/s]Loading weights:  60%|█████▉    | 174/291 [00:03<00:02, 52.45it/s]Loading weights:  64%|██████▎   | 185/291 [00:03<00:01, 62.77it/s]Loading weights:  66%|██████▌   | 192/291 [00:04<00:01, 52.79it/s]Loading weights:  70%|██████▉   | 203/291 [00:04<00:01, 63.08it/s]Loading weights:  73%|███████▎  | 211/291 [00:04<00:01, 59.63it/s]Loading weights:  75%|███████▌  | 219/291 [00:04<00:01, 62.24it/s]Loading weights:  78%|███████▊  | 226/291 [00:04<00:01, 62.59it/s]Loading weights:  80%|████████  | 233/291 [00:04<00:01, 52.88it/s]Loading weights:  84%|████████▎ | 243/291 [00:04<00:00, 61.97it/s]Loading weights:  86%|████████▌ | 250/291 [00:05<00:00, 54.84it/s]Loading weights:  88%|████████▊ | 256/291 [00:05<00:00, 53.01it/s]Loading weights:  91%|█████████ | 264/291 [00:05<00:00, 57.46it/s]Loading weights:  94%|█████████▍| 273/291 [00:05<00:00, 57.65it/s]Loading weights:  97%|█████████▋| 282/291 [00:05<00:00, 62.77it/s]Loading weights:  99%|█████████▉| 289/291 [00:05<00:00, 63.45it/s]Loading weights: 100%|██████████| 291/291 [00:05<00:00, 50.76it/s]
+  [outlier] skip_layers (all quant methods) = []
+[transformers] The following generation flags are not valid and may be ignored: ['temperature', 'top_p']. Set `TRANSFORMERS_VERBOSITY=info` for more details.
+[transformers] The attention mask is not set and cannot be inferred from input because pad token is same as eos token. As a consequence, you may observe unexpected behavior. Please pass your input's `attention_mask` to obtain reliable results.
+[transformers] Both `max_new_tokens` (=200) and `max_length`(=131072) seem to have been set. `max_new_tokens` will take precedence. Please refer to the documentation for more information. (https://huggingface.co/docs/transformers/main/en/main_classes/text_generation)
+[transformers] `sdpa` attention does not support `output_attentions=True`. Please set your attention to `eager` if you want any of these features.
+[transformers] Both `max_new_tokens` (=200) and `max_length`(=131072) seem to have been set. `max_new_tokens` will take precedence. Please refer to the documentation for more information. (https://huggingface.co/docs/transformers/main/en/main_classes/text_generation)
+[transformers] Both `max_new_tokens` (=200) and `max_length`(=131072) seem to have been set. `max_new_tokens` will take precedence. Please refer to the documentation for more information. (https://huggingface.co/docs/transformers/main/en/main_classes/text_generation)
+Error executing job with overrides: ['model_path=/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct', 'output_dir=/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_turboquant']
+Traceback (most recent call last):
+  File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/kv_benchmark.py", line 218, in main
+    methods = build_methods(cfg, model, tok)
+  File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/kv_benchmark.py", line 113, in build_methods
+    thinp = auto_configure_thinkv(
+        model, tok, precision=dict(cfg.thinkv.precision), sink_tokens=sink,
+        max_new_tokens=cfg.thinkv.get("calib_max_new", 200), skip_layers=skip)
+  File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+  File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/onecomp/kvcomp/recipe/thinkv.py", line 636, in auto_configure_thinkv
+    calib_layers, thr = pol.select_optimal_layers(ls)
+                        ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/onecomp/kvcomp/recipe/thinkv.py", line 529, in select_optimal_layers
+    pooled = torch.cat([torch.as_tensor(v).flatten() for v in layer_sparsity.values()])
+ValueError: torch.cat(): expected a non-empty list of Tensors
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.

@@ -56,16 +56,22 @@ from .cache import (
     thinkv_attention_capture,
     TaperKVCache,
     taper_bits,
+    TurboTaperCache,
     PMKVQCache,
     StreamingLLMEvictCache,
     GradedQuantCache,
 )
 from .recipe import (
     TaperKVPolicy,
+    TurboTaperPolicy,
     PMKVQPolicy,
     ThinKVPolicy,
     auto_configure_thinkv,
     detect_outlier_layers,
+    calibrate_pmkvq,
+    estimate_block_sensitivity,
+    solve_block_allocation,
+    calibrate_channel_reparam,
 )
 
 __all__ = [
@@ -95,12 +101,18 @@ __all__ = [
     "thinkv_attention_capture",
     "TaperKVCache",
     "taper_bits",
+    "TurboTaperCache",
     "TaperKVPolicy",
+    "TurboTaperPolicy",
     "PMKVQCache",
     "PMKVQPolicy",
     "ThinKVPolicy",
     "auto_configure_thinkv",
     "detect_outlier_layers",
+    "calibrate_pmkvq",
+    "estimate_block_sensitivity",
+    "solve_block_allocation",
+    "calibrate_channel_reparam",
     "StreamingLLMEvictCache",
     "GradedQuantCache",
 ]

@@ -19,10 +19,16 @@ PM-KVQ's two ideas (paper §3):
 
 2. **Block-wise memory allocation.**  More sensitive transformer blocks
    (layers) get a higher bit-width.  The paper solves an integer program over
-   per-block sensitivity; for a fair same-budget comparison we expose the
-   resulting assignment directly via ``sensitive_layers`` (+``sensitive_bump``
-   bits), which is sufficient to reproduce the *behaviour* (uneven per-layer
-   bits) without the offline solver.
+   per-block sensitivity.  Two ways to drive this:
+
+   * **Faithful (offline IP).**  :func:`onecomp.kvcomp.recipe.pmkvq_calib.
+     calibrate_pmkvq` estimates per-block Taylor sensitivity and solves the
+     integer program (``scipy.optimize.milp``), writing a per-layer final
+     bit-width into :attr:`block_final_bits` (and per-channel key
+     reparameterization factors into :attr:`key_channel_scale`, §3.3).
+   * **Manual shortcut.**  Set ``sensitive_layers`` (+``sensitive_bump`` bits)
+     directly to reproduce the *behaviour* (uneven per-layer bits) without the
+     solver.  ``block_final_bits`` (when present) takes precedence.
 
 Contrast with TaperKV (the proposed method): TaperKV's ladder is indexed by
 token *age fraction* relative to the **current length**, so the graded
@@ -37,7 +43,7 @@ Copyright 2025-2026 Fujitsu Ltd.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List
+from typing import Dict, List
 
 from .._base import KVPolicy
 from .._registry import register_kv_policy
@@ -60,6 +66,14 @@ class PMKVQPolicy(KVPolicy):
         sensitive_layers: transformer blocks given ``sensitive_bump`` extra bits
             (block-wise memory allocation; the IP solution, supplied directly).
         sensitive_bump: extra bits for sensitive blocks.
+        block_final_bits: per-layer *value* final bit-width from the offline IP
+            (``calibrate_pmkvq``); the key floor for that layer is
+            ``max(block_final_bits[i], key_final_bits)`` (MKLV K>V).  When set it
+            overrides ``final_bits``/``sensitive_*`` for those layers.
+        key_channel_scale: per-layer per-channel key reparameterization factors
+            ``λ`` (shape ``(n_kv_heads, head_dim)``) from the §3.3 calibration;
+            the cache reconstructs keys as ``λ·Q_b(K/λ)`` to migrate outliers out
+            of the quantized key.  Runtime tensors (not serialized).
         skip_layers: layers kept in full precision (outlier layers).
     """
 
@@ -71,6 +85,8 @@ class PMKVQPolicy(KVPolicy):
     ladder_span: int = 256
     sensitive_layers: List[int] = field(default_factory=list)
     sensitive_bump: int = 1
+    block_final_bits: Dict[int, int] = field(default_factory=dict)
+    key_channel_scale: Dict[int, object] = field(default_factory=dict)
     skip_layers: List[int] = field(default_factory=list)
 
     def __post_init__(self):
@@ -95,8 +111,13 @@ class PMKVQPolicy(KVPolicy):
     def get_kv_config(self) -> dict:
         return {
             "name": "pmkvq", "key_bits": self.key_bits, "value_bits": self.value_bits,
-            "final_bits": self.final_bits, "recent_window": self.recent_window,
-            "ladder_span": self.ladder_span,
+            "final_bits": self.final_bits, "key_final_bits": self.key_final_bits,
+            "recent_window": self.recent_window, "ladder_span": self.ladder_span,
             "sensitive_layers": list(self.sensitive_layers),
-            "sensitive_bump": self.sensitive_bump, "skip_layers": list(self.skip_layers),
+            "sensitive_bump": self.sensitive_bump,
+            # Block IP result is serialized (small int map); the per-channel key
+            # reparam factors are runtime tensors and recreated by calibration.
+            "block_final_bits": {int(k): int(v) for k, v in self.block_final_bits.items()},
+            "channel_reparam": bool(self.key_channel_scale),
+            "skip_layers": list(self.skip_layers),
         }

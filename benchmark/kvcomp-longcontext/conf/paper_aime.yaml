@@ -58,20 +58,34 @@ thinkv:
   calib_max_new: 300          # more tokens → better calibration on reasoning models
   capture_long: false
 
-# PM-KVQ: paper-faithful settings (progressive 16→4→2 bit, recent window 128)
-# Note: our implementation is a faithful online approximation of the paper's
-# algorithm.  The original PM-KVQ adds: (a) offline block-wise IP allocation
-# via sensitivity profiling + CVXPY, (b) channel-wise reparameterization with
-# positional interpolation for calibration.  These offline steps are expensive
-# (requires full-model forward passes on a calibration set); we approximate
-# block sensitivity with a uniform layout.  Results may differ from the paper
-# by ~1-3% on AIME; see ichikawa_works/kvcomp_verification for analysis.
+# PM-KVQ: paper-faithful settings (progressive 16→4→2 bit, recent window 128).
+# All three paper pillars are implemented and enabled below:
+#   (a) progressive quantization (online, in PMKVQCache),
+#   (b) block-wise IP allocation -- Taylor sensitivity + scipy.optimize.milp
+#       (onecomp.kvcomp.calibrate_pmkvq; cvxpy/pulp not installed, HiGHS used),
+#   (c) channel-wise reparameterization with positional-interpolation calibration
+#       (key K̂ = λ·Q_b(K/λ), positions scaled by pos_scale per Eq. 12).
+# Verified in ichikawa_works/kvcomp_verification/12_pmkvq_blockwise_verify.py
+# (1.5B + 7B, B0-B4 ALL PASS). The "simplified block allocation" caveat no
+# longer applies. Calibration adds a few short forward/backward passes at load.
 pmkvq:
   key_bits: 8                 # initial high-precision window
   value_bits: 4
   final_bits: 2               # paper Fbit for Qwen-7B/14B/32B, QwQ-32B
   key_final_bits: 4           # keeps K >= V to reduce perplexity loss
   ladder_span: 256
+  # Faithful offline calibration (paper §3.2 + §3.3). Enabled for paper runs.
+  block_allocation: true      # Taylor-sensitivity integer program (scipy.milp)
+  channel_reparam: true       # positional-interpolation key reparameterization
+  bit_options: [2, 4, 8]      # candidate per-block final bit-widths for the IP
+  # Average *final* bit budget over quantizable layers. A fractional value
+  # (2.5) is what makes block-IP non-trivial: it places 4-bit on sensitive
+  # blocks and 2-bit on the rest (uniform per-layer cannot realise 2.5). PM-KVQ's
+  # realised compression_ratio is reported per-method in the table, so the
+  # iso-memory comparison stays honest (lessons K29) -- giving the baseline its
+  # proper mixed-precision allocation is fair, not favourable.
+  avg_bit_budget: 2.5
+  pos_scale: 4                # PI position scaling (paper s=4 -> 8192 eff. length)
 
 # TaperKV: proposed method (static age-graded, no eviction)
 taperkv:

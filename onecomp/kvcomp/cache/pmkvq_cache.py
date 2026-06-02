@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import torch
 
-from ._graded_base import GradedQuantCache
+from ._graded_base import GradedQuantCache, fake_quant_tokens
 
 
 def progressive_bits(recency: torch.Tensor, recent_window: int, ladder_span: int,
@@ -52,13 +52,47 @@ class PMKVQCache(GradedQuantCache):
                          requant_stride=requant_stride, **kwargs)
         self.policy = policy
         self._sensitive = set(policy.sensitive_layers or [])
+        self._block_final = dict(getattr(policy, "block_final_bits", {}) or {})
+        self._key_scale = dict(getattr(policy, "key_channel_scale", {}) or {})
 
     def token_bits(self, total, device, layer_idx):
         p = self.policy
-        bump = p.sensitive_bump if layer_idx in self._sensitive else 0
         recency = torch.arange(total - 1, -1, -1, device=device)  # 0 = newest
+        if layer_idx in self._block_final:
+            # Faithful block-wise IP allocation: this layer's *value* floor is the
+            # solver's choice; the key floor stays >= value floor (MKLV K>V).
+            v_final = int(self._block_final[layer_idx])
+            k_final = max(v_final, p.key_final_bits)
+            kbits = progressive_bits(recency, p.recent_window, p.ladder_span,
+                                     p.key_bits, k_final)
+            vbits = progressive_bits(recency, p.recent_window, p.ladder_span,
+                                     p.value_bits, v_final)
+            return kbits, vbits
+        # Manual shortcut: per-layer additive bump for sensitive blocks.
+        bump = p.sensitive_bump if layer_idx in self._sensitive else 0
         kbits = progressive_bits(recency, p.recent_window, p.ladder_span,
                                  p.key_bits + bump, p.key_final_bits + bump)
         vbits = progressive_bits(recency, p.recent_window, p.ladder_span,
                                  p.value_bits + bump, p.final_bits + bump)
         return kbits, vbits
+
+    def _grade_layer(self, keys, values, layer_idx):
+        """Override: apply per-channel key reparameterization before quantizing.
+
+        With §3.3 calibration the key is reconstructed as ``λ·Q_b(K/λ)`` so the
+        outlier channels are migrated into range before per-token quantization
+        (the value path is unchanged).  Falls back to the base behaviour when no
+        reparam factors are calibrated for this layer.
+        """
+        lam = self._key_scale.get(layer_idx)
+        if lam is None:
+            return super()._grade_layer(keys, values, layer_idx)
+        kbits, vbits = self.token_bits(keys.shape[2], keys.device, layer_idx)
+        lam = lam.to(keys.device, keys.dtype)              # (n_kv_heads, head_dim)
+        inv = (1.0 / lam.clamp_min(1e-6)).view(1, lam.shape[0], 1, lam.shape[1])
+        scl = lam.view(1, lam.shape[0], 1, lam.shape[1])
+        kq = scl.float() * fake_quant_tokens(keys.float() * inv.float(), kbits)
+        vq = fake_quant_tokens(values, vbits)
+        per = keys.shape[1] * keys.shape[-1]
+        bits = int(kbits.sum() * per + vbits.sum() * per)
+        return kq, vq, bits

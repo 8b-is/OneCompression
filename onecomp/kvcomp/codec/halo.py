@@ -82,6 +82,19 @@ def _dense_rotation(dim: int, seed: int) -> torch.Tensor:
     return random_orthogonal(dim, seed)
 
 
+@lru_cache(maxsize=64)
+def _dense_rotation_on(dim: int, seed: int, device_str: str, dtype) -> torch.Tensor:
+    """Device-resident orthogonal matrix, cached per ``(dim, seed, device, dtype)``.
+
+    The dense rotation ``Q`` is reused on every encode/decode; materialising it on
+    the GPU once (instead of ``_dense_rotation(...).to(device)`` per call, a host->
+    device copy each time) removes pure online overhead -- the dominant HALO cost
+    at small head dims where ``rotation_mode='auto'`` resolves to dense (see
+    tasks/lessons.md K39).
+    """
+    return _dense_rotation(dim, seed).to(device=torch.device(device_str), dtype=dtype)
+
+
 @register_kv_codec("halo")
 @dataclass
 class HALOCodec(KVCodec):
@@ -180,14 +193,14 @@ class HALOCodec(KVCodec):
         if self._resolved_mode(m) == "hadamard" and is_power_of_two(m):
             sign = random_sign(m, self.seed, device=x.device, dtype=torch.float32)
             return rotate(x.float(), sign), "h"
-        q = _dense_rotation(m, self.seed).to(x.device)
+        q = _dense_rotation_on(m, self.seed, str(x.device), torch.float32)
         return x.float() @ q, "d"
 
     def _unrotate(self, xr, m, kind):
         if kind == "h":
             sign = random_sign(m, self.seed, device=xr.device, dtype=torch.float32)
             return unrotate(xr, sign)
-        q = _dense_rotation(m, self.seed).to(xr.device)
+        q = _dense_rotation_on(m, self.seed, str(xr.device), torch.float32)
         return xr @ q.t()
 
     # --- per-tensor encode / decode --------------------------------------

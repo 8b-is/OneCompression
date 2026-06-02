@@ -60,6 +60,12 @@ def _ortho(dim: int, seed: int) -> torch.Tensor:
     return random_orthogonal(dim, seed)
 
 
+@lru_cache(maxsize=64)
+def _ortho_on(dim: int, seed: int, device_str: str) -> torch.Tensor:
+    """Device-resident orthogonal matrix (avoids a host->device copy per call)."""
+    return _ortho(dim, seed).to(torch.device(device_str))
+
+
 @register_kv_codec("turboquant")
 @dataclass
 class TurboQuantCodec(KVCodec):
@@ -110,7 +116,7 @@ class TurboQuantCodec(KVCodec):
         if self.rotation_mode == "hadamard" and is_power_of_two(m):
             sign = random_sign(m, seed, device=x.device, dtype=torch.float32)
             return rotate(x.float(), sign), ("h", seed)
-        q = _ortho(m, seed).to(x.device)
+        q = _ortho_on(m, seed, str(x.device))
         return x.float() @ q, ("d", seed)
 
     def _unrotate(self, xr, m, rot):
@@ -118,7 +124,7 @@ class TurboQuantCodec(KVCodec):
         if kind == "h":
             sign = random_sign(m, seed, device=xr.device, dtype=torch.float32)
             return unrotate(xr, sign)
-        q = _ortho(m, seed).to(xr.device)
+        q = _ortho_on(m, seed, str(xr.device))
         return xr @ q.t()
 
     def _quant_subset(self, x, bits, seed):

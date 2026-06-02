@@ -38,6 +38,7 @@ from .longcontext import (
     greedy_answer,
     NeedleResult,
 )
+from .longbench import longbench_e, LongBenchResult, LONGBENCH_E_TASKS
 
 __all__ = [
     "KVMemoryReport",
@@ -58,4 +59,7 @@ __all__ = [
     "make_multikey_prompt",
     "greedy_answer",
     "NeedleResult",
+    "longbench_e",
+    "LongBenchResult",
+    "LONGBENCH_E_TASKS",
 ]

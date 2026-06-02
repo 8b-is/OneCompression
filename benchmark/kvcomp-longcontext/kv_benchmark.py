@@ -41,13 +41,14 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, DynamicCache
 
 from onecomp.kvcomp import (
     PMKVQPolicy, PMKVQCache, TaperKVPolicy, TaperKVCache,
+    TurboTaperPolicy, TurboTaperCache,
     ThinKVCache, StreamingLLMEvictCache, CompressedDynamicCache,
     build_codec, auto_configure_thinkv, detect_outlier_layers,
 )
 from onecomp.kvcomp.recipe.thinkv import ThinKVPolicy
 from onecomp.kvcomp.eval import (
     needle_in_haystack, ruler_multikey, gsm8k_pass_at_1, math500_pass_at_1,
-    aime_pass_at_1, wikitext2_perplexity,
+    aime_pass_at_1, wikitext2_perplexity, longbench_e,
 )
 
 
@@ -136,6 +137,21 @@ def build_methods(cfg: DictConfig, model, tok):
                       final_bits=cfg.pmkvq.final_bits, key_final_bits=cfg.pmkvq.key_final_bits,
                       recent_window=recent, ladder_span=cfg.pmkvq.ladder_span,
                       skip_layers=skip)
+    # Faithful PM-KVQ: run the offline block-wise integer-program allocation
+    # (§3.2) and the positional-interpolation channel reparameterization (§3.3).
+    # Without these the comparison understates PM-KVQ by ~3-6% on AIME (the
+    # "simplified block allocation" caveat); enabling them is paper-faithful.
+    if cfg.pmkvq.get("block_allocation", False) or cfg.pmkvq.get("channel_reparam", False):
+        from onecomp.kvcomp import calibrate_pmkvq
+        calibrate_pmkvq(
+            model, tok, pmp,
+            block_allocation=cfg.pmkvq.get("block_allocation", False),
+            channel_reparam=cfg.pmkvq.get("channel_reparam", False),
+            bit_options=list(cfg.pmkvq.get("bit_options", [2, 4, 8])),
+            avg_bit_budget=cfg.pmkvq.get("avg_bit_budget", None),
+            pos_scale=cfg.pmkvq.get("pos_scale", 4))
+        print(f"  [PM-KVQ] block_final_bits set for {len(pmp.block_final_bits)} layers; "
+              f"channel_reparam on {len(pmp.key_channel_scale)} layers", flush=True)
     methods["PM-KVQ"] = dict(
         make=lambda ctx: PMKVQCache(pmp, config=mc, requant_stride=cfg.requant_stride), evict=False,
         reason=lambda: PMKVQCache(pmp, config=mc, requant_stride=cfg.requant_stride))
@@ -146,6 +162,23 @@ def build_methods(cfg: DictConfig, model, tok):
     methods["TaperKV"] = dict(
         make=lambda ctx: TaperKVCache(tap, config=mc, requant_stride=cfg.requant_stride), evict=False,
         reason=lambda: TaperKVCache(tap, config=mc, requant_stride=cfg.requant_stride))
+
+    # TurboTaper (proposed, ThinKV+TurboQuant superset): TaperKV's age ladder
+    # quantized with TurboQuant's rotated Lloyd-Max codec (MSE-optimal floor).
+    # Defaults track the TaperKV config so the two are iso-schedule comparable.
+    tt = cfg.get("turbotaper", {}) or {}
+    ttp = TurboTaperPolicy(
+        key_bits=tt.get("key_bits", cfg.taperkv.key_bits),
+        value_bits=tt.get("value_bits", cfg.taperkv.value_bits),
+        b_min=tt.get("b_min", cfg.taperkv.b_min),
+        b_min_value=tt.get("b_min_value", cfg.taperkv.b_min_value),
+        sink_tokens=sink, recent_tokens=recent, skip_layers=skip,
+        dist=tt.get("dist", "gaussian"), rotation_mode=tt.get("rotation_mode", "hadamard"),
+        seed=tt.get("seed", 0), n_outlier_floor=tt.get("n_outlier_floor", 0))
+    methods["TurboTaper"] = dict(
+        make=lambda ctx: TurboTaperCache(ttp, config=mc, requant_stride=cfg.requant_stride),
+        evict=False,
+        reason=lambda: TurboTaperCache(ttp, config=mc, requant_stride=cfg.requant_stride))
 
     # Optional TaperKV memory sweep: register one method per (label, overrides)
     # so a single run traces TaperKV's accuracy-vs-memory Pareto curve and we can
@@ -165,6 +198,53 @@ def build_methods(cfg: DictConfig, model, tok):
             make=lambda ctx, p=vp: TaperKVCache(p, config=mc, requant_stride=cfg.requant_stride),
             evict=False,
             reason=lambda p=vp: TaperKVCache(p, config=mc, requant_stride=cfg.requant_stride))
+
+    # TurboQuant (arXiv:2504.19874): random rotation + Lloyd-Max scalar quant.
+    # Paper bit-widths: pure 2/3/4-bit plus the *outlier-split* 2.5-bit
+    # (32 ch @ 3 + 96 @ 2) and 3.5-bit (32 ch @ 4 + 96 @ 3) for head_dim=128.
+    # Each variant is a dict {label, bits, [n_outlier, outlier_bits, ...]}.
+    for variant in (cfg.get("turboquant_variants", None) or []):
+        v = dict(variant)
+        label = v.pop("label")
+        codec = build_codec("turboquant", skip_layers=skip, **v)
+        methods[label] = dict(
+            make=lambda ctx, c=codec: CompressedDynamicCache(codec=c, config=mc, sink_tokens=sink),
+            evict=False,
+            reason=lambda c=codec: CompressedDynamicCache(codec=c, config=mc, sink_tokens=sink))
+
+    # KIVI (arXiv:2402.02750): per-channel key + per-token value asymmetric quant.
+    # The headline baseline TurboQuant compares against; bits via ``kivi_bits``.
+    for b in (cfg.get("kivi_bits", None) or []):
+        codec = build_codec("kivi", skip_layers=skip, bits=b)
+        methods[f"KIVI-INT{b}"] = dict(
+            make=lambda ctx, c=codec: CompressedDynamicCache(codec=c, config=mc, sink_tokens=sink),
+            evict=False,
+            reason=lambda c=codec: CompressedDynamicCache(codec=c, config=mc, sink_tokens=sink))
+
+    # HALO (fast online-whitened randomized-Hadamard Lloyd-Max codec). Each entry
+    # is a codec kwargs dict {label, bits, [value_bits, rotation_mode, ...]}.
+    for variant in (cfg.get("halo_variants", None) or []):
+        v = dict(variant)
+        label = v.pop("label")
+        codec = build_codec("halo", skip_layers=skip, **v)
+        methods[label] = dict(
+            make=lambda ctx, c=codec: CompressedDynamicCache(codec=c, config=mc, sink_tokens=sink),
+            evict=False,
+            reason=lambda c=codec: CompressedDynamicCache(codec=c, config=mc, sink_tokens=sink))
+
+    # Generic codec methods: benchmark ANY registered codec by name so no
+    # implemented codec is unreachable from the harness (fp8, nvfp4, ternary,
+    # int8, ...).  Each entry is {label, codec, **codec_kwargs}, e.g.
+    # ``{label: FP8, codec: fp8}`` or ``{label: NVFP4, codec: nvfp4}``.
+    for variant in (cfg.get("codec_variants", None) or []):
+        v = dict(variant)
+        label = v.pop("label")
+        name = v.pop("codec")
+        codec = build_codec(name, skip_layers=skip, **v)
+        methods[label] = dict(
+            make=lambda ctx, c=codec: CompressedDynamicCache(codec=c, config=mc, sink_tokens=sink),
+            evict=False,
+            reason=lambda c=codec: CompressedDynamicCache(codec=c, config=mc, sink_tokens=sink))
 
     return methods
 
@@ -224,6 +304,21 @@ def main(cfg: DictConfig):
                 "mem_fraction": round(sum(mems_r) / max(1, len(mems_r)), 4),
                 "by_length": by_len_r, "n": n_r}
             print("  ruler:", entry["ruler"], flush=True)
+
+        # LongBench-E: end-to-end long-context generation (TurboQuant Table 1).
+        # cache_factory ignores ctx (codec/graded caches are length-agnostic);
+        # the eviction baseline uses its reason() cache (recent window).
+        if cfg.get("run_longbench", False):
+            lb = longbench_e(
+                model, tok,
+                cache_factory=(spec["reason"] if spec["evict"]
+                               else lambda: spec["make"](cfg.get("longbench_max_length", 7500))),
+                tasks=list(cfg.get("longbench_tasks", [])) or None,
+                max_length=cfg.get("longbench_max_length", 7500),
+                limit_per_task=cfg.get("longbench_limit", 20),
+                evict=spec["evict"])
+            entry["longbench"] = lb.as_dict()
+            print("  longbench:", entry["longbench"], flush=True)
 
         if cfg.run_gsm8k:
             rr = gsm8k_pass_at_1(
@@ -293,22 +388,27 @@ def _markdown_table(model_tag, results) -> str:
         if k.startswith("aime")
     })
     aime_cols = [f"AIME-{y} p@1" for y in aime_years]
-    header = (["Method", "Needle acc", "RULER acc", "Mem", "GSM8K p@1", "MATH p@1"]
-              + aime_cols + ["PPL"])
+    has_lb = any("longbench" in e for e in results.values())
+    lb_cols = ["LongBench-E"] if has_lb else []
+    header = (["Method", "Needle acc", "RULER acc"] + lb_cols
+              + ["Mem", "GSM8K p@1", "MATH p@1"] + aime_cols + ["PPL"])
     lines = [f"\n### {model_tag}", "",
              "| " + " | ".join(header) + " |",
              "| " + " | ".join(["---"] + ["---:"] * (len(header) - 1)) + " |"]
     for name, e in results.items():
         nd = e.get("needle", {})
         ru = e.get("ruler", {})
+        lb = e.get("longbench", {})
         gs = e.get("gsm8k", {})
         ma = e.get("math500", {})
         pp = e.get("ppl", {})
         ppl_val = pp.get("perplexity") or pp.get("ppl") or next(iter(pp.values()), "")
-        mem = nd.get("mem_fraction", ru.get("mem_fraction", ""))
+        mem = nd.get("mem_fraction", lb.get("mem_fraction", ru.get("mem_fraction", "")))
         aime_vals = [str(e.get(f"aime{y}", {}).get("pass@1", "")) for y in aime_years]
-        row = [name, str(nd.get("accuracy", "")), str(ru.get("accuracy", "")),
-               str(mem), str(gs.get("pass@1", "")), str(ma.get("pass@1", ""))]
+        row = [name, str(nd.get("accuracy", "")), str(ru.get("accuracy", ""))]
+        if has_lb:
+            row.append(str(lb.get("score", "")))
+        row += [str(mem), str(gs.get("pass@1", "")), str(ma.get("pass@1", ""))]
         row += aime_vals + [str(ppl_val)]
         lines.append("| " + " | ".join(row) + " |")
     return "\n".join(lines)

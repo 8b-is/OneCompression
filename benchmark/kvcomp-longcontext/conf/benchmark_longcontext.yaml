@@ -22,6 +22,32 @@ target_mem: 0.27            # iso-memory budget (stored/fp16) for the evict wind
 
 uniform_bits: [4, 2]        # uniform-quant baselines (per-token INT)
 
+# TurboQuant (arXiv:2504.19874): rotation + Lloyd-Max scalar quant. Each entry
+# is a codec kwargs dict; "2.5-bit"/"3.5-bit" use the paper's outlier split
+# (32 ch @ +1 bit, 96 ch @ base; head_dim=128). Empty = skip TurboQuant.
+turboquant_variants: []
+# KIVI baseline (arXiv:2402.02750): per-channel key, per-token value. Empty=skip.
+kivi_bits: []
+
+# HALO codec variants (fast rotated Lloyd-Max). Each entry is a codec kwargs
+# dict {label, bits, ...}; empty = skip HALO.
+halo_variants: []
+
+# Generic codec methods: benchmark ANY registered codec by name. Each entry is
+# {label, codec, **kwargs}. Makes fp8/nvfp4/ternary/int8/... reachable, e.g.:
+#   - {label: FP8,     codec: fp8}
+#   - {label: NVFP4,   codec: nvfp4}
+#   - {label: Ternary, codec: ternary}
+#   - {label: Uniform-INT8, codec: int8, key_axis: token, value_axis: token}
+codec_variants: []
+
+# TurboTaper (proposed): TaperKV age-ladder + TurboQuant rotated Lloyd-Max.
+# Always built; overrides default to the taperkv section values.
+turbotaper:
+  dist: gaussian            # RMS-normalised rotated Lloyd-Max (real-KV default)
+  rotation_mode: hadamard   # fast WHT for power-of-two head_dim
+  n_outlier_floor: 0        # >0 protects N highest-energy channels at the floor (+1 bit)
+
 # Skip massive-activation (outlier) layers in *every* quant method (fair, K23).
 skip_outliers: true
 outlier_ratio: 50.0         # key max/median ratio threshold for outlier layers
@@ -39,6 +65,13 @@ pmkvq:
   final_bits: 2             # value floor (Fbit, no eviction)
   key_final_bits: 4         # key floor (>= value floor; per-token 2-bit keys are catastrophic)
   ladder_span: 256          # progressive high->final transition (absolute)
+  # Offline calibration (paper-faithful, §3.2/§3.3). Off by default (fast,
+  # behaviour-faithful); enable in paper_aime.yaml for the paper comparison.
+  block_allocation: false   # Taylor-sensitivity integer program (scipy.milp)
+  channel_reparam: false    # positional-interpolation key reparameterization
+  bit_options: [2, 4, 8]    # candidate per-block final bit-widths for the IP
+  avg_bit_budget: null      # null -> use final_bits as the average budget
+  pos_scale: 4              # PI position scaling (Eq. 12)
 
 taperkv:
   key_bits: 8
@@ -75,6 +108,12 @@ max_new_reason: 1024
 run_math: false
 math_limit: 50
 max_new_math: 3072
+
+# --- LongBench-E end-to-end generation (TurboQuant Table 1 downstream metric) ---
+run_longbench: false
+longbench_tasks: []         # empty = all 13 English LongBench-E tasks
+longbench_max_length: 7500  # prompt budget; longer prompts middle-truncated
+longbench_limit: 20         # samples per task
 
 # --- perplexity sanity ---
 run_ppl: true
