@@ -50,6 +50,7 @@ from onecomp.kvcomp.eval import (
     needle_in_haystack, ruler_multikey, gsm8k_pass_at_1, math500_pass_at_1,
     aime_pass_at_1, wikitext2_perplexity, longbench_e,
 )
+from onecomp.kvcomp.eval.longcontext import proportion_stats
 
 
 def build_methods(cfg: DictConfig, model, tok):
@@ -328,8 +329,14 @@ def main(cfg: DictConfig):
                 by_len[ctx] = round(nr.accuracy, 4)
                 mems.append(nr.mem_fraction)
                 accs.append(nr.accuracy * nr.n); n_tot += nr.n
+            # Pooled accuracy + binomial SE / Wilson 95% CI over all (ctx,depth,seed)
+            # trials, so the paper table carries error bars (benchmark review B-4).
+            acc_all = sum(accs) / max(1, n_tot)
+            se, lo, hi = proportion_stats(int(round(acc_all * n_tot)), n_tot)
             entry["needle"] = {
-                "accuracy": round(sum(accs) / max(1, n_tot), 4),
+                "accuracy": round(acc_all, 4),
+                "accuracy_stderr": round(se, 4),
+                "accuracy_ci95": [round(lo, 4), round(hi, 4)],
                 "mem_fraction": round(sum(mems) / max(1, len(mems)), 4),
                 "by_length": by_len, "n": n_tot}
             print("  needle:", entry["needle"], flush=True)
@@ -345,8 +352,12 @@ def main(cfg: DictConfig):
                 by_len_r[ctx] = round(rr2.accuracy, 4)
                 mems_r.append(rr2.mem_fraction)
                 accs_r.append(rr2.accuracy * rr2.n); n_r += rr2.n
+            acc_all_r = sum(accs_r) / max(1, n_r)
+            se_r, lo_r, hi_r = proportion_stats(int(round(acc_all_r * n_r)), n_r)
             entry["ruler"] = {
-                "accuracy": round(sum(accs_r) / max(1, n_r), 4),
+                "accuracy": round(acc_all_r, 4),
+                "accuracy_stderr": round(se_r, 4),
+                "accuracy_ci95": [round(lo_r, 4), round(hi_r, 4)],
                 "mem_fraction": round(sum(mems_r) / max(1, len(mems_r)), 4),
                 "by_length": by_len_r, "n": n_r}
             print("  ruler:", entry["ruler"], flush=True)
@@ -427,6 +438,18 @@ def _save(cfg, results) -> str:
     return out_json
 
 
+def _fmt_ci(d, key="pass@1", ci_key="pass@1_ci95"):
+    """Render ``value ±half-width`` from a result dict's metric + its 95% CI."""
+    if not d or key not in d:
+        return ""
+    val = d.get(key, "")
+    ci = d.get(ci_key)
+    if isinstance(ci, (list, tuple)) and len(ci) == 2:
+        half = (float(ci[1]) - float(ci[0])) / 2.0
+        return f"{val}\u00b1{half:.3f}"
+    return str(val)
+
+
 def _markdown_table(model_tag, results) -> str:
     # Detect which AIME years are present
     aime_years = sorted({
@@ -450,11 +473,13 @@ def _markdown_table(model_tag, results) -> str:
         pp = e.get("ppl", {})
         ppl_val = pp.get("perplexity") or pp.get("ppl") or next(iter(pp.values()), "")
         mem = nd.get("mem_fraction", lb.get("mem_fraction", ru.get("mem_fraction", "")))
-        aime_vals = [str(e.get(f"aime{y}", {}).get("pass@1", "")) for y in aime_years]
-        row = [name, str(nd.get("accuracy", "")), str(ru.get("accuracy", ""))]
+        # Reasoning columns carry their 95% CI half-width; needle carries its CI too.
+        aime_vals = [_fmt_ci(e.get(f"aime{y}", {})) for y in aime_years]
+        row = [name, _fmt_ci(nd, "accuracy", "accuracy_ci95"),
+               _fmt_ci(ru, "accuracy", "accuracy_ci95")]
         if has_lb:
             row.append(str(lb.get("score", "")))
-        row += [str(mem), str(gs.get("pass@1", "")), str(ma.get("pass@1", ""))]
+        row += [str(mem), _fmt_ci(gs), _fmt_ci(ma)]
         row += aime_vals + [str(ppl_val)]
         lines.append("| " + " | ".join(row) + " |")
     return "\n".join(lines)

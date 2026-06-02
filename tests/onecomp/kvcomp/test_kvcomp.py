@@ -640,3 +640,56 @@ def test_detect_outlier_layers_multiprobe_agg():
     # vote: layer1 is a minority outlier (1/3) -> only layer0 skipped (stable).
     assert detect_outlier_layers(
         _outlier_fake_model(sched), [ids, ids, ids], agg="vote") == [0]
+
+
+# --- benchmark harness: codec speed-quality ablation matrix & CI formatting ---
+def _import_benchmark_module(name):
+    import importlib
+    import os
+    import sys
+
+    bench_dir = os.path.join(
+        os.path.dirname(__file__), "..", "..", "..",
+        "benchmark", "kvcomp-longcontext")
+    bench_dir = os.path.abspath(bench_dir)
+    if bench_dir not in sys.path:
+        sys.path.insert(0, bench_dir)
+    return importlib.import_module(name)
+
+
+def test_codec_speed_ablation_matrix():
+    """The HALO lever ablation: GEMM is quality-neutral, LS lowers MSE, iso-storage."""
+    cs = _import_benchmark_module("codec_speed")
+    codecs = cs._codecs(4)
+    assert set(codecs) == {
+        "TurboQuant-hadamard", "HALO-hadamard-noLS", "HALO-hadamard_gemm-noLS",
+        "HALO-hadamard_gemm-LS", "HALO-dense-LS"}
+
+    torch.manual_seed(0)
+    k = torch.randn(1, 2, 64, 128)
+    v = torch.randn(1, 2, 64, 128)
+
+    def rt(c):
+        comp = c.encode(k, v)
+        kq, vq = c.decode(comp)
+        mse = ((kq - k).pow(2).mean() + (vq - v).pow(2).mean()) / 2
+        return float(mse), comp.meta["stored_bits"]
+
+    mse_h, bits_h = rt(codecs["HALO-hadamard-noLS"])
+    mse_hg, bits_hg = rt(codecs["HALO-hadamard_gemm-noLS"])
+    mse_hg_ls, bits_ls = rt(codecs["HALO-hadamard_gemm-LS"])
+    # GEMM is mathematically identical to the butterfly => same MSE & storage.
+    assert mse_hg == pytest.approx(mse_h, rel=1e-4)
+    assert bits_hg == bits_h == bits_ls          # LS is storage-neutral
+    # Least-squares dequant scale provably lowers (<=) reconstruction MSE.
+    assert mse_hg_ls <= mse_hg + 1e-9
+
+
+def test_markdown_ci_formatting():
+    kb = _import_benchmark_module("kv_benchmark")
+    # value ± half-width of the 95% CI
+    assert kb._fmt_ci({"pass@1": 0.5, "pass@1_ci95": [0.4, 0.6]}) == "0.5\u00b10.100"
+    assert kb._fmt_ci({"accuracy": 0.9, "accuracy_ci95": [0.85, 0.97]},
+                      "accuracy", "accuracy_ci95") == "0.9\u00b10.060"
+    assert kb._fmt_ci({}) == ""               # missing metric -> blank cell
+    assert kb._fmt_ci({"pass@1": 0.3}) == "0.3"  # no CI -> bare value

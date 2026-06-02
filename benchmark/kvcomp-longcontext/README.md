@@ -57,6 +57,47 @@ srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py \
     run_needle=false run_ruler=false max_new_reason=2048 gsm8k_limit=100
 ```
 
+## Ablations (paper)
+
+Two complementary ablation artefacts isolate each design lever of the proposed
+codecs/recipes:
+
+**1. Codec speed × quality Pareto** (`codec_speed.py`).  Times encode/decode
+(CUDA-synchronised, warmup + median) **and** measures KV-MSE / attention-output
+error on the *same* tensors, so the HALO levers are separable:
+
+```bash
+# GPU: the headline speed-quality table (synthetic anisotropic KV)
+python codec_speed.py --device cuda --heads 32 --seq 4096 --dim 128 \
+    --bits 2 3 4 --repeats 30 --out results/codec_speed_cuda.json
+# real KV from a model instead of synthetic:
+python codec_speed.py --device cuda --model /lustre/.../llama-3.1-8b-instruct
+```
+
+Rows: `TurboQuant-hadamard` (shipped default) · `HALO-hadamard-noLS` (== TurboQuant
+quality control) · `HALO-hadamard_gemm-noLS` (GEMM rotation — **same math/quality,
+isolates speed**) · `HALO-hadamard_gemm-LS` (+ least-squares scale — **isolates
+quality, storage-neutral**) · `HALO-dense-LS` (dense rotation — **shows it
+regresses**).  This substantiates "HALO is faster *and* no worse than TurboQuant".
+
+**2. End-task lever ablation** (`conf/paper_ablation.yaml`).  Does each codec lever
+/ TaperKV design choice carry through to needle retrieval + PPL on a real model?
+
+```bash
+srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py --config-name paper_ablation \
+    model_path=/lustre/.../models/llama-3.1-8b-instruct
+```
+
+* HALO levers (iso bit-width & iso storage): `HALO-{h,hg}-{noLS}` and
+  `HALO-hg-LS` vs `HALO-dense-LS`, referenced to the faithful `TurboQuant-{3,4}bit`.
+* TaperKV K≥V asymmetry: `TaperKV-asym` (K6V3) vs `TaperKV-sym` (K4V4) vs
+  `TaperKV-revsym` (K3V6, reversed — expected to regress since keys are more
+  sensitive).
+
+All accuracy/pass@1 results now carry a **95% CI** (Wilson for retrieval, normal
+for reasoning) in both the JSON and the Markdown table (`value±half-width`), so a
+claimed win is backed by an error bar rather than a single point.
+
 Config: `conf/benchmark_longcontext.yaml`. Knobs are kept identical across
 methods (`sink_tokens`, `recent_tokens`, `target_mem`) for a fair iso-memory
 comparison; the eviction window is sized to `target_mem * ctx` so eviction gets
