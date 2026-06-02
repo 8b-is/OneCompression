@@ -82,6 +82,14 @@ class Int4Codec(AffineKVCodec):
     bits: int = 4
 
 
+@register_kv_codec("int3")
+@dataclass
+class Int3Codec(AffineKVCodec):
+    """3-bit affine KV quantization (the iso-bit reference for HALO/TurboQuant 3-bit)."""
+
+    bits: int = 3
+
+
 @register_kv_codec("int2")
 @dataclass
 class Int2Codec(AffineKVCodec):

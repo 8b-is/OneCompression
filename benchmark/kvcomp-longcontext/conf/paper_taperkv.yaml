@@ -1,0 +1,128 @@
+# TaperKV paper: retrieval-preserving age-graded KV quantization.
+#
+# Thesis: at an aggressive iso-memory budget (~3-bit average), eviction
+# baselines (StreamingLLM, ThinKV) structurally fail long-context retrieval
+# because the needle in the dropped region is unrecoverable.  Quantization
+# baselines (Uniform-INT, KIVI, TurboQuant) avoid eviction but spend bits
+# uniformly across token age.  TaperKV keeps every token at a non-zero
+# precision floor with a higher precision sink + recent window, so the needle
+# always survives — lossily but recoverably — and the bit budget is spent
+# where retrieval needs it.  This preset evaluates that thesis.
+#
+# Methods (iso-memory ~3-bit average, eviction window sized to target_mem):
+#   * FullKV                    — fp16 upper bound
+#   * Uniform-INT3              — per-token uniform affine (lower bound at 3-bit)
+#   * KIVI-INT2                 — per-channel-key/per-token-value (KIVI paper)
+#   * StreamingLLM              — eviction baseline (must fail at iso-memory)
+#   * ThinKV                    — thought-adaptive eviction+quant baseline
+#   * PM-KVQ                    — progressive precision baseline (no evict)
+#   * TurboQuant-3bit           — uniform rotated Lloyd-Max
+#   * HALO-3bit                 — proposed companion codec at iso-bit
+#   * TaperKV (~4-bit)          — proposed at the standard operating point
+#   * TaperKV-3bit (~3-bit)     — proposed at the headline iso-memory point
+#   * TurboTaper-3bit           — TaperKV schedule x rotated Lloyd-Max codec
+#
+# Run:
+#   srun --gres=gpu:1 .../python kv_benchmark.py --config-name paper_taperkv \
+#       model_path=/lustre/.../models/DeepSeek-R1-Distill-Qwen-7B
+
+defaults:
+  - benchmark_longcontext
+  - _self_
+
+model_path: ???
+
+output_dir: ${hydra:runtime.cwd}/results_taperkv
+
+# Iso-memory budget for the eviction window: matches ~3-bit avg quant (3/16=0.1875).
+target_mem: 0.20
+sink_tokens: 4
+recent_tokens: 128
+requant_stride: 16
+
+methods:
+  - FullKV
+  - Uniform-INT3
+  - KIVI-INT2
+  - StreamingLLM
+  - ThinKV                  # eager attention only
+  - PM-KVQ
+  - TurboQuant-3bit
+  - HALO-3bit
+  - TaperKV
+  - TaperKV-3bit
+  - TurboTaper-3bit
+
+uniform_bits: [3]            # generates Uniform-INT3
+kivi_bits: [2]
+
+# TaperKV at the standard operating point (~4-bit avg, K=8/V=4 floor 2).
+taperkv:
+  key_bits: 8
+  value_bits: 4
+  b_min: 2
+  b_min_value: 2
+
+# Iso-bit operating point at ~3-bit avg (K=4/V=3 floor 2) for the headline.
+taperkv_sweep:
+  - {label: "TaperKV-3bit", key_bits: 4, value_bits: 3, b_min: 2, b_min_value: 2, recent_tokens: 64}
+
+# TurboTaper at standard ~4-bit (left at defaults; not in `methods` for this preset).
+turbotaper:
+  dist: gaussian
+  rotation_mode: hadamard
+  n_outlier_floor: 32
+
+# Companion rotated-codec variant of TaperKV at the 3-bit headline budget.
+turbotaper_sweep:
+  - {label: "TurboTaper-3bit", key_bits: 4, value_bits: 3, b_min: 2, b_min_value: 2, recent_tokens: 64}
+
+# Single TurboQuant variant at 3-bit (paper-faithful Beta + Hadamard rotation).
+turboquant_variants:
+  - {label: "TurboQuant-3bit", bits: 3, dist: beta}
+
+# HALO at 3-bit (proposed companion codec at iso-bit to TurboQuant-3bit).
+halo_variants:
+  - {label: "HALO-3bit", bits: 3}
+
+# ThinKV: keep eager attention so its sparsity calibration runs (faithful regime).
+attn_implementation: eager
+thinkv:
+  group_size: 16
+  precision: {R: 4, E: 4, T: 2}     # match the ThinKV faithful preset
+  auto_configure: true
+  calib_max_new: 200
+  capture_long: false                # cheaper, GSM8K only
+
+# --- Long-context retrieval (the headline metric for the TaperKV paper) ---
+run_needle: true
+context_lens: [4096, 8192, 16384]
+depths: [0.1, 0.25, 0.5, 0.75, 0.9]
+seeds: 3
+max_new_needle: 32
+
+run_ruler: true
+ruler_keys: 4
+ruler_seeds: 5
+
+run_longbench: true
+longbench_tasks: []
+longbench_max_length: 7500
+longbench_limit: 10
+
+# --- Reasoning non-degradation (TaperKV thesis: keeps reasoning intact) ---
+run_gsm8k: true
+gsm8k_limit: 100
+max_new_reason: 4096
+run_math: true
+math_limit: 100
+max_new_math: 4096
+
+# --- WikiText-2 PPL sanity ---
+run_ppl: true
+ppl_max_length: 4096
+ppl_stride: 2048
+ppl_windows: 16
+
+skip_outliers: true
+outlier_ratio: 50.0

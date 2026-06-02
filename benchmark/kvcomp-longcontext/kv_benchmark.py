@@ -180,6 +180,27 @@ def build_methods(cfg: DictConfig, model, tok):
         evict=False,
         reason=lambda: TurboTaperCache(ttp, config=mc, requant_stride=cfg.requant_stride))
 
+    # Optional TurboTaper sweep: same pattern as taperkv_sweep, so multiple
+    # TurboTaper operating points (e.g. 3-bit / 4-bit average) can be compared
+    # in one run -- needed for the Pareto curve in the recipe paper.
+    for variant in (cfg.get("turbotaper_sweep", None) or []):
+        v = dict(variant)
+        label = v.pop("label")
+        vp = TurboTaperPolicy(
+            key_bits=v.get("key_bits", tt.get("key_bits", cfg.taperkv.key_bits)),
+            value_bits=v.get("value_bits", tt.get("value_bits", cfg.taperkv.value_bits)),
+            b_min=v.get("b_min", tt.get("b_min", cfg.taperkv.b_min)),
+            b_min_value=v.get("b_min_value", tt.get("b_min_value", cfg.taperkv.b_min_value)),
+            sink_tokens=sink, recent_tokens=v.get("recent_tokens", recent), skip_layers=skip,
+            dist=v.get("dist", tt.get("dist", "gaussian")),
+            rotation_mode=v.get("rotation_mode", tt.get("rotation_mode", "hadamard")),
+            seed=v.get("seed", tt.get("seed", 0)),
+            n_outlier_floor=v.get("n_outlier_floor", tt.get("n_outlier_floor", 0)))
+        methods[label] = dict(
+            make=lambda ctx, p=vp: TurboTaperCache(p, config=mc, requant_stride=cfg.requant_stride),
+            evict=False,
+            reason=lambda p=vp: TurboTaperCache(p, config=mc, requant_stride=cfg.requant_stride))
+
     # Optional TaperKV memory sweep: register one method per (label, overrides)
     # so a single run traces TaperKV's accuracy-vs-memory Pareto curve and we can
     # show it dominates PM-KVQ / eviction *at matched memory*, not just at one
@@ -260,6 +281,15 @@ def main(cfg: DictConfig):
 
     methods = build_methods(cfg, model, tok)
     only = set(cfg.methods) if cfg.get("methods") else None
+    # Fail-fast on typos / unregistered method names (K43): catch before model
+    # load + outlier scan would otherwise be wasted, and prevents mid-run crashes.
+    if only is not None:
+        unknown = only - set(methods)
+        if unknown:
+            raise KeyError(
+                f"Unknown method(s) in cfg.methods: {sorted(unknown)}. "
+                f"Available: {sorted(methods)}.  Add the codec to the registry "
+                f"and/or the corresponding sweep section in the YAML.")
     results = {}
     for name, spec in methods.items():
         if only is not None and name not in only:

@@ -1,0 +1,178 @@
+==============================
+HALO paper benchmark (codec speed-quality)
+Model: /lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Qwen-7B
+Started: Tue Jun  2 12:25:34 JST 2026
+==============================
+model_path: /lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Qwen-7B
+device: cuda:0
+dtype: bfloat16
+output_dir: /lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-codec/results
+bits:
+- 4
+- 3
+- 2
+sink_tokens: 4
+capture_tokens: 2048
+timing_heads: 8
+timing_seq: 1024
+timing_iters: 100
+run_ppl: true
+ppl_max_length: 2048
+ppl_stride: 1024
+ppl_windows: 32
+
+Loading weights:   0%|          | 0/339 [00:00<?, ?it/s]Loading weights:   0%|          | 1/339 [00:00<03:37,  1.55it/s]Loading weights:   1%|          | 2/339 [00:01<03:47,  1.48it/s]Loading weights:   1%|          | 3/339 [00:01<02:31,  2.22it/s]Loading weights:   1%|          | 4/339 [00:01<01:53,  2.94it/s]Loading weights:   5%|▍         | 16/339 [00:01<00:19, 16.53it/s]Loading weights:   6%|▌         | 19/339 [00:02<00:19, 16.25it/s]Loading weights:   8%|▊         | 28/339 [00:02<00:13, 22.44it/s]Loading weights:   9%|▉         | 31/339 [00:02<00:18, 16.74it/s]Loading weights:  12%|█▏        | 40/339 [00:03<00:14, 21.00it/s]Loading weights:  13%|█▎        | 43/339 [00:03<00:18, 16.03it/s]Loading weights:  15%|█▌        | 52/339 [00:03<00:13, 21.14it/s]Loading weights:  16%|█▌        | 55/339 [00:03<00:15, 18.82it/s]Loading weights:  19%|█▉        | 64/339 [00:04<00:12, 22.01it/s]Loading weights:  22%|██▏       | 75/339 [00:04<00:08, 29.90it/s]Loading weights:  23%|██▎       | 79/339 [00:04<00:08, 29.93it/s]Loading weights:  26%|██▌       | 87/339 [00:04<00:06, 38.01it/s]Loading weights:  27%|██▋       | 92/339 [00:04<00:07, 31.30it/s]Loading weights:  29%|██▉       | 100/339 [00:05<00:06, 35.51it/s]Loading weights:  31%|███       | 105/339 [00:05<00:06, 37.14it/s]Loading weights:  33%|███▎      | 111/339 [00:05<00:06, 35.47it/s]Loading weights:  34%|███▍      | 116/339 [00:05<00:05, 37.74it/s]Loading weights:  36%|███▋      | 123/339 [00:05<00:05, 37.09it/s]Loading weights:  37%|███▋      | 127/339 [00:05<00:05, 36.77it/s]Loading weights:  40%|███▉      | 135/339 [00:05<00:05, 37.67it/s]Loading weights:  44%|████▎     | 148/339 [00:06<00:06, 31.46it/s]Loading weights:  47%|████▋     | 159/339 [00:06<00:04, 37.31it/s]Loading weights:  48%|████▊     | 164/339 [00:07<00:06, 28.41it/s]Loading weights:  51%|█████     | 172/339 [00:07<00:06, 27.02it/s]Loading weights:  52%|█████▏    | 176/339 [00:07<00:05, 28.34it/s]Loading weights:  54%|█████▍    | 183/339 [00:07<00:05, 30.87it/s]Loading weights:  55%|█████▌    | 187/339 [00:07<00:05, 29.45it/s]Loading weights:  57%|█████▋    | 194/339 [00:08<00:04, 29.74it/s]Loading weights:  58%|█████▊    | 198/339 [00:08<00:04, 30.91it/s]Loading weights:  61%|██████▏   | 208/339 [00:08<00:04, 32.23it/s]Loading weights:  65%|██████▍   | 220/339 [00:08<00:02, 39.97it/s]Loading weights:  66%|██████▋   | 225/339 [00:08<00:03, 36.56it/s]Loading weights:  68%|██████▊   | 231/339 [00:08<00:02, 38.21it/s]Loading weights:  69%|██████▉   | 235/339 [00:09<00:03, 31.22it/s]Loading weights:  72%|███████▏  | 243/339 [00:09<00:03, 30.94it/s]Loading weights:  73%|███████▎  | 247/339 [00:09<00:03, 27.62it/s]Loading weights:  76%|███████▌  | 256/339 [00:09<00:02, 30.15it/s]Loading weights:  77%|███████▋  | 260/339 [00:10<00:03, 26.22it/s]Loading weights:  78%|███████▊  | 266/339 [00:10<00:03, 21.27it/s]Loading weights:  83%|████████▎ | 280/339 [00:10<00:02, 26.60it/s]Loading weights:  86%|████████▌ | 291/339 [00:11<00:01, 31.99it/s]Loading weights:  87%|████████▋ | 295/339 [00:11<00:01, 32.44it/s]Loading weights:  90%|████████▉ | 304/339 [00:11<00:01, 29.68it/s]Loading weights:  93%|█████████▎| 314/339 [00:12<00:00, 25.95it/s]Loading weights:  96%|█████████▌| 324/339 [00:12<00:00, 34.14it/s]Loading weights:  97%|█████████▋| 329/339 [00:12<00:00, 27.11it/s]Loading weights: 100%|██████████| 339/339 [00:12<00:00, 26.94it/s]
+head_dim=128; captured KV (1, 12, 2048, 128)
+[2026-06-02 12:26:04,536][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:04,720][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+[2026-06-02 12:26:04,722][huggingface_hub.utils._http][WARNING] - Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+[2026-06-02 12:26:04,737][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/Salesforce/wikitext/b08601e04326c79dfdd32d625aee71d232d685c3/README.md "HTTP/1.1 200 OK"
+[2026-06-02 12:26:04,924][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext.py "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:05,110][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext.py "HTTP/1.1 404 Not Found"
+[2026-06-02 12:26:05,689][httpx][INFO] - HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/wikitext/wikitext.py "HTTP/1.1 200 OK"
+[2026-06-02 12:26:05,879][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/wikitext/revision/b08601e04326c79dfdd32d625aee71d232d685c3 "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:06,053][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/Salesforce/wikitext/revision/b08601e04326c79dfdd32d625aee71d232d685c3 "HTTP/1.1 200 OK"
+[2026-06-02 12:26:06,227][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/.huggingface.yaml "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:06,397][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/.huggingface.yaml "HTTP/1.1 404 Not Found"
+[2026-06-02 12:26:06,610][httpx][INFO] - HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=wikitext "HTTP/1.1 404 Not Found"
+[2026-06-02 12:26:06,780][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/wikitext/tree/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext-103-raw-v1?recursive=true&expand=false "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:06,964][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/Salesforce/wikitext/tree/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext-103-raw-v1?recursive=true&expand=false "HTTP/1.1 200 OK"
+[2026-06-02 12:26:07,149][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/wikitext/tree/b08601e04326c79dfdd32d625aee71d232d685c3?recursive=false&expand=false "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:07,324][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/Salesforce/wikitext/tree/b08601e04326c79dfdd32d625aee71d232d685c3?recursive=false&expand=false "HTTP/1.1 200 OK"
+[2026-06-02 12:26:07,516][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/dataset_infos.json "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:07,695][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/dataset_infos.json "HTTP/1.1 404 Not Found"
+[2026-06-02 12:26:07,878][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/wikitext/tree/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext-2-raw-v1?recursive=true&expand=false "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:08,070][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/Salesforce/wikitext/tree/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext-2-raw-v1?recursive=true&expand=false "HTTP/1.1 200 OK"
+[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (327418 > 16384). Running this sequence through the model will result in indexing errors
+  [4bit] TurboQuant-hadamard: {'distortion_key': 0.00915, 'distortion_value': 0.00941, 'ms_per_encode': 1.0667, 'throughput_Melem_s': 983.0, 'ppl': 19240.7578}
+[2026-06-02 12:26:11,399][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:11,575][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:11,592][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/Salesforce/wikitext/b08601e04326c79dfdd32d625aee71d232d685c3/README.md "HTTP/1.1 200 OK"
+[2026-06-02 12:26:11,767][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext.py "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:11,945][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext.py "HTTP/1.1 404 Not Found"
+[2026-06-02 12:26:12,504][httpx][INFO] - HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/wikitext/wikitext.py "HTTP/1.1 200 OK"
+[2026-06-02 12:26:12,699][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/.huggingface.yaml "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:12,875][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/.huggingface.yaml "HTTP/1.1 404 Not Found"
+[2026-06-02 12:26:13,093][httpx][INFO] - HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=wikitext "HTTP/1.1 404 Not Found"
+[2026-06-02 12:26:13,278][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/dataset_infos.json "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:13,457][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/dataset_infos.json "HTTP/1.1 404 Not Found"
+  [4bit] TurboQuant-dense: {'distortion_key': 0.00938, 'distortion_value': 0.00985, 'ms_per_encode': 0.2898, 'throughput_Melem_s': 3617.9, 'ppl': 24608.9062}
+[2026-06-02 12:26:16,079][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:16,248][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:16,263][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/Salesforce/wikitext/b08601e04326c79dfdd32d625aee71d232d685c3/README.md "HTTP/1.1 200 OK"
+[2026-06-02 12:26:16,439][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext.py "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:16,615][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext.py "HTTP/1.1 404 Not Found"
+[2026-06-02 12:26:16,809][httpx][INFO] - HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/wikitext/wikitext.py "HTTP/1.1 200 OK"
+[2026-06-02 12:26:16,998][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/.huggingface.yaml "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:17,165][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/.huggingface.yaml "HTTP/1.1 404 Not Found"
+[2026-06-02 12:26:17,363][httpx][INFO] - HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=wikitext "HTTP/1.1 404 Not Found"
+[2026-06-02 12:26:17,538][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/dataset_infos.json "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:17,705][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/dataset_infos.json "HTTP/1.1 404 Not Found"
+  [4bit] HALO-auto: {'distortion_key': 0.00938, 'distortion_value': 0.00985, 'ms_per_encode': 0.2903, 'throughput_Melem_s': 3612.2, 'ppl': 24608.9062}
+[2026-06-02 12:26:20,358][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:20,586][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:20,602][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/Salesforce/wikitext/b08601e04326c79dfdd32d625aee71d232d685c3/README.md "HTTP/1.1 200 OK"
+[2026-06-02 12:26:20,780][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext.py "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:20,953][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext.py "HTTP/1.1 404 Not Found"
+[2026-06-02 12:26:21,149][httpx][INFO] - HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/wikitext/wikitext.py "HTTP/1.1 200 OK"
+[2026-06-02 12:26:21,336][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/.huggingface.yaml "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:21,509][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/.huggingface.yaml "HTTP/1.1 404 Not Found"
+[2026-06-02 12:26:21,697][httpx][INFO] - HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=wikitext "HTTP/1.1 404 Not Found"
+[2026-06-02 12:26:21,918][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/dataset_infos.json "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:22,096][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/dataset_infos.json "HTTP/1.1 404 Not Found"
+  [3bit] TurboQuant-hadamard: {'distortion_key': 0.03332, 'distortion_value': 0.03393, 'ms_per_encode': 1.1408, 'throughput_Melem_s': 919.2, 'ppl': 70290.0234}
+[2026-06-02 12:26:25,329][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:25,506][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:25,522][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/Salesforce/wikitext/b08601e04326c79dfdd32d625aee71d232d685c3/README.md "HTTP/1.1 200 OK"
+[2026-06-02 12:26:25,710][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext.py "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:25,890][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext.py "HTTP/1.1 404 Not Found"
+[2026-06-02 12:26:26,084][httpx][INFO] - HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/wikitext/wikitext.py "HTTP/1.1 200 OK"
+[2026-06-02 12:26:26,282][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/.huggingface.yaml "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:26,454][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/.huggingface.yaml "HTTP/1.1 404 Not Found"
+[2026-06-02 12:26:26,644][httpx][INFO] - HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=wikitext "HTTP/1.1 404 Not Found"
+[2026-06-02 12:26:26,830][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/dataset_infos.json "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:27,005][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/dataset_infos.json "HTTP/1.1 404 Not Found"
+  [3bit] TurboQuant-dense: {'distortion_key': 0.03408, 'distortion_value': 0.03497, 'ms_per_encode': 0.2902, 'throughput_Melem_s': 3612.7, 'ppl': 80979.3594}
+[2026-06-02 12:26:29,560][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:29,750][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:29,766][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/Salesforce/wikitext/b08601e04326c79dfdd32d625aee71d232d685c3/README.md "HTTP/1.1 200 OK"
+[2026-06-02 12:26:29,945][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext.py "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:30,121][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext.py "HTTP/1.1 404 Not Found"
+[2026-06-02 12:26:30,317][httpx][INFO] - HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/wikitext/wikitext.py "HTTP/1.1 200 OK"
+[2026-06-02 12:26:30,504][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/.huggingface.yaml "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:30,680][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/.huggingface.yaml "HTTP/1.1 404 Not Found"
+[2026-06-02 12:26:30,872][httpx][INFO] - HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=wikitext "HTTP/1.1 404 Not Found"
+[2026-06-02 12:26:31,052][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/dataset_infos.json "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:32,089][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/dataset_infos.json "HTTP/1.1 404 Not Found"
+  [3bit] HALO-auto: {'distortion_key': 0.03408, 'distortion_value': 0.03497, 'ms_per_encode': 0.2909, 'throughput_Melem_s': 3604.5, 'ppl': 80979.3594}
+[2026-06-02 12:26:34,735][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:34,906][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:34,923][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/Salesforce/wikitext/b08601e04326c79dfdd32d625aee71d232d685c3/README.md "HTTP/1.1 200 OK"
+[2026-06-02 12:26:35,109][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext.py "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:35,281][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext.py "HTTP/1.1 404 Not Found"
+[2026-06-02 12:26:35,481][httpx][INFO] - HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/wikitext/wikitext.py "HTTP/1.1 200 OK"
+[2026-06-02 12:26:35,673][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/.huggingface.yaml "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:35,850][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/.huggingface.yaml "HTTP/1.1 404 Not Found"
+[2026-06-02 12:26:36,045][httpx][INFO] - HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=wikitext "HTTP/1.1 404 Not Found"
+[2026-06-02 12:26:37,071][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/dataset_infos.json "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:37,255][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/dataset_infos.json "HTTP/1.1 404 Not Found"
+  [2bit] TurboQuant-hadamard: {'distortion_key': 0.11393, 'distortion_value': 0.11585, 'ms_per_encode': 1.1422, 'throughput_Melem_s': 918.0, 'ppl': 260028.8438}
+[2026-06-02 12:26:40,499][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:40,672][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:40,688][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/Salesforce/wikitext/b08601e04326c79dfdd32d625aee71d232d685c3/README.md "HTTP/1.1 200 OK"
+[2026-06-02 12:26:40,873][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext.py "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:41,097][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext.py "HTTP/1.1 404 Not Found"
+[2026-06-02 12:26:41,665][httpx][INFO] - HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/wikitext/wikitext.py "HTTP/1.1 200 OK"
+[2026-06-02 12:26:41,856][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/.huggingface.yaml "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:42,030][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/.huggingface.yaml "HTTP/1.1 404 Not Found"
+[2026-06-02 12:26:42,246][httpx][INFO] - HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=wikitext "HTTP/1.1 404 Not Found"
+[2026-06-02 12:26:42,433][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/dataset_infos.json "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:42,604][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/dataset_infos.json "HTTP/1.1 404 Not Found"
+  [2bit] TurboQuant-dense: {'distortion_key': 0.11604, 'distortion_value': 0.11805, 'ms_per_encode': 0.2904, 'throughput_Melem_s': 3610.2, 'ppl': 221192.0469}
+[2026-06-02 12:26:45,143][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:45,333][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:45,348][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/Salesforce/wikitext/b08601e04326c79dfdd32d625aee71d232d685c3/README.md "HTTP/1.1 200 OK"
+[2026-06-02 12:26:45,533][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext.py "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:45,739][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext.py "HTTP/1.1 404 Not Found"
+[2026-06-02 12:26:45,935][httpx][INFO] - HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/wikitext/wikitext.py "HTTP/1.1 200 OK"
+[2026-06-02 12:26:46,127][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/.huggingface.yaml "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:46,346][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/.huggingface.yaml "HTTP/1.1 404 Not Found"
+[2026-06-02 12:26:46,532][httpx][INFO] - HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=wikitext "HTTP/1.1 404 Not Found"
+[2026-06-02 12:26:46,710][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/dataset_infos.json "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 12:26:46,885][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/dataset_infos.json "HTTP/1.1 404 Not Found"
+  [2bit] HALO-auto: {'distortion_key': 0.11604, 'distortion_value': 0.11805, 'ms_per_encode': 0.2915, 'throughput_Melem_s': 3597.4, 'ppl': 221192.0469}
+
+Wrote /lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-codec/results/results_DeepSeek-R1-Distill-Qwen-7B.json
+
+### DeepSeek-R1-Distill-Qwen-7B (head_dim=128)
+
+
+**4-bit**
+
+| Codec | dist(K) | dist(V) | ms/encode | Melem/s | PPL |
+|---|---:|---:|---:|---:|---:|
+| TurboQuant-hadamard | 0.00915 | 0.00941 | 1.0667 | 983.0 | 19240.7578 |
+| TurboQuant-dense | 0.00938 | 0.00985 | 0.2898 | 3617.9 | 24608.9062 |
+| HALO-auto | 0.00938 | 0.00985 | 0.2903 | 3612.2 | 24608.9062 |
+
+**3-bit**
+
+| Codec | dist(K) | dist(V) | ms/encode | Melem/s | PPL |
+|---|---:|---:|---:|---:|---:|
+| TurboQuant-hadamard | 0.03332 | 0.03393 | 1.1408 | 919.2 | 70290.0234 |
+| TurboQuant-dense | 0.03408 | 0.03497 | 0.2902 | 3612.7 | 80979.3594 |
+| HALO-auto | 0.03408 | 0.03497 | 0.2909 | 3604.5 | 80979.3594 |
+
+**2-bit**
+
+| Codec | dist(K) | dist(V) | ms/encode | Melem/s | PPL |
+|---|---:|---:|---:|---:|---:|
+| TurboQuant-hadamard | 0.11393 | 0.11585 | 1.1422 | 918.0 | 260028.8438 |
+| TurboQuant-dense | 0.11604 | 0.11805 | 0.2904 | 3610.2 | 221192.0469 |
+| HALO-auto | 0.11604 | 0.11805 | 0.2915 | 3597.4 | 221192.0469 |
+
+==============================
+Done: Tue Jun  2 12:26:50 JST 2026
+Output: /lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-codec/results
+==============================

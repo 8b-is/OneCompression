@@ -37,6 +37,18 @@ srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py \
     model_path=/lustre/.../models/llama-3.1-8b-instruct
 ```
 
+**TaperKV paper preset** (`conf/paper_taperkv.yaml`, iso-memory ~3-bit;
+TaperKV vs ThinKV/PM-KVQ/StreamingLLM/KIVI/TurboQuant/HALO/Uniform-INT3):
+```bash
+sbatch ichikawa_works/kvcomp_verification/run_paper_taperkv.sh                                                # 7B headline
+MODEL=/.../models/DeepSeek-R1-Distill-Qwen-1.5B sbatch ichikawa_works/kvcomp_verification/run_paper_taperkv.sh  # 1.5B fast
+```
+
+**TurboQuant comparison preset** (`conf/turboquant_paper.yaml`, full bit grid 2/2.5/3/3.5/4 + HALO 2/3/4 + TaperKV-3bit on Llama-3.1-8B-Instruct):
+```bash
+sbatch ichikawa_works/kvcomp_verification/run_turboquant_bench.sh
+```
+
 **Reasoning model** (ThinKV native regime; disable needle which is uninformative at long CoT):
 ```bash
 srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py \

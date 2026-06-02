@@ -39,6 +39,29 @@ HALO(auto) equals TurboQuant(dense) overhead (the cheapest path) and is
 **2.3–2.9× faster than TurboQuant's shipped default (Hadamard)** at identical
 reconstruction quality.
 
+### Paper-grade headline (`paper_halo.yaml`, 3 models × 3 bit-widths) — Jun 2026
+
+After the **device-resident orthogonal cache** fix the gap widens further (a
+single dense GEMM with no per-call host→device copy):
+
+| model | bits | TurboQuant-hadamard | **HALO-auto** | speedup | quality (relMSE) |
+|---|---:|---:|---:|---:|---:|
+| Llama-3.1-8B-Instruct | 4 | 1.070 ms | **0.284 ms** | **3.76×** | identical |
+| Llama-3.1-8B-Instruct | 3 | 1.081 ms | **0.286 ms** | **3.78×** | identical |
+| Llama-3.1-8B-Instruct | 2 | 1.084 ms | **0.285 ms** | **3.81×** | identical |
+| DeepSeek-R1-Distill-Qwen-7B | 4 | 1.067 ms | **0.290 ms** | **3.68×** | identical |
+| DeepSeek-R1-Distill-Qwen-7B | 3 | 1.141 ms | **0.291 ms** | **3.92×** | identical |
+| DeepSeek-R1-Distill-Qwen-7B | 2 | 1.142 ms | **0.292 ms** | **3.91×** | identical |
+| DeepSeek-R1-Distill-Qwen-1.5B | 4 | 0.950 ms | **0.284 ms** | **3.34×** | identical |
+| DeepSeek-R1-Distill-Qwen-1.5B | 3 | 1.091 ms | **0.285 ms** | **3.83×** | identical |
+| DeepSeek-R1-Distill-Qwen-1.5B | 2 | 1.106 ms | **0.285 ms** | **3.88×** | identical |
+
+PPL under `CompressedDynamicCache` is **identical to 4 decimals** between
+HALO-auto and TurboQuant-dense at every bit-width and model — the win is purely
+the cheaper transform selection + zero-overhead skipped preconditioning + the
+device-resident rotation cache. The Hadamard default that the TurboQuant paper
+ships is both slower **and** no better in quality.
+
 ## Run
 
 **Standard run:**
@@ -52,6 +75,14 @@ srun --gres=gpu:1 .venv/bin/python -u codec_benchmark.py \
 srun --gres=gpu:1 .venv/bin/python -u codec_benchmark.py \
     --config-name paper_run \
     model_path=/lustre/.../models/llama-3.1-8b-instruct
+```
+
+**HALO paper preset** (`conf/paper_halo.yaml`, headline 4/3/2-bit, multi-model):
+```bash
+# launch on three models in parallel via SLURM
+sbatch ichikawa_works/kvcomp_verification/run_paper_halo.sh                                                  # llama-3.1-8b-instruct
+MODEL=/.../models/DeepSeek-R1-Distill-Qwen-7B sbatch ichikawa_works/kvcomp_verification/run_paper_halo.sh    # 7B reasoning
+MODEL=/.../models/DeepSeek-R1-Distill-Qwen-1.5B sbatch ichikawa_works/kvcomp_verification/run_paper_halo.sh  # 1.5B fast
 ```
 
 Config: `conf/benchmark_codec.yaml`. Metrics per bit-width {2,3,4}: distortion

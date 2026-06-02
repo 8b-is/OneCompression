@@ -188,3 +188,4 @@ Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF
 [2026-06-02 07:32:15,277][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/AI-MO/aimo-validation-aime/resolve/13f9e12f613e720c2a2b2f345dd04b998a29494d/.huggingface.yaml "HTTP/1.1 404 Not Found"
 [2026-06-02 07:32:15,589][httpx][INFO] - HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=AI-MO/aimo-validation-aime "HTTP/1.1 200 OK"
 [2026-06-02 07:32:15,787][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/AI-MO/aimo-validation-aime/resolve/13f9e12f613e720c2a2b2f345dd04b998a29494d/dataset_infos.json "HTTP/1.1 404 Not Found"
+[2026-06-02T10:45:45.017] error: *** JOB 45703 ON kagura-gpu06 CANCELLED AT 2026-06-02T10:45:45 DUE TO TIME LIMIT ***
