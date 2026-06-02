@@ -526,9 +526,17 @@ class ThinKVPolicy(KVPolicy):
                 eligible[layer] = thr
         if not eligible:
             # Fallback: pool all layers' sparsity and use k-means thresholds.
-            pooled = torch.cat([torch.as_tensor(v).flatten() for v in layer_sparsity.values()])
-            self.thresholds = self.make_classifier().calibrate(pooled, self.num_thoughts)
-            self.calib_layers = sorted(layer_sparsity)[: self.max_calib_layers]
+            non_empty = [torch.as_tensor(v).flatten() for v in layer_sparsity.values() if len(v) > 0]
+            if non_empty:
+                pooled = torch.cat(non_empty)
+                self.thresholds = self.make_classifier().calibrate(pooled, self.num_thoughts)
+                self.calib_layers = sorted(layer_sparsity)[: self.max_calib_layers]
+            else:
+                # No calibration data at all (model generated 0 attention steps, e.g. R1-Distill-14B
+                # at short context with calib_max_new=200 EOS early). Fall back to uniform thresholds
+                # so ThinKV degrades gracefully to a fixed-bit policy rather than crashing.
+                self.thresholds = tuple([0.5] * (self.num_thoughts - 1))
+                self.calib_layers = []
             return self.calib_layers, self.thresholds
         chosen = sorted(eligible)[: self.max_calib_layers]
         avg = [sum(eligible[l][j] for l in chosen) / len(chosen) for j in range(self.num_thoughts - 1)]

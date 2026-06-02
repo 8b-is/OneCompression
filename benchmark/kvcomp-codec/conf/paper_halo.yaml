@@ -41,3 +41,11 @@ run_ppl: true
 ppl_max_length: 2048
 ppl_stride: 1024
 ppl_windows: 32
+
+# Outlier layers: massive-activation layers (common in small Qwen R1-Distill models)
+# destroy generation quality when quantized at any bit-width.  Detect them once and
+# skip uniformly for ALL codecs so the comparison stays fair.  Set to false to
+# reproduce the raw codec-only baseline (e.g. for distortion-only analysis on a model
+# without outlier layers like Llama-3.1-8B-Instruct).
+skip_outliers: true
+outlier_ratio: 50.0

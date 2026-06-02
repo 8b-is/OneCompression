@@ -36,7 +36,7 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from onecomp.kvcomp import CompressedDynamicCache
+from onecomp.kvcomp import CompressedDynamicCache, detect_outlier_layers
 from onecomp.kvcomp.eval import wikitext2_perplexity
 from onecomp.kvcomp.codec import HALOCodec, TurboQuantCodec
 
@@ -96,6 +96,21 @@ def main(cfg: DictConfig):
     timing_x = torch.randn(1, cfg.timing_heads, cfg.timing_seq, D, device=model.device)
     print(f"head_dim={D}; captured KV {tuple(ks.shape)}")
 
+    # Detect outlier layers once and skip them uniformly for ALL codecs in the PPL
+    # measurement.  Massive-activation outlier layers (common in small Qwen models)
+    # destroy generation quality when quantized at any bit-width; skipping them
+    # uniformly keeps the comparison fair -- the same layers are skipped for
+    # TurboQuant and HALO.  The distortion metrics (KV-MSE) are measured on
+    # representative non-outlier layers so they are unaffected.
+    skip_layers: set = set()
+    if getattr(cfg, "skip_outliers", True):
+        calib_text = ("The history of cartography spans many centuries. " * 8)
+        calib_ids = tok(calib_text, return_tensors="pt",
+                        truncation=True, max_length=512).input_ids.to(model.device)
+        skip_layers = set(detect_outlier_layers(model, calib_ids,
+                                               outlier_ratio=getattr(cfg, "outlier_ratio", 50.0)))
+        print(f"outlier layers (kept FP16): {sorted(skip_layers)}")
+
     results = {}
     for bits in list(cfg.bits):
         results[bits] = {}
@@ -108,8 +123,9 @@ def main(cfg: DictConfig):
             entry["throughput_Melem_s"] = round(melem, 1)
             if cfg.run_ppl:
                 pp = wikitext2_perplexity(
-                    model, tok, cache_factory=lambda c=codec: CompressedDynamicCache(
-                        codec=c, config=model.config, sink_tokens=cfg.sink_tokens),
+                    model, tok, cache_factory=lambda c=codec, sl=skip_layers: CompressedDynamicCache(
+                        codec=c, config=model.config, sink_tokens=cfg.sink_tokens,
+                        skip_layers=sl if sl else None),
                     max_length=cfg.ppl_max_length, stride=cfg.ppl_stride, max_windows=cfg.ppl_windows)
                 entry["ppl"] = round(float(pp.get("ppl", pp.get("perplexity", 0.0))), 4)
             results[bits][name] = entry
