@@ -108,7 +108,7 @@ def main(cfg: DictConfig):
         calib_ids = tok(calib_text, return_tensors="pt",
                         truncation=True, max_length=512).input_ids.to(model.device)
         skip_layers = set(detect_outlier_layers(model, calib_ids,
-                                               outlier_ratio=getattr(cfg, "outlier_ratio", 50.0)))
+                                               ratio_thresh=getattr(cfg, "outlier_ratio", 50.0)))
         print(f"outlier layers (kept FP16): {sorted(skip_layers)}")
 
     results = {}
