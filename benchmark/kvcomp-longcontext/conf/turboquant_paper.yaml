@@ -44,6 +44,9 @@ methods:
   - HALO-4bit
   - HALO-3bit          # 3-bit HALO (proposed codec, iso-quality to TurboQuant-3bit)
   - HALO-2bit
+  - HALO-dense-LS-4bit   # dense rotation + LS scale: best PPL at every bit (ablation)
+  - HALO-dense-LS-3bit
+  - HALO-dense-LS-2bit
   - FP8
   - NVFP4
   - TaperKV            # K=8/V=4, key floor 4 / value floor 2 (~4.5-bit, retrieval-safe)
@@ -63,6 +66,12 @@ halo_variants:
   - {label: "HALO-4bit", bits: 4}
   - {label: "HALO-3bit", bits: 3}
   - {label: "HALO-2bit", bits: 2}
+  # Dense rotation + LS scale: same GEMM cost as folded-Hadamard at head_dim=128,
+  # marginally better Gaussianisation -> best PPL at every bit on Ministral/Llama.
+  # Included as a Pareto ablation alongside the default HALO (Hadamard-GEMM + LS).
+  - {label: "HALO-dense-LS-4bit", bits: 4, rotation_mode: dense, ls_scale: true}
+  - {label: "HALO-dense-LS-3bit", bits: 3, rotation_mode: dense, ls_scale: true}
+  - {label: "HALO-dense-LS-2bit", bits: 2, rotation_mode: dense, ls_scale: true}
 
 # Additional standalone-codec baselines (now reachable via the generic path):
 # FP8 (the recommended 2026 native baseline) and NVFP4 (4-bit E2M1 float).
