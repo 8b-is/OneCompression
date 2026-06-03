@@ -617,6 +617,87 @@
         },
         "mem_fraction": 0.1963
       }
+    },
+    "HALO-2bit": {
+      "longbench": {
+        "n": 130,
+        "score": 20.22,
+        "per_task": {
+          "qasper": 5.84,
+          "multifieldqa_en": 30.76,
+          "hotpotqa": 34.71,
+          "2wikimqa": 23.01,
+          "gov_report": 17.82,
+          "multi_news": 11.56,
+          "trec": 25.0,
+          "triviaqa": 15.99,
+          "samsum": 10.5,
+          "passage_count": 0.0,
+          "passage_retrieval_en": 40.0,
+          "lcc": 9.03,
+          "repobench-p": 38.59
+        },
+        "by_length": {
+          "0-4k": 18.17,
+          "4-8k": 22.02,
+          "8k+": 0.0
+        },
+        "mem_fraction": 0.1339
+      }
+    },
+    "FP8": {
+      "longbench": {
+        "n": 130,
+        "score": 27.54,
+        "per_task": {
+          "qasper": 12.07,
+          "multifieldqa_en": 19.37,
+          "hotpotqa": 16.17,
+          "2wikimqa": 15.52,
+          "gov_report": 18.58,
+          "multi_news": 14.14,
+          "trec": 45.0,
+          "triviaqa": 16.74,
+          "samsum": 12.75,
+          "passage_count": 20.0,
+          "passage_retrieval_en": 70.0,
+          "lcc": 58.55,
+          "repobench-p": 39.1
+        },
+        "by_length": {
+          "0-4k": 25.75,
+          "4-8k": 29.12,
+          "8k+": 0.0
+        },
+        "mem_fraction": 0.5006
+      }
+    },
+    "NVFP4": {
+      "longbench": {
+        "n": 130,
+        "score": 27.7,
+        "per_task": {
+          "qasper": 12.11,
+          "multifieldqa_en": 21.15,
+          "hotpotqa": 16.09,
+          "2wikimqa": 14.97,
+          "gov_report": 21.43,
+          "multi_news": 13.43,
+          "trec": 40.0,
+          "triviaqa": 15.12,
+          "samsum": 13.81,
+          "passage_count": 30.0,
+          "passage_retrieval_en": 70.0,
+          "lcc": 50.28,
+          "repobench-p": 41.75
+        },
+        "by_length": {
+          "0-4k": 25.39,
+          "4-8k": 29.75,
+          "8k+": 0.0
+        },
+        "mem_fraction": 0.2821
+      }
     }
   }
 }

@@ -160,6 +160,22 @@
         "compression_ratio": 3.21,
         "eviction_fired": true
       }
+    },
+    "PM-KVQ": {
+      "aime2025": {
+        "task": "aime2025",
+        "n": 30,
+        "k": 2,
+        "pass@1": 0.0333,
+        "pass@1_stderr": 0.0333,
+        "pass@1_ci95": [
+          -0.032,
+          0.0987
+        ],
+        "avg_gen_len": 5610.5,
+        "compression_ratio": 2.992,
+        "eviction_fired": true
+      }
     }
   }
 }

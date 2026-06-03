@@ -316,6 +316,44 @@
         "n_skipped_nonfinite": 0.0,
         "compression_ratio": 2.5129
       }
+    },
+    "KIVI-INT2": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 50,
+        "k": 1,
+        "pass@1": 0.86,
+        "pass@1_stderr": 0.0496,
+        "pass@1_ci95": [
+          0.7628,
+          0.9572
+        ],
+        "avg_gen_len": 491.7,
+        "compression_ratio": 3.471,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 50,
+        "k": 1,
+        "pass@1": 0.64,
+        "pass@1_stderr": 0.0686,
+        "pass@1_ci95": [
+          0.5056,
+          0.7744
+        ],
+        "avg_gen_len": 1918.4,
+        "compression_ratio": 3.499,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 14.3067,
+        "nll": 2.6607,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 3.5207
+      }
     }
   }
 }

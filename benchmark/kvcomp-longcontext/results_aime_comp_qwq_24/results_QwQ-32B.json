@@ -176,6 +176,38 @@
         "compression_ratio": 4.535,
         "eviction_fired": true
       }
+    },
+    "TaperKV": {
+      "aime2024": {
+        "task": "aime2024",
+        "n": 30,
+        "k": 1,
+        "pass@1": 0.2,
+        "pass@1_stderr": 0.0743,
+        "pass@1_ci95": [
+          0.0544,
+          0.3456
+        ],
+        "avg_gen_len": 6025.0,
+        "compression_ratio": 3.409,
+        "eviction_fired": true
+      }
+    },
+    "TurboTaper": {
+      "aime2024": {
+        "task": "aime2024",
+        "n": 30,
+        "k": 1,
+        "pass@1": 0.0,
+        "pass@1_stderr": 0.0,
+        "pass@1_ci95": [
+          0.0,
+          0.0
+        ],
+        "avg_gen_len": 958.6,
+        "compression_ratio": 3.311,
+        "eviction_fired": true
+      }
     }
   }
 }

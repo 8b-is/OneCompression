@@ -176,6 +176,22 @@
         "compression_ratio": 4.538,
         "eviction_fired": true
       }
+    },
+    "TaperKV": {
+      "aime2025": {
+        "task": "aime2025",
+        "n": 30,
+        "k": 1,
+        "pass@1": 0.1667,
+        "pass@1_stderr": 0.0692,
+        "pass@1_ci95": [
+          0.031,
+          0.3023
+        ],
+        "avg_gen_len": 6024.4,
+        "compression_ratio": 3.409,
+        "eviction_fired": true
+      }
     }
   }
 }

@@ -80,7 +80,7 @@
     "taperkv": {
       "key_bits": 8,
       "value_bits": 4,
-      "b_min": 2,
+      "b_min": 4,
       "b_min_value": 2
     },
     "taperkv_sweep": [
@@ -88,9 +88,8 @@
         "label": "TaperKV-3bit",
         "key_bits": 4,
         "value_bits": 3,
-        "b_min": 2,
-        "b_min_value": 2,
-        "recent_tokens": 64
+        "b_min": 3,
+        "b_min_value": 2
       }
     ],
     "turbotaper_sweep": [
@@ -98,9 +97,8 @@
         "label": "TurboTaper-3bit",
         "key_bits": 4,
         "value_bits": 3,
-        "b_min": 2,
-        "b_min_value": 2,
-        "recent_tokens": 64
+        "b_min": 3,
+        "b_min_value": 2
       }
     ],
     "context_lens": [
@@ -116,11 +114,11 @@
       0.9
     ],
     "seeds": 3,
-    "max_new_needle": 32,
-    "run_ruler": true,
+    "max_new_needle": 256,
+    "run_ruler": false,
     "ruler_keys": 4,
     "ruler_seeds": 5,
-    "run_needle": true,
+    "run_needle": false,
     "run_gsm8k": true,
     "gsm8k_limit": 100,
     "max_new_reason": 4096,
@@ -131,6 +129,14 @@
     "longbench_tasks": [],
     "longbench_max_length": 7500,
     "longbench_limit": 10,
+    "run_livecodebench": false,
+    "lcb_problems_path": null,
+    "lcb_dataset": "livecodebench/code_generation_lite",
+    "lcb_split": "test",
+    "lcb_limit": 50,
+    "lcb_k": 1,
+    "lcb_timeout": 6.0,
+    "max_new_code": 4096,
     "run_ppl": true,
     "ppl_max_length": 4096,
     "ppl_stride": 2048,
@@ -138,26 +144,6 @@
   },
   "results": {
     "FullKV": {
-      "needle": {
-        "accuracy": 0.2222,
-        "mem_fraction": 1.0,
-        "by_length": {
-          "4096": 0.0,
-          "8192": 0.4667,
-          "16384": 0.2
-        },
-        "n": 45
-      },
-      "ruler": {
-        "accuracy": 0.0667,
-        "mem_fraction": 1.0,
-        "by_length": {
-          "4096": 0.0,
-          "8192": 0.0,
-          "16384": 0.2
-        },
-        "n": 15
-      },
       "longbench": {
         "n": 130,
         "score": 3.63,
@@ -188,22 +174,35 @@
         "n": 100,
         "k": 1,
         "pass@1": 0.69,
+        "pass@1_stderr": 0.0465,
+        "pass@1_ci95": [
+          0.5989,
+          0.7811
+        ],
         "avg_gen_len": 563.1,
-        "compression_ratio": 1.0
+        "compression_ratio": 1.0,
+        "eviction_fired": true
       },
       "math500": {
         "task": "math500",
         "n": 100,
         "k": 1,
         "pass@1": 0.61,
+        "pass@1_stderr": 0.049,
+        "pass@1_ci95": [
+          0.5139,
+          0.7061
+        ],
         "avg_gen_len": 2331.6,
-        "compression_ratio": 1.0
+        "compression_ratio": 1.0,
+        "eviction_fired": true
       },
       "ppl": {
         "ppl": 48.9303,
         "nll": 3.8904,
         "n_tokens": 34815.0,
         "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
         "compression_ratio": 1.0
       }
     },
