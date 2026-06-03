@@ -66,6 +66,20 @@ max_new_code: 4096
 #   - HALO (proposed codec, beats TurboQuant): static rotated Lloyd-Max at 3/4-bit.
 #   - TurboTaper (proposed recipe): TaperKV age-ladder + HALO/TurboQuant core.
 # So the reasoning table carries HALO + TaperKV + TurboTaper vs ThinKV/PM-KVQ/KIVI.
+
+# Explicitly limit to the 8 methods in the paper table (prevents extra baselines from
+# running when new methods are registered in the future).
+methods:
+  - FullKV
+  - Uniform-INT4
+  - KIVI-INT2
+  - ThinKV
+  - PM-KVQ
+  - TaperKV
+  - TurboTaper
+  - HALO-4bit
+  - HALO-3bit
+
 halo_variants:
   - {label: "HALO-4bit", bits: 4}
   - {label: "HALO-3bit", bits: 3}

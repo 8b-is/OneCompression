@@ -95,8 +95,6 @@ class TurboQuantCodec(KVCodec):
     seed: int = 0
     key_axis: str = "token"
     value_axis: str = "token"
-    _sign_cache: dict = field(default_factory=dict, repr=False, compare=False)
-
     def validate_params(self):
         if self.rotation_mode not in ("hadamard", "dense"):
             raise ValueError("rotation_mode must be 'hadamard' or 'dense'")

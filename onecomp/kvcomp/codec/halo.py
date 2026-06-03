@@ -102,7 +102,8 @@ class HALOCodec(KVCodec):
         ls_scale: Store the MSE-optimal least-squares dequant scale instead of the
             RMS (the quality lever; free, same fp16-per-vector storage).
         center: Remove a running per-channel mean before rotation (research lever
-            against massive-activation bias).
+            against massive-activation bias).  Only active when ``precond_roles``
+            is non-empty; has no effect otherwise.
         whiten: Divide by a running per-channel std before rotation.
         momentum: EMA momentum for the per-channel mean / variance (online).
         rotation_mode: ``"auto"`` (Hadamard-GEMM for power-of-two head dims, dense
@@ -116,7 +117,7 @@ class HALOCodec(KVCodec):
     bits: int = 4
     value_bits: int = None
     ls_scale: bool = True
-    center: bool = True
+    center: bool = False
     # NB: whitening is OFF by default.  For *values*, un-whitening at decode
     # divides channel c by w_c, which *amplifies* the attention-output error on
     # high-variance channels (the softmax mixes quantization noise, then 1/w_c
