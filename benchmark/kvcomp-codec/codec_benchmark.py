@@ -76,9 +76,19 @@ def _ms_per_encode(codec, x, iters=50, warmup=10):
 
 
 def _codecs(bits):
+    # Pareto / lever ablation for the HALO paper:
+    #   TurboQuant-hadamard : Hadamard incoherence via the WHT *butterfly* (slow).
+    #   TurboQuant-dense    : dense random-orthogonal rotation (fast, lower quality).
+    #   HALO-RMS            : Hadamard incoherence via a *single GEMM* (folded
+    #                         signed-Hadamard) + RMS scale -> matches/beats
+    #                         TurboQuant-dense speed at strictly better quality
+    #                         (isolates the rotation lever).
+    #   HALO-auto           : + least-squares scale (the proposed default) ->
+    #                         best quality at every bit (adds the LS lever).
     return {
         "TurboQuant-hadamard": TurboQuantCodec(bits=bits, rotation_mode="hadamard"),
         "TurboQuant-dense": TurboQuantCodec(bits=bits, rotation_mode="dense"),
+        "HALO-RMS": HALOCodec(bits=bits, rotation_mode="auto", ls_scale=False),
         "HALO-auto": HALOCodec(bits=bits, rotation_mode="auto"),
     }
 
