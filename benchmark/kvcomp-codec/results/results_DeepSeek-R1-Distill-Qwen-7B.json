@@ -19,76 +19,99 @@
     "run_ppl": true,
     "ppl_max_length": 2048,
     "ppl_stride": 1024,
-    "ppl_windows": 32
+    "ppl_windows": 32,
+    "skip_outliers": true,
+    "outlier_ratio": 50.0
   },
   "results": {
     "4": {
       "TurboQuant-hadamard": {
         "distortion_key": 0.00915,
         "distortion_value": 0.00941,
-        "ms_per_encode": 1.0667,
-        "throughput_Melem_s": 983.0,
-        "ppl": 19240.7578
+        "ms_per_encode": 1.1038,
+        "throughput_Melem_s": 949.9,
+        "ppl": 50.0968
       },
       "TurboQuant-dense": {
         "distortion_key": 0.00938,
         "distortion_value": 0.00985,
-        "ms_per_encode": 0.2898,
-        "throughput_Melem_s": 3617.9,
-        "ppl": 24608.9062
+        "ms_per_encode": 0.2891,
+        "throughput_Melem_s": 3626.6,
+        "ppl": 50.3445
+      },
+      "HALO-RMS": {
+        "distortion_key": 0.00915,
+        "distortion_value": 0.00941,
+        "ms_per_encode": 0.2901,
+        "throughput_Melem_s": 3614.1,
+        "ppl": 50.1762
       },
       "HALO-auto": {
-        "distortion_key": 0.00938,
-        "distortion_value": 0.00985,
-        "ms_per_encode": 0.2903,
-        "throughput_Melem_s": 3612.2,
-        "ppl": 24608.9062
+        "distortion_key": 0.00898,
+        "distortion_value": 0.00923,
+        "ms_per_encode": 0.3946,
+        "throughput_Melem_s": 2657.4,
+        "ppl": 49.7765
       }
     },
     "3": {
       "TurboQuant-hadamard": {
         "distortion_key": 0.03332,
         "distortion_value": 0.03393,
-        "ms_per_encode": 1.1408,
-        "throughput_Melem_s": 919.2,
-        "ppl": 70290.0234
+        "ms_per_encode": 1.1236,
+        "throughput_Melem_s": 933.2,
+        "ppl": 52.5741
       },
       "TurboQuant-dense": {
         "distortion_key": 0.03408,
         "distortion_value": 0.03497,
-        "ms_per_encode": 0.2902,
-        "throughput_Melem_s": 3612.7,
-        "ppl": 80979.3594
+        "ms_per_encode": 0.2918,
+        "throughput_Melem_s": 3593.7,
+        "ppl": 55.3319
+      },
+      "HALO-RMS": {
+        "distortion_key": 0.03332,
+        "distortion_value": 0.03393,
+        "ms_per_encode": 0.2892,
+        "throughput_Melem_s": 3626.2,
+        "ppl": 52.9232
       },
       "HALO-auto": {
-        "distortion_key": 0.03408,
-        "distortion_value": 0.03497,
-        "ms_per_encode": 0.2909,
-        "throughput_Melem_s": 3604.5,
-        "ppl": 80979.3594
+        "distortion_key": 0.03282,
+        "distortion_value": 0.03346,
+        "ms_per_encode": 0.3934,
+        "throughput_Melem_s": 2665.6,
+        "ppl": 52.3792
       }
     },
     "2": {
       "TurboQuant-hadamard": {
         "distortion_key": 0.11393,
         "distortion_value": 0.11585,
-        "ms_per_encode": 1.1422,
-        "throughput_Melem_s": 918.0,
-        "ppl": 260028.8438
+        "ms_per_encode": 1.1222,
+        "throughput_Melem_s": 934.4,
+        "ppl": 71.5064
       },
       "TurboQuant-dense": {
         "distortion_key": 0.11604,
         "distortion_value": 0.11805,
-        "ms_per_encode": 0.2904,
-        "throughput_Melem_s": 3610.2,
-        "ppl": 221192.0469
+        "ms_per_encode": 0.2918,
+        "throughput_Melem_s": 3594.0,
+        "ppl": 77.0283
+      },
+      "HALO-RMS": {
+        "distortion_key": 0.11393,
+        "distortion_value": 0.11585,
+        "ms_per_encode": 0.2927,
+        "throughput_Melem_s": 3582.7,
+        "ppl": 70.8618
       },
       "HALO-auto": {
-        "distortion_key": 0.11604,
-        "distortion_value": 0.11805,
-        "ms_per_encode": 0.2915,
-        "throughput_Melem_s": 3597.4,
-        "ppl": 221192.0469
+        "distortion_key": 0.1129,
+        "distortion_value": 0.11508,
+        "ms_per_encode": 0.3941,
+        "throughput_Melem_s": 2660.9,
+        "ppl": 67.5764
       }
     }
   }

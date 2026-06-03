@@ -83,13 +83,20 @@ def _codecs(bits):
     #                         signed-Hadamard) + RMS scale -> matches/beats
     #                         TurboQuant-dense speed at strictly better quality
     #                         (isolates the rotation lever).
-    #   HALO-auto           : + least-squares scale (the proposed default) ->
-    #                         best quality at every bit (adds the LS lever).
+    #   HALO-auto           : Hadamard-GEMM + least-squares scale -> lowest
+    #                         reconstruction relMSE at every bit (best on the
+    #                         incoherence axis; wins PPL on reasoning models).
+    #   HALO-dense-LS       : dense random-orthogonal rotation (same GEMM cost as
+    #                         folded-Hadamard at head_dim) + LS scale.  Dense gives
+    #                         marginally better Gaussianisation than +-1 Hadamard,
+    #                         which matters at the coarse low-bit codebook, so this
+    #                         fixes the 2-bit PPL edge cases while keeping LS.
     return {
         "TurboQuant-hadamard": TurboQuantCodec(bits=bits, rotation_mode="hadamard"),
         "TurboQuant-dense": TurboQuantCodec(bits=bits, rotation_mode="dense"),
         "HALO-RMS": HALOCodec(bits=bits, rotation_mode="auto", ls_scale=False),
         "HALO-auto": HALOCodec(bits=bits, rotation_mode="auto"),
+        "HALO-dense-LS": HALOCodec(bits=bits, rotation_mode="dense", ls_scale=True),
     }
 
 

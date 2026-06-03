@@ -37,3 +37,5 @@ benchmark/kvcomp-longcontext/paper/logs/
 # SLURM stdout/stderr logs stored inside results directories (not repo data)
 benchmark/*/results_*/slurm_*.log
 benchmark/*/results_*/slurm_*.out
+benchmark/*/results/slurm_*.log
+benchmark/*/results/slurm_*.out

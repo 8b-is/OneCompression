@@ -1,0 +1,139 @@
+{
+  "model": "Ministral-8B-Instruct-2410",
+  "head_dim": 128,
+  "config": {
+    "model_path": "/lustre/home/frj/yuma-ichikawa/conference/models/Ministral-8B-Instruct-2410",
+    "device": "cuda:0",
+    "dtype": "bfloat16",
+    "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-codec/results",
+    "bits": [
+      4,
+      3,
+      2
+    ],
+    "sink_tokens": 4,
+    "capture_tokens": 2048,
+    "timing_heads": 8,
+    "timing_seq": 1024,
+    "timing_iters": 100,
+    "run_ppl": true,
+    "ppl_max_length": 2048,
+    "ppl_stride": 1024,
+    "ppl_windows": 32,
+    "skip_outliers": true,
+    "outlier_ratio": 50.0
+  },
+  "results": {
+    "4": {
+      "TurboQuant-hadamard": {
+        "distortion_key": 0.00871,
+        "distortion_value": 0.00922,
+        "ms_per_encode": 1.1165,
+        "throughput_Melem_s": 939.2,
+        "ppl": 8.8122
+      },
+      "TurboQuant-dense": {
+        "distortion_key": 0.00934,
+        "distortion_value": 0.00935,
+        "ms_per_encode": 0.284,
+        "throughput_Melem_s": 3692.5,
+        "ppl": 8.797
+      },
+      "HALO-RMS": {
+        "distortion_key": 0.00871,
+        "distortion_value": 0.00922,
+        "ms_per_encode": 0.2838,
+        "throughput_Melem_s": 3695.0,
+        "ppl": 8.8109
+      },
+      "HALO-auto": {
+        "distortion_key": 0.00857,
+        "distortion_value": 0.00906,
+        "ms_per_encode": 0.388,
+        "throughput_Melem_s": 2702.4,
+        "ppl": 8.8212
+      },
+      "HALO-dense-LS": {
+        "distortion_key": 0.00916,
+        "distortion_value": 0.00916,
+        "ms_per_encode": 0.3844,
+        "throughput_Melem_s": 2727.6,
+        "ppl": 8.7751
+      }
+    },
+    "3": {
+      "TurboQuant-hadamard": {
+        "distortion_key": 0.03154,
+        "distortion_value": 0.03366,
+        "ms_per_encode": 1.1253,
+        "throughput_Melem_s": 931.8,
+        "ppl": 9.4078
+      },
+      "TurboQuant-dense": {
+        "distortion_key": 0.03414,
+        "distortion_value": 0.0337,
+        "ms_per_encode": 0.2861,
+        "throughput_Melem_s": 3664.4,
+        "ppl": 9.3646
+      },
+      "HALO-RMS": {
+        "distortion_key": 0.03154,
+        "distortion_value": 0.03366,
+        "ms_per_encode": 0.2862,
+        "throughput_Melem_s": 3664.0,
+        "ppl": 9.4319
+      },
+      "HALO-auto": {
+        "distortion_key": 0.03108,
+        "distortion_value": 0.0332,
+        "ms_per_encode": 0.3839,
+        "throughput_Melem_s": 2731.2,
+        "ppl": 9.4003
+      },
+      "HALO-dense-LS": {
+        "distortion_key": 0.03368,
+        "distortion_value": 0.03324,
+        "ms_per_encode": 0.386,
+        "throughput_Melem_s": 2716.2,
+        "ppl": 9.3412
+      }
+    },
+    "2": {
+      "TurboQuant-hadamard": {
+        "distortion_key": 0.10704,
+        "distortion_value": 0.11477,
+        "ms_per_encode": 1.1211,
+        "throughput_Melem_s": 935.3,
+        "ppl": 14.8426
+      },
+      "TurboQuant-dense": {
+        "distortion_key": 0.1169,
+        "distortion_value": 0.11524,
+        "ms_per_encode": 0.2855,
+        "throughput_Melem_s": 3672.8,
+        "ppl": 14.5925
+      },
+      "HALO-RMS": {
+        "distortion_key": 0.10704,
+        "distortion_value": 0.11477,
+        "ms_per_encode": 0.2859,
+        "throughput_Melem_s": 3667.6,
+        "ppl": 14.8196
+      },
+      "HALO-auto": {
+        "distortion_key": 0.10611,
+        "distortion_value": 0.11402,
+        "ms_per_encode": 0.3878,
+        "throughput_Melem_s": 2703.9,
+        "ppl": 14.7026
+      },
+      "HALO-dense-LS": {
+        "distortion_key": 0.1161,
+        "distortion_value": 0.11442,
+        "ms_per_encode": 0.3865,
+        "throughput_Melem_s": 2713.1,
+        "ppl": 14.3849
+      }
+    }
+  }
+}
