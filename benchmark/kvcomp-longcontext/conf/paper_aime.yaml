@@ -55,7 +55,9 @@ max_new_aime: 8192
 # leave lcb_problems_path null to load lcb_dataset from HF. Generated code is
 # executed in a sandboxed subprocess (rlimits + timeout) -- run on an isolated node.
 run_livecodebench: true
-lcb_problems_path: null
+# Pre-converted HumanEval-style JSONL (142 functional problems extracted from
+# livecodebench/code_generation_lite raw JSONL -- datasets>=4.x dropped script support).
+lcb_problems_path: /lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/data/lcb_functional.jsonl
 lcb_limit: 50
 lcb_k: 1
 max_new_code: 4096
