@@ -60,7 +60,11 @@ run_livecodebench: true
 lcb_problems_path: /lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/data/lcb_functional.jsonl
 lcb_limit: 50
 lcb_k: 1
-max_new_code: 4096
+# Reasoning models (R1-Distill, QwQ) emit long <think> blocks before the
+# solution code.  4096 was too short: avg_gen_len reached 3800-4000, the code
+# was truncated, and pass@1=0.0% for all methods.  16384 tokens gives enough
+# room for ~3000-token thinking + ~1000-token solution code.
+max_new_code: 16384
 
 # Both proposed methods evaluated on the reasoning models, not just TaperKV:
 #   - HALO (proposed codec, beats TurboQuant): static rotated Lloyd-Max at 3/4-bit.

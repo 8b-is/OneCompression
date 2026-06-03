@@ -166,14 +166,14 @@
         "compression_ratio": 2.8577
       },
       "TaperKV": {
-        "needle_acc": 0.0444,
-        "ruler_acc": 0.1333,
-        "longbench": 3.39,
-        "gsm8k": 0.74,
-        "math500": 0.52,
-        "ppl": 80.4486,
-        "mem_fraction": 0.3859,
-        "compression_ratio": 2.5822
+        "needle_acc": null,
+        "ruler_acc": null,
+        "longbench": 3.25,
+        "gsm8k": 0.75,
+        "math500": 0.6,
+        "ppl": 50.3763,
+        "mem_fraction": null,
+        "compression_ratio": 2.379
       }
     },
     "r1-qwen-14b": {
@@ -256,6 +256,26 @@
         "ppl": 13.9212,
         "mem_fraction": null,
         "compression_ratio": 3.1768
+      },
+      "TurboQuant-3bit": {
+        "needle_acc": null,
+        "ruler_acc": null,
+        "longbench": 4.09,
+        "gsm8k": 0.88,
+        "math500": 0.6,
+        "ppl": 12.5998,
+        "mem_fraction": null,
+        "compression_ratio": 3.1915
+      },
+      "KIVI-INT2": {
+        "needle_acc": null,
+        "ruler_acc": null,
+        "longbench": 3.96,
+        "gsm8k": 0.86,
+        "math500": 0.62,
+        "ppl": 13.2605,
+        "mem_fraction": null,
+        "compression_ratio": 3.5294
       }
     },
     "r1-qwen-1.5b": {
@@ -308,6 +328,16 @@
         "ppl": 229.0224,
         "mem_fraction": null,
         "compression_ratio": 3.7716
+      },
+      "TaperKV": {
+        "needle_acc": null,
+        "ruler_acc": null,
+        "longbench": 3.59,
+        "gsm8k": 0.23,
+        "math500": 0.28,
+        "ppl": 163.3376,
+        "mem_fraction": null,
+        "compression_ratio": 2.9008
       }
     }
   },
@@ -342,6 +372,12 @@
           "gsm8k": 0.0,
           "math500": 0.0,
           "ppl": 3.8343,
+          "mem_fraction": null
+        },
+        "KIVI-INT2": {
+          "gsm8k": 1.0,
+          "math500": 0.6667,
+          "ppl": 4.1603,
           "mem_fraction": null
         }
       },
@@ -414,6 +450,16 @@
           "ppl": 24.7944,
           "mem_fraction": null
         }
+      },
+      "aime2024": {
+        "FullKV": {
+          "aime2024_pass@1": 0.35,
+          "aime2024_k": 4
+        },
+        "Uniform-INT4": {
+          "aime2024_pass@1": 0.2833,
+          "aime2024_k": 4
+        }
       }
     },
     "r1-qwen-14b": {
@@ -469,6 +515,14 @@
         "PM-KVQ": {
           "aime2024_pass@1": 0.0,
           "aime2024_k": 2
+        },
+        "Uniform-INT4": {
+          "aime2024_pass@1": 0.3333,
+          "aime2024_k": 2
+        },
+        "StreamingLLM": {
+          "aime2024_pass@1": 0.0,
+          "aime2024_k": 2
         }
       }
     },
@@ -496,6 +550,12 @@
           "gsm8k": 0.18,
           "math500": 0.29,
           "ppl": 218.4384,
+          "mem_fraction": null
+        },
+        "PM-KVQ": {
+          "gsm8k": 0.19,
+          "math500": 0.19,
+          "ppl": 243.6642,
           "mem_fraction": null
         }
       }
@@ -537,25 +597,17 @@
           "math500": 0.64,
           "ppl": 53.5963,
           "mem_fraction": null
+        },
+        "TurboTaper": {
+          "gsm8k": 0.48,
+          "math500": 0.06,
+          "ppl": 49.7407,
+          "mem_fraction": null
         }
       }
     }
   },
   "livecodebench": {
-    "r1-llama-8b": {
-      "FullKV": {
-        "lcb_pass@1": 0.0,
-        "lcb_n": 50
-      },
-      "Uniform-INT4": {
-        "lcb_pass@1": 0.0,
-        "lcb_n": 50
-      },
-      "StreamingLLM": {
-        "lcb_pass@1": 0.0,
-        "lcb_n": 50
-      }
-    },
     "r1-qwen-7b": {
       "FullKV": {
         "lcb_pass@1": 0.0,
@@ -572,10 +624,30 @@
       "ThinKV": {
         "lcb_pass@1": 0.0,
         "lcb_n": 50
+      },
+      "PM-KVQ": {
+        "lcb_pass@1": 0.0,
+        "lcb_n": 50
+      },
+      "TaperKV": {
+        "lcb_pass@1": 0.0,
+        "lcb_n": 50
+      },
+      "TurboTaper": {
+        "lcb_pass@1": 0.0,
+        "lcb_n": 50
       }
     },
     "r1-qwen-14b": {
       "FullKV": {
+        "lcb_pass@1": 0.0,
+        "lcb_n": 50
+      },
+      "Uniform-INT4": {
+        "lcb_pass@1": 0.0,
+        "lcb_n": 50
+      },
+      "StreamingLLM": {
         "lcb_pass@1": 0.0,
         "lcb_n": 50
       }
@@ -592,26 +664,33 @@
       "StreamingLLM": {
         "lcb_pass@1": 0.0,
         "lcb_n": 50
+      },
+      "ThinKV": {
+        "lcb_pass@1": 0.0,
+        "lcb_n": 50
+      },
+      "PM-KVQ": {
+        "lcb_pass@1": 0.0,
+        "lcb_n": 50
       }
     }
   },
   "status": {
     "complete": [
       "policy/llama-8b (11/11)",
-      "aime_basic/r1-qwen-14b (7 methods)"
+      "policy/r1-qwen-14b (10/11)",
+      "aime_basic/r1-qwen-14b (7 methods)",
+      "aime_basic/r1-qwen-7b (7 methods)",
+      "lcb/r1-qwen-7b (7 methods)"
     ],
     "running": [
       "policy/r1-qwen-7b (6/11)",
-      "policy/r1-qwen-14b (8/11)",
-      "policy/r1-qwen-1.5b (5/11)",
-      "aime_basic/qwq-32b (5 methods)",
+      "policy/r1-qwen-1.5b (6/11)",
+      "aime_basic/qwq-32b (6 methods)",
       "aime_basic/r1-llama-8b (6 methods)",
-      "aime_basic/r1-qwen-1.5b (4 methods)",
-      "aime_basic/r1-qwen-7b (6 methods)",
-      "lcb/r1-llama-8b (3 methods)",
-      "lcb/r1-qwen-7b (4 methods)",
-      "lcb/r1-qwen-14b_24 (1 methods)",
-      "lcb/r1-qwen-1.5b (3 methods)"
+      "aime_basic/r1-qwen-1.5b (5 methods)",
+      "lcb/r1-qwen-14b_24 (3 methods)",
+      "lcb/r1-qwen-1.5b (5 methods)"
     ],
     "missing": []
   }

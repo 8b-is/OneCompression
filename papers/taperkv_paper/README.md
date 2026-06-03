@@ -1,5 +1,7 @@
 # TaperKV Paper: Recency-Graded Precision Scheduling for KV Cache Compression
 
+> **最終更新: 2026-06-03 22:40 JST**
+
 ## 概要
 
 **主張:** TaperKV は、トークンを削除せず「古いトークンほど低精度」の精度スケジュールを適用する KV キャッシュ圧縮 Policy であり、StreamingLLM・ThinKV・PM-KVQ より LongBench スコアが高く、GSM8K では FullKV に匹敵する。
@@ -43,92 +45,161 @@
 
 ---
 
-### Table 2: Reasoning Benchmark (AIME / GSM8K / MATH-500)
+### Table 2: R1-Qwen-14B Policy 比較 (完了 10/11)
 
-**ベンチ:** `paper_aime.yaml` (R1-Distill モデル, QwQ-32B)  
-**ソース:** `benchmark/kvcomp-longcontext/results_aime_*/`
+**ベンチ:** `paper_taperkv.yaml` (R1-Qwen-14B)  
+**ソース:** `results_taperkv/results_DeepSeek-R1-Distill-Qwen-14B.json`
 
-**QwQ-32B GSM8K / MATH-500 (完了):**
+| 手法 | LongBench | GSM8K% | MATH-500% | PPL | cr |
+|------|-----------|--------|-----------|-----|----|
+| FullKV | 4.26 | 88.0 | 66.0 | 11.61 | 1.00 |
+| Uniform-INT3 | 3.73 | 60.0 | 48.0 | 21.17 | 3.18 |
+| StreamingLLM | 3.90 | 24.0 | 16.0 | 11.61 | ∞ |
+| ThinKV | 4.10 | 86.0 | 60.0 | 11.84 | 2.42 |
+| PM-KVQ | 4.16 | **94.0** | 58.0 | 14.29 | 3.09 |
+| **TaperKV** | **4.17** | **90.0** | 56.0 | 12.14 | 2.52 |
+| TaperKV-3bit | **4.35** | 90.0 | 60.0 | 13.92 | 3.18 |
+| TurboQuant-3bit | 4.09 | 88.0 | 60.0 | 12.60 | 3.19 |
+| KIVI-INT2 | 3.96 | 86.0 | **62.0** | 13.26 | 3.53 |
+| TurboTaper-3bit | 3.97 | 16.0 ⚠️ | 10.0 ⚠️ | 12.06 | 3.09 |
+| HALO-3bit | — | — | — | — | — (実行中) |
 
-| 手法 | GSM8K% | MATH-500% | PPL |
-|------|--------|-----------|-----|
-| FullKV | 100.0 | 66.7 | 3.724 |
-| TaperKV | 96.7 | 60.0 | 3.824 |
-| ThinKV | 63.3 | 20.0 | 3.79 |
-| PM-KVQ | — | — | — |
-| TurboTaper | 0.0 | 0.0 | 3.834 |
+→ **TaperKV-3bit は LongBench 4.35 でトップ** (FullKV 4.26 を超過)  
+→ **TurboTaper-3bit はRotation により R1-Qwen 系で深刻な性能低下** (要対応: 原因は後述)
 
-**⚠️ TurboTaper が QwQ-32B で 0.0 になっている** — 重大バグの可能性（確認要）
+---
+
+### Table 3: Reasoning Benchmark (AIME2024/2025 / GSM8K / MATH-500)
+
+**QwQ-32B GSM8K / MATH-500 (n=6メソッド完了):**
+
+| 手法 | GSM8K% | MATH-500% | PPL | cr |
+|------|--------|-----------|-----|----|
+| FullKV | 100.0 | 66.7 | 3.72 | 1.00 |
+| **TaperKV** | **96.7** | **60.0** | 3.82 | 3.36 |
+| KIVI-INT2 | 100.0 | 66.7 | 4.16 | 6.18 |
+| ThinKV | 63.3 | 20.0 | 3.79 | 3.19 |
+| PM-KVQ | 63.3 | 20.0 | 4.10 | 4.27 |
+| TurboTaper | 0.0 ⚠️ | 0.0 ⚠️ | 3.83 | 3.39 |
 
 **AIME2024 QwQ-32B (pass@1, k=1):**
 
 | 手法 | pass@1 |
 |------|--------|
 | FullKV | 0.30 |
-| KIVI-INT2 | 0.333 |
+| KIVI-INT2 | **0.333** |
 | TaperKV | 0.20 |
 | ThinKV | 0.00 |
 | PM-KVQ | 0.00 |
-| TurboTaper | 0.00 |
+| TurboTaper | 0.00 ⚠️ |
 
-**R1-Qwen-14B GSM8K / MATH-500 (完了):**
+**R1-Qwen-14B GSM8K / MATH-500 (n=50):**
 
-| 手法 | GSM8K% | MATH-500% |
-|------|--------|-----------|
-| FullKV | 88.0 | 68.0 |
-| HALO-3bit | 88.0 | 66.0 |
-| KIVI-INT2 | 86.0 | 64.0 |
-| TaperKV | 90.0 | 62.0 |
-| PM-KVQ | 86.0 | 58.0 |
-| TurboTaper | 12.0 | 12.0 |
+| 手法 | GSM8K% | MATH-500% | PPL | cr |
+|------|--------|-----------|-----|----|
+| FullKV | 88.0 | 68.0 | 12.43 | 1.00 |
+| **TaperKV** | **90.0** | 62.0 | 13.16 | 2.52 |
+| HALO-3bit | 88.0 | **66.0** | 13.23 | — |
+| KIVI-INT2 | 86.0 | 64.0 | 14.31 | — |
+| PM-KVQ | 86.0 | 58.0 | 13.62 | — |
+| TurboTaper | 12.0 ⚠️ | 12.0 ⚠️ | 12.52 | — |
 
-**→ HALO-3bit は R1-Qwen-14B で FullKV に匹敵** (HALO論文でも使える)  
-**→ TurboTaper は R1系で深刻な性能低下** — 原因調査が必要
+**🆕 AIME2025 R1-Qwen-14B (pass@1, k=2) — 新規データ:**
+
+| 手法 | AIME2025 pass@1 (k=2) |
+|------|----------------------|
+| FullKV | 0.283 |
+| **TaperKV** | **0.333** ← FullKV を超過! |
+| KIVI-INT2 | 0.267 |
+| HALO-3bit | 0.267 |
+| ThinKV | 0.083 |
+| PM-KVQ | 0.033 |
+| TurboTaper | 0.017 ⚠️ |
+
+→ **TaperKV は AIME2025 で FullKV を超えた (33.3% vs 28.3%)**
+
+**R1-Qwen-7B GSM8K / MATH-500 (n=7メソッド):**
+
+| 手法 | GSM8K% | MATH-500% | PPL | cr |
+|------|--------|-----------|-----|----|
+| FullKV | 69.0 | 67.0 | 48.93 | 1.00 |
+| TaperKV | **75.0** | **64.0** | 50.38 | 2.38 |
+| ThinKV | 73.0 | 67.0 | 50.61 | 2.29 |
+| PM-KVQ | 71.0 | 48.0 | 60.86 | 2.71 |
+| Uniform-INT4 | 72.0 | 66.0 | 55.45 | 2.54 |
+| StreamingLLM | 25.0 | 13.0 | 48.93 | ∞ |
+| TurboTaper | 48.0 ⚠️ | 6.0 ⚠️ | 49.74 | 2.38 |
 
 ---
 
-### Table 3: LiveCodeBench (進行中)
+### Table 4: LiveCodeBench (再実行中)
 
-**ソース:** `results_aime_comp_*/` (現在実行中: `p2-lcb-*` ジョブ)
+**問題:** 前回の実行 (p2-lcb-*) は `max_new_code=4096` が短すぎ、R1系モデルの`<think>`ブロックで全トークンを消費し、コードが切り捨てられて **全メソッド pass@1=0.0%** になっていた。
 
-現時点の部分結果 (R1-Llama-8B, r1-qwen-7b):
+```
+avg_gen_len (R1-Qwen-7B FullKV) = 3804 tokens / max=4096 → コード末尾が切断
+```
 
-| 手法 | LCB pass@1 |
-|------|-----------|
-| FullKV (r1-llama-8b) | 完了待ち |
-| TaperKV (r1-llama-8b) | 実行中 |
+**修正:** `max_new_code: 4096 → 16384` (`paper_aime.yaml` 修正済み)  
+**再実行ジョブ:** 46393 (r1l8), 46394 (r1q7), 46395 (r1q14), 46396 (r1q15) — 24h 枠で投入済み
 
 ---
 
-## ステータス (2026-06-03 時点)
+## ステータス (2026-06-03 22:40 JST)
 
 | ベンチ | Llama-8B | R1-Qwen-7B | R1-Qwen-14B | R1-Qwen-1.5B | QwQ-32B |
 |--------|----------|------------|-------------|--------------|---------|
-| Policy (Needle+LB+GSM) | ✅ 11/11 | 🔄 6/11 | 🔄 8/11 | 🔄 5/11 | — |
-| AIME basic (GSM+MATH) | ✅ | 🔄 6/9 | ✅ 7/7 | 🔄 4/9 | 🔄 5/9 |
-| AIME 2024 | — | 🔄 | 🔄 | 🔄 | ✅ |
-| LiveCodeBench | 🔄 実行中 | 🔄 実行中 | 🔄 実行中 | 🔄 実行中 | — |
+| Policy (LB+GSM+MATH) | ✅ 11/11 | 🔄 6/11 | ✅ 10/11 | 🔄 6/11 | — |
+| AIME basic (GSM+MATH) | — | ✅ 7 | ✅ 7 | 🔄 5 | ✅ 6 |
+| AIME 2024 | — | — | 🔄 | — | ✅ |
+| AIME 2025 | — | — | ✅ 7 | — | — |
+| LiveCodeBench | 🔄 再実行中 | 🔄 再実行中 | 🔄 再実行中 | 🔄 再実行中 | — |
 
-**実行中ジョブ (2026-06-03):**
-- `p2-taper-r1q14` (13h): policy R1-Qwen-14B 残り3メソッド
-- `p2-taper-r1q7` (9h): policy R1-Qwen-7B 残り5メソッド
-- `p2-taper-r1q15` (14h): policy R1-Qwen-1.5B 残り6メソッド
-- `p2-aime-r1l8`, `p2-aime-r1q7`, etc.: AIME補完
-- `p2-lcb-r1l8`, `p2-lcb-r1q7`, `p2-lcb-r1q14`, `p2-lcb-r1q15`: LiveCodeBench
+**実行中ジョブ:**
+| ジョブ名 | JID | 内容 | 経過時間 |
+|---------|-----|------|---------|
+| p2-taper-r1q14 | 46036 | policy R1-14B 残り1/11 | 17h38m |
+| p2-taper-r1q7 | 46098 | policy R1-7B 残り5/11 | 9h34m |
+| p2-taper-r1q15 | 46034 | policy R1-1.5B 残り5/11 | 18h43m |
+| p2-aime-r1l8 | 45940 | AIME R1-Llama-8B | 21h12m |
+| p2-aime-r1q7 | 45941 | AIME R1-7B | 21h12m |
+| p2-aime-r1q15 | 45939 | AIME R1-1.5B | 21h39m |
+| p2-basic-qwq | 45938 | GSM/MATH QwQ-32B | 21h39m |
+| p2-basic-r1l8 | 45915 | GSM/MATH R1-Llama | 22h13m |
+| p2-basic-r1q7 | 45916 | GSM/MATH R1-7B | 22h09m |
+| p2-basic-r1q15 | 45914 | GSM/MATH R1-1.5B | 22h13m |
+| p2-aime24-r1q14 | 46256 | AIME2024 R1-14B | 8h05m |
+| **p2-lcb2-r1l8** | **46393** | **LCB 再実行(16K)** | **新規** |
+| **p2-lcb2-r1q7** | **46394** | **LCB 再実行(16K)** | **新規** |
+| **p2-lcb2-r1q14** | **46395** | **LCB 再実行(16K)** | **新規** |
+| **p2-lcb2-r1q15** | **46396** | **LCB 再実行(16K)** | **新規** |
 
 ---
 
-## 要対応事項
+## 要対応事項・既知問題
 
-1. **TurboTaper が QwQ-32B / R1-Qwen で 0.0 になる問題**  
-   - 推定原因: Qwen系モデルの外れ値チャネルに対して `skip_layers` が未設定  
-   - 対応: `TurboTaperCache` + `detect_outlier_layers` の適用確認
+### ⚠️ [重大] TurboTaper が R1-Qwen 系で壊滅的に低下 (gsm8k 16%, math 10%)
 
-2. **TaperKV R1-Qwen モデルのジョブ完了待ち**  
-   - `p2-taper-*` が完了次第 `aggregate_results.py` を再実行
+**診断済みの原因:**  
+`TurboTaperPolicy` は `rotation_mode="hadamard"` がデフォルト。Qwen アーキテクチャでは `skip_layers` が適用されても、残りの層に対する 2-bit Hadamard 回転量子化が attention 出力品質を大幅に悪化させる。PPL は正常値 (12.06) にも関わらず、長い推論タスクで影響が累積する。
 
-3. **LiveCodeBench の全結果待ち**  
-   - `p2-lcb-*` ジョブ完了後に集約
+**証拠:**
+- TurboTaper-3bit R1-14B: gsm8k=16%, math=10%, PPL=12.06 (FullKV: gsm8k=88%, PPL=11.61)
+- TurboTaper R1-7B: gsm8k=48%, math=6%, PPL=49.74 (FullKV PPL: 50.85 ≈ 同等)
+- TurboTaper QwQ-32B: gsm8k=0%, math=0%
+
+**PPLが正常なのに推論が壊れる** → ショートコンテキスト (PPL測定) では問題ないが、長い CoT 生成では回転誤差が累積する可能性が高い。
+
+**対応策 (論文用):**
+- 選択肢A: TurboTaper に `rotation_mode=dense` を使用 (Qwen 系に対してより安全)
+- 選択肢B: TurboTaper を TaperKV 論文の比較から外し「TaperKV (proposed) vs ThinKV/PM-KVQ/KIVI」の構成にする
+- **現状の判断:** Llama-8B では TurboTaper-3bit が正常動作 (LB=28.46, gsm8k=73%)。Qwen系向けの修正は別タスクとして追跡。
+
+### ⚠️ [修正済み] LiveCodeBench pass@1 = 0.0%
+
+- **原因:** `max_new_code=4096` が不足 (R1系 `<think>` で 3800〜4000 トークン消費)
+- **修正:** `paper_aime.yaml` の `max_new_code: 4096 → 16384`
+- **再実行ジョブ:** 46393-46396 (24h 枠) 投入済み
 
 ---
 

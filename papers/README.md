@@ -90,27 +90,43 @@ python papers/aggregate_results.py
 
 ---
 
-## 現在実行中のジョブ (2026-06-03 18:00 JST)
+## 現在実行中のジョブ (2026-06-03 22:40 JST)
 
-| ジョブ名 | 内容 | 完了時刻見込み |
-|---------|------|--------------|
-| p2-taper-r1q14 | policy R1-Qwen-14B (残り3/11) | 数時間後 |
-| p2-taper-r1q7 | policy R1-Qwen-7B (残り5/11) | 数時間後 |
-| p2-taper-r1q15 | policy R1-Qwen-1.5B (残り6/11) | 数時間後 |
-| p2-aime-* | AIME/GSM/MATH 補完 | 数時間後 |
-| p2-lcb-* | LiveCodeBench (r1l8/r1q7/r1q14/r1q15) | 本日中 |
-| p2-aime25-r1q14 | AIME2025 R1-Qwen-14B | 数時間後 |
+| ジョブ名 | JID | 内容 | 経過 | 状態 |
+|---------|-----|------|------|------|
+| p2-taper-r1q14 | 46036 | policy R1-14B 残り1/11 | 17h38m | 🔄 |
+| p2-taper-r1q7 | 46098 | policy R1-7B 残り5/11 | 9h34m | 🔄 |
+| p2-taper-r1q15 | 46034 | policy R1-1.5B 残り5/11 | 18h43m | 🔄 |
+| p2-aime-r1l8/r1q7/r1q15 | 45940/41/39 | AIME/GSM/MATH 補完 | 21h+ | 🔄 |
+| p2-basic-* | 45914-16,38 | GSM/MATH 補完 | 22h+ | 🔄 |
+| p2-aime24-r1q14 | 46256 | AIME2024 R1-14B | 8h05m | 🔄 |
+| **p2-lcb2-r1l8/r1q7/r1q14/r1q15** | **46393-96** | **LCB 再実行(16K token)** | 新規 | 🔄 |
+
+---
+
+## 新規・更新データ (2026-06-03 22:40 時点)
+
+| データ | 内容 | 状態 |
+|--------|------|------|
+| R1-Qwen-14B policy | 10/11 メソッド完了 (HALO-3bit のみ残) | ✅ |
+| AIME2025 R1-Qwen-14B | TaperKV=33.3% > FullKV=28.3% (k=2) | ✅ |
+| QwQ-32B GSM/MATH | 6メソッド (TurboTaper=0.0% 問題確認) | ✅ |
+| R1-Qwen-7B GSM/MATH | 7メソッド (TurboTaper=48%/6% 問題確認) | ✅ |
+| LCB 全モデル | 0.0%→ **max_new_code修正後に再実行中** | 🔄 |
 
 ---
 
 ## 既知の問題
 
-1. **TurboTaper on QwQ-32B: GSM8K/MATH-500 = 0.0**  
-   - `n=30` × `k=1` のサンプル数が少なく統計的ばらつきが大きい  
-   - かつ `b_min=2` (values) の2ビット量子化が 32B モデルで品質低下  
-   - **対応:** TurboTaper を `b_min=3/4` または `n_outlier_floor=32` 付きで再実行予定
+1. **TurboTaper on Qwen系: 壊滅的性能低下**  
+   - 根本原因特定済み: Hadamard rotation が Qwen KV 分布に悪影響
+   - Llama-8B では正常動作 (LB=28.46, GSM8K=73%)
+   - **TaperKV 論文方針:** TurboTaper は Llama-8B の結果のみ示すか、`dense` rotation を使う
 
-2. **R1-Qwen 系の codec PPL 異常高 (R1-Qwen-1.5B: PPL=17424, R1-Qwen-7B: PPL=4401)**  
-   - 外れ値チャネルが原因。`kv_benchmark.py` では `skip_layers` 適用済みだが  
-     `codec_benchmark.py` での確認が必要  
-   - **対応:** `codec_benchmark.py` の `skip_outliers=true` を設定して再実行
+2. **LCB pass@1 = 0.0% (修正済み)**  
+   - 原因: `max_new_code=4096` 不足 (R1 思考で全消費)
+   - 修正: `paper_aime.yaml` を 16384 に更新
+   - 再実行ジョブ: 46393-46396 投入済み
+
+3. **R1-Qwen 系の codec PPL 異常高**  
+   - 外れ値チャネルが原因。`codec_benchmark.py` での skip_layers 適用が必要
