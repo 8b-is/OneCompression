@@ -60,7 +60,7 @@ from .rotation import (
     random_orthogonal,
     rotate,
     unrotate,
-    hadamard_matrix,
+    signed_hadamard_matrix,
     lloyd_max_gaussian,
     quantize_to_codebook,
 )
@@ -201,9 +201,12 @@ class HALOCodec(KVCodec):
         mode = self._resolved_mode(m)
         x = x.float()
         if mode == "hadamard_gemm" and is_power_of_two(m):
-            sign = random_sign(m, self.seed, device=x.device, dtype=torch.float32)
-            h = hadamard_matrix(m, str(x.device), torch.float32)
-            return (x * sign) @ h, "hg"
+            # Folded randomized-Hadamard: (x*sign) @ H == x @ (diag(sign) @ H).
+            # Precomputing HS = diag(sign) @ H makes the rotation a single GEMM
+            # with no separate elementwise sign pass (~1.15-1.2x faster encode,
+            # bit-identical -- verified in kvcomp_halo_research/01).
+            hs = signed_hadamard_matrix(m, self.seed, str(x.device), torch.float32)
+            return x @ hs, "hg"
         if mode == "hadamard" and is_power_of_two(m):
             sign = random_sign(m, self.seed, device=x.device, dtype=torch.float32)
             return rotate(x, sign), "h"
@@ -212,9 +215,9 @@ class HALOCodec(KVCodec):
 
     def _unrotate(self, xr, m, kind):
         if kind == "hg":
-            sign = random_sign(m, self.seed, device=xr.device, dtype=torch.float32)
-            h = hadamard_matrix(m, str(xr.device), torch.float32)
-            return (xr @ h) * sign  # H symmetric orthonormal -> H is its own inverse
+            # HS = diag(sign) @ H is orthonormal -> inverse is the transpose.
+            hs = signed_hadamard_matrix(m, self.seed, str(xr.device), torch.float32)
+            return xr @ hs.t()
         if kind == "h":
             sign = random_sign(m, self.seed, device=xr.device, dtype=torch.float32)
             return unrotate(xr, sign)

@@ -14,13 +14,25 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Optional
 
-# Optional GemLite/HQQ imports
+# Optional GemLite/HQQ imports.
+#
+# NB: importing ``gemlite.core`` eagerly touches CUDA (it allocates lookup
+# tensors on every visible device at import time).  On a contended node a
+# transient ``cudaErrorDevicesUnavailable`` ("CUDA-capable device(s) is/are
+# busy or unavailable") is raised as ``torch.AcceleratorError`` -- a
+# ``RuntimeError`` subclass that the original ``(ImportError, AttributeError)``
+# guard did NOT catch, so the whole ``onecomp`` import crashed before the job
+# could even load its model.  This was a major source of flaky paper-benchmark
+# failures on busy GPUs.  GemLite is an *optional* accelerator for the quantizer
+# path (unused by the KV-codec / kvcomp research path), so degrade gracefully on
+# any import-time failure -- including the CUDA-busy RuntimeError -- rather than
+# taking the process down.
 try:
     from gemlite.core import GemLiteLinearTriton, DType
     from hqq.core.quantize import BaseQuantizeConfig, HQQLinear
 
     HAS_GEMLITE = True
-except (ImportError, AttributeError):
+except (ImportError, AttributeError, RuntimeError):
     HAS_GEMLITE = False
 
 

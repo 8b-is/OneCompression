@@ -83,6 +83,27 @@ def _cached_sign(dim: int, seed: int, device_str: str, dtype) -> torch.Tensor:
     return s.to(device=torch.device(device_str), dtype=dtype)
 
 
+@lru_cache(maxsize=64)
+def signed_hadamard_matrix(dim: int, seed: int, device_str: str, dtype) -> torch.Tensor:
+    """Folded randomized-Hadamard rotation ``HS = diag(sign) @ H`` (cached).
+
+    The randomized-Hadamard rotation ``(x * sign) @ H`` is *identical* to
+    ``x @ HS`` with ``HS = diag(sign) @ H`` (scaling column ``j`` of ``x`` by
+    ``sign[j]`` then right-multiplying by ``H`` equals right-multiplying by the
+    row-scaled matrix ``HS``).  Precomputing ``HS`` turns the rotation into a
+    **single GEMM with no separate elementwise sign pass** -- the GEMM is the
+    same cost as a dense random rotation, but keeps the Hadamard transform's
+    superior incoherence.  ``HS`` is orthonormal (``HS HS^T = D_sign H H^T
+    D_sign = I``), so the inverse rotation is ``xr @ HS.t()``.
+
+    Verified bit-for-bit identical to the ``(x*sign) @ H`` path
+    (``ichikawa_works/kvcomp_halo_research/01_halo_speed_quality.py``).
+    """
+    sign = _cached_sign(int(dim), int(seed), str(device_str), dtype)   # (d,)
+    h = hadamard_matrix(int(dim), str(device_str), dtype)              # (d, d)
+    return sign.unsqueeze(1) * h     # row j scaled by sign[j]  ==  diag(sign) @ H
+
+
 def random_sign(dim: int, seed: int, device=None, dtype=torch.float32) -> torch.Tensor:
     """Deterministic ``+/-1`` diagonal (as a 1-D vector) for a random rotation.
 
