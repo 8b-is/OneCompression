@@ -203,7 +203,7 @@ Before fix (OLD cascade-error code): R1-7B MATH=6%, QwQ-32B GSM=0%.
 
 ---
 
-## Run status (2026-06-04 20:50 JST — updated)
+## Run status (2026-06-04 21:27 JST — updated)
 
 ### Bugs fixed (2026-06-04)
 
@@ -223,55 +223,57 @@ Before fix (OLD cascade-error code): R1-7B MATH=6%, QwQ-32B GSM=0%.
 | P2 TurboTaper AIME comp R1-7B,R1-14B,QwQ (delta fix) | 46485-46488 | ✅ |
 | P2 taperkv/R1-14B TurboTaper-3bit (delta fix) | 46489 | ✅ |
 | P2 comp/qwq_25 all except StreamingLLM | 46535 | ✅ |
+| P2 taperkv/R1-7B KIVI-INT2 (gsm=0.69, math=0.58, lb=3.07) | 46421 | ✅ |
 
-### Running (as of 20:50 JST)
+**Overall: 108/145 methods (74%) — 18 jobs running, est. completion ~Jun 5 morning**
 
-| JID | Component | Notes |
+### Running (as of 21:27 JST)
+
+| JID | Component | Status |
 |---|---|---|
-| 46708 | comp/r1q14_24: TaperKV+TurboTaper+HALO | TaperKV started (~2h in), delta fix ✅ |
-| 46714 | taperkv/R1-7B: TurboTaper-3bit+HALO delta fix | LongBench in progress |
-| 46716 | taperkv/R1-14B: HALO-3bit | LongBench in progress |
-| 46718 | basic/r1l8: KIVI+HALO | started |
-| 46719 | basic/r1q14: StreamingLLM+Uniform-INT4 | started |
-| 46720 | basic/r1q7: KIVI+HALO | started |
-| 46721 | comp/qwq_24: StreamingLLM | started |
-| 46722 | comp/qwq_25: StreamingLLM | started |
-| 46723 | comp/r1q14_25: StreamingLLM | started |
-| 46724 | comp/r1q15: TaperKV+KIVI+HALO+TurboTaper | started |
-| 46725 | basic/qwq: StreamingLLM+Uniform-INT4 | retry (46717 CUDA error) |
-| 46534 | comp/r1q7: PM-KVQ→HALO | PM-KVQ started |
-| 46537 | comp/r1l8: PM-KVQ→TurboTaper | PM-KVQ started |
-| 46417 | taperkv/R1-1.5B: TurboQuant→KIVI→HALO→TT | ⚠ OLD code, TT-3bit will be wrong |
-| 46418 | basic/R1-1.5B: TurboTaper→KIVI→HALO | ⚠ OLD code, TT will be wrong |
-| 46421 | taperkv/R1-7B: HALO-3bit | ⚠ OLD TT-3bit already written |
+| 46417 | taperkv/R1-1.5B: TurboQuant→KIVI→HALO | ⚠ OLD code; timeout ~22:30; postfix 46735 queued |
+| 46418 | basic/R1-1.5B: TurboTaper→KIVI→HALO | ⚠ OLD code; timeout ~22:30; postfix 46736 queued |
+| 46421 | taperkv/R1-7B: HALO-3bit computing | timeout ~22:30; 46714 will add HALO-3bit + fix TT-3bit |
+| 46534 | comp/r1q7: PM-KVQ in progress | then TaperKV→KIVI→HALO |
+| 46537 | comp/r1l8: PM-KVQ in progress | then TaperKV→KIVI→HALO→TT |
+| 46708 | comp/r1q14_24: TaperKV in progress (~2h45m in) | then TT+HALO, postfix B for KIVI+Stream |
+| 46714 | taperkv/R1-7B: TT-3bit math500 computing | then LB, then HALO-3bit (delta fix) |
+| 46716 | taperkv/R1-14B: HALO-3bit started | GSM+MATH+LB pending |
+| 46718 | basic/r1l8: KIVI-INT2 gsm=0.53 done | math500 running, then HALO |
+| 46719 | basic/r1q14: Uni-INT4 gsm=0.86 done | math500 running, then StreamingLLM |
+| 46720 | basic/r1q7: KIVI-INT2 started | then HALO |
+| 46721 | comp/qwq_24: StreamingLLM AIME started | QwQ-32B slow |
+| 46722 | comp/qwq_25: StreamingLLM AIME started | QwQ-32B slow |
+| 46723 | comp/r1q14_25: StreamingLLM started | |
+| 46724 | comp/r1q15: TaperKV started | R1-1.5B fast |
+| 46725 | basic/qwq: Uniform-INT4 started | retry (46717 CUDA error) |
 
-### Postfix queue (manual, run after parent job ends)
+### Postfix queue
 
-| Script | Trigger | Action |
-|---|---|---|
-| `postfix_after_running.sh A` | 46534 completes | comp/r1q7: TurboTaper re-run (race-condition fix) |
-| `postfix_after_running.sh B` | 46708 completes | comp/r1q14_24: KIVI+StreamingLLM |
-| `postfix_after_running.sh C` | 46417 timeout (~00:25) | taperkv/R1-1.5B: TurboTaper-3bit delta fix + HALO+KIVI+TQ |
-| `postfix_after_running.sh D` | 46418 timeout (~00:25) | basic/R1-1.5B: TurboTaper delta fix + KIVI+HALO |
-| `postfix_46421.sh` (46714) | 46421 timeout (~00:25) | taperkv/R1-7B: TT-3bit delta fix (already queued as 46714) |
+| JID | Trigger | Action | Status |
+|---|---|---|---|
+| 46735 | 46417 timeout (~22:30) | taperkv/R1-1.5B: TT-3bit delta fix + remaining | PENDING ✅ |
+| 46736 | 46418 timeout (~22:30) | basic/R1-1.5B: TurboTaper delta fix + KIVI + HALO | PENDING ✅ |
+| (submit manually) | 46534 completes | `postfix_after_running.sh A`: comp/r1q7 TurboTaper re-run | pending |
+| (submit manually) | 46708 completes | `postfix_after_running.sh B`: comp/r1q14_24 KIVI+StreamingLLM | pending |
 
-### Data gaps — current snapshot
+### Data gaps — snapshot 21:27 JST
 
 | Dataset | has/need | Missing | Fill |
 |---|---|---|---|
 | basic/qwq | 7/9 | StreamingLLM, Uniform-INT4 | 46725 running |
 | basic/r1l8 | 7/9 | KIVI, HALO | 46718 running |
 | basic/r1q14 | 7/9 | StreamingLLM, Uniform-INT4 | 46719 running |
-| basic/r1q15 | 6/9 | KIVI, HALO, TurboTaper | 46418 (TT: OLD), postfix D |
+| basic/r1q15 | 6/9 | KIVI, HALO, TurboTaper | 46418 (TT: OLD) → postfix 46736 |
 | basic/r1q7 | 7/9 | KIVI, HALO | 46720 running |
 | taperkv/Llama | 11/11 | — | ✅ COMPLETE |
-| taperkv/R1-1.5B | 8/11 | TurboQuant-3bit, KIVI, HALO | 46417 (TT-3bit OLD→postfix C) |
+| taperkv/R1-1.5B | 8/11 | TurboQuant-3bit, KIVI, HALO | 46417 (TT-3bit OLD) → postfix 46735 |
 | taperkv/R1-14B | 10/11 | HALO-3bit | 46716 running |
-| taperkv/R1-7B | 11/11 | (TT-3bit OLD→fix by 46714) | 46714 running |
+| taperkv/R1-7B | 10/11 | HALO-3bit (TT-3bit in JSON: OLD) | 46714 running (fixes TT + adds HALO) |
 | comp/qwq_24 | 7/8 | StreamingLLM | 46721 running |
 | comp/qwq_25 | 7/8 | StreamingLLM | 46722 running |
 | comp/r1l8 | 3/8 | PM-KVQ,TaperKV,KIVI,HALO,TT | 46537 running |
-| comp/r1q14_24 | 3/8 | StreamingLLM,TaperKV,KIVI,HALO,TT | 46708 (TT+HALO+TK), postfix B |
+| comp/r1q14_24 | 3/8 | StreamingLLM,TaperKV,KIVI,HALO,TT | 46708 (TK+TT+HALO) + postfix B (KIVI+Stream) |
 | comp/r1q14_25 | 7/8 | StreamingLLM | 46723 running |
 | comp/r1q15 | 4/8 | TaperKV,KIVI,HALO,TT | 46724 running |
-| comp/r1q7 | 4/8 | PM-KVQ,TaperKV,KIVI,HALO,TT | 46534 (PM-KVQ+TK+KIVI+HALO), postfix A (TT) |
+| comp/r1q7 | 4/8 | PM-KVQ,TaperKV,KIVI,HALO,TT | 46534 (PM-KVQ+TK+KIVI+HALO) + postfix A (TT) |
