@@ -497,12 +497,26 @@ def _load_lcb_problems(cfg):
 
 
 def _save(cfg, results) -> str:
+    """Persist results to disk, merging with any on-disk state written by
+    concurrent jobs since this process started.  The in-memory ``results``
+    (freshly computed by *this* job) take precedence over on-disk entries for
+    the same method key; all other on-disk methods are preserved unchanged.
+    This prevents a race condition where two jobs share the same output dir and
+    the slower job overwrites the faster job's already-written results.
+    """
     os.makedirs(cfg.output_dir, exist_ok=True)
     model_tag = os.path.basename(str(cfg.model_path).rstrip("/"))
     out_json = os.path.join(cfg.output_dir, f"results_{model_tag}.json")
+    # Re-read whatever is currently on disk and layer our fresh results on top.
+    try:
+        with open(out_json) as f:
+            on_disk = json.load(f).get("results", {})
+    except (FileNotFoundError, json.JSONDecodeError):
+        on_disk = {}
+    merged = {**on_disk, **results}   # our results win for shared keys
     with open(out_json, "w") as f:
         json.dump({"model": model_tag, "config": OmegaConf.to_container(cfg, resolve=True),
-                   "results": results}, f, indent=2)
+                   "results": merged}, f, indent=2)
     return out_json
 
 
