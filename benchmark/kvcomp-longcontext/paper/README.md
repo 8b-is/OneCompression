@@ -203,47 +203,75 @@ Before fix (OLD cascade-error code): R1-7B MATH=6%, QwQ-32B GSM=0%.
 
 ---
 
-## Run status (2026-06-04 18:50 JST — updated)
+## Run status (2026-06-04 20:50 JST — updated)
+
+### Bugs fixed (2026-06-04)
+
+| Bug | Fix | Committed |
+|---|---|---|
+| TurboTaper Bug-1: `b_min_value=2` crashes Qwen long-CoT | `b_min_value: 3` in both YAML configs | ✅ |
+| TurboTaper Bug-2: cascade re-quantization (non-idempotent Lloyd-Max) | Delta quantization in `turbotaper_cache.py` | ✅ |
+| `kv_benchmark._save()` race condition: concurrent jobs overwrite each other | Re-read on-disk JSON before each write; merge on-disk + in-memory | ✅ `8e1a24f` |
 
 ### Completed (all OK)
 
 | Component | JID(s) | Status |
 |---|---|---|
 | Paper 1 codec/retrieval/ablation/speed | various | ✅ |
-| P2 taperkv retrieval Llama-8B-instruct | 46386 | ✅ |
+| P2 taperkv Llama-8B-instruct (full 11 methods) | 46386+46539 | ✅ |
 | P2 TurboTaper basic (delta fix) — R1-Llama,R1-7B,R1-14B,QwQ | 46481-46484 | ✅ |
-| P2 TurboTaper AIME-2024/2025 R1-14B comp | 46486,46487 | ✅ |
-| P2 TurboTaper AIME-2024 QwQ comp | 46488 | ✅ |
-| P2 TurboTaper-3bit taperkv R1-14B (delta fix) | 46489 | ✅ |
-| P2 TurboTaper AIME R1-7B (delta fix) | 46485 | ✅ aime2024=0.533, aime2025=0.300 |
-| P2 taperkv/Llama TurboTaper-3bit (delta fix) | 46539 | ✅ GSM=81%, MATH=48% |
+| P2 TurboTaper AIME comp R1-7B,R1-14B,QwQ (delta fix) | 46485-46488 | ✅ |
+| P2 taperkv/R1-14B TurboTaper-3bit (delta fix) | 46489 | ✅ |
+| P2 comp/qwq_25 all except StreamingLLM | 46535 | ✅ |
 
-### Running (as of 18:50 JST)
+### Running (as of 20:50 JST)
 
-| Component | JID | Notes |
+| JID | Component | Notes |
 |---|---|---|
-| P2 taperkv R1-1.5B (resume — all methods) | 46417 | ~22:00 timeout |
-| P2 basic R1-1.5B (resume — all methods) | 46418 | ~22:00 timeout |
-| P2 taperkv R1-7B (KIVI-INT2 → HALO) | 46421 | ⚠ TurboTaper-3bit ALREADY WRITTEN with **OLD code** (gsm=0.53, math=0.06) |
-| P2 comp/r1q7 remaining (ThinKV…HALO) | 46534 | ThinKV AIME-2024=0.567 done, AIME-2025 in progress |
-| P2 comp/qwq_25 HALO-3bit | 46535 | KIVI=0.200 done, HALO started |
-| P2 comp/r1l8 AIME all methods (k=2) | 46537 | StreamingLLM done, ThinKV in progress |
-| P2 comp/r1q14_24 TaperKV+TurboTaper+HALO | 46708 | **new, just submitted** delta fix ✅ |
+| 46708 | comp/r1q14_24: TaperKV+TurboTaper+HALO | TaperKV started (~2h in), delta fix ✅ |
+| 46714 | taperkv/R1-7B: TurboTaper-3bit+HALO delta fix | LongBench in progress |
+| 46716 | taperkv/R1-14B: HALO-3bit | LongBench in progress |
+| 46718 | basic/r1l8: KIVI+HALO | started |
+| 46719 | basic/r1q14: StreamingLLM+Uniform-INT4 | started |
+| 46720 | basic/r1q7: KIVI+HALO | started |
+| 46721 | comp/qwq_24: StreamingLLM | started |
+| 46722 | comp/qwq_25: StreamingLLM | started |
+| 46723 | comp/r1q14_25: StreamingLLM | started |
+| 46724 | comp/r1q15: TaperKV+KIVI+HALO+TurboTaper | started |
+| 46725 | basic/qwq: StreamingLLM+Uniform-INT4 | retry (46717 CUDA error) |
+| 46534 | comp/r1q7: PM-KVQ→HALO | PM-KVQ started |
+| 46537 | comp/r1l8: PM-KVQ→TurboTaper | PM-KVQ started |
+| 46417 | taperkv/R1-1.5B: TurboQuant→KIVI→HALO→TT | ⚠ OLD code, TT-3bit will be wrong |
+| 46418 | basic/R1-1.5B: TurboTaper→KIVI→HALO | ⚠ OLD code, TT will be wrong |
+| 46421 | taperkv/R1-7B: HALO-3bit | ⚠ OLD TT-3bit already written |
 
-### Critical issues / postfix required
+### Postfix queue (manual, run after parent job ends)
 
-| Issue | Action | Script | Status |
+| Script | Trigger | Action |
+|---|---|---|
+| `postfix_after_running.sh A` | 46534 completes | comp/r1q7: TurboTaper re-run (race-condition fix) |
+| `postfix_after_running.sh B` | 46708 completes | comp/r1q14_24: KIVI+StreamingLLM |
+| `postfix_after_running.sh C` | 46417 timeout (~00:25) | taperkv/R1-1.5B: TurboTaper-3bit delta fix + HALO+KIVI+TQ |
+| `postfix_after_running.sh D` | 46418 timeout (~00:25) | basic/R1-1.5B: TurboTaper delta fix + KIVI+HALO |
+| `postfix_46421.sh` (46714) | 46421 timeout (~00:25) | taperkv/R1-7B: TT-3bit delta fix (already queued as 46714) |
+
+### Data gaps — current snapshot
+
+| Dataset | has/need | Missing | Fill |
 |---|---|---|---|
-| taperkv/R1-7B: TurboTaper-3bit has cascade error (math=0.06) | Run after 46421 completes (~22:00) | `postfix_46421.sh` | ⏳ PENDING |
-| postfix_46421.sh updated to also add HALO-3bit if 46421 times out before completing it | — | `postfix_46421.sh` | ready |
-
-### Data gaps remaining
-
-| Dataset | Missing | Expected fill |
-|---|---|---|
-| comp/r1q14_24 | TaperKV, TurboTaper, HALO-3bit | 46708 (running) |
-| comp/r1q7 | ThinKV, PM-KVQ, TaperKV, KIVI, HALO | 46534 (running) |
-| comp/qwq_25 | HALO-3bit | 46535 (running) |
-| comp/r1l8 | PM-KVQ, TaperKV, KIVI, HALO, TurboTaper | 46537 (running, slow) |
-| taperkv/R1-1.5B | TurboTaper-3bit, KIVI, HALO | 46417 (running) |
-| taperkv/R1-7B | TurboTaper-3bit (delta fix) | postfix_46421.sh after 46421 done |
+| basic/qwq | 7/9 | StreamingLLM, Uniform-INT4 | 46725 running |
+| basic/r1l8 | 7/9 | KIVI, HALO | 46718 running |
+| basic/r1q14 | 7/9 | StreamingLLM, Uniform-INT4 | 46719 running |
+| basic/r1q15 | 6/9 | KIVI, HALO, TurboTaper | 46418 (TT: OLD), postfix D |
+| basic/r1q7 | 7/9 | KIVI, HALO | 46720 running |
+| taperkv/Llama | 11/11 | — | ✅ COMPLETE |
+| taperkv/R1-1.5B | 8/11 | TurboQuant-3bit, KIVI, HALO | 46417 (TT-3bit OLD→postfix C) |
+| taperkv/R1-14B | 10/11 | HALO-3bit | 46716 running |
+| taperkv/R1-7B | 11/11 | (TT-3bit OLD→fix by 46714) | 46714 running |
+| comp/qwq_24 | 7/8 | StreamingLLM | 46721 running |
+| comp/qwq_25 | 7/8 | StreamingLLM | 46722 running |
+| comp/r1l8 | 3/8 | PM-KVQ,TaperKV,KIVI,HALO,TT | 46537 running |
+| comp/r1q14_24 | 3/8 | StreamingLLM,TaperKV,KIVI,HALO,TT | 46708 (TT+HALO+TK), postfix B |
+| comp/r1q14_25 | 7/8 | StreamingLLM | 46723 running |
+| comp/r1q15 | 4/8 | TaperKV,KIVI,HALO,TT | 46724 running |
+| comp/r1q7 | 4/8 | PM-KVQ,TaperKV,KIVI,HALO,TT | 46534 (PM-KVQ+TK+KIVI+HALO), postfix A (TT) |
