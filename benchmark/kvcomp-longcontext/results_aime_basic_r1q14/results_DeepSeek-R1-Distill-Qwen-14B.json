@@ -7,13 +7,7 @@
     "attn_implementation": "eager",
     "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_aime_basic_r1q14",
     "methods": [
-      "FullKV",
-      "KIVI-INT2",
-      "ThinKV",
-      "PM-KVQ",
-      "TaperKV",
-      "TurboTaper",
-      "HALO-3bit"
+      "TurboTaper"
     ],
     "sink_tokens": 4,
     "recent_tokens": 128,
@@ -40,7 +34,8 @@
     "turbotaper": {
       "dist": "gaussian",
       "rotation_mode": "hadamard",
-      "n_outlier_floor": 0
+      "n_outlier_floor": 32,
+      "b_min_value": 3
     },
     "skip_outliers": true,
     "outlier_ratio": 50.0,
@@ -110,13 +105,13 @@
     "longbench_max_length": 7500,
     "longbench_limit": 20,
     "run_livecodebench": false,
-    "lcb_problems_path": null,
+    "lcb_problems_path": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/data/lcb_functional.jsonl",
     "lcb_dataset": "livecodebench/code_generation_lite",
     "lcb_split": "test",
     "lcb_limit": 50,
     "lcb_k": 1,
     "lcb_timeout": 6.0,
-    "max_new_code": 4096,
+    "max_new_code": 16384,
     "run_ppl": true,
     "ppl_max_length": 2048,
     "ppl_stride": 1024,
@@ -124,7 +119,8 @@
     "aime_years": [],
     "aime_k": 8,
     "aime_limit": 30,
-    "max_new_aime": 8192
+    "max_new_aime": 8192,
+    "resume": true
   },
   "results": {
     "FullKV": {
@@ -279,44 +275,6 @@
         "compression_ratio": 2.5009
       }
     },
-    "TurboTaper": {
-      "gsm8k": {
-        "task": "gsm8k",
-        "n": 50,
-        "k": 1,
-        "pass@1": 0.12,
-        "pass@1_stderr": 0.0464,
-        "pass@1_ci95": [
-          0.029,
-          0.211
-        ],
-        "avg_gen_len": 525.2,
-        "compression_ratio": 2.391,
-        "eviction_fired": true
-      },
-      "math500": {
-        "task": "math500",
-        "n": 50,
-        "k": 1,
-        "pass@1": 0.12,
-        "pass@1_stderr": 0.0464,
-        "pass@1_ci95": [
-          0.029,
-          0.211
-        ],
-        "avg_gen_len": 1402.7,
-        "compression_ratio": 2.422,
-        "eviction_fired": true
-      },
-      "ppl": {
-        "ppl": 12.5183,
-        "nll": 2.5272,
-        "n_tokens": 17407.0,
-        "n_windows": 16.0,
-        "n_skipped_nonfinite": 0.0,
-        "compression_ratio": 2.5129
-      }
-    },
     "KIVI-INT2": {
       "gsm8k": {
         "task": "gsm8k",
@@ -353,6 +311,82 @@
         "n_windows": 16.0,
         "n_skipped_nonfinite": 0.0,
         "compression_ratio": 3.5207
+      }
+    },
+    "HALO-3bit": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 50,
+        "k": 1,
+        "pass@1": 0.88,
+        "pass@1_stderr": 0.0464,
+        "pass@1_ci95": [
+          0.789,
+          0.971
+        ],
+        "avg_gen_len": 494.3,
+        "compression_ratio": 3.146,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 50,
+        "k": 1,
+        "pass@1": 0.66,
+        "pass@1_stderr": 0.0677,
+        "pass@1_ci95": [
+          0.5274,
+          0.7926
+        ],
+        "avg_gen_len": 2283.6,
+        "compression_ratio": 3.168,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 13.2303,
+        "nll": 2.5825,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 3.1847
+      }
+    },
+    "TurboTaper": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 50,
+        "k": 1,
+        "pass@1": 0.86,
+        "pass@1_stderr": 0.0496,
+        "pass@1_ci95": [
+          0.7628,
+          0.9572
+        ],
+        "avg_gen_len": 483.8,
+        "compression_ratio": 2.328,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 50,
+        "k": 1,
+        "pass@1": 0.68,
+        "pass@1_stderr": 0.0666,
+        "pass@1_ci95": [
+          0.5494,
+          0.8106
+        ],
+        "avg_gen_len": 2113.9,
+        "compression_ratio": 2.366,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 12.4327,
+        "nll": 2.5203,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 2.3983
       }
     }
   }

@@ -6,7 +6,17 @@
     "dtype": "bfloat16",
     "attn_implementation": "eager",
     "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_aime_basic_r1q15",
-    "methods": null,
+    "methods": [
+      "FullKV",
+      "Uniform-INT4",
+      "KIVI-INT2",
+      "ThinKV",
+      "PM-KVQ",
+      "TaperKV",
+      "TurboTaper",
+      "HALO-4bit",
+      "HALO-3bit"
+    ],
     "sink_tokens": 4,
     "recent_tokens": 128,
     "requant_stride": 16,
@@ -32,7 +42,8 @@
     "turbotaper": {
       "dist": "gaussian",
       "rotation_mode": "hadamard",
-      "n_outlier_floor": 0
+      "n_outlier_floor": 32,
+      "b_min_value": 3
     },
     "skip_outliers": true,
     "outlier_ratio": 50.0,
@@ -102,13 +113,13 @@
     "longbench_max_length": 7500,
     "longbench_limit": 20,
     "run_livecodebench": false,
-    "lcb_problems_path": null,
+    "lcb_problems_path": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/data/lcb_functional.jsonl",
     "lcb_dataset": "livecodebench/code_generation_lite",
     "lcb_split": "test",
     "lcb_limit": 50,
     "lcb_k": 1,
     "lcb_timeout": 6.0,
-    "max_new_code": 4096,
+    "max_new_code": 16384,
     "run_ppl": true,
     "ppl_max_length": 2048,
     "ppl_stride": 1024,
@@ -116,7 +127,8 @@
     "aime_years": [],
     "aime_k": 8,
     "aime_limit": 30,
-    "max_new_aime": 8192
+    "max_new_aime": 8192,
+    "resume": true
   },
   "results": {
     "FullKV": {
@@ -193,6 +205,158 @@
         "n_windows": 16.0,
         "n_skipped_nonfinite": 0.0,
         "compression_ratio": 3.1849
+      }
+    },
+    "StreamingLLM": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.09,
+        "pass@1_stderr": 0.0288,
+        "pass@1_ci95": [
+          0.0336,
+          0.1464
+        ],
+        "avg_gen_len": 4804.4,
+        "compression_ratio": 1.013,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.06,
+        "pass@1_stderr": 0.0239,
+        "pass@1_ci95": [
+          0.0132,
+          0.1068
+        ],
+        "avg_gen_len": 7605.1,
+        "compression_ratio": 1.061,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 207.526,
+        "nll": 5.3353,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 1000000000.0
+      }
+    },
+    "ThinKV": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.18,
+        "pass@1_stderr": 0.0386,
+        "pass@1_ci95": [
+          0.1043,
+          0.2557
+        ],
+        "avg_gen_len": 958.5,
+        "compression_ratio": 2.666,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.29,
+        "pass@1_stderr": 0.0456,
+        "pass@1_ci95": [
+          0.2006,
+          0.3794
+        ],
+        "avg_gen_len": 6065.8,
+        "compression_ratio": 2.741,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 218.4384,
+        "nll": 5.3865,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 2.7559
+      }
+    },
+    "PM-KVQ": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.19,
+        "pass@1_stderr": 0.0394,
+        "pass@1_ci95": [
+          0.1127,
+          0.2673
+        ],
+        "avg_gen_len": 542.1,
+        "compression_ratio": 2.865,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.19,
+        "pass@1_stderr": 0.0394,
+        "pass@1_ci95": [
+          0.1127,
+          0.2673
+        ],
+        "avg_gen_len": 6432.3,
+        "compression_ratio": 3.567,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 243.6642,
+        "nll": 5.4958,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 3.473
+      }
+    },
+    "TaperKV": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.23,
+        "pass@1_stderr": 0.0423,
+        "pass@1_ci95": [
+          0.1471,
+          0.3129
+        ],
+        "avg_gen_len": 585.4,
+        "compression_ratio": 2.726,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.27,
+        "pass@1_stderr": 0.0446,
+        "pass@1_ci95": [
+          0.1825,
+          0.3575
+        ],
+        "avg_gen_len": 6290.5,
+        "compression_ratio": 2.891,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 208.8174,
+        "nll": 5.3415,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 2.877
       }
     }
   }

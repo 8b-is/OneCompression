@@ -6,7 +6,9 @@
     "dtype": "bfloat16",
     "attn_implementation": "eager",
     "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_aime_basic_r1q7",
-    "methods": null,
+    "methods": [
+      "TurboTaper"
+    ],
     "sink_tokens": 4,
     "recent_tokens": 128,
     "requant_stride": 16,
@@ -32,7 +34,8 @@
     "turbotaper": {
       "dist": "gaussian",
       "rotation_mode": "hadamard",
-      "n_outlier_floor": 0
+      "n_outlier_floor": 32,
+      "b_min_value": 3
     },
     "skip_outliers": true,
     "outlier_ratio": 50.0,
@@ -102,13 +105,13 @@
     "longbench_max_length": 7500,
     "longbench_limit": 20,
     "run_livecodebench": false,
-    "lcb_problems_path": null,
+    "lcb_problems_path": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/data/lcb_functional.jsonl",
     "lcb_dataset": "livecodebench/code_generation_lite",
     "lcb_split": "test",
     "lcb_limit": 50,
     "lcb_k": 1,
     "lcb_timeout": 6.0,
-    "max_new_code": 4096,
+    "max_new_code": 16384,
     "run_ppl": true,
     "ppl_max_length": 2048,
     "ppl_stride": 1024,
@@ -116,7 +119,8 @@
     "aime_years": [],
     "aime_k": 8,
     "aime_limit": 30,
-    "max_new_aime": 8192
+    "max_new_aime": 8192,
+    "resume": true
   },
   "results": {
     "FullKV": {
@@ -269,6 +273,120 @@
         "n_windows": 16.0,
         "n_skipped_nonfinite": 0.0,
         "compression_ratio": 2.2916
+      }
+    },
+    "PM-KVQ": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.71,
+        "pass@1_stderr": 0.0456,
+        "pass@1_ci95": [
+          0.6206,
+          0.7994
+        ],
+        "avg_gen_len": 902.5,
+        "compression_ratio": 2.402,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.48,
+        "pass@1_stderr": 0.0502,
+        "pass@1_ci95": [
+          0.3816,
+          0.5784
+        ],
+        "avg_gen_len": 4477.8,
+        "compression_ratio": 2.714,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 60.8615,
+        "nll": 4.1086,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 2.7064
+      }
+    },
+    "TaperKV": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.75,
+        "pass@1_stderr": 0.0435,
+        "pass@1_ci95": [
+          0.6647,
+          0.8353
+        ],
+        "avg_gen_len": 600.4,
+        "compression_ratio": 2.278,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.64,
+        "pass@1_stderr": 0.0482,
+        "pass@1_ci95": [
+          0.5454,
+          0.7346
+        ],
+        "avg_gen_len": 3505.5,
+        "compression_ratio": 2.362,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 53.5963,
+        "nll": 3.9815,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 2.3648
+      }
+    },
+    "TurboTaper": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.67,
+        "pass@1_stderr": 0.0473,
+        "pass@1_ci95": [
+          0.5774,
+          0.7626
+        ],
+        "avg_gen_len": 556.2,
+        "compression_ratio": 2.214,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.65,
+        "pass@1_stderr": 0.0479,
+        "pass@1_ci95": [
+          0.556,
+          0.744
+        ],
+        "avg_gen_len": 3122.3,
+        "compression_ratio": 2.272,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 50.4202,
+        "nll": 3.9204,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 2.2763
       }
     }
   }

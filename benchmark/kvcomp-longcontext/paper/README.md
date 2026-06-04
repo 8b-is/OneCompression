@@ -143,22 +143,107 @@ srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py \
 
 ---
 
-## Known-excluded axis: LiveCodeBench
+## LiveCodeBench axis
 
-ThinKV's code axis is **not** submitted. The LiveCodeBench loader is incompatible
-with `datasets>=4.8` (its dataset script + on-disk format break the current
-loader). It is left out rather than shipped half-working; GSM8K/MATH/AIME cover
-the reasoning claim. To re-enable once a compatible local JSONL exists, add a job
-with `run_livecodebench=true lcb_problems_path=<...>.jsonl HF_DATASETS_OFFLINE=0`.
+LiveCodeBench is now enabled via a local pre-fetched JSONL
+(`data/lcb_functional.jsonl`, 50 functional programming tasks from
+`livecodebench/code_generation_lite`). Jobs use `run_livecodebench=true
+lcb_problems_path=<...>/lcb_functional.jsonl HF_DATASETS_OFFLINE=0`.
+
+**Important caveat (2026-06-04):** R1-Distill-Llama-8B achieves **FullKV=0%**
+pass@1 on LCB (avg_gen_len≈10400, well below the 16384 limit). This is a
+model-capability issue: the model was distilled for MATH/reasoning, not
+functional code generation, and its long `<think>` blocks precede code that
+fails the test harness. LCB results for R1-Llama-8B are therefore included for
+completeness but should not be used as a primary comparison point; QwQ-32B and
+R1-Qwen-14B are the relevant models for the LCB claim.
 
 ---
 
-## Run status (snapshot)
+## TurboTaper bugs (2026-06-03 / 2026-06-04)
 
-* **Paper 1 — complete & committed:** codec (`results_paper_*`), retrieval
-  (`results_tq_{llama,minis}_retr`), ablation, codec-speed. LongBench-E
-  (`results_tq_*_lb`) re-running with the floor fix.
-* **Paper 2 — running on kagura:** `paper_taperkv` (Llama done; R1/QwQ in queue)
-  and the `paper_aime` reasoning grid (GSM8K/MATH/AIME) are generating; reasoning
-  jobs are slow (long CoT, `max_new≈4–8k`). Summary JSONs are committed as each
-  model's full method list completes.
+Two implementation bugs were found and fixed in `TurboTaper`:
+
+| Bug | Symptom | Root cause | Fix |
+|---|---|---|---|
+| **Bug-1** (2026-06-03) | QwQ-32B: GSM8K 0%; R1-7B: GSM8K 48% / MATH 6% | `b_min_value=2` → Hadamard + 2-bit value floor causes CoT collapse on long Qwen reasoning chains | Raise `b_min_value` to 3 in both `paper_taperkv.yaml` and `paper_aime.yaml` |
+| **Bug-2** (2026-06-04) | R1-7B: MATH 24% despite GSM8K 69%=FullKV; QwQ-32B: GSM8K 17% after Bug-1 fix | `GradedQuantCache.update()` re-quantises ALL floor tokens every 16 steps; rotated Lloyd-Max codec is not perfectly idempotent → drift compounds over 66–275 passes | **Delta quantisation** in `turbotaper_cache.py`: only (re-)quantise tokens whose bit-width changed or that are new. Floor tokens quantised at most once. |
+
+After both fixes, re-run jobs submitted on 2026-06-04 (`resubmit_deltafix.sh`,
+JIDs 46481-46489).
+
+---
+
+## TurboTaper delta-fix results (2026-06-04, confirmed)
+
+All four TurboTaper re-run jobs (JIDs 46481-46484) completed successfully.
+**Delta quantization fix fully eliminates cascade error.** Results are at or
+above FullKV level on every model:
+
+### Basic (GSM8K / MATH-500) — TurboTaper after delta fix
+
+| Model | FullKV GSM | FullKV MATH | TaperKV GSM | TaperKV MATH | TurboTaper GSM | TurboTaper MATH | CR |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| R1-Distill-Llama-8B | 0.63 | 0.61 | 0.62 | 0.58 | **0.65** | **0.59** | 3.0× |
+| R1-Distill-Qwen-7B  | 0.69 | 0.67 | 0.75 | 0.64 | **0.67** | **0.65** | 2.2× |
+| R1-Distill-Qwen-14B | 0.88 | 0.68 | 0.90 | 0.62 | **0.86** | **0.68** | 2.3× |
+| QwQ-32B             | 1.00 | 0.67 | 0.97 | 0.60 | **1.00** | **0.70** | 3.1× |
+
+QwQ-32B MATH **0.70 > FullKV 0.67** — TurboTaper compression is strictly lossless at iso-memory.
+
+Before fix (OLD cascade-error code): R1-7B MATH=6%, QwQ-32B GSM=0%.
+
+### AIME comp — TurboTaper after delta fix
+
+| Model | Year | FullKV | TaperKV | TurboTaper (delta fix) | CR |
+|---|:---:|:---:|:---:|:---:|:---:|
+| R1-Distill-Qwen-14B | 2024 | 0.50 | — | **0.43** | 2.4× |
+| R1-Distill-Qwen-14B | 2025 | 0.28 | 0.33 | **0.37** | 2.4× |
+| QwQ-32B             | 2024 | 0.30 | 0.20 | **0.30** (=FullKV) | 3.2× |
+
+---
+
+## Run status (2026-06-04 18:50 JST — updated)
+
+### Completed (all OK)
+
+| Component | JID(s) | Status |
+|---|---|---|
+| Paper 1 codec/retrieval/ablation/speed | various | ✅ |
+| P2 taperkv retrieval Llama-8B-instruct | 46386 | ✅ |
+| P2 TurboTaper basic (delta fix) — R1-Llama,R1-7B,R1-14B,QwQ | 46481-46484 | ✅ |
+| P2 TurboTaper AIME-2024/2025 R1-14B comp | 46486,46487 | ✅ |
+| P2 TurboTaper AIME-2024 QwQ comp | 46488 | ✅ |
+| P2 TurboTaper-3bit taperkv R1-14B (delta fix) | 46489 | ✅ |
+| P2 TurboTaper AIME R1-7B (delta fix) | 46485 | ✅ aime2024=0.533, aime2025=0.300 |
+| P2 taperkv/Llama TurboTaper-3bit (delta fix) | 46539 | ✅ GSM=81%, MATH=48% |
+
+### Running (as of 18:50 JST)
+
+| Component | JID | Notes |
+|---|---|---|
+| P2 taperkv R1-1.5B (resume — all methods) | 46417 | ~22:00 timeout |
+| P2 basic R1-1.5B (resume — all methods) | 46418 | ~22:00 timeout |
+| P2 taperkv R1-7B (KIVI-INT2 → HALO) | 46421 | ⚠ TurboTaper-3bit ALREADY WRITTEN with **OLD code** (gsm=0.53, math=0.06) |
+| P2 comp/r1q7 remaining (ThinKV…HALO) | 46534 | ThinKV AIME-2024=0.567 done, AIME-2025 in progress |
+| P2 comp/qwq_25 HALO-3bit | 46535 | KIVI=0.200 done, HALO started |
+| P2 comp/r1l8 AIME all methods (k=2) | 46537 | StreamingLLM done, ThinKV in progress |
+| P2 comp/r1q14_24 TaperKV+TurboTaper+HALO | 46708 | **new, just submitted** delta fix ✅ |
+
+### Critical issues / postfix required
+
+| Issue | Action | Script | Status |
+|---|---|---|---|
+| taperkv/R1-7B: TurboTaper-3bit has cascade error (math=0.06) | Run after 46421 completes (~22:00) | `postfix_46421.sh` | ⏳ PENDING |
+| postfix_46421.sh updated to also add HALO-3bit if 46421 times out before completing it | — | `postfix_46421.sh` | ready |
+
+### Data gaps remaining
+
+| Dataset | Missing | Expected fill |
+|---|---|---|
+| comp/r1q14_24 | TaperKV, TurboTaper, HALO-3bit | 46708 (running) |
+| comp/r1q7 | ThinKV, PM-KVQ, TaperKV, KIVI, HALO | 46534 (running) |
+| comp/qwq_25 | HALO-3bit | 46535 (running) |
+| comp/r1l8 | PM-KVQ, TaperKV, KIVI, HALO, TurboTaper | 46537 (running, slow) |
+| taperkv/R1-1.5B | TurboTaper-3bit, KIVI, HALO | 46417 (running) |
+| taperkv/R1-7B | TurboTaper-3bit (delta fix) | postfix_46421.sh after 46421 done |

@@ -6,7 +6,15 @@
     "dtype": "bfloat16",
     "attn_implementation": "eager",
     "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_aime_comp_r1l8",
-    "methods": null,
+    "methods": [
+      "StreamingLLM",
+      "ThinKV",
+      "PM-KVQ",
+      "TaperKV",
+      "KIVI-INT2",
+      "HALO-3bit",
+      "TurboTaper"
+    ],
     "sink_tokens": 4,
     "recent_tokens": 128,
     "requant_stride": 16,
@@ -32,7 +40,8 @@
     "turbotaper": {
       "dist": "gaussian",
       "rotation_mode": "hadamard",
-      "n_outlier_floor": 0
+      "n_outlier_floor": 32,
+      "b_min_value": 3
     },
     "skip_outliers": true,
     "outlier_ratio": 50.0,
@@ -102,13 +111,13 @@
     "longbench_max_length": 7500,
     "longbench_limit": 20,
     "run_livecodebench": false,
-    "lcb_problems_path": null,
+    "lcb_problems_path": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/data/lcb_functional.jsonl",
     "lcb_dataset": "livecodebench/code_generation_lite",
     "lcb_split": "test",
     "lcb_limit": 50,
     "lcb_k": 1,
     "lcb_timeout": 6.0,
-    "max_new_code": 4096,
+    "max_new_code": 16384,
     "run_ppl": false,
     "ppl_max_length": 2048,
     "ppl_stride": 1024,
@@ -117,9 +126,10 @@
       2024,
       2025
     ],
-    "aime_k": 4,
+    "aime_k": 2,
     "aime_limit": 30,
-    "max_new_aime": 8192
+    "max_new_aime": 8192,
+    "resume": true
   },
   "results": {
     "FullKV": {
@@ -149,6 +159,110 @@
         ],
         "avg_gen_len": 6934.4,
         "compression_ratio": 1.0,
+        "eviction_fired": true
+      },
+      "livecodebench": {
+        "task": "livecodebench",
+        "n": 50,
+        "k": 1,
+        "pass@1": 0.0,
+        "pass@1_stderr": 0.0,
+        "pass@1_ci95": [
+          0.0,
+          0.0
+        ],
+        "avg_gen_len": 10400.1,
+        "compression_ratio": 1.0,
+        "eviction_fired": true
+      }
+    },
+    "Uniform-INT4": {
+      "aime2024": {
+        "task": "aime2024",
+        "n": 30,
+        "k": 4,
+        "pass@1": 0.2833,
+        "pass@1_stderr": 0.0696,
+        "pass@1_ci95": [
+          0.1469,
+          0.4198
+        ],
+        "avg_gen_len": 7157.8,
+        "compression_ratio": 3.843,
+        "eviction_fired": true
+      },
+      "aime2025": {
+        "task": "aime2025",
+        "n": 30,
+        "k": 4,
+        "pass@1": 0.2417,
+        "pass@1_stderr": 0.0734,
+        "pass@1_ci95": [
+          0.0978,
+          0.3855
+        ],
+        "avg_gen_len": 6979.4,
+        "compression_ratio": 3.843,
+        "eviction_fired": true
+      }
+    },
+    "StreamingLLM": {
+      "aime2024": {
+        "task": "aime2024",
+        "n": 30,
+        "k": 2,
+        "pass@1": 0.0333,
+        "pass@1_stderr": 0.0333,
+        "pass@1_ci95": [
+          -0.032,
+          0.0987
+        ],
+        "avg_gen_len": 4615.0,
+        "compression_ratio": 1.147,
+        "eviction_fired": true
+      },
+      "aime2025": {
+        "task": "aime2025",
+        "n": 30,
+        "k": 2,
+        "pass@1": 0.0,
+        "pass@1_stderr": 0.0,
+        "pass@1_ci95": [
+          0.0,
+          0.0
+        ],
+        "avg_gen_len": 4670.3,
+        "compression_ratio": 1.419,
+        "eviction_fired": true
+      }
+    },
+    "ThinKV": {
+      "aime2024": {
+        "task": "aime2024",
+        "n": 30,
+        "k": 2,
+        "pass@1": 0.0,
+        "pass@1_stderr": 0.0,
+        "pass@1_ci95": [
+          0.0,
+          0.0
+        ],
+        "avg_gen_len": 8180.6,
+        "compression_ratio": 5.217,
+        "eviction_fired": true
+      },
+      "aime2025": {
+        "task": "aime2025",
+        "n": 30,
+        "k": 2,
+        "pass@1": 0.0,
+        "pass@1_stderr": 0.0,
+        "pass@1_ci95": [
+          0.0,
+          0.0
+        ],
+        "avg_gen_len": 8182.1,
+        "compression_ratio": 5.202,
         "eviction_fired": true
       }
     }

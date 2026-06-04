@@ -7,16 +7,6 @@
     "attn_implementation": "eager",
     "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_taperkv",
     "methods": [
-      "FullKV",
-      "Uniform-INT3",
-      "KIVI-INT2",
-      "StreamingLLM",
-      "ThinKV",
-      "PM-KVQ",
-      "TurboQuant-3bit",
-      "HALO-3bit",
-      "TaperKV",
-      "TaperKV-3bit",
       "TurboTaper-3bit"
     ],
     "sink_tokens": 4,
@@ -98,7 +88,7 @@
         "key_bits": 4,
         "value_bits": 3,
         "b_min": 3,
-        "b_min_value": 2
+        "b_min_value": 3
       }
     ],
     "context_lens": [
@@ -120,10 +110,10 @@
     "ruler_seeds": 5,
     "run_needle": false,
     "run_gsm8k": true,
-    "gsm8k_limit": 50,
+    "gsm8k_limit": 100,
     "max_new_reason": 4096,
     "run_math": true,
-    "math_limit": 50,
+    "math_limit": 100,
     "max_new_math": 4096,
     "run_longbench": true,
     "longbench_tasks": [],
@@ -140,7 +130,8 @@
     "run_ppl": true,
     "ppl_max_length": 4096,
     "ppl_stride": 2048,
-    "ppl_windows": 16
+    "ppl_windows": 16,
+    "resume": true
   },
   "results": {
     "FullKV": {
@@ -393,6 +384,384 @@
         "n_windows": 16.0,
         "n_skipped_nonfinite": 0.0,
         "compression_ratio": 2.4194
+      }
+    },
+    "PM-KVQ": {
+      "longbench": {
+        "n": 130,
+        "score": 4.16,
+        "per_task": {
+          "qasper": 0.0,
+          "multifieldqa_en": 0.0,
+          "hotpotqa": 0.0,
+          "2wikimqa": 0.0,
+          "gov_report": 0.0,
+          "multi_news": 0.0,
+          "trec": 20.0,
+          "triviaqa": 0.0,
+          "samsum": 0.0,
+          "passage_count": 0.0,
+          "passage_retrieval_en": 0.0,
+          "lcc": 17.91,
+          "repobench-p": 16.19
+        },
+        "by_length": {
+          "0-4k": 6.36,
+          "4-8k": 2.5,
+          "8k+": 0.0
+        },
+        "mem_fraction": 0.326
+      },
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 50,
+        "k": 1,
+        "pass@1": 0.94,
+        "pass@1_stderr": 0.0339,
+        "pass@1_ci95": [
+          0.8735,
+          1.0065
+        ],
+        "avg_gen_len": 475.7,
+        "compression_ratio": 2.534,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 50,
+        "k": 1,
+        "pass@1": 0.58,
+        "pass@1_stderr": 0.0705,
+        "pass@1_ci95": [
+          0.4418,
+          0.7182
+        ],
+        "avg_gen_len": 1634.7,
+        "compression_ratio": 2.778,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 14.2853,
+        "nll": 2.6592,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 3.0862
+      }
+    },
+    "TaperKV": {
+      "longbench": {
+        "n": 130,
+        "score": 4.17,
+        "per_task": {
+          "qasper": 0.0,
+          "multifieldqa_en": 0.0,
+          "hotpotqa": 0.0,
+          "2wikimqa": 0.0,
+          "gov_report": 0.0,
+          "multi_news": 0.0,
+          "trec": 20.0,
+          "triviaqa": 0.0,
+          "samsum": 0.0,
+          "passage_count": 0.0,
+          "passage_retrieval_en": 0.0,
+          "lcc": 13.1,
+          "repobench-p": 21.14
+        },
+        "by_length": {
+          "0-4k": 5.67,
+          "4-8k": 3.04,
+          "8k+": 0.0
+        },
+        "mem_fraction": 0.3978
+      },
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 50,
+        "k": 1,
+        "pass@1": 0.9,
+        "pass@1_stderr": 0.0429,
+        "pass@1_ci95": [
+          0.816,
+          0.984
+        ],
+        "avg_gen_len": 474.3,
+        "compression_ratio": 2.4,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 50,
+        "k": 1,
+        "pass@1": 0.56,
+        "pass@1_stderr": 0.0709,
+        "pass@1_ci95": [
+          0.421,
+          0.699
+        ],
+        "avg_gen_len": 1624.1,
+        "compression_ratio": 2.454,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 12.1427,
+        "nll": 2.4967,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 2.5174
+      }
+    },
+    "TaperKV-3bit": {
+      "longbench": {
+        "n": 130,
+        "score": 4.35,
+        "per_task": {
+          "qasper": 0.0,
+          "multifieldqa_en": 0.0,
+          "hotpotqa": 0.0,
+          "2wikimqa": 0.0,
+          "gov_report": 0.0,
+          "multi_news": 0.0,
+          "trec": 18.33,
+          "triviaqa": 0.0,
+          "samsum": 0.0,
+          "passage_count": 0.0,
+          "passage_retrieval_en": 0.0,
+          "lcc": 15.73,
+          "repobench-p": 22.43
+        },
+        "by_length": {
+          "0-4k": 6.24,
+          "4-8k": 2.91,
+          "8k+": 0.0
+        },
+        "mem_fraction": 0.315
+      },
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 50,
+        "k": 1,
+        "pass@1": 0.9,
+        "pass@1_stderr": 0.0429,
+        "pass@1_ci95": [
+          0.816,
+          0.984
+        ],
+        "avg_gen_len": 471.9,
+        "compression_ratio": 3.102,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 50,
+        "k": 1,
+        "pass@1": 0.6,
+        "pass@1_stderr": 0.07,
+        "pass@1_ci95": [
+          0.4628,
+          0.7372
+        ],
+        "avg_gen_len": 1663.9,
+        "compression_ratio": 3.138,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 13.9212,
+        "nll": 2.6334,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 3.1768
+      }
+    },
+    "TurboQuant-3bit": {
+      "longbench": {
+        "n": 130,
+        "score": 4.09,
+        "per_task": {
+          "qasper": 0.0,
+          "multifieldqa_en": 0.0,
+          "hotpotqa": 0.0,
+          "2wikimqa": 0.0,
+          "gov_report": 0.0,
+          "multi_news": 0.0,
+          "trec": 20.0,
+          "triviaqa": 0.0,
+          "samsum": 0.0,
+          "passage_count": 0.0,
+          "passage_retrieval_en": 0.0,
+          "lcc": 13.13,
+          "repobench-p": 19.99
+        },
+        "by_length": {
+          "0-4k": 5.58,
+          "4-8k": 2.95,
+          "8k+": 0.0
+        },
+        "mem_fraction": 0.3135
+      },
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 50,
+        "k": 1,
+        "pass@1": 0.88,
+        "pass@1_stderr": 0.0464,
+        "pass@1_ci95": [
+          0.789,
+          0.971
+        ],
+        "avg_gen_len": 482.0,
+        "compression_ratio": 3.145,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 50,
+        "k": 1,
+        "pass@1": 0.6,
+        "pass@1_stderr": 0.07,
+        "pass@1_ci95": [
+          0.4628,
+          0.7372
+        ],
+        "avg_gen_len": 1561.6,
+        "compression_ratio": 3.166,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 12.5998,
+        "nll": 2.5337,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 3.1915
+      }
+    },
+    "KIVI-INT2": {
+      "longbench": {
+        "n": 130,
+        "score": 3.96,
+        "per_task": {
+          "qasper": 0.0,
+          "multifieldqa_en": 0.0,
+          "hotpotqa": 0.0,
+          "2wikimqa": 0.0,
+          "gov_report": 0.0,
+          "multi_news": 0.0,
+          "trec": 18.33,
+          "triviaqa": 0.0,
+          "samsum": 0.0,
+          "passage_count": 0.0,
+          "passage_retrieval_en": 0.0,
+          "lcc": 12.37,
+          "repobench-p": 20.74
+        },
+        "by_length": {
+          "0-4k": 4.96,
+          "4-8k": 3.2,
+          "8k+": 0.0
+        },
+        "mem_fraction": 0.2835
+      },
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 50,
+        "k": 1,
+        "pass@1": 0.86,
+        "pass@1_stderr": 0.0496,
+        "pass@1_ci95": [
+          0.7628,
+          0.9572
+        ],
+        "avg_gen_len": 491.7,
+        "compression_ratio": 3.471,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 50,
+        "k": 1,
+        "pass@1": 0.62,
+        "pass@1_stderr": 0.0693,
+        "pass@1_ci95": [
+          0.4841,
+          0.7559
+        ],
+        "avg_gen_len": 1547.6,
+        "compression_ratio": 3.499,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 13.2605,
+        "nll": 2.5848,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 3.5294
+      }
+    },
+    "TurboTaper-3bit": {
+      "longbench": {
+        "n": 130,
+        "score": 4.35,
+        "per_task": {
+          "qasper": 0.0,
+          "multifieldqa_en": 0.0,
+          "hotpotqa": 0.0,
+          "2wikimqa": 0.0,
+          "gov_report": 0.0,
+          "multi_news": 0.0,
+          "trec": 20.0,
+          "triviaqa": 0.0,
+          "samsum": 0.0,
+          "passage_count": 0.0,
+          "passage_retrieval_en": 0.0,
+          "lcc": 15.47,
+          "repobench-p": 21.09
+        },
+        "by_length": {
+          "0-4k": 6.01,
+          "4-8k": 3.09,
+          "8k+": 0.0
+        },
+        "mem_fraction": 0.3414
+      },
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.85,
+        "pass@1_stderr": 0.0359,
+        "pass@1_ci95": [
+          0.7797,
+          0.9203
+        ],
+        "avg_gen_len": 462.2,
+        "compression_ratio": 2.902,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.61,
+        "pass@1_stderr": 0.049,
+        "pass@1_ci95": [
+          0.5139,
+          0.7061
+        ],
+        "avg_gen_len": 1606.1,
+        "compression_ratio": 2.914,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 11.8705,
+        "nll": 2.4741,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 2.93
       }
     }
   }

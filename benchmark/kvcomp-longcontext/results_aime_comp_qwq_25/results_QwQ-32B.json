@@ -7,13 +7,9 @@
     "attn_implementation": "eager",
     "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_aime_comp_qwq_25",
     "methods": [
-      "FullKV",
       "KIVI-INT2",
-      "ThinKV",
-      "PM-KVQ",
-      "TaperKV",
-      "TurboTaper",
-      "HALO-3bit"
+      "HALO-3bit",
+      "TurboTaper"
     ],
     "sink_tokens": 4,
     "recent_tokens": 128,
@@ -40,7 +36,8 @@
     "turbotaper": {
       "dist": "gaussian",
       "rotation_mode": "hadamard",
-      "n_outlier_floor": 0
+      "n_outlier_floor": 32,
+      "b_min_value": 3
     },
     "skip_outliers": true,
     "outlier_ratio": 50.0,
@@ -110,13 +107,13 @@
     "longbench_max_length": 7500,
     "longbench_limit": 20,
     "run_livecodebench": false,
-    "lcb_problems_path": null,
+    "lcb_problems_path": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/data/lcb_functional.jsonl",
     "lcb_dataset": "livecodebench/code_generation_lite",
     "lcb_split": "test",
     "lcb_limit": 50,
     "lcb_k": 1,
     "lcb_timeout": 6.0,
-    "max_new_code": 4096,
+    "max_new_code": 16384,
     "run_ppl": false,
     "ppl_max_length": 2048,
     "ppl_stride": 1024,
@@ -126,7 +123,8 @@
     ],
     "aime_k": 1,
     "aime_limit": 30,
-    "max_new_aime": 6144
+    "max_new_aime": 6144,
+    "resume": true
   },
   "results": {
     "FullKV": {
@@ -190,6 +188,54 @@
         ],
         "avg_gen_len": 6024.4,
         "compression_ratio": 3.409,
+        "eviction_fired": true
+      }
+    },
+    "TurboTaper": {
+      "aime2025": {
+        "task": "aime2025",
+        "n": 30,
+        "k": 1,
+        "pass@1": 0.1667,
+        "pass@1_stderr": 0.0692,
+        "pass@1_ci95": [
+          0.031,
+          0.3023
+        ],
+        "avg_gen_len": 5887.9,
+        "compression_ratio": 3.18,
+        "eviction_fired": true
+      }
+    },
+    "KIVI-INT2": {
+      "aime2025": {
+        "task": "aime2025",
+        "n": 30,
+        "k": 1,
+        "pass@1": 0.2,
+        "pass@1_stderr": 0.0743,
+        "pass@1_ci95": [
+          0.0544,
+          0.3456
+        ],
+        "avg_gen_len": 5861.7,
+        "compression_ratio": 6.222,
+        "eviction_fired": true
+      }
+    },
+    "HALO-3bit": {
+      "aime2025": {
+        "task": "aime2025",
+        "n": 30,
+        "k": 1,
+        "pass@1": 0.1667,
+        "pass@1_stderr": 0.0692,
+        "pass@1_ci95": [
+          0.031,
+          0.3023
+        ],
+        "avg_gen_len": 5895.2,
+        "compression_ratio": 5.106,
         "eviction_fired": true
       }
     }

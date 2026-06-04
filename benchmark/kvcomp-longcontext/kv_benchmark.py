@@ -457,7 +457,16 @@ def main(cfg: DictConfig):
                             if isinstance(v, (int, float))}
             print("  ppl:", entry["ppl"], flush=True)
 
-        results[name] = entry
+        # Targeted re-run (cfg.methods=[X,Y,...]): merge the newly computed
+        # benchmarks INTO the existing method entry so that previously computed
+        # benchmarks (e.g. AIME data from a prior AIME-only run) are preserved.
+        # Full runs (no methods filter) replace the entry as before.
+        if only is not None and name in existing_results:
+            merged = dict(existing_results[name])
+            merged.update(entry)
+            results[name] = merged
+        else:
+            results[name] = entry
         # Persist after every method so a long multi-method sweep is crash-safe
         # (a failure late in the run still leaves the completed methods on disk).
         _save(cfg, results)

@@ -133,6 +133,31 @@ taperkv:
   b_min: 4
   b_min_value: 2
 
+# TurboTaper: TaperKV age-schedule with TurboQuant (Hadamard + Lloyd-Max) codec.
+# b_min_value MUST be 3 (not 2) for Qwen-based reasoning models.
+#
+# CRITICAL FIX (2026-06-03): b_min_value=2 (inherited from taperkv defaults)
+# combines Hadamard rotation with 2-bit value quantization at the schedule floor.
+# TWO bugs were identified and fixed (2026-06-04):
+#
+# Bug-1 (b_min_value=2): Hadamard + 2-bit value floor is catastrophic on Qwen:
+#   QwQ-32B:     GSM8K 0.0% / MATH  0.0%  (FullKV: 100%/67%)
+#   R1-Qwen-7B:  GSM8K 48%  / MATH  6.0%  (FullKV:  69%/67%)
+#   Fix: b_min_value=3 (3-bit Hadamard is safe, as confirmed by TurboQuant-3bit).
+#
+# Bug-2 (cascade re-quantisation): GradedQuantCache re-quantises the ENTIRE cache
+#   every requant_stride=16 steps.  The rotated Lloyd-Max codec is not perfectly
+#   idempotent; per-vector RMS drift compounds over many passes:
+#     R1-7B  (~66 passes): math500 24% despite gsm8k=69%=FullKV
+#     QwQ-32B (~275 passes): gsm8k 17% even after Bug-1 fix
+#   Fix (turbotaper_cache.py): delta quantisation — only re-quantise tokens whose
+#   bit-width CHANGED (recent→floor transition) and new tokens.  Floor tokens
+#   whose bit assignment is unchanged are left in place, eliminating cascade drift.
+#   n_outlier_floor=32 is now safe because floor tokens are quantised at most once.
+turbotaper:
+  b_min_value: 3         # fix Bug-1: 2-bit Hadamard is catastrophic
+  n_outlier_floor: 32    # protect outlier channels (safe with delta-quant fix)
+
 # TaperKV Pareto sweep (optional: disable for faster runs)
 taperkv_sweep: []
 

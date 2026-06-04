@@ -99,10 +99,10 @@
     "ruler_keys": 4,
     "ruler_seeds": 5,
     "run_needle": false,
-    "run_gsm8k": false,
+    "run_gsm8k": true,
     "gsm8k_limit": 100,
     "max_new_reason": 8192,
-    "run_math": false,
+    "run_math": true,
     "math_limit": 100,
     "max_new_math": 8192,
     "run_longbench": false,
@@ -110,14 +110,14 @@
     "longbench_max_length": 7500,
     "longbench_limit": 20,
     "run_livecodebench": false,
-    "lcb_problems_path": null,
+    "lcb_problems_path": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/data/lcb_functional.jsonl",
     "lcb_dataset": "livecodebench/code_generation_lite",
     "lcb_split": "test",
     "lcb_limit": 50,
     "lcb_k": 1,
     "lcb_timeout": 6.0,
     "max_new_code": 4096,
-    "run_ppl": false,
+    "run_ppl": true,
     "ppl_max_length": 2048,
     "ppl_stride": 1024,
     "ppl_windows": 16,
@@ -126,39 +126,164 @@
     ],
     "aime_k": 2,
     "aime_limit": 30,
-    "max_new_aime": 6144
+    "max_new_aime": 6144,
+    "resume": true
   },
   "results": {
     "FullKV": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.87,
+        "pass@1_stderr": 0.0338,
+        "pass@1_ci95": [
+          0.8038,
+          0.9362
+        ],
+        "avg_gen_len": 465.0,
+        "compression_ratio": 1.0,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.69,
+        "pass@1_stderr": 0.0465,
+        "pass@1_ci95": [
+          0.5989,
+          0.7811
+        ],
+        "avg_gen_len": 1911.6,
+        "compression_ratio": 1.0,
+        "eviction_fired": true
+      },
       "aime2024": {
         "task": "aime2024",
         "n": 30,
         "k": 2,
-        "pass@1": 0.3333,
-        "pass@1_stderr": 0.0771,
+        "pass@1": 0.5,
+        "pass@1_stderr": 0.0928,
         "pass@1_ci95": [
-          0.1823,
-          0.4844
+          0.318,
+          0.682
         ],
-        "avg_gen_len": 5289.1,
+        "avg_gen_len": 5211.8,
         "compression_ratio": 1.0,
         "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 12.4251,
+        "nll": 2.5197,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 1.0
       }
     },
     "ThinKV": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.8,
+        "pass@1_stderr": 0.0402,
+        "pass@1_ci95": [
+          0.7212,
+          0.8788
+        ],
+        "avg_gen_len": 536.4,
+        "compression_ratio": 2.736,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.53,
+        "pass@1_stderr": 0.0502,
+        "pass@1_ci95": [
+          0.4317,
+          0.6283
+        ],
+        "avg_gen_len": 3239.5,
+        "compression_ratio": 2.971,
+        "eviction_fired": true
+      },
+      "aime2024": {
+        "task": "aime2024",
+        "n": 30,
+        "k": 2,
+        "pass@1": 0.0667,
+        "pass@1_stderr": 0.0463,
+        "pass@1_ci95": [
+          -0.0241,
+          0.1575
+        ],
+        "avg_gen_len": 5788.9,
+        "compression_ratio": 3.205,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 12.5863,
+        "nll": 2.5326,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 2.416
+      }
+    },
+    "PM-KVQ": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.86,
+        "pass@1_stderr": 0.0349,
+        "pass@1_ci95": [
+          0.7916,
+          0.9284
+        ],
+        "avg_gen_len": 448.4,
+        "compression_ratio": 2.473,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.58,
+        "pass@1_stderr": 0.0496,
+        "pass@1_ci95": [
+          0.4828,
+          0.6772
+        ],
+        "avg_gen_len": 2787.2,
+        "compression_ratio": 2.719,
+        "eviction_fired": true
+      },
       "aime2024": {
         "task": "aime2024",
         "n": 30,
         "k": 2,
         "pass@1": 0.0333,
-        "pass@1_stderr": 0.0232,
+        "pass@1_stderr": 0.0333,
         "pass@1_ci95": [
-          -0.0121,
-          0.0787
+          -0.032,
+          0.0987
         ],
-        "avg_gen_len": 5650.9,
-        "compression_ratio": 3.195,
+        "avg_gen_len": 5655.1,
+        "compression_ratio": 2.989,
         "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 13.6201,
+        "nll": 2.6116,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 2.8934
       }
     }
   }

@@ -7,25 +7,9 @@
     "attn_implementation": "sdpa",
     "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_tq_minis_lb",
     "methods": [
-      "FullKV",
-      "Uniform-INT4",
-      "Uniform-INT3",
-      "Uniform-INT2",
-      "KIVI-INT2",
-      "StreamingLLM",
-      "TurboQuant-4bit",
-      "TurboQuant-3.5bit",
-      "TurboQuant-3bit",
-      "TurboQuant-2.5bit",
-      "TurboQuant-2bit",
-      "HALO-4bit",
-      "HALO-3bit",
-      "HALO-2bit",
-      "FP8",
-      "NVFP4",
-      "TaperKV",
-      "TaperKV-3bit",
-      "TurboTaper"
+      "HALO-dense-LS-4bit",
+      "HALO-dense-LS-3bit",
+      "HALO-dense-LS-2bit"
     ],
     "sink_tokens": 4,
     "recent_tokens": 64,
@@ -82,6 +66,24 @@
       {
         "label": "HALO-2bit",
         "bits": 2
+      },
+      {
+        "label": "HALO-dense-LS-4bit",
+        "bits": 4,
+        "rotation_mode": "dense",
+        "ls_scale": true
+      },
+      {
+        "label": "HALO-dense-LS-3bit",
+        "bits": 3,
+        "rotation_mode": "dense",
+        "ls_scale": true
+      },
+      {
+        "label": "HALO-dense-LS-2bit",
+        "bits": 2,
+        "rotation_mode": "dense",
+        "ls_scale": true
       }
     ],
     "codec_variants": [
@@ -183,7 +185,8 @@
     "run_ppl": false,
     "ppl_max_length": 4096,
     "ppl_stride": 2048,
-    "ppl_windows": 16
+    "ppl_windows": 16,
+    "resume": true
   },
   "results": {
     "FullKV": {
@@ -697,6 +700,87 @@
           "8k+": 0.0
         },
         "mem_fraction": 0.2821
+      }
+    },
+    "HALO-dense-LS-4bit": {
+      "longbench": {
+        "n": 130,
+        "score": 11.45,
+        "per_task": {
+          "qasper": 10.0,
+          "multifieldqa_en": 1.82,
+          "hotpotqa": 15.0,
+          "2wikimqa": 20.0,
+          "gov_report": 0.0,
+          "multi_news": 0.0,
+          "trec": 25.0,
+          "triviaqa": 40.0,
+          "samsum": 0.0,
+          "passage_count": 0.0,
+          "passage_retrieval_en": 0.0,
+          "lcc": 13.79,
+          "repobench-p": 23.25
+        },
+        "by_length": {
+          "0-4k": 13.52,
+          "4-8k": 10.03,
+          "8k+": 0.0
+        },
+        "mem_fraction": 0.2587
+      }
+    },
+    "HALO-dense-LS-3bit": {
+      "longbench": {
+        "n": 130,
+        "score": 12.01,
+        "per_task": {
+          "qasper": 30.0,
+          "multifieldqa_en": 1.82,
+          "hotpotqa": 5.0,
+          "2wikimqa": 30.0,
+          "gov_report": 0.0,
+          "multi_news": 0.0,
+          "trec": 20.0,
+          "triviaqa": 40.0,
+          "samsum": 0.0,
+          "passage_count": 0.0,
+          "passage_retrieval_en": 0.0,
+          "lcc": 9.16,
+          "repobench-p": 20.16
+        },
+        "by_length": {
+          "0-4k": 11.83,
+          "4-8k": 12.13,
+          "8k+": 0.0
+        },
+        "mem_fraction": 0.1962
+      }
+    },
+    "HALO-dense-LS-2bit": {
+      "longbench": {
+        "n": 130,
+        "score": 8.07,
+        "per_task": {
+          "qasper": 20.0,
+          "multifieldqa_en": 1.82,
+          "hotpotqa": 5.0,
+          "2wikimqa": 30.0,
+          "gov_report": 0.0,
+          "multi_news": 0.0,
+          "trec": 10.0,
+          "triviaqa": 10.0,
+          "samsum": 0.0,
+          "passage_count": 0.0,
+          "passage_retrieval_en": 0.0,
+          "lcc": 10.35,
+          "repobench-p": 17.69
+        },
+        "by_length": {
+          "0-4k": 8.89,
+          "4-8k": 7.5,
+          "8k+": 0.0
+        },
+        "mem_fraction": 0.1338
       }
     }
   }

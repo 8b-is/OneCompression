@@ -89,10 +89,23 @@ turbotaper:
 # Companion rotated-codec variant of TaperKV at the 3-bit headline budget.
 # MUST be iso-memory to TaperKV-3bit so the comparison isolates the codec
 # (plain affine vs rotated Lloyd-Max) rather than the schedule.  Align b_min=3,
-# b_min_value=2, and inherit recent_tokens=128 from the config default.
-# (Old b_min:2/recent_tokens:64 caused needle failure and was not iso-memory.)
+# b_min_value=3, and inherit recent_tokens=128 from the config default.
+#
+# TWO bugs were fixed in TurboTaper (2026-06-04):
+#
+# Bug-1 (b_min_value=2, fixed 2026-06-03): Hadamard + 2-bit value floor is
+# catastrophic on Qwen-based models (R1-Qwen-14B: GSM8K 16%; QwQ-32B: GSM8K 0%)
+# despite normal PPL.  3-bit floor (TurboQuant-3bit: 88%) confirms safety.
+# Fix: b_min_value=3.
+#
+# Bug-2 (cascade re-quantisation, fixed 2026-06-04): turbotaper_cache.py
+# re-quantised floor tokens every 16 steps.  The rotated Lloyd-Max codec is not
+# perfectly idempotent, so drift accumulates over many passes (R1-7B math500=24%
+# despite gsm8k=69%=FullKV; QwQ-32B gsm8k=17% even after Bug-1 fix).
+# Fix (delta quantisation): only re-quantise tokens that changed bit-width.
+# See turbotaper_cache.py class docstring for details.
 turbotaper_sweep:
-  - {label: "TurboTaper-3bit", key_bits: 4, value_bits: 3, b_min: 3, b_min_value: 2}
+  - {label: "TurboTaper-3bit", key_bits: 4, value_bits: 3, b_min: 3, b_min_value: 3}
 
 # Single TurboQuant variant at 3-bit (paper-faithful Beta + Hadamard rotation).
 turboquant_variants:
