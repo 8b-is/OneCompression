@@ -203,7 +203,7 @@ Before fix (OLD cascade-error code): R1-7B MATH=6%, QwQ-32B GSM=0%.
 
 ---
 
-## Run status (2026-06-04 21:27 JST — updated)
+## Run status (2026-06-05 15:51 JST — updated)
 
 ### Bugs fixed (2026-06-04)
 
@@ -223,57 +223,53 @@ Before fix (OLD cascade-error code): R1-7B MATH=6%, QwQ-32B GSM=0%.
 | P2 TurboTaper AIME comp R1-7B,R1-14B,QwQ (delta fix) | 46485-46488 | ✅ |
 | P2 taperkv/R1-14B TurboTaper-3bit (delta fix) | 46489 | ✅ |
 | P2 comp/qwq_25 all except StreamingLLM | 46535 | ✅ |
-| P2 taperkv/R1-7B KIVI-INT2 (gsm=0.69, math=0.58, lb=3.07) | 46421 | ✅ |
+| P2 basic/R1-L8 KIVI+HALO (gsm=0.53/0.59, math=0.56/0.54) | 46718 | ✅ |
+| P2 basic/R1-Q7 KIVI+HALO (gsm=0.69/0.67, math=0.63/0.69) | 46720 | ✅ |
+| P2 basic/R1-Q14 StreamingLLM+Uniform-INT4 | 46719 | ✅ |
+| P2 comp/qwq_24 StreamingLLM | 46721 | ✅ |
+| P2 comp/qwq_25 StreamingLLM | 46722 | ✅ |
+| P2 comp/r1q14_25 StreamingLLM | 46723 | ✅ |
+| P2 taperkv/R1-Q14 HALO-3bit (gsm=0.84, math=0.64, lb=4.11) | 46716 | ✅ |
+| P2 taperkv/R1-Q7 TT-3bit Δfix (gsm=0.73, math=0.59) + HALO-3bit (gsm=0.67, math=0.65) | 46714 | ✅ |
+| P2 comp/r1q14_24 TaperKV(0.433)+TurboTaper(0.433)+HALO(0.367) | 46708 | ✅ |
+| P2 comp/r1l8 PM-KVQ(0.067/0.133)+TaperKV(0.367/0.400) | 46537 | ✅ |
+| P2 basic/R1-Q15 TurboTaper (gsm=0.28, math=0.26) | 46736 | ✅ |
+| P2 taperkv/R1-Q15 TurboQuant-3bit (gsm=0.19, math=0.20) | 46417+46735 | ✅ |
 
-**Overall: 108/145 methods (74%) — 18 jobs running, est. completion ~Jun 5 morning**
+**Overall: 128/145 methods (88%) — 10 new jobs running (46919-46928)**
 
-### Running (as of 21:27 JST)
+### Running (as of 15:51 JST Jun 5)
 
-| JID | Component | Status |
+| JID | Component | walltime |
 |---|---|---|
-| 46417 | taperkv/R1-1.5B: TurboQuant→KIVI→HALO | ⚠ OLD code; timeout ~22:30; postfix 46735 queued |
-| 46418 | basic/R1-1.5B: TurboTaper→KIVI→HALO | ⚠ OLD code; timeout ~22:30; postfix 46736 queued |
-| 46421 | taperkv/R1-7B: HALO-3bit computing | timeout ~22:30; 46714 will add HALO-3bit + fix TT-3bit |
-| 46534 | comp/r1q7: PM-KVQ in progress | then TaperKV→KIVI→HALO |
-| 46537 | comp/r1l8: PM-KVQ in progress | then TaperKV→KIVI→HALO→TT |
-| 46708 | comp/r1q14_24: TaperKV in progress (~2h45m in) | then TT+HALO, postfix B for KIVI+Stream |
-| 46714 | taperkv/R1-7B: TT-3bit math500 computing | then LB, then HALO-3bit (delta fix) |
-| 46716 | taperkv/R1-14B: HALO-3bit started | GSM+MATH+LB pending |
-| 46718 | basic/r1l8: KIVI-INT2 gsm=0.53 done | math500 running, then HALO |
-| 46719 | basic/r1q14: Uni-INT4 gsm=0.86 done | math500 running, then StreamingLLM |
-| 46720 | basic/r1q7: KIVI-INT2 started | then HALO |
-| 46721 | comp/qwq_24: StreamingLLM AIME started | QwQ-32B slow |
-| 46722 | comp/qwq_25: StreamingLLM AIME started | QwQ-32B slow |
-| 46723 | comp/r1q14_25: StreamingLLM started | |
-| 46724 | comp/r1q15: TaperKV started | R1-1.5B fast |
-| 46725 | basic/qwq: Uniform-INT4 started | retry (46717 CUDA error) |
+| 46919 | comp/r1q7 TaperKV (k=4, 2yr) | 23h |
+| 46920 | comp/r1q7 KIVI+HALO (k=4, 2yr) | 23h |
+| 46921 | comp/r1l8 KIVI+HALO (k=2, 2yr) | 23h |
+| 46922 | comp/r1l8 TurboTaper (k=2, 2yr) | 12h |
+| 46923 | comp/r1q14_24 StreamingLLM (k=2, 2024) | 12h |
+| 46924 | comp/r1q14_24 KIVI-INT2 (k=2, 2024) | 23h |
+| 46925 | comp/r1q15 KIVI+HALO+TurboTaper | 12h |
+| 46926 | basic/QwQ StreamingLLM+Uni-INT4 | 12h |
+| 46927 | basic/R1-1.5B KIVI+HALO | 8h |
+| 46928 | taperkv/R1-1.5B KIVI+HALO | 12h |
 
-### Postfix queue
-
-| JID | Trigger | Action | Status |
-|---|---|---|---|
-| 46735 | 46417 timeout (~22:30) | taperkv/R1-1.5B: TT-3bit delta fix + remaining | PENDING ✅ |
-| 46736 | 46418 timeout (~22:30) | basic/R1-1.5B: TurboTaper delta fix + KIVI + HALO | PENDING ✅ |
-| (submit manually) | 46534 completes | `postfix_after_running.sh A`: comp/r1q7 TurboTaper re-run | pending |
-| (submit manually) | 46708 completes | `postfix_after_running.sh B`: comp/r1q14_24 KIVI+StreamingLLM | pending |
-
-### Data gaps — snapshot 21:27 JST
+### Data gaps — snapshot 15:51 JST Jun 5
 
 | Dataset | has/need | Missing | Fill |
 |---|---|---|---|
-| basic/qwq | 7/9 | StreamingLLM, Uniform-INT4 | 46725 running |
-| basic/r1l8 | 7/9 | KIVI, HALO | 46718 running |
-| basic/r1q14 | 7/9 | StreamingLLM, Uniform-INT4 | 46719 running |
-| basic/r1q15 | 6/9 | KIVI, HALO, TurboTaper | 46418 (TT: OLD) → postfix 46736 |
-| basic/r1q7 | 7/9 | KIVI, HALO | 46720 running |
-| taperkv/Llama | 11/11 | — | ✅ COMPLETE |
-| taperkv/R1-1.5B | 8/11 | TurboQuant-3bit, KIVI, HALO | 46417 (TT-3bit OLD) → postfix 46735 |
-| taperkv/R1-14B | 10/11 | HALO-3bit | 46716 running |
-| taperkv/R1-7B | 10/11 | HALO-3bit (TT-3bit in JSON: OLD) | 46714 running (fixes TT + adds HALO) |
-| comp/qwq_24 | 7/8 | StreamingLLM | 46721 running |
-| comp/qwq_25 | 7/8 | StreamingLLM | 46722 running |
-| comp/r1l8 | 3/8 | PM-KVQ,TaperKV,KIVI,HALO,TT | 46537 running |
-| comp/r1q14_24 | 3/8 | StreamingLLM,TaperKV,KIVI,HALO,TT | 46708 (TK+TT+HALO) + postfix B (KIVI+Stream) |
-| comp/r1q14_25 | 7/8 | StreamingLLM | 46723 running |
-| comp/r1q15 | 4/8 | TaperKV,KIVI,HALO,TT | 46724 running |
-| comp/r1q7 | 4/8 | PM-KVQ,TaperKV,KIVI,HALO,TT | 46534 (PM-KVQ+TK+KIVI+HALO) + postfix A (TT) |
+| basic/qwq | 7/9 | StreamingLLM, Uniform-INT4 | 46926 running |
+| basic/r1l8 | **9/9** | — | ✅ COMPLETE |
+| basic/r1q14 | **9/9** | — | ✅ COMPLETE |
+| basic/r1q15 | 7/9 | KIVI, HALO | 46927 running |
+| basic/r1q7 | **9/9** | — | ✅ COMPLETE |
+| taperkv/Llama | **11/11** | — | ✅ COMPLETE |
+| taperkv/R1-1.5B | 9/11 | KIVI, HALO | 46928 running |
+| taperkv/R1-14B | **11/11** | — | ✅ COMPLETE |
+| taperkv/R1-7B | **11/11** | — | ✅ COMPLETE |
+| comp/qwq_24 | **8/8** | — | ✅ COMPLETE |
+| comp/qwq_25 | **8/8** | — | ✅ COMPLETE |
+| comp/r1l8 | 5/8 | KIVI, HALO, TurboTaper | 46921+46922 running |
+| comp/r1q14_24 | 6/8 | StreamingLLM, KIVI | 46923+46924 running |
+| comp/r1q14_25 | **8/8** | — | ✅ COMPLETE |
+| comp/r1q15 | 5/8 | KIVI, HALO, TurboTaper | 46925 running |
+| comp/r1q7 | 5/8 | TaperKV, KIVI, HALO | 46919+46920 running (TT restored) |

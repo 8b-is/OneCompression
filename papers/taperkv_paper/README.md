@@ -1,6 +1,6 @@
 # TaperKV Paper: Recency-Graded Precision Scheduling for KV Cache Compression
 
-> **最終更新: 2026-06-04 18:50 JST** (delta quantization fix 確定後)
+> **最終更新: 2026-06-05 15:51 JST** (Round-2 results: 128/145 methods, 8 datasets complete)
 
 ## 概要
 
@@ -51,7 +51,7 @@
 
 ---
 
-### Table 2: Policy 比較 — R1-Qwen-14B (10メソッド完了、delta fix済み)
+### Table 2: Policy 比較 — R1-Qwen-14B (全11メソッド完了 ✅、delta fix済み)
 
 **ソース:** `results_taperkv/results_DeepSeek-R1-Distill-Qwen-14B.json`
 
@@ -66,10 +66,12 @@
 | **TaperKV-3bit** | **4.35** | 90.0 | 60.0 | 13.92 | 3.18 |
 | TurboQuant-3bit | 4.09 | 88.0 | 60.0 | 12.60 | 3.19 |
 | KIVI-INT2 | 3.96 | 86.0 | **62.0** | 13.26 | 3.53 |
-| **TurboTaper-3bit** ✅ | 4.35 | **85.0** | **61.0** | 11.87 | 2.90 |
+| **TurboTaper-3bit** ✅ | **4.35** | 85.0 | 61.0 | 11.87 | 2.90 |
+| **HALO-3bit** ✅ | 4.11 | 84.0 | 64.0 | 12.45 | 3.19 |
 
 **→ TaperKV-3bit / TurboTaper-3bit が LB 4.35 でタイ最高 (FullKV 4.26 超)**
-**→ TurboTaper-3bit: GSM=85% (FullKV 88%比 97%)、MATH=61% (FullKV 66%比 92%) ✅**
+**→ TurboTaper-3bit: GSM=85% (FullKV比 97%)、MATH=61% (FullKV比 92%) ✅**
+**→ HALO-3bit: GSM=84%, MATH=64% (FullKV比 95%/97%) — excellent 3bit codec**
 
 ---
 
@@ -101,43 +103,60 @@
 | ThinKV | 0.000 | 0.000 |
 | PM-KVQ | 0.000 | 0.000 |
 
-**R1-Qwen-14B — 全7メソッド完了:**
+**R1-Qwen-14B — 全9メソッド完了 ✅:**
 
-| 手法 | GSM8K% | MATH-500% | AIME-2024 | AIME-2025 |
-|------|--------|-----------|-----------|-----------|
-| FullKV | 88.0 | 68.0 | 0.500 | 0.283 |
-| **TaperKV** | **90.0** | 62.0 | — | **0.333** |
-| **TurboTaper** ✅ | 86.0 | **68.0** | **0.433** | **0.367** |
-| HALO-3bit | 88.0 | 66.0 | — | 0.267 |
-| KIVI-INT2 | 86.0 | 64.0 | — | 0.267 |
-| PM-KVQ | 86.0 | 58.0 | — | 0.033 |
-| ThinKV | 78.0 | 54.0 | — | 0.083 |
+| 手法 | GSM8K% | MATH-500% | AIME-2024 | AIME-2025 | cr |
+|------|--------|-----------|-----------|-----------|-----|
+| FullKV | 88.0 | 68.0 | 0.500 | 0.283 | 1.00 |
+| Uniform-INT4 | 86.0 | 70.0 | — | — | 2.68 |
+| StreamingLLM | 25.0 | 16.0 | — | — | ∞ |
+| ThinKV | 78.0 | 54.0 | 0.067 | 0.083 | 3.21 |
+| PM-KVQ | 86.0 | 58.0 | 0.033 | 0.033 | 2.99 |
+| **TaperKV** | **90.0** | 62.0 | **0.433** | **0.333** | 2.52 |
+| KIVI-INT2 | 86.0 | 64.0 | — | 0.267 | 3.53 |
+| HALO-3bit | 88.0 | 66.0 | **0.367** | 0.267 | 3.19 |
+| **TurboTaper** ✅ | 86.0 | **68.0** | **0.433** | **0.367** | 2.41 |
 
-**→ TurboTaper AIME-2025 0.367 > FullKV 0.283 (+30%)!**
+**→ TurboTaper AIME-2025 0.367 > FullKV 0.283 (+30%)! ✅**
 **→ TurboTaper MATH = FullKV 68% (完全等価)**
+**→ TaperKV AIME-2024 0.433 vs ThinKV 0.067 (+548%)、PM-KVQ 0.033 (+1212%)!**
 
-**R1-Qwen-7B — 全7メソッド完了 (delta fix済み):**
+**R1-Qwen-7B — 全9メソッド完了 ✅ (taperkv, delta fix済み):**
 
-| 手法 | GSM8K% | MATH-500% | PPL | cr |
-|------|--------|-----------|-----|----|
-| FullKV | 69.0 | 67.0 | 50.85 | 1.00 |
-| TaperKV | **75.0** | 64.0 | 50.38 | 2.38 |
-| ThinKV | 73.0 | 67.0 | 50.61 | 2.29 |
-| PM-KVQ | 71.0 | 48.0 | 60.86 | 2.71 |
-| **TurboTaper** ✅ | 67.0 | **65.0** | 50.42 | 2.21 |
-| Uniform-INT4 | 72.0 | 66.0 | 55.45 | 2.54 |
-| StreamingLLM | 25.0 | 13.0 | 50.85 | ∞ |
+| 手法 | LongBench | GSM8K% | MATH-500% | PPL | cr |
+|------|-----------|--------|-----------|-----|----|
+| FullKV | 3.63 | 69.0 | 61.0 | 50.85 | 1.00 |
+| Uniform-INT3 | 3.61 | 66.0 | 55.0 | — | 3.15 |
+| StreamingLLM | 3.22 | 25.0 | 12.0 | — | ∞ |
+| ThinKV | 3.48 | 72.0 | 59.0 | — | 2.23 |
+| PM-KVQ | 3.44 | 74.0 | 57.0 | — | 2.71 |
+| **TaperKV** | **3.25** | **75.0** | **60.0** | — | 2.46 |
+| TaperKV-3bit | 3.29 | 64.0 | 51.0 | — | 3.15 |
+| TurboQuant-3bit | 3.39 | 64.0 | 62.0 | — | 3.19 |
+| KIVI-INT2 | 3.07 | 69.0 | 58.0 | — | 3.18 |
+| **TurboTaper-3bit** ✅ | **3.39** | **73.0** | **59.0** | — | **2.70** |
+| **HALO-3bit** ✅ | **3.47** | **67.0** | **65.0** | — | **2.91** |
 
-**R1-Distill-Llama-8B — 全7メソッド完了:**
+**→ TaperKV GSM=75% > FullKV=69% (+6pt)**
+**→ TurboTaper-3bit: GSM=73% (FullKV比 106%), MATH=59% (FullKV比 97%) ✅ delta fix確認**
+**→ HALO-3bit: MATH=65% > FullKV=61% — 3bit codec で精度向上**
 
-| 手法 | GSM8K% | MATH-500% | PPL | cr |
-|------|--------|-----------|-----|----|
-| FullKV | 63.0 | 61.0 | 23.50 | 1.00 |
-| TaperKV | 62.0 | 58.0 | 24.79 | 3.16 |
-| **TurboTaper** ✅ | **65.0** | **59.0** | 23.52 | 3.01 |
-| PM-KVQ | 61.0 | 48.0 | 29.03 | 3.33 |
-| ThinKV | 35.0 | 21.0 | 24.36 | 4.12 |
-| StreamingLLM | 17.0 | 15.0 | 23.50 | ∞ |
+**R1-Distill-Llama-8B — 全9メソッド完了 ✅ (basic GSM/MATH):**
+
+| 手法 | GSM8K% | MATH-500% | cr |
+|------|--------|-----------|-----|
+| FullKV | 63.0 | 61.0 | 1.00 |
+| Uniform-INT4 | 66.0 | 57.0 | 2.68 |
+| StreamingLLM | 17.0 | 15.0 | ∞ |
+| ThinKV | 35.0 | 21.0 | 4.12 |
+| PM-KVQ | 61.0 | 48.0 | 3.33 |
+| **TaperKV** | **62.0** | **58.0** | 3.16 |
+| KIVI-INT2 | 53.0 | 56.0 | 5.99 |
+| HALO-3bit | 59.0 | 54.0 | 2.91 |
+| **TurboTaper** ✅ | **65.0** | **59.0** | 3.01 |
+
+**→ TurboTaper GSM=65% > FullKV=63% — 圧縮しつつ精度向上**
+**→ ThinKV: GSM=35% (FullKV比 56%) — 大幅劣化**
 
 ---
 
@@ -148,43 +167,46 @@ QwQ-32B / R1-14B が主要比較対象。LCB ジョブ実行中 / 未完了。
 
 ---
 
-## ステータス (2026-06-04 18:50 JST)
+## ステータス (2026-06-05 15:51 JST) — 128/145 methods, 88%
 
-### 完了データ ✅
+### 完了データ ✅ (8データセット完全完了)
 
 | ベンチ | モデル | メソッド数 | 備考 |
 |--------|--------|-----------|------|
-| taperkv (policy) | Llama-3.1-8B | 11/11 | TurboTaper-3bit delta fix済み ✅ |
-| taperkv (policy) | R1-14B | 10/10 | TurboTaper-3bit delta fix済み ✅ |
-| taperkv (policy) | R1-7B | 9/9+ | **TurboTaper-3bit は OLD code** ⚠️ → postfix_46421.sh 実行待ち |
-| taperkv (policy) | R1-1.5B | 6/6+ | KIVI/HALO/TurboTaper-3bit 実行中 (46417) |
-| basic (GSM+MATH) | R1-Llama, R1-7B, R1-14B, QwQ | 7/7 each | delta fix済み ✅ |
-| basic (GSM+MATH) | R1-1.5B | 5/6 | TaperKV done, TurboTaper/KIVI/HALO 実行中 |
-| comp AIME-2024+2025 | R1-14B | 7/7 (2025), 3/7 (2024) | 2024: 46708 で TaperKV+TT+HALO 実行中 |
-| comp AIME-2024+2025 | QwQ-32B | 7/7 (2024), 6/7 (2025) | 2025 HALO: 46535 実行中 |
-| comp AIME-2024+2025 | R1-7B | 4/7 (TT完了), 残り実行中 | 46534 実行中 |
-| comp AIME | R1-Llama | 3/7 | 46537 実行中 (k=2) |
+| taperkv (policy) | Llama-3.1-8B | **11/11** ✅ | TurboTaper-3bit delta fix済み |
+| taperkv (policy) | R1-14B | **11/11** ✅ | HALO-3bit (gsm=0.84, math=0.64) 追加 |
+| taperkv (policy) | R1-7B | **11/11** ✅ | TurboTaper-3bit delta fix (gsm=0.73, math=0.59), HALO-3bit (gsm=0.67, math=0.65) |
+| basic (GSM+MATH) | R1-L8 | **9/9** ✅ | KIVI (gsm=0.53), HALO (gsm=0.59) 追加 |
+| basic (GSM+MATH) | R1-Q7 | **9/9** ✅ | KIVI (gsm=0.69, math=0.63), HALO (gsm=0.67, math=0.69) 追加 |
+| basic (GSM+MATH) | R1-Q14 | **9/9** ✅ | StreamingLLM, Uniform-INT4 追加 |
+| comp AIME-2024 | QwQ-32B (24%) | **8/8** ✅ | StreamingLLM 追加 |
+| comp AIME-2025 | QwQ-32B (25%) | **8/8** ✅ | StreamingLLM 追加 |
+| comp AIME-2025 | R1-Q14 (25%) | **8/8** ✅ | StreamingLLM 追加 |
 
-### 実行中ジョブ
+### 部分完了
 
-| JID | 内容 | 状況 |
-|-----|------|------|
-| 46421 | taperkv/R1-7B 残り (KIVI, HALO) | KIVI-INT2 gsm8k 計算中 (~22:00 タイムアウト) |
-| 46534 | comp/r1q7 ThinKV→HALO-3bit | ThinKV aime2024=0.567 完了, aime2025 計算中 |
-| 46535 | comp/qwq_25 HALO-3bit | 実行中 |
-| 46537 | comp/r1l8 残り全メソッド (k=2) | ThinKV 計算中 |
-| 46708 | comp/r1q14_24 TaperKV+TT+HALO | 実行中 |
+| ベンチ | モデル | 状況 |
+|--------|--------|------|
+| comp AIME-2024 | R1-Q14 (24%) | 6/8 (TaperKV=0.433, TT=0.433, HALO=0.367 取得済) — KIVI+Stream 計算中 |
+| comp AIME-2024+2025 | R1-Q7 | 5/8 (ThinKV=0.567/0.400, PM-KVQ=0.033/0.067, TT=0.533/0.300) — TaperKV+KIVI+HALO 計算中 |
+| comp AIME-2024+2025 | R1-L8 (k=2) | 5/8 (PM-KVQ=0.067/0.133, TaperKV=0.367/0.400 取得済) — KIVI+HALO+TT 計算中 |
+| basic (GSM+MATH) | R1-1.5B | 7/9 (TurboTaper=0.28/0.26 取得済) — KIVI+HALO 計算中 |
+| taperkv | R1-1.5B | 9/11 (TurboQuant-3bit=0.19/0.20 取得済) — KIVI+HALO 計算中 |
 
-### 要手動実行 (今夜)
+### 実行中ジョブ (46919-46928)
 
-```bash
-# 46421 タイムアウト後 (~22:00)
-bash /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/kvcomp_paper/postfix_46421.sh
-# → taperkv/R1-7B TurboTaper-3bit delta fix + HALO-3bit 上書き
-
-# ⚠️ 警告: taperkv/R1-7B の現在の TurboTaper-3bit は cascade error (gsm=0.53, math=0.06)
-# postfix 実行後に正しい結果で上書きされる
-```
+| JID | 内容 | walltime |
+|-----|------|---------|
+| 46919 | comp/r1q7 TaperKV (k=4, 2yr) | 23h |
+| 46920 | comp/r1q7 KIVI+HALO (k=4, 2yr) | 23h |
+| 46921 | comp/r1l8 KIVI+HALO (k=2, 2yr) | 23h |
+| 46922 | comp/r1l8 TurboTaper (k=2, 2yr) | 12h |
+| 46923 | comp/r1q14_24 StreamingLLM (k=2, 2024) | 12h |
+| 46924 | comp/r1q14_24 KIVI-INT2 (k=2, 2024) | 23h |
+| 46925 | comp/r1q15 KIVI+HALO+TT (k=4, 2yr) | 12h |
+| 46926 | basic/QwQ StreamingLLM+Uni4 (GSM/MATH) | 12h |
+| 46927 | basic/R1-1.5B KIVI+HALO (GSM/MATH) | 8h |
+| 46928 | taperkv/R1-1.5B KIVI+HALO (LB+GSM+MATH) | 12h |
 
 ---
 
