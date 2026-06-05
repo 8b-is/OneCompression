@@ -7,9 +7,7 @@
     "attn_implementation": "eager",
     "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_aime_comp_qwq_25",
     "methods": [
-      "KIVI-INT2",
-      "HALO-3bit",
-      "TurboTaper"
+      "StreamingLLM"
     ],
     "sink_tokens": 4,
     "recent_tokens": 128,
@@ -123,7 +121,7 @@
     ],
     "aime_k": 1,
     "aime_limit": 30,
-    "max_new_aime": 6144,
+    "max_new_aime": 8192,
     "resume": true
   },
   "results": {
@@ -236,6 +234,22 @@
         ],
         "avg_gen_len": 5895.2,
         "compression_ratio": 5.106,
+        "eviction_fired": true
+      }
+    },
+    "StreamingLLM": {
+      "aime2025": {
+        "task": "aime2025",
+        "n": 30,
+        "k": 1,
+        "pass@1": 0.0,
+        "pass@1_stderr": 0.0,
+        "pass@1_ci95": [
+          0.0,
+          0.0
+        ],
+        "avg_gen_len": 2868.1,
+        "compression_ratio": 1.546,
         "eviction_fired": true
       }
     }

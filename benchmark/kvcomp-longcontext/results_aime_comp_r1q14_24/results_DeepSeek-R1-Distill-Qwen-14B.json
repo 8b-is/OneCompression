@@ -7,10 +7,6 @@
     "attn_implementation": "eager",
     "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_aime_comp_r1q14_24",
     "methods": [
-      "FullKV",
-      "KIVI-INT2",
-      "ThinKV",
-      "PM-KVQ",
       "TaperKV",
       "TurboTaper",
       "HALO-3bit"
@@ -40,7 +36,8 @@
     "turbotaper": {
       "dist": "gaussian",
       "rotation_mode": "hadamard",
-      "n_outlier_floor": 0
+      "n_outlier_floor": 32,
+      "b_min_value": 3
     },
     "skip_outliers": true,
     "outlier_ratio": 50.0,
@@ -99,10 +96,10 @@
     "ruler_keys": 4,
     "ruler_seeds": 5,
     "run_needle": false,
-    "run_gsm8k": true,
+    "run_gsm8k": false,
     "gsm8k_limit": 100,
     "max_new_reason": 8192,
-    "run_math": true,
+    "run_math": false,
     "math_limit": 100,
     "max_new_math": 8192,
     "run_longbench": false,
@@ -116,8 +113,8 @@
     "lcb_limit": 50,
     "lcb_k": 1,
     "lcb_timeout": 6.0,
-    "max_new_code": 4096,
-    "run_ppl": true,
+    "max_new_code": 16384,
+    "run_ppl": false,
     "ppl_max_length": 2048,
     "ppl_stride": 1024,
     "ppl_windows": 16,
@@ -284,6 +281,54 @@
         "n_windows": 16.0,
         "n_skipped_nonfinite": 0.0,
         "compression_ratio": 2.8934
+      }
+    },
+    "TaperKV": {
+      "aime2024": {
+        "task": "aime2024",
+        "n": 30,
+        "k": 2,
+        "pass@1": 0.4333,
+        "pass@1_stderr": 0.092,
+        "pass@1_ci95": [
+          0.253,
+          0.6137
+        ],
+        "avg_gen_len": 5296.7,
+        "compression_ratio": 2.518,
+        "eviction_fired": true
+      }
+    },
+    "TurboTaper": {
+      "aime2024": {
+        "task": "aime2024",
+        "n": 30,
+        "k": 2,
+        "pass@1": 0.4333,
+        "pass@1_stderr": 0.092,
+        "pass@1_ci95": [
+          0.253,
+          0.6137
+        ],
+        "avg_gen_len": 5195.1,
+        "compression_ratio": 2.41,
+        "eviction_fired": true
+      }
+    },
+    "HALO-3bit": {
+      "aime2024": {
+        "task": "aime2024",
+        "n": 30,
+        "k": 2,
+        "pass@1": 0.3667,
+        "pass@1_stderr": 0.0895,
+        "pass@1_ci95": [
+          0.1913,
+          0.5421
+        ],
+        "avg_gen_len": 5337.1,
+        "compression_ratio": 3.192,
+        "eviction_fired": true
       }
     }
   }

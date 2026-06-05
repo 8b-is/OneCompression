@@ -7,7 +7,8 @@
     "attn_implementation": "eager",
     "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_aime_basic_r1l8",
     "methods": [
-      "TurboTaper"
+      "KIVI-INT2",
+      "HALO-3bit"
     ],
     "sink_tokens": 4,
     "recent_tokens": 128,
@@ -112,7 +113,7 @@
     "lcb_k": 1,
     "lcb_timeout": 6.0,
     "max_new_code": 16384,
-    "run_ppl": true,
+    "run_ppl": false,
     "ppl_max_length": 2048,
     "ppl_stride": 1024,
     "ppl_windows": 16,
@@ -387,6 +388,66 @@
         "n_windows": 16.0,
         "n_skipped_nonfinite": 0.0,
         "compression_ratio": 3.1503
+      }
+    },
+    "KIVI-INT2": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.53,
+        "pass@1_stderr": 0.0502,
+        "pass@1_ci95": [
+          0.4317,
+          0.6283
+        ],
+        "avg_gen_len": 439.6,
+        "compression_ratio": 5.988,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.56,
+        "pass@1_stderr": 0.0499,
+        "pass@1_ci95": [
+          0.4622,
+          0.6578
+        ],
+        "avg_gen_len": 2671.0,
+        "compression_ratio": 6.133,
+        "eviction_fired": true
+      }
+    },
+    "HALO-3bit": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.59,
+        "pass@1_stderr": 0.0494,
+        "pass@1_ci95": [
+          0.4931,
+          0.6869
+        ],
+        "avg_gen_len": 421.4,
+        "compression_ratio": 4.948,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.54,
+        "pass@1_stderr": 0.0501,
+        "pass@1_ci95": [
+          0.4418,
+          0.6382
+        ],
+        "avg_gen_len": 2870.1,
+        "compression_ratio": 5.046,
+        "eviction_fired": true
       }
     }
   }

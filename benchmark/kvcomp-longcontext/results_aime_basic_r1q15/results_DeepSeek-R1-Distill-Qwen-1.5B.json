@@ -7,14 +7,8 @@
     "attn_implementation": "eager",
     "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_aime_basic_r1q15",
     "methods": [
-      "FullKV",
-      "Uniform-INT4",
-      "KIVI-INT2",
-      "ThinKV",
-      "PM-KVQ",
-      "TaperKV",
       "TurboTaper",
-      "HALO-4bit",
+      "KIVI-INT2",
       "HALO-3bit"
     ],
     "sink_tokens": 4,
@@ -120,7 +114,7 @@
     "lcb_k": 1,
     "lcb_timeout": 6.0,
     "max_new_code": 16384,
-    "run_ppl": true,
+    "run_ppl": false,
     "ppl_max_length": 2048,
     "ppl_stride": 1024,
     "ppl_windows": 16,
@@ -357,6 +351,36 @@
         "n_windows": 16.0,
         "n_skipped_nonfinite": 0.0,
         "compression_ratio": 2.877
+      }
+    },
+    "TurboTaper": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.28,
+        "pass@1_stderr": 0.0451,
+        "pass@1_ci95": [
+          0.1916,
+          0.3684
+        ],
+        "avg_gen_len": 600.1,
+        "compression_ratio": 2.63,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.26,
+        "pass@1_stderr": 0.0441,
+        "pass@1_ci95": [
+          0.1736,
+          0.3464
+        ],
+        "avg_gen_len": 6062.5,
+        "compression_ratio": 2.736,
+        "eviction_fired": true
       }
     }
   }

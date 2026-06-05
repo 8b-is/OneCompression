@@ -250,6 +250,36 @@
         "eviction_fired": true
       }
     },
+    "PM-KVQ": {
+      "aime2024": {
+        "task": "aime2024",
+        "n": 30,
+        "k": 4,
+        "pass@1": 0.0333,
+        "pass@1_stderr": 0.0333,
+        "pass@1_ci95": [
+          -0.032,
+          0.0987
+        ],
+        "avg_gen_len": 8085.0,
+        "compression_ratio": 2.809,
+        "eviction_fired": true
+      },
+      "aime2025": {
+        "task": "aime2025",
+        "n": 30,
+        "k": 4,
+        "pass@1": 0.0667,
+        "pass@1_stderr": 0.0463,
+        "pass@1_ci95": [
+          -0.0241,
+          0.1575
+        ],
+        "avg_gen_len": 7974.7,
+        "compression_ratio": 2.808,
+        "eviction_fired": true
+      }
+    },
     "TurboTaper": {
       "aime2024": {
         "task": "aime2024",

@@ -7,17 +7,10 @@
     "attn_implementation": "eager",
     "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_taperkv",
     "methods": [
-      "FullKV",
-      "Uniform-INT3",
-      "KIVI-INT2",
-      "StreamingLLM",
-      "ThinKV",
-      "PM-KVQ",
-      "TurboQuant-3bit",
+      "TurboTaper-3bit",
       "HALO-3bit",
-      "TaperKV",
-      "TaperKV-3bit",
-      "TurboTaper-3bit"
+      "TurboQuant-3bit",
+      "KIVI-INT2"
     ],
     "sink_tokens": 4,
     "recent_tokens": 128,
@@ -525,7 +518,7 @@
     "TurboTaper-3bit": {
       "longbench": {
         "n": 130,
-        "score": 3.19,
+        "score": 3.0,
         "per_task": {
           "qasper": 0.0,
           "multifieldqa_en": 0.0,
@@ -533,17 +526,17 @@
           "2wikimqa": 0.0,
           "gov_report": 0.0,
           "multi_news": 0.0,
-          "trec": 25.0,
+          "trec": 23.33,
           "triviaqa": 0.0,
           "samsum": 0.0,
           "passage_count": 0.0,
           "passage_retrieval_en": 0.0,
-          "lcc": 5.59,
-          "repobench-p": 10.82
+          "lcc": 5.75,
+          "repobench-p": 9.94
         },
         "by_length": {
-          "0-4k": 3.75,
-          "4-8k": 2.76,
+          "0-4k": 3.47,
+          "4-8k": 2.65,
           "8k+": 0.0
         },
         "mem_fraction": 0.284
@@ -552,28 +545,28 @@
         "task": "gsm8k",
         "n": 100,
         "k": 1,
-        "pass@1": 0.2,
-        "pass@1_stderr": 0.0402,
+        "pass@1": 0.21,
+        "pass@1_stderr": 0.0409,
         "pass@1_ci95": [
-          0.1212,
-          0.2788
+          0.1298,
+          0.2902
         ],
-        "avg_gen_len": 1525.2,
-        "compression_ratio": 3.495,
+        "avg_gen_len": 607.3,
+        "compression_ratio": 3.487,
         "eviction_fired": true
       },
       "math500": {
         "task": "math500",
         "n": 100,
         "k": 1,
-        "pass@1": 0.05,
-        "pass@1_stderr": 0.0219,
+        "pass@1": 0.24,
+        "pass@1_stderr": 0.0429,
         "pass@1_ci95": [
-          0.0071,
-          0.0929
+          0.1559,
+          0.3241
         ],
-        "avg_gen_len": 3710.6,
-        "compression_ratio": 3.519,
+        "avg_gen_len": 3468.3,
+        "compression_ratio": 3.517,
         "eviction_fired": true
       },
       "ppl": {
@@ -646,6 +639,69 @@
         "n_windows": 16.0,
         "n_skipped_nonfinite": 0.0,
         "compression_ratio": 3.9201
+      }
+    },
+    "TurboQuant-3bit": {
+      "longbench": {
+        "n": 130,
+        "score": 3.14,
+        "per_task": {
+          "qasper": 0.0,
+          "multifieldqa_en": 0.0,
+          "hotpotqa": 0.0,
+          "2wikimqa": 0.0,
+          "gov_report": 0.0,
+          "multi_news": 0.0,
+          "trec": 20.0,
+          "triviaqa": 0.0,
+          "samsum": 0.0,
+          "passage_count": 0.0,
+          "passage_retrieval_en": 0.0,
+          "lcc": 10.77,
+          "repobench-p": 10.04
+        },
+        "by_length": {
+          "0-4k": 3.9,
+          "4-8k": 2.56,
+          "8k+": 0.0
+        },
+        "mem_fraction": 0.2537
+      },
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.19,
+        "pass@1_stderr": 0.0394,
+        "pass@1_ci95": [
+          0.1127,
+          0.2673
+        ],
+        "avg_gen_len": 814.4,
+        "compression_ratio": 3.868,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.2,
+        "pass@1_stderr": 0.0402,
+        "pass@1_ci95": [
+          0.1212,
+          0.2788
+        ],
+        "avg_gen_len": 3516.2,
+        "compression_ratio": 3.936,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 164.2651,
+        "nll": 5.1015,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 3.9445
       }
     }
   }

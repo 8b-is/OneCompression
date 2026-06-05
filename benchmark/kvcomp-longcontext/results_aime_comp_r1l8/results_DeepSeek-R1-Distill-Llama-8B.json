@@ -265,6 +265,66 @@
         "compression_ratio": 5.202,
         "eviction_fired": true
       }
+    },
+    "PM-KVQ": {
+      "aime2024": {
+        "task": "aime2024",
+        "n": 30,
+        "k": 2,
+        "pass@1": 0.0667,
+        "pass@1_stderr": 0.0463,
+        "pass@1_ci95": [
+          -0.0241,
+          0.1575
+        ],
+        "avg_gen_len": 7902.8,
+        "compression_ratio": 4.577,
+        "eviction_fired": true
+      },
+      "aime2025": {
+        "task": "aime2025",
+        "n": 30,
+        "k": 2,
+        "pass@1": 0.1333,
+        "pass@1_stderr": 0.0631,
+        "pass@1_ci95": [
+          0.0096,
+          0.2571
+        ],
+        "avg_gen_len": 7594.6,
+        "compression_ratio": 4.569,
+        "eviction_fired": true
+      }
+    },
+    "TaperKV": {
+      "aime2024": {
+        "task": "aime2024",
+        "n": 30,
+        "k": 2,
+        "pass@1": 0.3667,
+        "pass@1_stderr": 0.0895,
+        "pass@1_ci95": [
+          0.1913,
+          0.5421
+        ],
+        "avg_gen_len": 7314.1,
+        "compression_ratio": 3.412,
+        "eviction_fired": true
+      },
+      "aime2025": {
+        "task": "aime2025",
+        "n": 30,
+        "k": 2,
+        "pass@1": 0.4,
+        "pass@1_stderr": 0.091,
+        "pass@1_ci95": [
+          0.2217,
+          0.5783
+        ],
+        "avg_gen_len": 7001.2,
+        "compression_ratio": 3.41,
+        "eviction_fired": true
+      }
     }
   }
 }
