@@ -2,11 +2,14 @@
 # ============================================================
 # TaperKV policy benchmark — QwQ-32B (slow model).
 #
-# Same as paper_taperkv.yaml but with adjusted limits to fit
-# within 24h walltime per job on a 32B model:
-#   - LongBench limit=10 (same, but might be slow)
-#   - GSM/MATH limit=50 (half of full 100, enough for significance)
-#   - Needle context_lens reduced to [4096, 8192] (skip 16384 to save time)
+# Key differences from paper_taperkv.yaml:
+#   1. attn_implementation: sdpa  — QwQ-32B uses GQA (40 Q-heads / 8 KV-heads);
+#      eager attention at 16K context allocates 38 GiB for the score matrix and
+#      OOMs on a single B200 (178 GiB total). Use SDPA (memory-efficient kernel).
+#   2. thinkv.auto_configure: false — ThinKV's sparsity calibration requires
+#      eager attention; skip it on this model.  ThinKV method is excluded from
+#      the methods list for QwQ-32B.
+#   3. GSM/MATH limit=50 — halved for 32B speed.
 # ============================================================
 
 defaults:
@@ -16,7 +19,27 @@ defaults:
 model_path: ???
 output_dir: ${hydra:runtime.cwd}/results_taperkv
 
-# Lighter needle to save time on 32B
+# QwQ-32B needs SDPA to avoid OOM at 16K context (eager OOMs at 38 GiB alloc).
+attn_implementation: sdpa
+
+# ThinKV requires eager attention for sparsity calibration — skip on 32B.
+thinkv:
+  auto_configure: false
+
+# Exclude ThinKV (needs eager attn) from QwQ-32B run; keep StreamingLLM
+methods:
+  - FullKV
+  - StreamingLLM
+  - Uniform-INT3
+  - KIVI-INT2
+  - PM-KVQ
+  - TurboQuant-3bit
+  - HALO-3bit
+  - TaperKV
+  - TaperKV-3bit
+  - TurboTaper-3bit
+
+# Keep full context lens (SDPA handles 16K on B200)
 context_lens: [4096, 8192, 16384]
 depths: [0.1, 0.25, 0.5, 0.75, 0.9]
 seeds: 3
