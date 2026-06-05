@@ -7,10 +7,8 @@
     "attn_implementation": "eager",
     "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_taperkv",
     "methods": [
-      "TurboTaper-3bit",
-      "HALO-3bit",
-      "TurboQuant-3bit",
-      "KIVI-INT2"
+      "KIVI-INT2",
+      "HALO-3bit"
     ],
     "sink_tokens": 4,
     "recent_tokens": 128,
@@ -698,6 +696,132 @@
       "ppl": {
         "ppl": 164.2651,
         "nll": 5.1015,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 3.9445
+      }
+    },
+    "KIVI-INT2": {
+      "longbench": {
+        "n": 130,
+        "score": 2.31,
+        "per_task": {
+          "qasper": 0.0,
+          "multifieldqa_en": 0.0,
+          "hotpotqa": 0.0,
+          "2wikimqa": 0.0,
+          "gov_report": 0.0,
+          "multi_news": 0.0,
+          "trec": 10.0,
+          "triviaqa": 0.0,
+          "samsum": 0.0,
+          "passage_count": 0.0,
+          "passage_retrieval_en": 0.0,
+          "lcc": 10.44,
+          "repobench-p": 9.57
+        },
+        "by_length": {
+          "0-4k": 3.86,
+          "4-8k": 1.14,
+          "8k+": 0.0
+        },
+        "mem_fraction": 0.221
+      },
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.15,
+        "pass@1_stderr": 0.0359,
+        "pass@1_ci95": [
+          0.0797,
+          0.2203
+        ],
+        "avg_gen_len": 1001.2,
+        "compression_ratio": 4.432,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.27,
+        "pass@1_stderr": 0.0446,
+        "pass@1_ci95": [
+          0.1825,
+          0.3575
+        ],
+        "avg_gen_len": 2980.7,
+        "compression_ratio": 4.5,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 273.3135,
+        "nll": 5.6106,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 4.5268
+      }
+    },
+    "HALO-3bit": {
+      "longbench": {
+        "n": 130,
+        "score": 3.87,
+        "per_task": {
+          "qasper": 0.0,
+          "multifieldqa_en": 0.0,
+          "hotpotqa": 0.0,
+          "2wikimqa": 0.0,
+          "gov_report": 0.0,
+          "multi_news": 0.0,
+          "trec": 30.0,
+          "triviaqa": 0.0,
+          "samsum": 0.0,
+          "passage_count": 0.0,
+          "passage_retrieval_en": 0.0,
+          "lcc": 9.92,
+          "repobench-p": 10.34
+        },
+        "by_length": {
+          "0-4k": 5.43,
+          "4-8k": 2.68,
+          "8k+": 0.0
+        },
+        "mem_fraction": 0.2537
+      },
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.2,
+        "pass@1_stderr": 0.0402,
+        "pass@1_ci95": [
+          0.1212,
+          0.2788
+        ],
+        "avg_gen_len": 641.6,
+        "compression_ratio": 3.868,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.24,
+        "pass@1_stderr": 0.0429,
+        "pass@1_ci95": [
+          0.1559,
+          0.3241
+        ],
+        "avg_gen_len": 3427.2,
+        "compression_ratio": 3.935,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 162.0881,
+        "nll": 5.0881,
         "n_tokens": 34815.0,
         "n_windows": 16.0,
         "n_skipped_nonfinite": 0.0,

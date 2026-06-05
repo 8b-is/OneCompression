@@ -7,7 +7,11 @@
     "attn_implementation": "eager",
     "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_aime_basic_qwq",
     "methods": [
-      "TurboTaper"
+      "FullKV",
+      "TaperKV",
+      "TurboTaper",
+      "HALO-3bit",
+      "HALO-4bit"
     ],
     "sink_tokens": 4,
     "recent_tokens": 128,
@@ -94,17 +98,17 @@
     "ruler_keys": 4,
     "ruler_seeds": 5,
     "run_needle": false,
-    "run_gsm8k": true,
-    "gsm8k_limit": 30,
-    "max_new_reason": 6144,
-    "run_math": true,
-    "math_limit": 30,
-    "max_new_math": 6144,
+    "run_gsm8k": false,
+    "gsm8k_limit": 100,
+    "max_new_reason": 8192,
+    "run_math": false,
+    "math_limit": 100,
+    "max_new_math": 8192,
     "run_longbench": false,
     "longbench_tasks": [],
     "longbench_max_length": 7500,
     "longbench_limit": 20,
-    "run_livecodebench": false,
+    "run_livecodebench": true,
     "lcb_problems_path": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/data/lcb_functional.jsonl",
     "lcb_dataset": "livecodebench/code_generation_lite",
     "lcb_split": "test",
@@ -112,7 +116,7 @@
     "lcb_k": 1,
     "lcb_timeout": 6.0,
     "max_new_code": 16384,
-    "run_ppl": true,
+    "run_ppl": false,
     "ppl_max_length": 2048,
     "ppl_stride": 1024,
     "ppl_windows": 16,
@@ -159,6 +163,20 @@
         "n_windows": 16.0,
         "n_skipped_nonfinite": 0.0,
         "compression_ratio": 1.0
+      },
+      "livecodebench": {
+        "task": "livecodebench",
+        "n": 50,
+        "k": 1,
+        "pass@1": 0.0,
+        "pass@1_stderr": 0.0,
+        "pass@1_ci95": [
+          0.0,
+          0.0
+        ],
+        "avg_gen_len": 5362.3,
+        "compression_ratio": 1.0,
+        "eviction_fired": true
       }
     },
     "ThinKV": {
@@ -387,6 +405,36 @@
         "n_windows": 16.0,
         "n_skipped_nonfinite": 0.0,
         "compression_ratio": 3.1503
+      }
+    },
+    "Uniform-INT4": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.92,
+        "pass@1_stderr": 0.0273,
+        "pass@1_ci95": [
+          0.8666,
+          0.9734
+        ],
+        "avg_gen_len": 1768.5,
+        "compression_ratio": 3.817,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.69,
+        "pass@1_stderr": 0.0465,
+        "pass@1_ci95": [
+          0.5989,
+          0.7811
+        ],
+        "avg_gen_len": 3652.5,
+        "compression_ratio": 3.832,
+        "eviction_fired": true
       }
     }
   }

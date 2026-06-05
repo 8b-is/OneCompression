@@ -1,0 +1,535 @@
+{
+  "model": "DeepSeek-R1-Distill-Qwen-7B",
+  "config": {
+    "model_path": "/lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Qwen-7B",
+    "device": "cuda:0",
+    "dtype": "bfloat16",
+    "attn_implementation": "sdpa",
+    "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_ablation_r1q7",
+    "methods": [
+      "FullKV",
+      "HALO-h-noLS-3",
+      "HALO-hg-noLS-3",
+      "HALO-hg-LS-3",
+      "HALO-dense-LS-3",
+      "TurboQuant-3bit",
+      "HALO-h-noLS-4",
+      "HALO-hg-noLS-4",
+      "HALO-hg-LS-4",
+      "HALO-dense-LS-4",
+      "TurboQuant-4bit",
+      "TaperKV-asym",
+      "TaperKV-sym",
+      "TaperKV-revsym"
+    ],
+    "sink_tokens": 4,
+    "recent_tokens": 64,
+    "requant_stride": 16,
+    "target_mem": 0.27,
+    "uniform_bits": [],
+    "turboquant_variants": [
+      {
+        "label": "TurboQuant-3bit",
+        "bits": 3,
+        "dist": "beta"
+      },
+      {
+        "label": "TurboQuant-4bit",
+        "bits": 4,
+        "dist": "beta"
+      }
+    ],
+    "kivi_bits": [],
+    "halo_variants": [
+      {
+        "label": "HALO-h-noLS-3",
+        "bits": 3,
+        "rotation_mode": "hadamard",
+        "ls_scale": false
+      },
+      {
+        "label": "HALO-hg-noLS-3",
+        "bits": 3,
+        "rotation_mode": "hadamard_gemm",
+        "ls_scale": false
+      },
+      {
+        "label": "HALO-hg-LS-3",
+        "bits": 3,
+        "rotation_mode": "hadamard_gemm",
+        "ls_scale": true
+      },
+      {
+        "label": "HALO-dense-LS-3",
+        "bits": 3,
+        "rotation_mode": "dense",
+        "ls_scale": true
+      },
+      {
+        "label": "HALO-h-noLS-4",
+        "bits": 4,
+        "rotation_mode": "hadamard",
+        "ls_scale": false
+      },
+      {
+        "label": "HALO-hg-noLS-4",
+        "bits": 4,
+        "rotation_mode": "hadamard_gemm",
+        "ls_scale": false
+      },
+      {
+        "label": "HALO-hg-LS-4",
+        "bits": 4,
+        "rotation_mode": "hadamard_gemm",
+        "ls_scale": true
+      },
+      {
+        "label": "HALO-dense-LS-4",
+        "bits": 4,
+        "rotation_mode": "dense",
+        "ls_scale": true
+      }
+    ],
+    "codec_variants": [],
+    "turbotaper": {
+      "dist": "gaussian",
+      "rotation_mode": "hadamard",
+      "n_outlier_floor": 0
+    },
+    "skip_outliers": true,
+    "outlier_ratio": 50.0,
+    "thinkv": {
+      "group_size": 16,
+      "precision": {
+        "R": 4,
+        "E": 4,
+        "T": 2
+      },
+      "auto_configure": false,
+      "calib_max_new": 200,
+      "capture_long": false
+    },
+    "pmkvq": {
+      "key_bits": 8,
+      "value_bits": 4,
+      "final_bits": 2,
+      "key_final_bits": 4,
+      "ladder_span": 256,
+      "block_allocation": false,
+      "channel_reparam": false,
+      "bit_options": [
+        2,
+        4,
+        8
+      ],
+      "avg_bit_budget": null,
+      "pos_scale": 4
+    },
+    "taperkv": {
+      "key_bits": 6,
+      "value_bits": 3,
+      "b_min": 2,
+      "b_min_value": 2
+    },
+    "taperkv_sweep": [
+      {
+        "label": "TaperKV-asym",
+        "key_bits": 6,
+        "value_bits": 3,
+        "b_min": 2,
+        "b_min_value": 2
+      },
+      {
+        "label": "TaperKV-sym",
+        "key_bits": 4,
+        "value_bits": 4,
+        "b_min": 2,
+        "b_min_value": 2
+      },
+      {
+        "label": "TaperKV-revsym",
+        "key_bits": 3,
+        "value_bits": 6,
+        "b_min": 2,
+        "b_min_value": 2
+      }
+    ],
+    "turbotaper_sweep": [],
+    "context_lens": [
+      4096,
+      8192
+    ],
+    "depths": [
+      0.1,
+      0.5,
+      0.9
+    ],
+    "seeds": 3,
+    "max_new_needle": 32,
+    "run_ruler": false,
+    "ruler_keys": 4,
+    "ruler_seeds": 5,
+    "run_needle": true,
+    "run_gsm8k": false,
+    "gsm8k_limit": 50,
+    "max_new_reason": 1024,
+    "run_math": false,
+    "math_limit": 50,
+    "max_new_math": 3072,
+    "run_longbench": false,
+    "longbench_tasks": [],
+    "longbench_max_length": 7500,
+    "longbench_limit": 20,
+    "run_livecodebench": false,
+    "lcb_problems_path": null,
+    "lcb_dataset": "livecodebench/code_generation_lite",
+    "lcb_split": "test",
+    "lcb_limit": 50,
+    "lcb_k": 1,
+    "lcb_timeout": 6.0,
+    "max_new_code": 4096,
+    "run_ppl": true,
+    "ppl_max_length": 4096,
+    "ppl_stride": 2048,
+    "ppl_windows": 16,
+    "resume": true
+  },
+  "results": {
+    "FullKV": {
+      "needle": {
+        "accuracy": 0.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.0,
+          0.1759
+        ],
+        "mem_fraction": 1.0,
+        "by_length": {
+          "4096": 0.0,
+          "8192": 0.0
+        },
+        "n": 18
+      },
+      "ppl": {
+        "ppl": 42.2784,
+        "nll": 3.7443,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 1.0
+      }
+    },
+    "TaperKV-asym": {
+      "needle": {
+        "accuracy": 0.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.0,
+          0.1759
+        ],
+        "mem_fraction": 0.354,
+        "by_length": {
+          "4096": 0.0,
+          "8192": 0.0
+        },
+        "n": 18
+      },
+      "ppl": {
+        "ppl": 81.0215,
+        "nll": 4.3947,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 2.823
+      }
+    },
+    "TaperKV-sym": {
+      "needle": {
+        "accuracy": 0.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.0,
+          0.1759
+        ],
+        "mem_fraction": 0.3409,
+        "by_length": {
+          "4096": 0.0,
+          "8192": 0.0
+        },
+        "n": 18
+      },
+      "ppl": {
+        "ppl": 107.5467,
+        "nll": 4.6779,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 2.9319
+      }
+    },
+    "TaperKV-revsym": {
+      "needle": {
+        "accuracy": 0.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.0,
+          0.1759
+        ],
+        "mem_fraction": 0.354,
+        "by_length": {
+          "4096": 0.0,
+          "8192": 0.0
+        },
+        "n": 18
+      },
+      "ppl": {
+        "ppl": 138.8879,
+        "nll": 4.9337,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 2.823
+      }
+    },
+    "TurboQuant-3bit": {
+      "needle": {
+        "accuracy": 0.0556,
+        "accuracy_stderr": 0.054,
+        "accuracy_ci95": [
+          0.0099,
+          0.2576
+        ],
+        "mem_fraction": 0.3395,
+        "by_length": {
+          "4096": 0.0,
+          "8192": 0.1111
+        },
+        "n": 18
+      },
+      "ppl": {
+        "ppl": 45.9593,
+        "nll": 3.8278,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 2.9442
+      }
+    },
+    "TurboQuant-4bit": {
+      "needle": {
+        "accuracy": 0.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.0,
+          0.1759
+        ],
+        "mem_fraction": 0.3908,
+        "by_length": {
+          "4096": 0.0,
+          "8192": 0.0
+        },
+        "n": 18
+      },
+      "ppl": {
+        "ppl": 43.347,
+        "nll": 3.7692,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 2.5579
+      }
+    },
+    "HALO-h-noLS-3": {
+      "needle": {
+        "accuracy": 0.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.0,
+          0.1759
+        ],
+        "mem_fraction": 0.3395,
+        "by_length": {
+          "4096": 0.0,
+          "8192": 0.0
+        },
+        "n": 18
+      },
+      "ppl": {
+        "ppl": 46.0875,
+        "nll": 3.8305,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 2.9442
+      }
+    },
+    "HALO-hg-noLS-3": {
+      "needle": {
+        "accuracy": 0.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.0,
+          0.1759
+        ],
+        "mem_fraction": 0.3395,
+        "by_length": {
+          "4096": 0.0,
+          "8192": 0.0
+        },
+        "n": 18
+      },
+      "ppl": {
+        "ppl": 46.4132,
+        "nll": 3.8376,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 2.9442
+      }
+    },
+    "HALO-hg-LS-3": {
+      "needle": {
+        "accuracy": 0.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.0,
+          0.1759
+        ],
+        "mem_fraction": 0.3395,
+        "by_length": {
+          "4096": 0.0,
+          "8192": 0.0
+        },
+        "n": 18
+      },
+      "ppl": {
+        "ppl": 45.8367,
+        "nll": 3.8251,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 2.9442
+      }
+    },
+    "HALO-dense-LS-3": {
+      "needle": {
+        "accuracy": 0.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.0,
+          0.1759
+        ],
+        "mem_fraction": 0.3395,
+        "by_length": {
+          "4096": 0.0,
+          "8192": 0.0
+        },
+        "n": 18
+      },
+      "ppl": {
+        "ppl": 46.2144,
+        "nll": 3.8333,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 2.9442
+      }
+    },
+    "HALO-h-noLS-4": {
+      "needle": {
+        "accuracy": 0.0556,
+        "accuracy_stderr": 0.054,
+        "accuracy_ci95": [
+          0.0099,
+          0.2576
+        ],
+        "mem_fraction": 0.3908,
+        "by_length": {
+          "4096": 0.1111,
+          "8192": 0.0
+        },
+        "n": 18
+      },
+      "ppl": {
+        "ppl": 43.1454,
+        "nll": 3.7646,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 2.5579
+      }
+    },
+    "HALO-hg-noLS-4": {
+      "needle": {
+        "accuracy": 0.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.0,
+          0.1759
+        ],
+        "mem_fraction": 0.3908,
+        "by_length": {
+          "4096": 0.0,
+          "8192": 0.0
+        },
+        "n": 18
+      },
+      "ppl": {
+        "ppl": 43.3664,
+        "nll": 3.7697,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 2.5579
+      }
+    },
+    "HALO-hg-LS-4": {
+      "needle": {
+        "accuracy": 0.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.0,
+          0.1759
+        ],
+        "mem_fraction": 0.3908,
+        "by_length": {
+          "4096": 0.0,
+          "8192": 0.0
+        },
+        "n": 18
+      },
+      "ppl": {
+        "ppl": 43.1297,
+        "nll": 3.7642,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 2.5579
+      }
+    },
+    "HALO-dense-LS-4": {
+      "needle": {
+        "accuracy": 0.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.0,
+          0.1759
+        ],
+        "mem_fraction": 0.3908,
+        "by_length": {
+          "4096": 0.0,
+          "8192": 0.0
+        },
+        "n": 18
+      },
+      "ppl": {
+        "ppl": 43.3476,
+        "nll": 3.7693,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 2.5579
+      }
+    }
+  }
+}

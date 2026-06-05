@@ -7,12 +7,6 @@
     "attn_implementation": "eager",
     "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_aime_comp_r1l8",
     "methods": [
-      "StreamingLLM",
-      "ThinKV",
-      "PM-KVQ",
-      "TaperKV",
-      "KIVI-INT2",
-      "HALO-3bit",
       "TurboTaper"
     ],
     "sink_tokens": 4,
@@ -323,6 +317,66 @@
         ],
         "avg_gen_len": 7001.2,
         "compression_ratio": 3.41,
+        "eviction_fired": true
+      }
+    },
+    "KIVI-INT2": {
+      "aime2024": {
+        "task": "aime2024",
+        "n": 30,
+        "k": 2,
+        "pass@1": 0.3667,
+        "pass@1_stderr": 0.0895,
+        "pass@1_ci95": [
+          0.1913,
+          0.5421
+        ],
+        "avg_gen_len": 6834.6,
+        "compression_ratio": 6.22,
+        "eviction_fired": true
+      },
+      "aime2025": {
+        "task": "aime2025",
+        "n": 30,
+        "k": 2,
+        "pass@1": 0.2667,
+        "pass@1_stderr": 0.0821,
+        "pass@1_ci95": [
+          0.1057,
+          0.4276
+        ],
+        "avg_gen_len": 6904.1,
+        "compression_ratio": 6.222,
+        "eviction_fired": true
+      }
+    },
+    "TurboTaper": {
+      "aime2024": {
+        "task": "aime2024",
+        "n": 30,
+        "k": 2,
+        "pass@1": 0.3667,
+        "pass@1_stderr": 0.0895,
+        "pass@1_ci95": [
+          0.1913,
+          0.5421
+        ],
+        "avg_gen_len": 7096.8,
+        "compression_ratio": 3.181,
+        "eviction_fired": true
+      },
+      "aime2025": {
+        "task": "aime2025",
+        "n": 30,
+        "k": 2,
+        "pass@1": 0.3333,
+        "pass@1_stderr": 0.0875,
+        "pass@1_ci95": [
+          0.1618,
+          0.5049
+        ],
+        "avg_gen_len": 6814.0,
+        "compression_ratio": 3.18,
         "eviction_fired": true
       }
     }
