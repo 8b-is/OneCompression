@@ -203,7 +203,7 @@ Before fix (OLD cascade-error code): R1-7B MATH=6%, QwQ-32B GSM=0%.
 
 ---
 
-## Run status (2026-06-05 15:51 JST — updated)
+## Run status (2026-06-05 16:56 JST — Round 3 投入済み)
 
 ### Bugs fixed (2026-06-04)
 
@@ -217,7 +217,7 @@ Before fix (OLD cascade-error code): R1-7B MATH=6%, QwQ-32B GSM=0%.
 
 | Component | JID(s) | Status |
 |---|---|---|
-| Paper 1 codec/retrieval/ablation/speed | various | ✅ |
+| Paper 1 codec/retrieval/ablation/speed (Llama+Ministral) | various | ✅ |
 | P2 taperkv Llama-8B-instruct (full 11 methods) | 46386+46539 | ✅ |
 | P2 TurboTaper basic (delta fix) — R1-Llama,R1-7B,R1-14B,QwQ | 46481-46484 | ✅ |
 | P2 TurboTaper AIME comp R1-7B,R1-14B,QwQ (delta fix) | 46485-46488 | ✅ |
@@ -236,9 +236,7 @@ Before fix (OLD cascade-error code): R1-7B MATH=6%, QwQ-32B GSM=0%.
 | P2 basic/R1-Q15 TurboTaper (gsm=0.28, math=0.26) | 46736 | ✅ |
 | P2 taperkv/R1-Q15 TurboQuant-3bit (gsm=0.19, math=0.20) | 46417+46735 | ✅ |
 
-**Overall: 128/145 methods (88%) — 10 new jobs running (46919-46928)**
-
-### Running (as of 15:51 JST Jun 5)
+### Round 2 running (46919-46928, submitted 2026-06-05 15:51 JST)
 
 | JID | Component | walltime |
 |---|---|---|
@@ -253,23 +251,70 @@ Before fix (OLD cascade-error code): R1-7B MATH=6%, QwQ-32B GSM=0%.
 | 46927 | basic/R1-1.5B KIVI+HALO | 8h |
 | 46928 | taperkv/R1-1.5B KIVI+HALO | 12h |
 
-### Data gaps — snapshot 15:51 JST Jun 5
+### Round 3 queued (46947-46990, submitted 2026-06-05 16:56 JST)
 
-| Dataset | has/need | Missing | Fill |
+44ジョブを `submit_all_experiments.sh` で一括投入。未実施の全実験 + ablation を完全網羅。
+
+| Section | JID range | 内容 | walltime |
 |---|---|---|---|
-| basic/qwq | 7/9 | StreamingLLM, Uniform-INT4 | 46926 running |
-| basic/r1l8 | **9/9** | — | ✅ COMPLETE |
-| basic/r1q14 | **9/9** | — | ✅ COMPLETE |
-| basic/r1q15 | 7/9 | KIVI, HALO | 46927 running |
-| basic/r1q7 | **9/9** | — | ✅ COMPLETE |
-| taperkv/Llama | **11/11** | — | ✅ COMPLETE |
-| taperkv/R1-1.5B | 9/11 | KIVI, HALO | 46928 running |
-| taperkv/R1-14B | **11/11** | — | ✅ COMPLETE |
-| taperkv/R1-7B | **11/11** | — | ✅ COMPLETE |
-| comp/qwq_24 | **8/8** | — | ✅ COMPLETE |
-| comp/qwq_25 | **8/8** | — | ✅ COMPLETE |
-| comp/r1l8 | 5/8 | KIVI, HALO, TurboTaper | 46921+46922 running |
-| comp/r1q14_24 | 6/8 | StreamingLLM, KIVI | 46923+46924 running |
-| comp/r1q14_25 | **8/8** | — | ✅ COMPLETE |
-| comp/r1q15 | 5/8 | KIVI, HALO, TurboTaper | 46925 running |
-| comp/r1q7 | 5/8 | TaperKV, KIVI, HALO | 46919+46920 running (TT restored) |
+| **A: taperkv bench 追加** | 46947-46953 | taperkv/QwQ-32B (5 jobs: 11メソッド分割) + taperkv/R1-L8 (2 jobs) | 20-23h |
+| **B: HALO-4bit basic** | 46954-46958 | 全5モデル (R1-L8/Q7/Q14/QwQ/Q15) に HALO-4bit + AIME | 4-23h |
+| **C: HALO-4bit comp** | 46959-46965 | 全7comp dir に HALO-4bit (AIME only) | 3-23h |
+| **D: LiveCodeBench** | 46966-46971 | 全5モデル × 全メソッド LCB (max_new_code=16384) | 4-23h |
+| **E: Ablation Ministral** | 46972 | HALO lever ablation on Ministral-8B | 12h |
+| **F: Ablation R1-Q7** | 46973 | HALO lever + TaperKV asymmetry on R1-Q7 | 14h |
+| **G: b_min sweep** | 46974-46975 | TaperKV b_min=2/3/4/5 sweep (Llama + R1-Q7) | 10-12h |
+| **H: Budget sweep** | 46976-46985 | target_mem=0.10/0.15/0.20/0.25/0.35 (Llama + R1-Q7) | 10-12h |
+| **I: TQ/HALO full sweep** | 46986-46987 | turboquant_paper config on R1-Q7 + R1-L8 | 18-23h |
+| **J: Ablation R1-L8** | 46988 | HALO lever + TaperKV asymmetry on R1-L8 | 12h |
+| **M: Asymmetry+reasoning** | 46989-46990 | K/V asymmetry ablation + GSM+MATH (R1-Q7 + R1-L8) | 12-16h |
+
+### New ablation configs (2026-06-05)
+
+| Config | Purpose |
+|---|---|
+| `conf/paper_ablation_bmin.yaml` | TaperKV b_min sensitivity: b_min=2/3/4/5 @3-bit, b_min=2/4/6 @4-bit |
+| `conf/paper_ablation_budget.yaml` | Memory budget trade-off: target_mem sweep, needle+PPL |
+| `conf/paper_taperkv_qwq.yaml` | TaperKV bench for QwQ-32B (gsm/math limit=50 for runtime) |
+
+### Data gaps — snapshot 16:56 JST Jun 5
+
+**Paper 1 (HALO):**
+| Dataset | Status | Notes |
+|---|---|---|
+| results_tq_llama_lb + retr | ✅ COMPLETE | 22 methods |
+| results_tq_minis_lb + retr | ✅ COMPLETE | 22 methods |
+| results_ablation_llama | ✅ COMPLETE | 14 methods (lever + asymmetry) |
+| results_ablation_minis | ⏳ 46972 | HALO lever ablation on Ministral |
+| results_codec_speed | ✅ COMPLETE | HALO Pareto (speed × quality) |
+| results_tq_r1q7 | ⏳ 46986 | Full bit-grid on reasoning model |
+| results_tq_r1l8 | ⏳ 46987 | Full bit-grid on reasoning model |
+
+**Paper 2 (TaperKV):**
+| Dataset | Status | Notes |
+|---|---|---|
+| taperkv/Llama | ✅ COMPLETE (11/11) | — |
+| taperkv/R1-Q7 | ✅ COMPLETE (11/11) | — |
+| taperkv/R1-Q14 | ✅ COMPLETE (11/11) | — |
+| taperkv/R1-Q15 | ⏳ 46928 | KIVI+HALO filling |
+| taperkv/QwQ-32B | ⏳ 46947-46951 | 5 jobs (all 11 methods) |
+| taperkv/R1-L8 | ⏳ 46952-46953 | 2 jobs (all 11 methods) |
+| basic/R1-L8 | ✅ (9/9) + HALO-4bit⏳ 46954 | — |
+| basic/R1-Q7 | ✅ (9/9) + HALO-4bit⏳ 46955 | — |
+| basic/R1-Q14 | ✅ (9/9) + HALO-4bit⏳ 46956 | — |
+| basic/QwQ | ⏳ 46926+46957 | Stream+Uni4+HALO-4bit |
+| basic/R1-Q15 | ⏳ 46927+46958 | KIVI+HALO+HALO-4bit |
+| comp/r1q7 | ⏳ 46919+46920+46959 | TaperKV+KIVI+HALO-3/4bit |
+| comp/r1l8 | ⏳ 46921+46922+46960 | KIVI+HALO+TT+HALO-4bit |
+| comp/r1q14_24 | ⏳ 46923+46924+46961 | Stream+KIVI+HALO-4bit |
+| comp/r1q14_25 | ✅ COMPLETE + HALO-4bit⏳ 46962 | — |
+| comp/r1q15 | ⏳ 46925+46963 | KIVI+HALO+TT+HALO-4bit |
+| comp/qwq_24 | ✅ COMPLETE + HALO-4bit⏳ 46964 | — |
+| comp/qwq_25 | ✅ COMPLETE + HALO-4bit⏳ 46965 | — |
+| LCB (all models) | ⏳ 46966-46971 | 全推論モデル × 全メソッド |
+| Ablation Ministral | ⏳ 46972 | HALO paper |
+| Ablation R1-Q7 | ⏳ 46973 | TaperKV K/V asymmetry |
+| Ablation R1-L8 | ⏳ 46988 | TaperKV K/V asymmetry |
+| b_min sweep (Llama+R1-Q7) | ⏳ 46974-46975 | TaperKV ablation |
+| Budget sweep ×10 | ⏳ 46976-46985 | trade-off curve |
+| Reasoning asymmetry (R1-Q7+R1-L8) | ⏳ 46989-46990 | GSM+MATH ablation |

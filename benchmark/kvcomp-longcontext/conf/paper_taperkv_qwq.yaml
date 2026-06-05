@@ -1,0 +1,26 @@
+# paper_taperkv_qwq.yaml
+# ============================================================
+# TaperKV policy benchmark — QwQ-32B (slow model).
+#
+# Same as paper_taperkv.yaml but with adjusted limits to fit
+# within 24h walltime per job on a 32B model:
+#   - LongBench limit=10 (same, but might be slow)
+#   - GSM/MATH limit=50 (half of full 100, enough for significance)
+#   - Needle context_lens reduced to [4096, 8192] (skip 16384 to save time)
+# ============================================================
+
+defaults:
+  - paper_taperkv
+  - _self_
+
+model_path: ???
+output_dir: ${hydra:runtime.cwd}/results_taperkv
+
+# Lighter needle to save time on 32B
+context_lens: [4096, 8192, 16384]
+depths: [0.1, 0.25, 0.5, 0.75, 0.9]
+seeds: 3
+
+# Reduce GSM/MATH samples for 32B speed
+gsm8k_limit: 50
+math_limit: 50

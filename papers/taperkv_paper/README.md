@@ -1,6 +1,6 @@
 # TaperKV Paper: Recency-Graded Precision Scheduling for KV Cache Compression
 
-> **最終更新: 2026-06-05 15:51 JST** (Round-2 results: 128/145 methods, 8 datasets complete)
+> **最終更新: 2026-06-05 16:56 JST** (Round-3 投入済み: 44ジョブ追加, taperkv/QwQ-32B, HALO-4bit, LCB, ablation 全網羅)
 
 ## 概要
 
@@ -193,7 +193,7 @@ QwQ-32B / R1-14B が主要比較対象。LCB ジョブ実行中 / 未完了。
 | basic (GSM+MATH) | R1-1.5B | 7/9 (TurboTaper=0.28/0.26 取得済) — KIVI+HALO 計算中 |
 | taperkv | R1-1.5B | 9/11 (TurboQuant-3bit=0.19/0.20 取得済) — KIVI+HALO 計算中 |
 
-### 実行中ジョブ (46919-46928)
+### 実行中ジョブ (Round 2: 46919-46928)
 
 | JID | 内容 | walltime |
 |-----|------|---------|
@@ -207,6 +207,26 @@ QwQ-32B / R1-14B が主要比較対象。LCB ジョブ実行中 / 未完了。
 | 46926 | basic/QwQ StreamingLLM+Uni4 (GSM/MATH) | 12h |
 | 46927 | basic/R1-1.5B KIVI+HALO (GSM/MATH) | 8h |
 | 46928 | taperkv/R1-1.5B KIVI+HALO (LB+GSM+MATH) | 12h |
+
+### キュー済みジョブ (Round 3: 46947-46990, 2026-06-05 16:56 JST)
+
+44ジョブを `submit_all_experiments.sh` で一括投入。未実施の全実験 + ablation を完全網羅。
+
+**追加された新実験群:**
+
+| セクション | JID | 内容 |
+|-----------|-----|------|
+| A: taperkv bench 追加 | 46947-46953 | taperkv/QwQ-32B (5jobs) + taperkv/R1-L8 (2jobs): 全11メソッド |
+| B: HALO-4bit basic | 46954-46958 | 全5モデルに HALO-4bit + AIME |
+| C: HALO-4bit comp | 46959-46965 | 全7comp dir に HALO-4bit |
+| D: LiveCodeBench | 46966-46971 | 全モデル × 全メソッド (max_new_code=16384) |
+| E: Ablation Ministral | 46972 | HALO lever ablation |
+| F: Ablation R1-Q7 | 46973 | HALO lever + TaperKV asymmetry |
+| G: b_min sweep | 46974-46975 | TaperKV b_min=2/3/4/5 (Llama+R1-Q7) |
+| H: Budget sweep | 46976-46985 | target_mem=0.10/0.15/0.20/0.25/0.35 ×2モデル |
+| I: TQ/HALO sweep | 46986-46987 | turboquant_paper full grid on R1-Q7+R1-L8 |
+| J: Ablation R1-L8 | 46988 | HALO lever + TaperKV asymmetry |
+| M: Asymmetry+reason | 46989-46990 | K/V asymmetry × GSM+MATH (R1-Q7+R1-L8) |
 
 ---
 

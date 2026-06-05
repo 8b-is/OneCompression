@@ -1,0 +1,48 @@
+# paper_ablation_budget.yaml
+# ============================================================
+# Ablation: memory-budget trade-off curve for TaperKV.
+#
+# Sweeps target_mem (= fraction of FP16 KV footprint) from
+# extremely aggressive (0.10) to near-full (0.35).
+#   - target_mem controls the eviction window for StreamingLLM/ThinKV
+#   - For TaperKV, bit allocation is fixed; only the recent/sink window scales
+#     with the budget (via target_mem → eviction_frac mapping)
+#
+# This config shows the trade-off curve:
+#   budget × {TaperKV, TaperKV-3bit, StreamingLLM, ThinKV, FullKV}
+#
+# Each budget variant has a unique label, so they all land in the same JSON.
+# Run (one sweep per job, override output_dir and target_mem):
+#   python kv_benchmark.py --config-name paper_ablation_budget \
+#       model_path=... target_mem=0.15 output_dir=results_ablation_budget_015
+# ============================================================
+
+defaults:
+  - paper_taperkv
+  - _self_
+
+output_dir: ${hydra:runtime.cwd}/results_ablation_budget
+
+methods:
+  - FullKV
+  - StreamingLLM
+  - ThinKV
+  - TaperKV
+  - TaperKV-3bit
+  - KIVI-INT2
+  - HALO-3bit
+
+# Focused benchmark: needle + PPL (fast feedback on retrieval quality)
+run_gsm8k: false
+run_math: false
+run_ruler: false
+run_longbench: false
+run_needle: true
+context_lens: [4096, 8192, 16384]
+depths: [0.1, 0.5, 0.9]
+seeds: 3
+max_new_needle: 256
+run_ppl: true
+ppl_max_length: 4096
+ppl_stride: 2048
+ppl_windows: 16
