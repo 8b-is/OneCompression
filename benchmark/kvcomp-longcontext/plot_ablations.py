@@ -1,11 +1,16 @@
 """
-Ablation study figures for TaperKV / HALO papers.
+plot_ablations.py  –  paper-quality ablation figures for TaperKV / HALO
 
-Generates:
-  papers/taperkv_paper/figures/fig_bmin_sweep.png
-  papers/taperkv_paper/figures/fig_budget_sweep.png
-  papers/taperkv_paper/figures/fig_kv_asymmetry.png
-  papers/halo_paper/figures/fig_halo_lever.png
+Outputs
+-------
+  papers/taperkv_paper/figures/
+    fig_bmin_sweep.png
+    fig_budget_sweep.png
+    fig_kv_asymmetry.png
+    fig_kv_asymmetry_reason.png
+  papers/halo_paper/figures/
+    fig_halo_lever.png
+    fig_halo_lever_reasoning.png
 
 Run from benchmark/kvcomp-longcontext/:
   python plot_ablations.py
@@ -18,353 +23,463 @@ import glob
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 import numpy as np
 
-HERE   = os.path.dirname(os.path.abspath(__file__))
-PAPERS = os.path.join(HERE, "..", "..", "papers")
+# ── Paper style (as specified) ────────────────────────────────────────────────
+plt.rcParams.update({
+    'font.family':           'sans-serif',
+    'xtick.direction':       'in',
+    'ytick.direction':       'in',
+    'xtick.major.width':     1.0,
+    'ytick.major.width':     1.0,
+    'axes.linewidth':        1.0,
+    'axes.xmargin':          0.01,
+    'axes.ymargin':          0.01,
+    'legend.fancybox':       False,
+    'legend.framealpha':     1,
+    'legend.edgecolor':      'black',
+    'mathtext.fontset':      'stix',
+})
+
+LINE_STYLES = ['-', '--', '-.', ':']
+MARKERS     = ['o', 's', '^', 'D', 'v', '<', '>', '1', '2', '3']
+COLORS      = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red',
+               'tab:purple', 'tab:brown', 'tab:pink', 'tab:gray']
+
+LABEL_FS  = 14   # axis label
+TICK_FS   = 12   # tick / annotation
+LEGEND_FS = 11
+
+HERE        = os.path.dirname(os.path.abspath(__file__))
+PAPERS      = os.path.join(HERE, "..", "..", "papers")
 TAPERKV_FIG = os.path.join(PAPERS, "taperkv_paper", "figures")
 HALO_FIG    = os.path.join(PAPERS, "halo_paper",    "figures")
 os.makedirs(TAPERKV_FIG, exist_ok=True)
 os.makedirs(HALO_FIG,    exist_ok=True)
 
-# ── palette ─────────────────────────────────────────────────────────────────
-PAL = {
-    "FullKV":        "#444444",
-    "StreamingLLM":  "#e07040",
-    "ThinKV":        "#7aaa4a",
-    "TaperKV":       "#2176ae",
-    "TaperKV-3bit":  "#5bc0eb",
-    "KIVI-INT2":     "#9a5fbf",
-    "HALO-3bit":     "#f7b731",
-    "TurboQuant-3bit":"#aaaaaa",
-    "TurboQuant-4bit":"#cccccc",
-}
-MARKER = {
-    "FullKV": "D", "StreamingLLM": "x", "ThinKV": "s",
-    "TaperKV": "o", "TaperKV-3bit": "^", "KIVI-INT2": "P",
-    "HALO-3bit": "*", "TurboQuant-3bit": "v", "TurboQuant-4bit": "v",
-}
 
-
+# ── helpers ───────────────────────────────────────────────────────────────────
 def load(path: str) -> dict:
     with open(path) as f:
         return json.load(f)["results"]
 
 
-# ── helpers ──────────────────────────────────────────────────────────────────
-def _set_style(ax, xlabel, ylabel, title="", ylim=None, legend=True):
-    ax.set_xlabel(xlabel, fontsize=10)
-    ax.set_ylabel(ylabel, fontsize=10)
-    if title:
-        ax.set_title(title, fontsize=11, fontweight="bold")
-    if ylim:
+def save_fig(fig: plt.Figure, path: str) -> None:
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"saved → {path}")
+
+
+def _style_ax(ax: plt.Axes, xlabel: str, ylabel: str, ylim=None) -> None:
+    ax.set_xlabel(xlabel, fontsize=LABEL_FS)
+    ax.set_ylabel(ylabel, fontsize=LABEL_FS)
+    ax.tick_params(labelsize=TICK_FS)
+    if ylim is not None:
         ax.set_ylim(*ylim)
-    ax.grid(True, alpha=0.3, linestyle="--")
-    if legend:
-        ax.legend(fontsize=8, framealpha=0.9)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
+    ax.grid(axis='y', linestyle='--', linewidth=0.6, alpha=0.5, zorder=0)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
 
 
-# ╔══════════════════════════════════════════════════════════════════════════╗
-# ║  Figure 1 – b_min sweep (TaperKV key-floor sensitivity)                 ║
-# ╚══════════════════════════════════════════════════════════════════════════╝
-def fig_bmin_sweep():
-    """Left: Llama-3.1-8B  |  Right: R1-Distill-Qwen-7B"""
+def _model_tag(ax: plt.Axes, text: str) -> None:
+    """Place model name in top-left corner of the axes."""
+    ax.text(0.03, 0.97, text, transform=ax.transAxes,
+            fontsize=TICK_FS, va='top', ha='left',
+            fontstyle='italic')
+
+
+# ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║  Figure 1 – b_min sweep (TaperKV key-floor sensitivity)                     ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
+def fig_bmin_sweep() -> None:
     datasets = [
-        (load(os.path.join(HERE, "results_ablation_bmin_llama", "results_llama-3.1-8b-instruct.json")),
-         "Llama-3.1-8B-Instruct"),
-        (load(os.path.join(HERE, "results_ablation_bmin_r1q7", "results_DeepSeek-R1-Distill-Qwen-7B.json")),
+        (load(os.path.join(HERE, "results_ablation_bmin_llama",
+                           "results_llama-3.1-8b-instruct.json")),
+         "Llama-3.1-8B"),
+        (load(os.path.join(HERE, "results_ablation_bmin_r1q7",
+                           "results_DeepSeek-R1-Distill-Qwen-7B.json")),
          "R1-Distill-Qwen-7B"),
     ]
 
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4.2), sharey=False)
-    fig.suptitle("TaperKV $b_{\\mathrm{min}}$ Key-Floor Sensitivity", fontsize=13, fontweight="bold")
+    fig, axes = plt.subplots(1, 2, figsize=(9, 3.8), constrained_layout=True)
 
-    bmin_labels_3 = [2, 3, 4, 5]
-    bmin_labels_4 = [2, 4, 6]
+    bmin3 = [2, 3, 4, 5]
+    bmin4 = [2, 4, 6]
 
     for ax, (results, model_name) in zip(axes, datasets):
         fkv  = results["FullKV"]["needle"]["accuracy"]
-        ref3 = results.get("TurboQuant-3bit", results.get("HALO-3bit", {})).get("needle", {}).get("accuracy", None)
+        halo = results.get("HALO-3bit", {}).get("needle", {}).get("accuracy")
 
-        # 3-bit sweep
-        vals3 = [results.get(f"TaperKV-3bit-bmin{b}", {}).get("needle", {}).get("accuracy", np.nan)
-                 for b in bmin_labels_3]
-        ax.plot(bmin_labels_3, vals3, "o-", color="#2176ae", linewidth=2,
-                markersize=7, label="TaperKV 3-bit ($b_{\\min}$ sweep)", zorder=3)
+        # reference horizontal lines (plotted behind data)
+        ax.axhline(fkv, color='black', linestyle=':', linewidth=1.4, zorder=1,
+                   label=f"FullKV  ({fkv:.3f})")
+        if halo is not None:
+            ax.axhline(halo, color=COLORS[3], linestyle='--', linewidth=1.2, zorder=1,
+                       label=f"HALO-3bit  ({halo:.3f})")
 
-        # 4-bit sweep
-        vals4 = [results.get(f"TaperKV-4bit-bmin{b}", {}).get("needle", {}).get("accuracy", np.nan)
-                 for b in bmin_labels_4]
-        ax.plot(bmin_labels_4, vals4, "s--", color="#5bc0eb", linewidth=2,
-                markersize=7, label="TaperKV 4-bit ($b_{\\min}$ sweep)", zorder=3)
+        # b_min sweep lines
+        vals3 = [results.get(f"TaperKV-3bit-bmin{b}", {}).get("needle", {})
+                             .get("accuracy", np.nan) for b in bmin3]
+        vals4 = [results.get(f"TaperKV-4bit-bmin{b}", {}).get("needle", {})
+                             .get("accuracy", np.nan) for b in bmin4]
 
-        # reference lines
-        ax.axhline(fkv, linestyle=":", color="#444444", linewidth=1.4, label=f"FullKV ({fkv:.2f})")
-        if ref3 is not None:
-            ax.axhline(ref3, linestyle="-.", color="#f7b731", linewidth=1.4, label=f"HALO-3bit ({ref3:.2f})")
+        ax.plot(bmin3, vals3,
+                color=COLORS[0], linestyle=LINE_STYLES[0], marker=MARKERS[0],
+                linewidth=1.8, markersize=7, zorder=3,
+                label=r"TaperKV-3bit ($b_{\min}$ sweep)")
+        ax.plot(bmin4, vals4,
+                color=COLORS[1], linestyle=LINE_STYLES[1], marker=MARKERS[1],
+                linewidth=1.8, markersize=7, zorder=3,
+                label=r"TaperKV-4bit ($b_{\min}$ sweep)")
 
-        ax.axvline(3, linestyle="--", color="#e07040", alpha=0.5, linewidth=1.2)
-        ax.text(3.05, ax.get_ylim()[0] + 0.02, "$b_{\\min}=3$", fontsize=7.5, color="#e07040")
+        # collapse boundary marker
+        ax.axvline(2.5, color='gray', linestyle=':', linewidth=0.8, zorder=0)
 
+        _style_ax(ax,
+                  xlabel=r"Key bit-width floor $b_{\min}$",
+                  ylabel="Needle Accuracy",
+                  ylim=(-0.05, 1.18))
         ax.set_xticks([2, 3, 4, 5, 6])
-        ax.set_xlabel("$b_{\\min}$ (key bit-width floor)", fontsize=10)
-        ax.set_ylabel("Needle Accuracy", fontsize=10)
-        ax.set_title(model_name, fontsize=10)
-        ax.set_ylim(-0.05, 1.08)
-        ax.grid(True, alpha=0.3, linestyle="--")
-        ax.legend(fontsize=8, framealpha=0.9, loc="lower right")
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
+        ax.set_xlim(1.6, 6.5)
+        _model_tag(ax, model_name)
+        ax.legend(fontsize=LEGEND_FS, loc='lower right',
+                  borderpad=0.5, labelspacing=0.3)
 
-    plt.tight_layout()
-    out = os.path.join(TAPERKV_FIG, "fig_bmin_sweep.png")
-    fig.savefig(out, dpi=150, bbox_inches="tight")
-    plt.close()
-    print(f"saved → {out}")
+    save_fig(fig, os.path.join(TAPERKV_FIG, "fig_bmin_sweep.png"))
 
 
-# ╔══════════════════════════════════════════════════════════════════════════╗
-# ║  Figure 2 – Memory-budget trade-off curve                               ║
-# ╚══════════════════════════════════════════════════════════════════════════╝
-def fig_budget_sweep():
-    """Needle accuracy vs target_mem budget, Llama-8B and R1-Q7 side-by-side."""
+# ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║  Figure 2 – Memory-budget trade-off                                         ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
+def fig_budget_sweep() -> None:
     budgets = [10, 15, 20, 25, 35]
 
-    def load_budget(prefix, pcts):
-        out = {}
-        for p in pcts:
-            pattern = os.path.join(HERE, f"results_ablation_budget_{prefix}_{p}", "results_*.json")
-            files = glob.glob(pattern)
-            if not files:
-                continue
-            r = load(files[0])
-            for method, vals in r.items():
-                out.setdefault(method, {})[p] = vals.get("needle", {}).get("accuracy", np.nan)
-        return out
-
-    llama_data = load_budget("llama", budgets)
-    r1q7_data  = load_budget("r1q7",  budgets)
-
-    methods_show = ["TaperKV", "TaperKV-3bit", "StreamingLLM", "ThinKV", "KIVI-INT2", "HALO-3bit"]
-    line_styles  = ["-", "--", "-.", ":", "-", "--"]
-    colors = ["#2176ae", "#5bc0eb", "#e07040", "#7aaa4a", "#9a5fbf", "#f7b731"]
-
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4.2), sharey=False)
-    fig.suptitle("Memory-Budget Trade-off (Needle Accuracy)", fontsize=13, fontweight="bold")
-
-    for ax, (data, model_name) in zip(axes, [(llama_data, "Llama-3.1-8B-Instruct"),
-                                              (r1q7_data,  "R1-Distill-Qwen-7B")]):
-        fkv = list(data.get("FullKV", {}).values())
-        if fkv:
-            ax.axhline(fkv[0], linestyle=":", color="#444444", linewidth=1.4,
-                       label=f"FullKV ({fkv[0]:.2f})")
-
-        for method, ls, color in zip(methods_show, line_styles, colors):
-            if method not in data:
-                continue
-            xs = sorted(data[method].keys())
-            ys = [data[method][x] for x in xs]
-            label = method.replace("TaperKV-3bit", "TaperKV-3bit").replace("KIVI-INT2", "KIVI-INT2")
-            ax.plot(xs, ys, marker=MARKER.get(method, "o"), linestyle=ls,
-                    color=color, linewidth=2, markersize=6, label=label, zorder=3)
-
-        ax.set_xlabel("Target Memory Budget (%)", fontsize=10)
-        ax.set_ylabel("Needle Accuracy", fontsize=10)
-        ax.set_title(model_name, fontsize=10)
-        ax.set_xticks(budgets)
-        ax.set_xticklabels([f"{b}%" for b in budgets])
-        ax.set_ylim(-0.05, 1.08)
-        ax.grid(True, alpha=0.3, linestyle="--")
-        ax.legend(fontsize=8, framealpha=0.9)
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
-
-    plt.tight_layout()
-    out = os.path.join(TAPERKV_FIG, "fig_budget_sweep.png")
-    fig.savefig(out, dpi=150, bbox_inches="tight")
-    plt.close()
-    print(f"saved → {out}")
-
-
-# ╔══════════════════════════════════════════════════════════════════════════╗
-# ║  Figure 3 – TaperKV K/V asymmetry ablation (Ministral + R1-Q7)         ║
-# ╚══════════════════════════════════════════════════════════════════════════╝
-def fig_kv_asymmetry():
-    """Bar chart: Needle + PPL for asym / sym / revsym + baselines."""
-    datasets = [
-        (load(os.path.join(HERE, "results_ablation_minis", "results_Ministral-8B-Instruct-2410.json")),
-         "Ministral-8B"),
-        (load(os.path.join(HERE, "results_ablation_r1q7", "results_DeepSeek-R1-Distill-Qwen-7B.json")),
-         "R1-Distill-Qwen-7B"),
+    method_order = [
+        ("StreamingLLM",  "StreamingLLM"),
+        ("ThinKV",        "ThinKV"),
+        ("KIVI-INT2",     "KIVI-INT2"),
+        ("HALO-3bit",     "HALO-3bit"),
+        ("TaperKV-3bit",  "TaperKV-3bit"),
+        ("TaperKV",       "TaperKV"),
     ]
 
-    kv_methods = ["TaperKV-asym", "TaperKV-sym", "TaperKV-revsym"]
-    kv_labels  = ["K>V (asym)", "K=V (sym)", "V>K (rev-sym)"]
-    kv_colors  = ["#2176ae", "#7aaa4a", "#e07040"]
+    def load_budget_series(prefix: str):
+        out: dict[str, dict[int, float]] = {}
+        for p in budgets:
+            pat = os.path.join(HERE, f"results_ablation_budget_{prefix}_{p}",
+                               "results_*.json")
+            files = glob.glob(pat)
+            if not files:
+                continue
+            for m, v in load(files[0]).items():
+                out.setdefault(m, {})[p] = v.get("needle", {}).get("accuracy", np.nan)
+        return out
 
-    fig, axes = plt.subplots(2, 2, figsize=(10, 7))
-    fig.suptitle("TaperKV K/V Bit-Asymmetry Ablation", fontsize=13, fontweight="bold")
+    llama_data = load_budget_series("llama")
+    r1q7_data  = load_budget_series("r1q7")
 
-    for col, (results, model_name) in enumerate(datasets):
-        ax_needle = axes[0, col]
-        ax_ppl    = axes[1, col]
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4.2))
+    fig.subplots_adjust(bottom=0.28, wspace=0.32)
 
-        fkv_needle = results["FullKV"]["needle"]["accuracy"]
-        fkv_ppl    = results["FullKV"]["ppl"]["ppl"]
+    handles_all, labels_all = [], []
 
-        needles = [results.get(m, {}).get("needle", {}).get("accuracy", 0) for m in kv_methods]
-        ppls    = [results.get(m, {}).get("ppl",    {}).get("ppl",    0)  for m in kv_methods]
+    for ax, (data, model_name) in zip(axes, [
+            (llama_data, "Llama-3.1-8B"),
+            (r1q7_data,  "R1-Distill-Qwen-7B")]):
 
-        x = np.arange(len(kv_methods))
-        bars = ax_needle.bar(x, needles, color=kv_colors, alpha=0.85, edgecolor="white", linewidth=0.8)
-        ax_needle.axhline(fkv_needle, linestyle="--", color="#444444", linewidth=1.4, label=f"FullKV ({fkv_needle:.2f})")
-        ax_needle.set_xticks(x)
-        ax_needle.set_xticklabels(kv_labels, fontsize=9)
-        ax_needle.set_ylabel("Needle Accuracy", fontsize=10)
-        ax_needle.set_title(model_name, fontsize=10)
-        ax_needle.set_ylim(0, 1.15)
-        ax_needle.legend(fontsize=8)
-        ax_needle.grid(axis="y", alpha=0.3, linestyle="--")
-        ax_needle.spines["top"].set_visible(False)
-        ax_needle.spines["right"].set_visible(False)
-        for bar, val in zip(bars, needles):
-            ax_needle.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.02,
-                           f"{val:.2f}", ha="center", va="bottom", fontsize=8)
+        # FullKV reference
+        fkv_vals = [data.get("FullKV", {}).get(p, np.nan) for p in budgets]
+        h, = ax.plot(budgets, fkv_vals, color='black', linestyle=':',
+                     linewidth=1.4, label="FullKV", zorder=1)
+        if ax is axes[0]:
+            handles_all.append(h); labels_all.append("FullKV")
 
-        bars2 = ax_ppl.bar(x, ppls, color=kv_colors, alpha=0.85, edgecolor="white", linewidth=0.8)
-        ax_ppl.axhline(fkv_ppl, linestyle="--", color="#444444", linewidth=1.4, label=f"FullKV ({fkv_ppl:.2f})")
-        ax_ppl.set_xticks(x)
-        ax_ppl.set_xticklabels(kv_labels, fontsize=9)
-        ax_ppl.set_ylabel("Perplexity ↓", fontsize=10)
-        ax_ppl.legend(fontsize=8)
-        ax_ppl.grid(axis="y", alpha=0.3, linestyle="--")
-        ax_ppl.spines["top"].set_visible(False)
-        ax_ppl.spines["right"].set_visible(False)
-        for bar, val in zip(bars2, ppls):
-            ax_ppl.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.5,
-                        f"{val:.1f}", ha="center", va="bottom", fontsize=8)
+        for idx, (key, label) in enumerate(method_order):
+            if key not in data:
+                continue
+            ys = [data[key].get(p, np.nan) for p in budgets]
+            h, = ax.plot(budgets, ys,
+                         color=COLORS[idx % len(COLORS)],
+                         linestyle=LINE_STYLES[idx % len(LINE_STYLES)],
+                         marker=MARKERS[idx % len(MARKERS)],
+                         linewidth=1.8, markersize=6, zorder=3, label=label)
+            if ax is axes[0]:
+                handles_all.append(h); labels_all.append(label)
 
-    plt.tight_layout()
-    out = os.path.join(TAPERKV_FIG, "fig_kv_asymmetry.png")
-    fig.savefig(out, dpi=150, bbox_inches="tight")
-    plt.close()
-    print(f"saved → {out}")
+        _style_ax(ax,
+                  xlabel="Target Memory Budget (%)",
+                  ylabel="Needle Accuracy",
+                  ylim=(-0.05, 1.15))
+        ax.set_xticks(budgets)
+        ax.set_xticklabels([f"{b}%" for b in budgets], fontsize=TICK_FS)
+        ax.set_xlim(8, 37)
+        _model_tag(ax, model_name)
+
+    # shared legend below both subplots — avoids overlapping with flat lines at 1.0
+    fig.legend(handles_all, labels_all,
+               loc='lower center', ncol=4,
+               fontsize=LEGEND_FS, framealpha=1,
+               edgecolor='black', fancybox=False,
+               bbox_to_anchor=(0.5, 0.01),
+               borderpad=0.5, labelspacing=0.3, columnspacing=1.0)
+
+    save_fig(fig, os.path.join(TAPERKV_FIG, "fig_budget_sweep.png"))
 
 
-# ╔══════════════════════════════════════════════════════════════════════════╗
-# ║  Figure 4 – HALO lever ablation (PPL iso-quality)                       ║
-# ╚══════════════════════════════════════════════════════════════════════════╝
-def fig_halo_lever():
-    """Grouped bar: HALO lever variants vs TurboQuant at 3-bit and 4-bit."""
+# ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║  Figure 3 – TaperKV K/V bit-asymmetry (Needle + PPL, Ministral + Llama)    ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
+def fig_kv_asymmetry() -> None:
     datasets = [
-        (load(os.path.join(HERE, "results_ablation_minis", "results_Ministral-8B-Instruct-2410.json")),
+        (load(os.path.join(HERE, "results_ablation_minis",
+                           "results_Ministral-8B-Instruct-2410.json")),
          "Ministral-8B"),
-        (load(os.path.join(HERE, "results_ablation_llama", "results_llama-3.1-8b-instruct.json")),
+        (load(os.path.join(HERE, "results_ablation_llama",
+                           "results_llama-3.1-8b-instruct.json")),
          "Llama-3.1-8B"),
     ]
 
-    lever_methods = {
-        3: ["TurboQuant-3bit", "HALO-h-noLS-3", "HALO-hg-noLS-3", "HALO-hg-LS-3", "HALO-dense-LS-3"],
-        4: ["TurboQuant-4bit", "HALO-h-noLS-4", "HALO-hg-noLS-4", "HALO-hg-LS-4", "HALO-dense-LS-4"],
-    }
-    lever_labels = {
-        3: ["TurboQuant", "HALO\nh-noLS", "HALO\nhg-noLS", "HALO\nhg-LS\n(full)", "HALO\ndense-LS"],
-        4: ["TurboQuant", "HALO\nh-noLS", "HALO\nhg-noLS", "HALO\nhg-LS\n(full)", "HALO\ndense-LS"],
-    }
-    lever_colors = ["#aaaaaa", "#96c1f7", "#5bc0eb", "#2176ae", "#8e44ad"]
+    kv_methods = [
+        ("TaperKV-asym",   r"$K$$>$$V$",  COLORS[0]),
+        ("TaperKV-sym",    r"$K$$=$$V$",  COLORS[1]),
+        ("TaperKV-revsym", r"$V$$>$$K$",  COLORS[2]),
+    ]
+    x = np.arange(len(kv_methods))
+    bar_w = 0.55
 
-    fig, axes = plt.subplots(2, 2, figsize=(11, 7))
-    fig.suptitle("HALO Lever Ablation — PPL (iso-quality verification)", fontsize=13, fontweight="bold")
+    fig, axes = plt.subplots(2, 2, figsize=(9, 6.5), constrained_layout=True)
+
+    for col, (results, model_name) in enumerate(datasets):
+        fkv_needle = results["FullKV"]["needle"]["accuracy"]
+        fkv_ppl    = results["FullKV"]["ppl"]["ppl"]
+
+        needles = [results.get(m, {}).get("needle", {}).get("accuracy", 0)
+                   for m, _, _ in kv_methods]
+        ppls    = [results.get(m, {}).get("ppl", {}).get("ppl", 0)
+                   for m, _, _ in kv_methods]
+
+        # ── top: Needle ────────────────────────────────────────────────────
+        ax_n = axes[0, col]
+        for i, ((_, xlbl, c), val) in enumerate(zip(kv_methods, needles)):
+            ax_n.bar(x[i], val, width=bar_w, color=c, alpha=0.85,
+                     edgecolor='black', linewidth=0.7, zorder=3)
+        ax_n.axhline(fkv_needle, color='black', linestyle='--',
+                     linewidth=1.4, zorder=4, label=f"FullKV ({fkv_needle:.2f})")
+
+        # value labels — only if bar height ≥ 0.06
+        for i, val in enumerate(needles):
+            if val >= 0.06:
+                ax_n.text(x[i], val + 0.025, f"{val:.2f}",
+                          ha='center', va='bottom', fontsize=10, fontweight='bold')
+
+        _style_ax(ax_n, xlabel="", ylabel="Needle Accuracy", ylim=(0, 1.22))
+        ax_n.set_xticks(x)
+        ax_n.set_xticklabels([xlbl for _, xlbl, _ in kv_methods], fontsize=TICK_FS)
+        ax_n.legend(fontsize=LEGEND_FS, loc='upper right',
+                    borderpad=0.4, labelspacing=0.2)
+        _model_tag(ax_n, model_name)
+
+        # ── bottom: PPL ────────────────────────────────────────────────────
+        ax_p = axes[1, col]
+        for i, ((_, xlbl, c), val) in enumerate(zip(kv_methods, ppls)):
+            ax_p.bar(x[i], val, width=bar_w, color=c, alpha=0.85,
+                     edgecolor='black', linewidth=0.7, zorder=3)
+        ax_p.axhline(fkv_ppl, color='black', linestyle='--',
+                     linewidth=1.4, zorder=4, label=f"FullKV ({fkv_ppl:.2f})")
+
+        ppl_max = max(ppls) * 1.15 if ppls else fkv_ppl * 1.5
+        for i, val in enumerate(ppls):
+            if val > 0:
+                ax_p.text(x[i], val + ppl_max * 0.012, f"{val:.1f}",
+                          ha='center', va='bottom', fontsize=10, fontweight='bold')
+
+        _style_ax(ax_p, xlabel="", ylabel="Perplexity ↓",
+                  ylim=(0, ppl_max))
+        ax_p.set_xticks(x)
+        ax_p.set_xticklabels([xlbl for _, xlbl, _ in kv_methods], fontsize=TICK_FS)
+        ax_p.legend(fontsize=LEGEND_FS, loc='upper left',
+                    borderpad=0.4, labelspacing=0.2)
+
+    save_fig(fig, os.path.join(TAPERKV_FIG, "fig_kv_asymmetry.png"))
+
+
+# ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║  Figure 4 – K/V asymmetry on reasoning tasks (GSM8K + MATH500)             ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
+def fig_kv_asymmetry_reason() -> None:
+    datasets = [
+        (os.path.join(HERE, "results_ablation_reason_r1q7",
+                      "results_DeepSeek-R1-Distill-Qwen-7B.json"),
+         "R1-Distill-Qwen-7B"),
+        (os.path.join(HERE, "results_ablation_reason_r1l8",
+                      "results_DeepSeek-R1-Distill-Llama-8B.json"),
+         "R1-Distill-Llama-8B"),
+    ]
+
+    methods = [
+        ("TaperKV-asym",   r"$K$$>$$V$",  COLORS[0]),
+        ("TaperKV-sym",    r"$K$$=$$V$",  COLORS[1]),
+        ("TaperKV-revsym", r"$V$$>$$K$",  COLORS[2]),
+        ("TurboQuant-3bit", "TurboQ-3bit", COLORS[3]),
+    ]
+    x    = np.arange(len(methods))
+    bar_w = 0.55
+
+    fig, axes = plt.subplots(2, 2, figsize=(9, 6.5), constrained_layout=True)
+
+    for col, (path, model_name) in enumerate(datasets):
+        r = load(path)
+        fkv_gsm  = r["FullKV"]["gsm8k"]["pass@1"]
+        fkv_math = r["FullKV"]["math500"]["pass@1"]
+
+        gsm_vals  = [r.get(m, {}).get("gsm8k",  {}).get("pass@1", 0) for m, _, _ in methods]
+        math_vals = [r.get(m, {}).get("math500", {}).get("pass@1", 0) for m, _, _ in methods]
+
+        for row, (vals, fkv_val, ylabel, task) in enumerate([
+                (gsm_vals,  fkv_gsm,  "GSM8K Pass@1",  "GSM8K"),
+                (math_vals, fkv_math, "MATH500 Pass@1", "MATH500"),
+        ]):
+            ax = axes[row, col]
+            for i, ((_, xlbl, c), val) in enumerate(zip(methods, vals)):
+                ax.bar(x[i], val, width=bar_w, color=c, alpha=0.85,
+                       edgecolor='black', linewidth=0.7, zorder=3)
+            ax.axhline(fkv_val, color='black', linestyle='--',
+                       linewidth=1.4, zorder=4, label=f"FullKV ({fkv_val:.2f})")
+
+            top = max(fkv_val, max(vals) if vals else 0) * 1.22
+            for i, val in enumerate(vals):
+                if val >= 0.04:
+                    ax.text(x[i], val + top * 0.012, f"{val:.2f}",
+                            ha='center', va='bottom', fontsize=9, fontweight='bold')
+
+            _style_ax(ax, xlabel="", ylabel=ylabel, ylim=(0, top))
+            ax.set_xticks(x)
+            ax.set_xticklabels([xlbl for _, xlbl, _ in methods],
+                               fontsize=TICK_FS)
+            ax.legend(fontsize=LEGEND_FS, loc='upper right',
+                      borderpad=0.4, labelspacing=0.2)
+            if row == 0:
+                _model_tag(ax, model_name)
+
+    save_fig(fig, os.path.join(TAPERKV_FIG, "fig_kv_asymmetry_reason.png"))
+
+
+# ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║  Figure 5 – HALO lever PPL (Ministral + Llama, 3-bit + 4-bit)              ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
+def fig_halo_lever() -> None:
+    datasets = [
+        (load(os.path.join(HERE, "results_ablation_minis",
+                           "results_Ministral-8B-Instruct-2410.json")),
+         "Ministral-8B"),
+        (load(os.path.join(HERE, "results_ablation_llama",
+                           "results_llama-3.1-8b-instruct.json")),
+         "Llama-3.1-8B"),
+    ]
+
+    lever_cfg = {
+        3: [
+            ("TurboQuant-3bit", "TurboQ",      COLORS[0]),
+            ("HALO-h-noLS-3",   "h-noLS",      COLORS[1]),
+            ("HALO-hg-noLS-3",  "hg-noLS",     COLORS[2]),
+            ("HALO-hg-LS-3",    "hg-LS\n(HALO)",COLORS[3]),
+            ("HALO-dense-LS-3", "dense-LS",    COLORS[4]),
+        ],
+        4: [
+            ("TurboQuant-4bit", "TurboQ",      COLORS[0]),
+            ("HALO-h-noLS-4",   "h-noLS",      COLORS[1]),
+            ("HALO-hg-noLS-4",  "hg-noLS",     COLORS[2]),
+            ("HALO-hg-LS-4",    "hg-LS\n(HALO)",COLORS[3]),
+            ("HALO-dense-LS-4", "dense-LS",    COLORS[4]),
+        ],
+    }
+    x = np.arange(5)
+    bar_w = 0.6
+
+    fig, axes = plt.subplots(2, 2, figsize=(10, 6.5), constrained_layout=True)
 
     for row, bits in enumerate([3, 4]):
         for col, (results, model_name) in enumerate(datasets):
             ax = axes[row, col]
-            fkv_ppl = results["FullKV"]["ppl"]["ppl"]
-            ppls = [results.get(m, {}).get("ppl", {}).get("ppl", 0) for m in lever_methods[bits]]
+            cfg = lever_cfg[bits]
+            fkv = results["FullKV"]["ppl"]["ppl"]
+            ppls = [results.get(m, {}).get("ppl", {}).get("ppl", 0)
+                    for m, _, _ in cfg]
 
-            x = np.arange(len(lever_methods[bits]))
-            bars = ax.bar(x, ppls, color=lever_colors, alpha=0.88, edgecolor="white", linewidth=0.8)
-            ax.axhline(fkv_ppl, linestyle="--", color="#444444", linewidth=1.4,
-                       label=f"FullKV PPL ({fkv_ppl:.2f})")
+            for i, ((_, xlbl, c), val) in enumerate(zip(cfg, ppls)):
+                ax.bar(x[i], val, width=bar_w, color=c, alpha=0.85,
+                       edgecolor='black', linewidth=0.7, zorder=3)
 
+            ax.axhline(fkv, color='black', linestyle='--', linewidth=1.4,
+                       zorder=4, label=f"FullKV ({fkv:.2f})")
+
+            # tight y-axis to show small differences clearly
+            ppl_range = max(ppls) - min(ppls) if ppls else 0.1
+            y_lo = max(0, fkv - ppl_range * 0.5)
+            y_hi = max(ppls) * 1.0 + ppl_range * 1.5 if ppls else fkv * 1.2
+
+            _style_ax(ax, xlabel="", ylabel=f"Perplexity ↓  ({bits}-bit)",
+                      ylim=(y_lo, y_hi))
             ax.set_xticks(x)
-            ax.set_xticklabels(lever_labels[bits], fontsize=8)
-            ax.set_ylabel("Perplexity ↓", fontsize=10)
-            title = f"{model_name}  ({bits}-bit)"
-            ax.set_title(title, fontsize=10)
-            ax.legend(fontsize=8)
-            ax.grid(axis="y", alpha=0.3, linestyle="--")
-            ax.spines["top"].set_visible(False)
-            ax.spines["right"].set_visible(False)
+            ax.set_xticklabels([xlbl for _, xlbl, _ in cfg], fontsize=TICK_FS - 1)
+            ax.legend(fontsize=LEGEND_FS, loc='upper left',
+                      borderpad=0.4, labelspacing=0.2)
+            if row == 0:
+                _model_tag(ax, model_name)
 
-            ppl_min = fkv_ppl * 0.95
-            ppl_max = max(ppls) * 1.06 if ppls else fkv_ppl * 1.2
-            ax.set_ylim(ppl_min, ppl_max)
-
-            for bar, val in zip(bars, ppls):
-                if val > 0:
-                    ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.01,
-                            f"{val:.2f}", ha="center", va="bottom", fontsize=8)
-
-    plt.tight_layout()
-    out = os.path.join(HALO_FIG, "fig_halo_lever.png")
-    fig.savefig(out, dpi=150, bbox_inches="tight")
-    plt.close()
-    print(f"saved → {out}")
+    save_fig(fig, os.path.join(HALO_FIG, "fig_halo_lever.png"))
 
 
-# ╔══════════════════════════════════════════════════════════════════════════╗
-# ║  Figure 5 – HALO lever: Needle accuracy for reasoning model (R1-Q7)     ║
-# ╚══════════════════════════════════════════════════════════════════════════╝
-def fig_halo_lever_reasoning():
-    """Additional HALO lever plot for R1-Q7 (needle + PPL)."""
-    results_r1q7 = load(os.path.join(HERE, "results_ablation_r1q7",
-                                      "results_DeepSeek-R1-Distill-Qwen-7B.json"))
-    results_r1l8 = load(os.path.join(HERE, "results_ablation_r1l8",
-                                      "results_DeepSeek-R1-Distill-Llama-8B.json"))
+# ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║  Figure 6 – HALO lever on reasoning models (3-bit PPL, R1-L8 + R1-Q7)      ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
+def fig_halo_lever_reasoning() -> None:
+    datasets = [
+        (load(os.path.join(HERE, "results_ablation_r1l8",
+                           "results_DeepSeek-R1-Distill-Llama-8B.json")),
+         "R1-Distill-Llama-8B"),
+        (load(os.path.join(HERE, "results_ablation_r1q7",
+                           "results_DeepSeek-R1-Distill-Qwen-7B.json")),
+         "R1-Distill-Qwen-7B"),
+    ]
 
-    lever_methods_3 = ["TurboQuant-3bit", "HALO-h-noLS-3", "HALO-hg-noLS-3", "HALO-hg-LS-3", "HALO-dense-LS-3"]
-    lever_labels_3  = ["TurboQuant", "h-noLS", "hg-noLS", "hg-LS\n(full)", "dense-LS"]
-    lever_colors    = ["#aaaaaa", "#96c1f7", "#5bc0eb", "#2176ae", "#8e44ad"]
+    lever_methods = [
+        ("TurboQuant-3bit", "TurboQ",      COLORS[0]),
+        ("HALO-h-noLS-3",   "h-noLS",      COLORS[1]),
+        ("HALO-hg-noLS-3",  "hg-noLS",     COLORS[2]),
+        ("HALO-hg-LS-3",    "hg-LS\n(HALO)",COLORS[3]),
+        ("HALO-dense-LS-3", "dense-LS",    COLORS[4]),
+    ]
+    x = np.arange(len(lever_methods))
+    bar_w = 0.6
 
-    fig, axes = plt.subplots(1, 4, figsize=(14, 4))
-    fig.suptitle("HALO Lever Ablation — Reasoning Models (3-bit)", fontsize=13, fontweight="bold")
+    fig, axes = plt.subplots(1, 2, figsize=(9, 3.8), constrained_layout=True)
 
-    for col, (results, model_name, metric, ylabel, ylim) in enumerate([
-        (results_r1l8, "R1-Distill-Llama-8B", "needle", "Needle Accuracy", (0, 1.1)),
-        (results_r1l8, "R1-Distill-Llama-8B", "ppl",    "Perplexity ↓",    None),
-        (results_r1q7, "R1-Distill-Qwen-7B",  "needle", "Needle Accuracy", (0, 1.1)),
-        (results_r1q7, "R1-Distill-Qwen-7B",  "ppl",    "Perplexity ↓",    None),
-    ]):
-        ax = axes[col]
-        fkv_val = results["FullKV"][metric]["accuracy" if metric == "needle" else "ppl"]
-        vals = [results.get(m, {}).get(metric, {}).get(
-                    "accuracy" if metric == "needle" else "ppl", 0)
-                for m in lever_methods_3]
+    for ax, (results, model_name) in zip(axes, datasets):
+        fkv = results["FullKV"]["ppl"]["ppl"]
+        ppls = [results.get(m, {}).get("ppl", {}).get("ppl", 0)
+                for m, _, _ in lever_methods]
 
-        x = np.arange(len(lever_methods_3))
-        bars = ax.bar(x, vals, color=lever_colors, alpha=0.88, edgecolor="white", linewidth=0.8)
-        ax.axhline(fkv_val, linestyle="--", color="#444444", linewidth=1.4,
-                   label=f"FullKV ({fkv_val:.2f})")
+        for i, ((_, xlbl, c), val) in enumerate(zip(lever_methods, ppls)):
+            ax.bar(x[i], val, width=bar_w, color=c, alpha=0.85,
+                   edgecolor='black', linewidth=0.7, zorder=3)
+
+        ax.axhline(fkv, color='black', linestyle='--', linewidth=1.4,
+                   zorder=4, label=f"FullKV ({fkv:.2f})")
+
+        ppl_range = max(ppls) - min(ppls) if ppls else 0.5
+        y_lo = max(0, fkv - ppl_range * 0.3)
+        y_hi = max(ppls) * 1.0 + ppl_range * 2.0 if ppls else fkv * 1.3
+
+        _style_ax(ax, xlabel="", ylabel="Perplexity ↓  (3-bit)",
+                  ylim=(y_lo, y_hi))
         ax.set_xticks(x)
-        ax.set_xticklabels(lever_labels_3, fontsize=8)
-        ax.set_ylabel(ylabel, fontsize=9)
-        ax.set_title(f"{model_name}\n({ylabel.split()[0]})", fontsize=9)
-        if ylim:
-            ax.set_ylim(*ylim)
-        ax.legend(fontsize=7)
-        ax.grid(axis="y", alpha=0.3, linestyle="--")
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
+        ax.set_xticklabels([xlbl for _, xlbl, _ in lever_methods], fontsize=TICK_FS)
+        ax.legend(fontsize=LEGEND_FS, loc='upper left',
+                  borderpad=0.4, labelspacing=0.2)
+        _model_tag(ax, model_name)
 
-    plt.tight_layout()
-    out = os.path.join(HALO_FIG, "fig_halo_lever_reasoning.png")
-    fig.savefig(out, dpi=150, bbox_inches="tight")
-    plt.close()
-    print(f"saved → {out}")
+    save_fig(fig, os.path.join(HALO_FIG, "fig_halo_lever_reasoning.png"))
 
 
 if __name__ == "__main__":
@@ -372,6 +487,7 @@ if __name__ == "__main__":
     fig_bmin_sweep()
     fig_budget_sweep()
     fig_kv_asymmetry()
+    fig_kv_asymmetry_reason()
     fig_halo_lever()
     fig_halo_lever_reasoning()
     print("Done.")
