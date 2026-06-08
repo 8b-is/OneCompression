@@ -7,10 +7,15 @@
     "attn_implementation": "eager",
     "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_aime_comp_r1q15",
     "methods": [
-      "TaperKV",
+      "FullKV",
+      "StreamingLLM",
+      "Uniform-INT4",
+      "ThinKV",
+      "PM-KVQ",
       "KIVI-INT2",
       "HALO-3bit",
-      "TurboTaper"
+      "TurboTaper",
+      "HALO-4bit"
     ],
     "sink_tokens": 4,
     "recent_tokens": 128,
@@ -125,8 +130,7 @@
     ],
     "aime_k": 4,
     "aime_limit": 30,
-    "max_new_aime": 4096,
-    "resume": true
+    "max_new_aime": 8192
   },
   "results": {
     "FullKV": {
@@ -141,6 +145,34 @@
           0.0
         ],
         "avg_gen_len": 4011.7,
+        "compression_ratio": 1.0,
+        "eviction_fired": true
+      },
+      "aime2024": {
+        "task": "aime2024",
+        "n": 30,
+        "k": 4,
+        "pass@1": 0.1,
+        "pass@1_stderr": 0.0557,
+        "pass@1_ci95": [
+          -0.0092,
+          0.2092
+        ],
+        "avg_gen_len": 7812.9,
+        "compression_ratio": 1.0,
+        "eviction_fired": true
+      },
+      "aime2025": {
+        "task": "aime2025",
+        "n": 30,
+        "k": 4,
+        "pass@1": 0.0333,
+        "pass@1_stderr": 0.0333,
+        "pass@1_ci95": [
+          -0.032,
+          0.0987
+        ],
+        "avg_gen_len": 8097.1,
         "compression_ratio": 1.0,
         "eviction_fired": true
       }

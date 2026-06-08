@@ -7,11 +7,11 @@
     "attn_implementation": "eager",
     "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_aime_basic_qwq",
     "methods": [
-      "FullKV",
-      "TaperKV",
-      "TurboTaper",
-      "HALO-3bit",
-      "HALO-4bit"
+      "PM-KVQ",
+      "ThinKV",
+      "KIVI-INT2",
+      "Uniform-INT4",
+      "StreamingLLM"
     ],
     "sink_tokens": 4,
     "recent_tokens": 128,
@@ -163,20 +163,6 @@
         "n_windows": 16.0,
         "n_skipped_nonfinite": 0.0,
         "compression_ratio": 1.0
-      },
-      "livecodebench": {
-        "task": "livecodebench",
-        "n": 50,
-        "k": 1,
-        "pass@1": 0.0,
-        "pass@1_stderr": 0.0,
-        "pass@1_ci95": [
-          0.0,
-          0.0
-        ],
-        "avg_gen_len": 5362.3,
-        "compression_ratio": 1.0,
-        "eviction_fired": true
       }
     },
     "ThinKV": {
@@ -215,6 +201,20 @@
         "n_windows": 16.0,
         "n_skipped_nonfinite": 0.0,
         "compression_ratio": 3.1863
+      },
+      "livecodebench": {
+        "task": "livecodebench",
+        "n": 50,
+        "k": 1,
+        "pass@1": 0.0,
+        "pass@1_stderr": 0.0,
+        "pass@1_ci95": [
+          0.0,
+          0.0
+        ],
+        "avg_gen_len": 15820.3,
+        "compression_ratio": 5.195,
+        "eviction_fired": true
       }
     },
     "PM-KVQ": {
@@ -408,33 +408,73 @@
       }
     },
     "Uniform-INT4": {
+      "livecodebench": {
+        "task": "livecodebench",
+        "n": 50,
+        "k": 1,
+        "pass@1": 0.0,
+        "pass@1_stderr": 0.0,
+        "pass@1_ci95": [
+          0.0,
+          0.0
+        ],
+        "avg_gen_len": 7154.7,
+        "compression_ratio": 3.841,
+        "eviction_fired": true
+      }
+    },
+    "StreamingLLM": {
+      "livecodebench": {
+        "task": "livecodebench",
+        "n": 50,
+        "k": 1,
+        "pass@1": 0.0,
+        "pass@1_stderr": 0.0,
+        "pass@1_ci95": [
+          0.0,
+          0.0
+        ],
+        "avg_gen_len": 2763.3,
+        "compression_ratio": 3.546,
+        "eviction_fired": true
+      }
+    },
+    "HALO-4bit": {
       "gsm8k": {
         "task": "gsm8k",
         "n": 100,
         "k": 1,
-        "pass@1": 0.92,
-        "pass@1_stderr": 0.0273,
+        "pass@1": 0.98,
+        "pass@1_stderr": 0.0141,
         "pass@1_ci95": [
-          0.8666,
-          0.9734
+          0.9524,
+          1.0076
         ],
-        "avg_gen_len": 1768.5,
-        "compression_ratio": 3.817,
+        "avg_gen_len": 1481.5,
+        "compression_ratio": 3.841,
         "eviction_fired": true
       },
       "math500": {
         "task": "math500",
         "n": 100,
         "k": 1,
-        "pass@1": 0.69,
-        "pass@1_stderr": 0.0465,
+        "pass@1": 0.73,
+        "pass@1_stderr": 0.0446,
         "pass@1_ci95": [
-          0.5989,
-          0.7811
+          0.6425,
+          0.8175
         ],
-        "avg_gen_len": 3652.5,
-        "compression_ratio": 3.832,
+        "avg_gen_len": 3269.9,
+        "compression_ratio": 3.859,
         "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 3.7394,
+        "nll": 1.3189,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 3.8571
       }
     }
   }

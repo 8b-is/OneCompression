@@ -509,6 +509,657 @@
         "n_skipped_nonfinite": 0.0,
         "compression_ratio": 4.37
       }
+    },
+    "StreamingLLM": {
+      "needle": {
+        "accuracy": 0.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.0,
+          0.0787
+        ],
+        "mem_fraction": 0.2041,
+        "by_length": {
+          "4096": 0.0,
+          "8192": 0.0,
+          "16384": 0.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.0,
+          0.2039
+        ],
+        "mem_fraction": 0.2027,
+        "by_length": {
+          "4096": 0.0,
+          "8192": 0.0,
+          "16384": 0.0
+        },
+        "n": 15
+      },
+      "longbench": {
+        "n": 130,
+        "score": 4.03,
+        "per_task": {
+          "qasper": 0.0,
+          "multifieldqa_en": 0.0,
+          "hotpotqa": 0.0,
+          "2wikimqa": 0.0,
+          "gov_report": 0.0,
+          "multi_news": 0.0,
+          "trec": 25.0,
+          "triviaqa": 0.0,
+          "samsum": 0.0,
+          "passage_count": 0.0,
+          "passage_retrieval_en": 0.0,
+          "lcc": 11.11,
+          "repobench-p": 16.24
+        },
+        "by_length": {
+          "0-4k": 4.96,
+          "4-8k": 3.3,
+          "8k+": 0.0
+        },
+        "mem_fraction": 0.0427
+      },
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.17,
+        "pass@1_stderr": 0.0378,
+        "pass@1_ci95": [
+          0.096,
+          0.244
+        ],
+        "avg_gen_len": 1445.4,
+        "compression_ratio": 1.012,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.12,
+        "pass@1_stderr": 0.0327,
+        "pass@1_ci95": [
+          0.056,
+          0.184
+        ],
+        "avg_gen_len": 2679.5,
+        "compression_ratio": 1.058,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 22.4388,
+        "nll": 3.1108,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 1000000000.0
+      }
+    },
+    "TaperKV-3bit": {
+      "needle": {
+        "accuracy": 0.0667,
+        "accuracy_stderr": 0.0372,
+        "accuracy_ci95": [
+          0.0229,
+          0.1786
+        ],
+        "mem_fraction": 0.1974,
+        "by_length": {
+          "4096": 0.1333,
+          "8192": 0.0,
+          "16384": 0.0667
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.0,
+          0.2039
+        ],
+        "mem_fraction": 0.1974,
+        "by_length": {
+          "4096": 0.0,
+          "8192": 0.0,
+          "16384": 0.0
+        },
+        "n": 15
+      },
+      "longbench": {
+        "n": 130,
+        "score": 3.76,
+        "per_task": {
+          "qasper": 0.0,
+          "multifieldqa_en": 0.0,
+          "hotpotqa": 0.0,
+          "2wikimqa": 0.0,
+          "gov_report": 0.0,
+          "multi_news": 0.0,
+          "trec": 20.0,
+          "triviaqa": 0.0,
+          "samsum": 0.0,
+          "passage_count": 0.0,
+          "passage_retrieval_en": 0.0,
+          "lcc": 10.21,
+          "repobench-p": 18.67
+        },
+        "by_length": {
+          "0-4k": 4.69,
+          "4-8k": 3.04,
+          "8k+": 0.0
+        },
+        "mem_fraction": 0.198
+      },
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.53,
+        "pass@1_stderr": 0.0502,
+        "pass@1_ci95": [
+          0.4317,
+          0.6283
+        ],
+        "avg_gen_len": 448.0,
+        "compression_ratio": 4.871,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.45,
+        "pass@1_stderr": 0.05,
+        "pass@1_ci95": [
+          0.352,
+          0.548
+        ],
+        "avg_gen_len": 2286.9,
+        "compression_ratio": 4.994,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 27.8405,
+        "nll": 3.3265,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 5.0558
+      }
+    },
+    "ThinKV": {
+      "needle": {
+        "accuracy": 0.0889,
+        "accuracy_stderr": 0.0424,
+        "accuracy_ci95": [
+          0.0351,
+          0.2073
+        ],
+        "mem_fraction": 0.3143,
+        "by_length": {
+          "4096": 0.1333,
+          "8192": 0.0667,
+          "16384": 0.0667
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.0,
+          0.2039
+        ],
+        "mem_fraction": 0.3143,
+        "by_length": {
+          "4096": 0.0,
+          "8192": 0.0,
+          "16384": 0.0
+        },
+        "n": 15
+      },
+      "longbench": {
+        "n": 130,
+        "score": 4.3,
+        "per_task": {
+          "qasper": 0.0,
+          "multifieldqa_en": 0.0,
+          "hotpotqa": 0.0,
+          "2wikimqa": 0.0,
+          "gov_report": 0.0,
+          "multi_news": 0.0,
+          "trec": 18.33,
+          "triviaqa": 0.0,
+          "samsum": 0.0,
+          "passage_count": 10.0,
+          "passage_retrieval_en": 0.0,
+          "lcc": 12.32,
+          "repobench-p": 15.28
+        },
+        "by_length": {
+          "0-4k": 4.62,
+          "4-8k": 4.06,
+          "8k+": 0.0
+        },
+        "mem_fraction": 0.3163
+      },
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.33,
+        "pass@1_stderr": 0.0473,
+        "pass@1_ci95": [
+          0.2374,
+          0.4226
+        ],
+        "avg_gen_len": 1246.7,
+        "compression_ratio": 4.1,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.23,
+        "pass@1_stderr": 0.0423,
+        "pass@1_ci95": [
+          0.1471,
+          0.3129
+        ],
+        "avg_gen_len": 3052.5,
+        "compression_ratio": 4.81,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 23.2015,
+        "nll": 3.1442,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 3.1931
+      }
+    },
+    "PM-KVQ": {
+      "needle": {
+        "accuracy": 0.0444,
+        "accuracy_stderr": 0.0307,
+        "accuracy_ci95": [
+          0.0123,
+          0.1483
+        ],
+        "mem_fraction": 0.2035,
+        "by_length": {
+          "4096": 0.1333,
+          "8192": 0.0,
+          "16384": 0.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.0,
+          0.2039
+        ],
+        "mem_fraction": 0.2035,
+        "by_length": {
+          "4096": 0.0,
+          "8192": 0.0,
+          "16384": 0.0
+        },
+        "n": 15
+      },
+      "longbench": {
+        "n": 130,
+        "score": 3.46,
+        "per_task": {
+          "qasper": 0.0,
+          "multifieldqa_en": 0.0,
+          "hotpotqa": 0.0,
+          "2wikimqa": 0.0,
+          "gov_report": 0.0,
+          "multi_news": 0.0,
+          "trec": 15.0,
+          "triviaqa": 0.0,
+          "samsum": 0.0,
+          "passage_count": 0.0,
+          "passage_retrieval_en": 0.0,
+          "lcc": 11.76,
+          "repobench-p": 18.27
+        },
+        "by_length": {
+          "0-4k": 4.15,
+          "4-8k": 2.93,
+          "8k+": 0.0
+        },
+        "mem_fraction": 0.2112
+      },
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.62,
+        "pass@1_stderr": 0.0488,
+        "pass@1_ci95": [
+          0.5244,
+          0.7156
+        ],
+        "avg_gen_len": 443.8,
+        "compression_ratio": 3.391,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.55,
+        "pass@1_stderr": 0.05,
+        "pass@1_ci95": [
+          0.452,
+          0.648
+        ],
+        "avg_gen_len": 2125.0,
+        "compression_ratio": 4.247,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 52.9073,
+        "nll": 3.9685,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 4.7936
+      }
+    },
+    "TurboQuant-3bit": {
+      "needle": {
+        "accuracy": 0.1778,
+        "accuracy_stderr": 0.057,
+        "accuracy_ci95": [
+          0.0929,
+          0.3133
+        ],
+        "mem_fraction": 0.1958,
+        "by_length": {
+          "4096": 0.3333,
+          "8192": 0.1333,
+          "16384": 0.0667
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.2667,
+        "accuracy_stderr": 0.1142,
+        "accuracy_ci95": [
+          0.109,
+          0.5195
+        ],
+        "mem_fraction": 0.1958,
+        "by_length": {
+          "4096": 0.4,
+          "8192": 0.4,
+          "16384": 0.0
+        },
+        "n": 15
+      },
+      "longbench": {
+        "n": 130,
+        "score": 5.22,
+        "per_task": {
+          "qasper": 0.0,
+          "multifieldqa_en": 0.0,
+          "hotpotqa": 0.0,
+          "2wikimqa": 0.0,
+          "gov_report": 0.0,
+          "multi_news": 0.0,
+          "trec": 20.0,
+          "triviaqa": 0.0,
+          "samsum": 0.0,
+          "passage_count": 20.0,
+          "passage_retrieval_en": 0.0,
+          "lcc": 12.34,
+          "repobench-p": 15.47
+        },
+        "by_length": {
+          "0-4k": 4.92,
+          "4-8k": 5.44,
+          "8k+": 0.0
+        },
+        "mem_fraction": 0.1963
+      },
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.56,
+        "pass@1_stderr": 0.0499,
+        "pass@1_ci95": [
+          0.4622,
+          0.6578
+        ],
+        "avg_gen_len": 449.2,
+        "compression_ratio": 4.953,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.53,
+        "pass@1_stderr": 0.0502,
+        "pass@1_ci95": [
+          0.4317,
+          0.6283
+        ],
+        "avg_gen_len": 2015.7,
+        "compression_ratio": 5.038,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 24.6665,
+        "nll": 3.2054,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 5.0995
+      }
+    },
+    "KIVI-INT2": {
+      "needle": {
+        "accuracy": 0.1333,
+        "accuracy_stderr": 0.0507,
+        "accuracy_ci95": [
+          0.0626,
+          0.2618
+        ],
+        "mem_fraction": 0.1606,
+        "by_length": {
+          "4096": 0.2,
+          "8192": 0.1333,
+          "16384": 0.0667
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.0,
+          0.2039
+        ],
+        "mem_fraction": 0.1606,
+        "by_length": {
+          "4096": 0.0,
+          "8192": 0.0,
+          "16384": 0.0
+        },
+        "n": 15
+      },
+      "longbench": {
+        "n": 130,
+        "score": 3.76,
+        "per_task": {
+          "qasper": 0.0,
+          "multifieldqa_en": 0.0,
+          "hotpotqa": 0.0,
+          "2wikimqa": 0.0,
+          "gov_report": 0.0,
+          "multi_news": 0.0,
+          "trec": 20.0,
+          "triviaqa": 0.0,
+          "samsum": 0.0,
+          "passage_count": 0.0,
+          "passage_retrieval_en": 0.0,
+          "lcc": 9.82,
+          "repobench-p": 19.05
+        },
+        "by_length": {
+          "0-4k": 4.56,
+          "4-8k": 3.13,
+          "8k+": 0.0
+        },
+        "mem_fraction": 0.1612
+      },
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.53,
+        "pass@1_stderr": 0.0502,
+        "pass@1_ci95": [
+          0.4317,
+          0.6283
+        ],
+        "avg_gen_len": 439.6,
+        "compression_ratio": 5.988,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.54,
+        "pass@1_stderr": 0.0501,
+        "pass@1_ci95": [
+          0.4418,
+          0.6382
+        ],
+        "avg_gen_len": 2051.0,
+        "compression_ratio": 6.13,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 31.0717,
+        "nll": 3.4363,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 6.2121
+      }
+    },
+    "HALO-3bit": {
+      "needle": {
+        "accuracy": 0.1556,
+        "accuracy_stderr": 0.054,
+        "accuracy_ci95": [
+          0.0775,
+          0.2878
+        ],
+        "mem_fraction": 0.1958,
+        "by_length": {
+          "4096": 0.3333,
+          "8192": 0.0667,
+          "16384": 0.0667
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.0667,
+        "accuracy_stderr": 0.0644,
+        "accuracy_ci95": [
+          0.0119,
+          0.2982
+        ],
+        "mem_fraction": 0.1958,
+        "by_length": {
+          "4096": 0.2,
+          "8192": 0.0,
+          "16384": 0.0
+        },
+        "n": 15
+      },
+      "longbench": {
+        "n": 130,
+        "score": 4.33,
+        "per_task": {
+          "qasper": 0.0,
+          "multifieldqa_en": 0.0,
+          "hotpotqa": 0.0,
+          "2wikimqa": 0.0,
+          "gov_report": 0.0,
+          "multi_news": 0.0,
+          "trec": 20.0,
+          "triviaqa": 0.0,
+          "samsum": 0.0,
+          "passage_count": 10.0,
+          "passage_retrieval_en": 0.0,
+          "lcc": 10.32,
+          "repobench-p": 15.99
+        },
+        "by_length": {
+          "0-4k": 4.84,
+          "4-8k": 3.93,
+          "8k+": 0.0
+        },
+        "mem_fraction": 0.1963
+      },
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.59,
+        "pass@1_stderr": 0.0494,
+        "pass@1_ci95": [
+          0.4931,
+          0.6869
+        ],
+        "avg_gen_len": 421.4,
+        "compression_ratio": 4.948,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.53,
+        "pass@1_stderr": 0.0502,
+        "pass@1_ci95": [
+          0.4317,
+          0.6283
+        ],
+        "avg_gen_len": 2046.7,
+        "compression_ratio": 5.044,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 24.6322,
+        "nll": 3.2041,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 5.0995
+      }
     }
   }
 }

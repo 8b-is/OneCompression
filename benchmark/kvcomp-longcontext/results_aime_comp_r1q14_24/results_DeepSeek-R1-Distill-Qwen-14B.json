@@ -7,7 +7,7 @@
     "attn_implementation": "eager",
     "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_aime_comp_r1q14_24",
     "methods": [
-      "HALO-4bit"
+      "Uniform-INT4"
     ],
     "sink_tokens": 4,
     "recent_tokens": 128,
@@ -374,6 +374,22 @@
         ],
         "avg_gen_len": 6643.1,
         "compression_ratio": 2.728,
+        "eviction_fired": true
+      }
+    },
+    "Uniform-INT4": {
+      "aime2024": {
+        "task": "aime2024",
+        "n": 30,
+        "k": 2,
+        "pass@1": 0.6,
+        "pass@1_stderr": 0.091,
+        "pass@1_ci95": [
+          0.4217,
+          0.7783
+        ],
+        "avg_gen_len": 6629.6,
+        "compression_ratio": 2.716,
         "eviction_fired": true
       }
     }

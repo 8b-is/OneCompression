@@ -7,15 +7,7 @@
     "attn_implementation": "eager",
     "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_aime_basic_r1q14",
     "methods": [
-      "FullKV",
-      "TaperKV",
-      "TurboTaper",
-      "HALO-3bit",
-      "PM-KVQ",
-      "ThinKV",
-      "KIVI-INT2",
-      "Uniform-INT4",
-      "StreamingLLM"
+      "HALO-4bit"
     ],
     "sink_tokens": 4,
     "recent_tokens": 128,
@@ -102,17 +94,17 @@
     "ruler_keys": 4,
     "ruler_seeds": 5,
     "run_needle": false,
-    "run_gsm8k": false,
+    "run_gsm8k": true,
     "gsm8k_limit": 100,
     "max_new_reason": 8192,
-    "run_math": false,
+    "run_math": true,
     "math_limit": 100,
     "max_new_math": 8192,
     "run_longbench": false,
     "longbench_tasks": [],
     "longbench_max_length": 7500,
     "longbench_limit": 20,
-    "run_livecodebench": true,
+    "run_livecodebench": false,
     "lcb_problems_path": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/data/lcb_functional.jsonl",
     "lcb_dataset": "livecodebench/code_generation_lite",
     "lcb_split": "test",
@@ -120,12 +112,15 @@
     "lcb_k": 1,
     "lcb_timeout": 6.0,
     "max_new_code": 16384,
-    "run_ppl": false,
+    "run_ppl": true,
     "ppl_max_length": 2048,
     "ppl_stride": 1024,
     "ppl_windows": 16,
-    "aime_years": [],
-    "aime_k": 8,
+    "aime_years": [
+      2024,
+      2025
+    ],
+    "aime_k": 2,
     "aime_limit": 30,
     "max_new_aime": 8192,
     "resume": true
@@ -167,20 +162,6 @@
         "n_windows": 16.0,
         "n_skipped_nonfinite": 0.0,
         "compression_ratio": 1.0
-      },
-      "livecodebench": {
-        "task": "livecodebench",
-        "n": 50,
-        "k": 1,
-        "pass@1": 0.0,
-        "pass@1_stderr": 0.0,
-        "pass@1_ci95": [
-          0.0,
-          0.0
-        ],
-        "avg_gen_len": 8595.1,
-        "compression_ratio": 1.0,
-        "eviction_fired": true
       }
     },
     "ThinKV": {
@@ -469,6 +450,72 @@
         "avg_gen_len": 3912.4,
         "compression_ratio": 1.061,
         "eviction_fired": true
+      }
+    },
+    "HALO-4bit": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.85,
+        "pass@1_stderr": 0.0359,
+        "pass@1_ci95": [
+          0.7797,
+          0.9203
+        ],
+        "avg_gen_len": 461.3,
+        "compression_ratio": 2.695,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.68,
+        "pass@1_stderr": 0.0469,
+        "pass@1_ci95": [
+          0.5881,
+          0.7719
+        ],
+        "avg_gen_len": 1913.2,
+        "compression_ratio": 2.71,
+        "eviction_fired": true
+      },
+      "aime2024": {
+        "task": "aime2024",
+        "n": 30,
+        "k": 2,
+        "pass@1": 0.6,
+        "pass@1_stderr": 0.091,
+        "pass@1_ci95": [
+          0.4217,
+          0.7783
+        ],
+        "avg_gen_len": 6467.0,
+        "compression_ratio": 2.728,
+        "eviction_fired": true
+      },
+      "aime2025": {
+        "task": "aime2025",
+        "n": 30,
+        "k": 2,
+        "pass@1": 0.4667,
+        "pass@1_stderr": 0.0926,
+        "pass@1_ci95": [
+          0.2851,
+          0.6482
+        ],
+        "avg_gen_len": 6813.5,
+        "compression_ratio": 2.729,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 12.6243,
+        "nll": 2.5356,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 2.7227
       }
     }
   }

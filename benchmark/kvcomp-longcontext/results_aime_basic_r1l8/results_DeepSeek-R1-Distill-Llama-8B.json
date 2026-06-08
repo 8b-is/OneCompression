@@ -7,15 +7,7 @@
     "attn_implementation": "eager",
     "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_aime_basic_r1l8",
     "methods": [
-      "FullKV",
-      "TaperKV",
-      "TurboTaper",
-      "HALO-3bit",
-      "PM-KVQ",
-      "ThinKV",
-      "KIVI-INT2",
-      "Uniform-INT4",
-      "StreamingLLM"
+      "HALO-4bit"
     ],
     "sink_tokens": 4,
     "recent_tokens": 128,
@@ -102,17 +94,17 @@
     "ruler_keys": 4,
     "ruler_seeds": 5,
     "run_needle": false,
-    "run_gsm8k": false,
+    "run_gsm8k": true,
     "gsm8k_limit": 100,
     "max_new_reason": 8192,
-    "run_math": false,
+    "run_math": true,
     "math_limit": 100,
     "max_new_math": 8192,
     "run_longbench": false,
     "longbench_tasks": [],
     "longbench_max_length": 7500,
     "longbench_limit": 20,
-    "run_livecodebench": true,
+    "run_livecodebench": false,
     "lcb_problems_path": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/data/lcb_functional.jsonl",
     "lcb_dataset": "livecodebench/code_generation_lite",
     "lcb_split": "test",
@@ -120,7 +112,7 @@
     "lcb_k": 1,
     "lcb_timeout": 6.0,
     "max_new_code": 16384,
-    "run_ppl": false,
+    "run_ppl": true,
     "ppl_max_length": 2048,
     "ppl_stride": 1024,
     "ppl_windows": 16,
@@ -219,6 +211,20 @@
         "n_windows": 16.0,
         "n_skipped_nonfinite": 0.0,
         "compression_ratio": 3.8283
+      },
+      "livecodebench": {
+        "task": "livecodebench",
+        "n": 50,
+        "k": 1,
+        "pass@1": 0.0,
+        "pass@1_stderr": 0.0,
+        "pass@1_ci95": [
+          0.0,
+          0.0
+        ],
+        "avg_gen_len": 10594.3,
+        "compression_ratio": 3.843,
+        "eviction_fired": true
       }
     },
     "StreamingLLM": {
@@ -469,6 +475,44 @@
         "avg_gen_len": 2870.1,
         "compression_ratio": 5.046,
         "eviction_fired": true
+      }
+    },
+    "HALO-4bit": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.62,
+        "pass@1_stderr": 0.0488,
+        "pass@1_ci95": [
+          0.5244,
+          0.7156
+        ],
+        "avg_gen_len": 439.3,
+        "compression_ratio": 3.789,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.56,
+        "pass@1_stderr": 0.0499,
+        "pass@1_ci95": [
+          0.4622,
+          0.6578
+        ],
+        "avg_gen_len": 3003.7,
+        "compression_ratio": 3.841,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 24.2393,
+        "nll": 3.188,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 3.8571
       }
     }
   }

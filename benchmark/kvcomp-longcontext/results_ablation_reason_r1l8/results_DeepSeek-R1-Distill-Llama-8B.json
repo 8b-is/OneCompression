@@ -1,0 +1,349 @@
+{
+  "model": "DeepSeek-R1-Distill-Llama-8B",
+  "config": {
+    "model_path": "/lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Llama-8B",
+    "device": "cuda:0",
+    "dtype": "bfloat16",
+    "attn_implementation": "sdpa",
+    "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_ablation_reason_r1l8",
+    "methods": [
+      "FullKV",
+      "HALO-h-noLS-3",
+      "HALO-hg-noLS-3",
+      "HALO-hg-LS-3",
+      "HALO-dense-LS-3",
+      "TurboQuant-3bit",
+      "HALO-h-noLS-4",
+      "HALO-hg-noLS-4",
+      "HALO-hg-LS-4",
+      "HALO-dense-LS-4",
+      "TurboQuant-4bit",
+      "TaperKV-asym",
+      "TaperKV-sym",
+      "TaperKV-revsym"
+    ],
+    "sink_tokens": 4,
+    "recent_tokens": 64,
+    "requant_stride": 16,
+    "target_mem": 0.27,
+    "uniform_bits": [],
+    "turboquant_variants": [
+      {
+        "label": "TurboQuant-3bit",
+        "bits": 3,
+        "dist": "beta"
+      },
+      {
+        "label": "TurboQuant-4bit",
+        "bits": 4,
+        "dist": "beta"
+      }
+    ],
+    "kivi_bits": [],
+    "halo_variants": [
+      {
+        "label": "HALO-h-noLS-3",
+        "bits": 3,
+        "rotation_mode": "hadamard",
+        "ls_scale": false
+      },
+      {
+        "label": "HALO-hg-noLS-3",
+        "bits": 3,
+        "rotation_mode": "hadamard_gemm",
+        "ls_scale": false
+      },
+      {
+        "label": "HALO-hg-LS-3",
+        "bits": 3,
+        "rotation_mode": "hadamard_gemm",
+        "ls_scale": true
+      },
+      {
+        "label": "HALO-dense-LS-3",
+        "bits": 3,
+        "rotation_mode": "dense",
+        "ls_scale": true
+      },
+      {
+        "label": "HALO-h-noLS-4",
+        "bits": 4,
+        "rotation_mode": "hadamard",
+        "ls_scale": false
+      },
+      {
+        "label": "HALO-hg-noLS-4",
+        "bits": 4,
+        "rotation_mode": "hadamard_gemm",
+        "ls_scale": false
+      },
+      {
+        "label": "HALO-hg-LS-4",
+        "bits": 4,
+        "rotation_mode": "hadamard_gemm",
+        "ls_scale": true
+      },
+      {
+        "label": "HALO-dense-LS-4",
+        "bits": 4,
+        "rotation_mode": "dense",
+        "ls_scale": true
+      }
+    ],
+    "codec_variants": [],
+    "turbotaper": {
+      "dist": "gaussian",
+      "rotation_mode": "hadamard",
+      "n_outlier_floor": 0
+    },
+    "skip_outliers": true,
+    "outlier_ratio": 50.0,
+    "thinkv": {
+      "group_size": 16,
+      "precision": {
+        "R": 4,
+        "E": 4,
+        "T": 2
+      },
+      "auto_configure": false,
+      "calib_max_new": 200,
+      "capture_long": false
+    },
+    "pmkvq": {
+      "key_bits": 8,
+      "value_bits": 4,
+      "final_bits": 2,
+      "key_final_bits": 4,
+      "ladder_span": 256,
+      "block_allocation": false,
+      "channel_reparam": false,
+      "bit_options": [
+        2,
+        4,
+        8
+      ],
+      "avg_bit_budget": null,
+      "pos_scale": 4
+    },
+    "taperkv": {
+      "key_bits": 6,
+      "value_bits": 3,
+      "b_min": 2,
+      "b_min_value": 2
+    },
+    "taperkv_sweep": [
+      {
+        "label": "TaperKV-asym",
+        "key_bits": 6,
+        "value_bits": 3,
+        "b_min": 2,
+        "b_min_value": 2
+      },
+      {
+        "label": "TaperKV-sym",
+        "key_bits": 4,
+        "value_bits": 4,
+        "b_min": 2,
+        "b_min_value": 2
+      },
+      {
+        "label": "TaperKV-revsym",
+        "key_bits": 3,
+        "value_bits": 6,
+        "b_min": 2,
+        "b_min_value": 2
+      }
+    ],
+    "turbotaper_sweep": [],
+    "context_lens": [
+      4096,
+      8192
+    ],
+    "depths": [
+      0.1,
+      0.5,
+      0.9
+    ],
+    "seeds": 3,
+    "max_new_needle": 32,
+    "run_ruler": false,
+    "ruler_keys": 4,
+    "ruler_seeds": 5,
+    "run_needle": false,
+    "run_gsm8k": true,
+    "gsm8k_limit": 100,
+    "max_new_reason": 4096,
+    "run_math": true,
+    "math_limit": 100,
+    "max_new_math": 4096,
+    "run_longbench": false,
+    "longbench_tasks": [],
+    "longbench_max_length": 7500,
+    "longbench_limit": 20,
+    "run_livecodebench": false,
+    "lcb_problems_path": null,
+    "lcb_dataset": "livecodebench/code_generation_lite",
+    "lcb_split": "test",
+    "lcb_limit": 50,
+    "lcb_k": 1,
+    "lcb_timeout": 6.0,
+    "max_new_code": 4096,
+    "run_ppl": false,
+    "ppl_max_length": 4096,
+    "ppl_stride": 2048,
+    "ppl_windows": 16,
+    "resume": true
+  },
+  "results": {
+    "FullKV": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.66,
+        "pass@1_stderr": 0.0476,
+        "pass@1_ci95": [
+          0.5667,
+          0.7533
+        ],
+        "avg_gen_len": 435.9,
+        "compression_ratio": 1.0,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.57,
+        "pass@1_stderr": 0.0498,
+        "pass@1_ci95": [
+          0.4725,
+          0.6675
+        ],
+        "avg_gen_len": 2110.7,
+        "compression_ratio": 1.0,
+        "eviction_fired": true
+      }
+    },
+    "TaperKV-asym": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.48,
+        "pass@1_stderr": 0.0502,
+        "pass@1_ci95": [
+          0.3816,
+          0.5784
+        ],
+        "avg_gen_len": 489.1,
+        "compression_ratio": 4.47,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.26,
+        "pass@1_stderr": 0.0441,
+        "pass@1_ci95": [
+          0.1736,
+          0.3464
+        ],
+        "avg_gen_len": 3064.1,
+        "compression_ratio": 4.628,
+        "eviction_fired": true
+      }
+    },
+    "TaperKV-sym": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.53,
+        "pass@1_stderr": 0.0502,
+        "pass@1_ci95": [
+          0.4317,
+          0.6283
+        ],
+        "avg_gen_len": 720.9,
+        "compression_ratio": 4.869,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.32,
+        "pass@1_stderr": 0.0469,
+        "pass@1_ci95": [
+          0.2281,
+          0.4119
+        ],
+        "avg_gen_len": 2516.6,
+        "compression_ratio": 4.979,
+        "eviction_fired": true
+      }
+    },
+    "TaperKV-revsym": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.37,
+        "pass@1_stderr": 0.0485,
+        "pass@1_ci95": [
+          0.2749,
+          0.4651
+        ],
+        "avg_gen_len": 683.5,
+        "compression_ratio": 4.477,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.22,
+        "pass@1_stderr": 0.0416,
+        "pass@1_ci95": [
+          0.1384,
+          0.3016
+        ],
+        "avg_gen_len": 3056.3,
+        "compression_ratio": 4.621,
+        "eviction_fired": true
+      }
+    },
+    "TurboQuant-3bit": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.47,
+        "pass@1_stderr": 0.0502,
+        "pass@1_ci95": [
+          0.3717,
+          0.5683
+        ],
+        "avg_gen_len": 474.3,
+        "compression_ratio": 4.953,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.48,
+        "pass@1_stderr": 0.0502,
+        "pass@1_ci95": [
+          0.3816,
+          0.5784
+        ],
+        "avg_gen_len": 2098.0,
+        "compression_ratio": 5.04,
+        "eviction_fired": true
+      }
+    }
+  }
+}
