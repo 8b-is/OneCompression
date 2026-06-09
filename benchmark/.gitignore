@@ -1,1 +1,5 @@
 count_accepted_lambda.py
+
+# Large raw benchmark data files (not for version control)
+kvcomp-longcontext/data/lcb_raw/*.jsonl
+kvcomp-longcontext/data/lcb_raw/
