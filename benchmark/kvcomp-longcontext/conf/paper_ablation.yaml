@@ -43,12 +43,16 @@ methods:
   - HALO-h-noLS-3
   - HALO-hg-noLS-3
   - HALO-hg-LS-3
+  - HALO-hg-NC-3       # + norm-correct keys (proposed scale lever 1)
+  - HALO-hg-NCIT-3     # + ls_iter values (lever 1 + lever 2)
   - HALO-dense-LS-3
   - TurboQuant-3bit
   # --- HALO lever ablation @ 4-bit ---
   - HALO-h-noLS-4
   - HALO-hg-noLS-4
   - HALO-hg-LS-4
+  - HALO-hg-NC-4
+  - HALO-hg-NCIT-4
   - HALO-dense-LS-4
   - TurboQuant-4bit
   # --- TaperKV design ablation ---
@@ -64,10 +68,14 @@ halo_variants:
   - {label: "HALO-h-noLS-3",   bits: 3, rotation_mode: hadamard,      ls_scale: false}
   - {label: "HALO-hg-noLS-3",  bits: 3, rotation_mode: hadamard_gemm, ls_scale: false}
   - {label: "HALO-hg-LS-3",    bits: 3, rotation_mode: hadamard_gemm, ls_scale: true}
+  - {label: "HALO-hg-NC-3",    bits: 3, rotation_mode: hadamard_gemm, key_scale_mode: nc, value_scale_mode: ls}
+  - {label: "HALO-hg-NCIT-3",  bits: 3, rotation_mode: hadamard_gemm, key_scale_mode: nc, value_scale_mode: ls_iter}
   - {label: "HALO-dense-LS-3", bits: 3, rotation_mode: dense,         ls_scale: true}
   - {label: "HALO-h-noLS-4",   bits: 4, rotation_mode: hadamard,      ls_scale: false}
   - {label: "HALO-hg-noLS-4",  bits: 4, rotation_mode: hadamard_gemm, ls_scale: false}
   - {label: "HALO-hg-LS-4",    bits: 4, rotation_mode: hadamard_gemm, ls_scale: true}
+  - {label: "HALO-hg-NC-4",    bits: 4, rotation_mode: hadamard_gemm, key_scale_mode: nc, value_scale_mode: ls}
+  - {label: "HALO-hg-NCIT-4",  bits: 4, rotation_mode: hadamard_gemm, key_scale_mode: nc, value_scale_mode: ls_iter}
   - {label: "HALO-dense-LS-4", bits: 4, rotation_mode: dense,         ls_scale: true}
 
 # Faithful TurboQuant references (beta codebook) at the same bit-widths.

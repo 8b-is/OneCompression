@@ -67,6 +67,40 @@ The retrieval grid runs HALO at 2/3/4-bit against TurboQuant's full bit-grid
 (2/2.5/3/3.5/4) + Uniform-INT + KIVI + FP8 + NVFP4, all at matched memory, so the
 "iso-bit, faster, no worse" claim is backed end-to-end (not just codec MSE).
 
+### Enhanced HALO — role-asymmetric dequant scale (proposed upgrade)
+
+The default HALO uses one least-squares (LS) dequant scale for both K and V. LS
+minimises reconstruction MSE but systematically shrinks the rotated vector norm
+(`‖k̂‖ = ‖k‖·cosθ`), so the attention **logit** is scaled by `cos²θ` — MSE-optimal
+is the wrong objective for keys, which enter softmax through an inner product.
+Enhanced HALO makes the scale **role-asymmetric** (iso-storage, same fp16/vector):
+
+| variant | key scale | value scale | effect |
+|---|---|---|---|
+| `HALO-NC-{2,3,4}bit` | norm-correcting (`nc`) | least-squares (`ls`) | logit shrink `cos²θ → cosθ`; value MSE unchanged |
+| `HALO-NCIT-{2,3,4}bit` | `nc` | `ls_iter` | + one Lloyd alternating-min step on values (monotone-lower value MSE) |
+
+`s_NC = √(s_LS · s_IP)` is the geometric mean of the MSE-optimal and inner-product
+-unbiased scales; the NC MSE penalty vs LS is `O(θ⁴)`, so 3–4-bit converge while
+2-bit gains the most (keys are sharpest there). The codec change is in
+`onecomp/kvcomp/codec/halo.py` (`key_scale_mode` / `value_scale_mode`, default
+`None` → legacy behaviour, so existing results reproduce bit-for-bit).
+
+Re-run the paper battery for the enhanced HALO only (self-contained vs FullKV +
+TurboQuant + legacy HALO at iso-bit; writes to `results_halo_enh_*`):
+
+```bash
+cd benchmark/kvcomp-longcontext/paper
+bash submit_halo_enhanced.sh             # 8 jobs (retrieval + reasoning)
+bash submit_halo_enhanced.sh retrieval   # Llama/Ministral needle/RULER/PPL/LB
+bash submit_halo_enhanced.sh reason      # R1/QwQ GSM8K/MATH/PPL
+DRYRUN=1 bash submit_halo_enhanced.sh    # print sbatch lines, submit nothing
+```
+
+The enhanced variants are also wired into `conf/turboquant_paper.yaml`,
+`conf/paper_ablation.yaml` (`HALO-hg-NC/NCIT` lever rows), `conf/paper_aime.yaml`,
+and `conf/paper_taperkv.yaml`, so the full battery picks them up automatically.
+
 ### Validated retrieval result (Llama-3.1-8B, completed)
 
 `needle = 45 cells (5 depths × 3 ctx × 3 seeds); RULER = 15 cells; PPL = WikiText-2`

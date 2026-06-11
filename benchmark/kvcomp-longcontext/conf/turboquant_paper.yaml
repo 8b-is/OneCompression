@@ -44,6 +44,15 @@ methods:
   - HALO-4bit
   - HALO-3bit          # 3-bit HALO (proposed codec, iso-quality to TurboQuant-3bit)
   - HALO-2bit
+  # Enhanced HALO (role-asymmetric scale): norm-correct keys (faithful attention
+  # logit) + least-squares values (MSE-optimal).  Storage-identical to plain HALO.
+  - HALO-NC-4bit
+  - HALO-NC-3bit
+  - HALO-NC-2bit
+  # Enhanced HALO + ls_iter values (one Lloyd alternating-min step on values).
+  - HALO-NCIT-4bit
+  - HALO-NCIT-3bit
+  - HALO-NCIT-2bit
   - HALO-dense-LS-4bit   # dense rotation + LS scale: best PPL at every bit (ablation)
   - HALO-dense-LS-3bit
   - HALO-dense-LS-2bit
@@ -66,6 +75,17 @@ halo_variants:
   - {label: "HALO-4bit", bits: 4}
   - {label: "HALO-3bit", bits: 3}
   - {label: "HALO-2bit", bits: 2}
+  # Enhanced HALO (proposed): per-role scale -- norm-correcting (nc) keys preserve
+  # the rotated norm so the attention logit is shrunk only by cos(theta) (vs
+  # cos^2 for plain LS), least-squares (ls) values are MSE-optimal.  Iso-storage.
+  - {label: "HALO-NC-4bit", bits: 4, key_scale_mode: nc, value_scale_mode: ls}
+  - {label: "HALO-NC-3bit", bits: 3, key_scale_mode: nc, value_scale_mode: ls}
+  - {label: "HALO-NC-2bit", bits: 2, key_scale_mode: nc, value_scale_mode: ls}
+  # Enhanced HALO + ls_iter on values: one Lloyd alternating-minimisation step
+  # (re-quantise at the fitted scale, re-fit) -> monotone-lower value MSE, free.
+  - {label: "HALO-NCIT-4bit", bits: 4, key_scale_mode: nc, value_scale_mode: ls_iter}
+  - {label: "HALO-NCIT-3bit", bits: 3, key_scale_mode: nc, value_scale_mode: ls_iter}
+  - {label: "HALO-NCIT-2bit", bits: 2, key_scale_mode: nc, value_scale_mode: ls_iter}
   # Dense rotation + LS scale: same GEMM cost as folded-Hadamard at head_dim=128,
   # marginally better Gaussianisation -> best PPL at every bit on Ministral/Llama.
   # Included as a Pareto ablation alongside the default HALO (Hadamard-GEMM + LS).

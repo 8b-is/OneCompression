@@ -49,6 +49,8 @@ methods:
   - PM-KVQ
   - TurboQuant-3bit
   - HALO-3bit
+  - HALO-NC-3bit            # enhanced HALO (norm-correct keys / LS values)
+  - HALO-NCIT-3bit          # enhanced HALO + ls_iter values
   - TaperKV
   - TaperKV-3bit
   - TurboTaper-3bit
@@ -111,9 +113,12 @@ turbotaper_sweep:
 turboquant_variants:
   - {label: "TurboQuant-3bit", bits: 3, dist: beta}
 
-# HALO at 3-bit (proposed companion codec at iso-bit to TurboQuant-3bit).
+# HALO at 3-bit (proposed companion codec at iso-bit to TurboQuant-3bit), plus
+# the enhanced role-asymmetric scale variants (iso-storage to HALO-3bit).
 halo_variants:
   - {label: "HALO-3bit", bits: 3}
+  - {label: "HALO-NC-3bit", bits: 3, key_scale_mode: nc, value_scale_mode: ls}
+  - {label: "HALO-NCIT-3bit", bits: 3, key_scale_mode: nc, value_scale_mode: ls_iter}
 
 # ThinKV: keep eager attention so its sparsity calibration runs (faithful regime).
 attn_implementation: eager
