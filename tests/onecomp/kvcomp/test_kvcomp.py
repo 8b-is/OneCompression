@@ -239,6 +239,88 @@ def test_halo_ls_scale_reduces_mse_and_is_storage_neutral():
         assert e_ls.meta["stored_bits"] == e_rms.meta["stored_bits"]
 
 
+# --- HALO role-asymmetric scale modes (lever 1) + ls_iter (lever 2) -------
+def test_halo_scale_modes_storage_neutral_and_roundtrip():
+    # Every key/value scale-mode combo stores the SAME bits and round-trips.
+    x, _ = _kv(h=4, s=128)
+    modes = ["rms", "ls", "nc", "ip", "ls_iter"]
+    stored = set()
+    for km in modes:
+        for vm in modes:
+            c = HALOCodec(bits=3, rotation_mode="hadamard_gemm",
+                          key_scale_mode=km, value_scale_mode=vm)
+            enc = c.encode(x, x)
+            k, v = c.decode(enc)
+            assert k.shape == x.shape and v.shape == x.shape
+            stored.add(enc.meta["stored_bits"])
+    assert len(stored) == 1  # scale choice is storage-neutral
+
+
+def test_halo_nc_preserves_rotated_norm():
+    # The norm-correcting scale reconstructs each rotated vector at its true norm
+    # (||x_hat|| == ||x_rot||), unlike the least-squares scale which shrinks it.
+    x, _ = _kv(h=2, s=256)
+    c = HALOCodec(bits=4, rotation_mode="hadamard_gemm", key_scale_mode="nc")
+    p = c._encode_tensor(x, 4, "k")
+    from onecomp.kvcomp.codec.halo import _gaussian_codebook
+    cb = _gaussian_codebook(4)
+    xr, _ = c._rotate(x, x.shape[-1])
+    xhat = cb[p["codes"]] * p["scale"]
+    assert torch.allclose(xhat.norm(dim=-1), xr.norm(dim=-1), rtol=1e-4)
+
+
+def test_halo_ls_iter_monotone_mse():
+    # One alternating-minimisation step never raises reconstruction MSE vs LS.
+    from onecomp.kvcomp.codec.halo import _gaussian_codebook
+    from onecomp.kvcomp.codec.rotation import quantize_to_codebook
+    x, _ = _kv(h=2, s=512)
+    c = HALOCodec(bits=2, rotation_mode="dense")
+    for bits in (2, 3, 4):
+        cb = _gaussian_codebook(bits)
+        xr, _ = c._rotate(x, x.shape[-1])
+        rms = xr.pow(2).mean(-1, keepdim=True).sqrt().clamp_min(1e-8)
+        codes = quantize_to_codebook(xr / rms, cb)
+        s_ls, c_ls = c._fit_scale(xr, cb, codes, rms, "ls")
+        s_it, c_it = c._fit_scale(xr, cb, codes, rms, "ls_iter")
+        m_ls = (xr - s_ls * cb[c_ls]).pow(2).sum()
+        m_it = (xr - s_it * cb[c_it]).pow(2).sum()
+        assert float(m_it) <= float(m_ls) + 1e-3
+
+
+def test_halo_legacy_ls_scale_backcompat():
+    # ls_scale derives the per-role modes and is bit-identical to explicit modes.
+    x, _ = _kv(h=2, s=128)
+    assert HALOCodec(bits=4)._scale_mode_for("k") == "ls"  # default
+    assert HALOCodec(bits=4, ls_scale=False)._scale_mode_for("v") == "rms"
+    o = HALOCodec(bits=4, ls_scale=False, key_scale_mode="nc")
+    assert o._scale_mode_for("k") == "nc" and o._scale_mode_for("v") == "rms"
+    a = HALOCodec(bits=3, rotation_mode="hadamard_gemm", ls_scale=True)
+    b = HALOCodec(bits=3, rotation_mode="hadamard_gemm", key_scale_mode="ls", value_scale_mode="ls")
+    assert torch.allclose(a.decode(a.encode(x, x))[0], b.decode(b.encode(x, x))[0])
+
+
+def test_halo_invalid_scale_mode_raises():
+    with pytest.raises(Exception):
+        HALOCodec(bits=4, key_scale_mode="bogus")
+
+
+def test_halo_stateless_precond_no_ema():
+    # Lever 4: no EMA state; encoding a block is independent of any prior block.
+    x_a = torch.randn(1, 4, 200, 128)
+    means = torch.zeros(128); means[:4] = torch.tensor([40.0, -30.0, 20.0, -10.0])
+    x_b = torch.randn(1, 4, 200, 128) + means
+    c = HALOCodec(bits=4, rotation_mode="dense", precond_roles=("k", "v"), center=True)
+    assert not hasattr(c, "_ema")
+    _ = c.encode(x_a, x_a)              # would have polluted an EMA
+    enc_b_after = c.encode(x_b, x_b)
+    fresh = HALOCodec(bits=4, rotation_mode="dense", precond_roles=("k", "v"), center=True)
+    enc_b_fresh = fresh.encode(x_b, x_b)
+    assert torch.equal(enc_b_after.key_q["codes"], enc_b_fresh.key_q["codes"])
+    # stored mu is exactly this block's channel mean (no cross-block mixing)
+    mu_true = x_b.float().reshape(-1, 128).mean(0)
+    assert torch.allclose(enc_b_fresh.key_q["mu"], mu_true, atol=1e-4)
+
+
 @pytest.mark.parametrize(
     "codec",
     [KIVICodec(bits=2), FP8Codec(), NVFP4Codec(), TernaryCodec(), Int3Codec(), Int4Codec()],
@@ -760,3 +842,28 @@ def test_code_pass_at_1_fake_model():
     d = res.as_dict()
     assert d["task"] == "livecodebench" and d["pass@1"] == 1.0
     assert "pass@1_ci95" in d and d["n"] == 1
+
+
+# --- vLLM mapping: TurboQuant semantic warning + skip_layers propagation ---
+def test_vllm_mapping_turboquant_warns_semantics_and_propagates_skip_layers():
+    from vllm_plugins.kvcomp.mapping import plan_from_kv_config
+
+    p = plan_from_kv_config({"codec": {
+        "name": "turboquant", "bits": 4, "value_bits": 4,
+        "skip_layers": [0, 1, 34, 35]}})
+    assert p.native_supported and p.kv_cache_dtype == "turboquant_4bit_nc"
+    # semantic-swap warning (Lloyd-Max keys + uniform values) now fires for TQ too
+    assert any("uniform" in w for w in p.warnings)
+    # boundary-layer protection is propagated, not dropped
+    assert p.skip_layers == [0, 1, 34, 35]
+    assert p.engine_kwargs()["kv_cache_dtype_skip_layers"] == "0,1,34,35"
+
+
+def test_vllm_mapping_turboquant_outlier_and_qjl_warn():
+    from vllm_plugins.kvcomp.mapping import plan_from_kv_config
+
+    p = plan_from_kv_config({"codec": {
+        "name": "turboquant", "bits": 4, "value_bits": 4,
+        "n_outlier": 32, "use_qjl": True}})
+    assert any("n_outlier" in w for w in p.warnings)
+    assert any("use_qjl" in w or "QJL" in w for w in p.warnings)

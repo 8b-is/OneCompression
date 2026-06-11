@@ -55,6 +55,13 @@ def read_kv_compression_config(model_path: str) -> Optional[dict]:
     """
     cfg_path = os.path.join(model_path, "config.json")
     if not os.path.isfile(cfg_path):
+        # Local path only: a bare HF Hub model id (no local config.json) yields a
+        # silent no-op.  Log it so a missing KV-comp config on a Hub id is visible
+        # rather than mysteriously un-applied.
+        _get_logger().info(
+            "[kvcomp] no local config.json at '%s' (HF Hub id?); KV-comp config "
+            "not read -- pass a local path or apply engine kwargs manually.",
+            model_path)
         return None
     with open(cfg_path, "r", encoding="utf-8") as fh:
         cfg = json.load(fh)
@@ -117,6 +124,10 @@ def apply_to_engine_args(engine_args, model_path: Optional[str] = None):
         engine_args.kv_cache_dtype = plan.kv_cache_dtype
         if plan.calculate_kv_scales and hasattr(engine_args, "calculate_kv_scales"):
             engine_args.calculate_kv_scales = True
+        if plan.skip_layers and hasattr(engine_args, "kv_cache_dtype_skip_layers"):
+            engine_args.kv_cache_dtype_skip_layers = ",".join(str(i) for i in plan.skip_layers)
+            logger.info("[kvcomp] set kv_cache_dtype_skip_layers=%s",
+                        engine_args.kv_cache_dtype_skip_layers)
         logger.info("[kvcomp] set kv_cache_dtype=%s", plan.kv_cache_dtype)
     elif plan.needs_custom_backend:
         logger.warning(

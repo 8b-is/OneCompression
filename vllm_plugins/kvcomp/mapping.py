@@ -103,6 +103,10 @@ class KVCompVLLMPlan:
     codec_name: Optional[str] = None
     calculate_kv_scales: bool = False
     needs_custom_backend: bool = False
+    # Boundary / outlier layers vLLM should keep in full precision; mapped onto
+    # ``--kv-cache-dtype-skip-layers`` so the codec's ``skip_layers`` are honoured
+    # instead of silently dropped.
+    skip_layers: list = field(default_factory=list)
     notes: list = field(default_factory=list)
     warnings: list = field(default_factory=list)
 
@@ -111,6 +115,10 @@ class KVCompVLLMPlan:
         kwargs: dict = {"kv_cache_dtype": self.kv_cache_dtype}
         if self.kv_cache_dtype.startswith("fp8") and self.calculate_kv_scales:
             kwargs["calculate_kv_scales"] = True
+        if self.native_supported and self.skip_layers:
+            # vLLM accepts a comma-separated list of layer indices to leave at the
+            # model dtype (boundary-layer protection).
+            kwargs["kv_cache_dtype_skip_layers"] = ",".join(str(i) for i in self.skip_layers)
         return kwargs
 
 
@@ -204,13 +212,37 @@ def plan_from_kv_config(
                 f"'{preset}' (requires a vLLM build with native TurboQuant KV "
                 "cache + FlashAttention-2; boundary layers auto-protected).",
             )
+            # Propagate boundary/outlier layer protection (1-line fix the OneComp
+            # outlier-layer detector already produces but the plugin used to drop).
+            plan.skip_layers = [int(x) for x in (codec.get("skip_layers") or [])]
+            # The named presets do NOT reproduce every OneComp knob.  vLLM's
+            # TurboQuant runs Lloyd-Max on *keys* and *uniform* quant on values
+            # (and the "8" in k8v4 is FP8 keys, not 8-bit Lloyd-Max), so the
+            # numbers differ from the HF rotated-Lloyd-Max-on-both path; warn for
+            # turboquant exactly as for halo rather than swapping semantics
+            # silently.
+            plan.warnings.append(
+                f"Codec '{name}' (k{kb}v{vb}) maps to vLLM preset '{preset}', "
+                "whose keys are Lloyd-Max and values are uniform (and k8 = FP8 "
+                "keys); this is not bit-identical to OneComp's rotated Lloyd-Max "
+                "on both K and V (HF cache path)."
+            )
+            # Knobs with no preset equivalent are dropped -- say so explicitly.
+            if int(codec.get("n_outlier") or 0) > 0:
+                plan.warnings.append(
+                    f"Codec '{name}' n_outlier={codec.get('n_outlier')} (2.5/3.5-bit "
+                    "outlier split) has no preset equivalent and is dropped by the "
+                    "native mapping; use the HF cache path to keep it.")
+            if codec.get("use_qjl"):
+                plan.warnings.append(
+                    f"Codec '{name}' use_qjl=True is ignored: upstream vLLM "
+                    "intentionally omits the QJL residual (it amplifies variance "
+                    "through softmax and harms attention quality).")
             if name == "halo":
                 plan.warnings.append(
-                    "HALO maps to vLLM's faithful TurboQuant kernel (Lloyd-Max "
-                    "keys + uniform values + norm-correction); HALO's "
-                    "Hadamard-GEMM / least-squares-scale refinements run only in "
-                    "the HF cache path."
-                )
+                    "HALO's Hadamard-GEMM / role-asymmetric (NC key, LS value) "
+                    "scale refinements run only in the HF cache path; the vLLM "
+                    "preset uses norm-correction on keys only.")
         else:
             plan.needs_custom_backend = True
             plan.kv_cache_dtype = "auto"

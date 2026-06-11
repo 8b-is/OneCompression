@@ -19,36 +19,67 @@ verified, hardware-robust, storage-neutral levers (see
    *dense* rotation (the earlier "auto->dense" speed trick traded ~15-30% KV-MSE /
    up to ~10% attention-output error away -- a regression this fixes).
 
-2. **Least-squares reconstruction scale (quality, free).**  TurboQuant stores the
-   per-vector RMS as the dequant scale.  HALO instead stores the scale that
-   *minimises* the reconstruction error for the chosen codes,
-   ``s* = <x_rot, c_hat> / <c_hat, c_hat>`` (the closed-form argmin of
-   ``||x_rot - s * c_hat||^2``).  It is one ``O(D)`` dot-product pair at encode,
-   the same single fp16 per vector at decode, and is provably ``<=`` the RMS MSE.
-   On real KV it lowers the attention-output error ~3-7% at equal bits/storage
-   across 2/3/4-bit.
+2. **Role-asymmetric reconstruction scale (quality, free).**  TurboQuant stores
+   the per-vector RMS as the dequant scale.  HALO instead stores a scale chosen
+   per *role* (key vs value), because the two roles have *different* quality
+   objectives once the codes are fixed.  Write ``x`` for the rotated vector,
+   ``c_hat`` for the chosen code direction and ``theta = angle(x, c_hat)``; then
 
-Together HALO is strictly faster *and* strictly higher quality than the shipped
-TurboQuant default at identical bit-width and metadata footprint.
+   =========  =========================  ==================  ==============  ====================
+   scale       formula                    <x_hat, x>          ||x_hat||       MSE ||x - s c||^2
+   =========  =========================  ==================  ==============  ====================
+   LS (rms+)  ``<x,c>/<c,c>``            ``||x||^2 cos^2 t``  ``||x|| cos t``  ``||x||^2 sin^2 t`` (min)
+   NC         ``||x||/||c||``            ``||x||^2 cos t``    ``||x||`` (exact) ``2||x||^2(1-cos t)``
+   IP         ``||x||^2/<x,c>``          ``||x||^2`` (exact)  ``||x||/cos t``   (largest)
+   =========  =========================  ==================  ==============  ====================
+
+   with the identity ``s_NC = sqrt(s_LS * s_IP)`` (NC is the geometric mean of
+   the MSE-optimal and inner-product-unbiased scales).  Small-angle:
+   ``2(1-cos t) = t^2 + O(t^4)`` and ``sin^2 t = t^2 - O(t^4)``, so at 3-4 bit
+   (``cos t ~ 0.99``) NC's MSE penalty over LS is ``O(t^4)`` (negligible), while
+   the *systematic attention-logit shrink* goes from ``cos^2 t`` (LS) to
+   ``cos t`` (NC) -- halving it.  Softmax is sensitive to a per-token logit
+   shrink (it raises the temperature and, because ``cos t`` jitters per token,
+   perturbs the ranking), so:
+
+   * **keys use NC** (``key_scale_mode="nc"``): preserve the rotated norm
+     (``scale = ||x_rot||``, ``c_hat`` normalised), keeping logits faithful;
+   * **values use LS** (``value_scale_mode="ls"``): values enter the output
+     *linearly* (``sum_i a_i v_i``), so MSE is the correct objective.
+
+   Both store the same single fp16 per vector (storage-neutral).  The
+   ``"ls_iter"`` value mode adds one Lloyd alternating-minimisation step
+   (re-quantise at the fitted ``s``, then re-fit ``s``) which is monotone
+   non-increasing in MSE for a few % extra MSE reduction at 2-3 bit.
+
+This makes HALO dominate the shipped TurboQuant default on *both* the MSE axis
+(values) and the attention axis (keys) at identical bit-width and metadata
+footprint -- matching upstream vLLM's choice of the ``_nc`` (norm-corrected)
+TurboQuant presets as the standard.  The legacy symmetric least-squares scale
+(``ls_scale=True`` -> LS on both roles) is retained for backwards comparability.
 
 Optional research levers (OFF by default):
 
-* **Online affine preconditioning (``precond_roles``).**  Real KV has
-  massive-activation channels with a large persistent per-channel mean.  HALO can
-  remove a running per-channel mean ``mu_c`` (and optionally a scale ``w_c``)
-  before rotation.  Mean-centering is PPL-safe (attention weights sum to 1, so the
-  added-back mean is exact); whitening lowers raw MSE but can amplify
-  attention-output error via the ``1/w_c`` un-whiten on high-variance channels, so
-  it stays opt-in.  A multi-architecture sweep (Llama, Qwen2, Cohere) did not show
-  a *robust* PPL win from preconditioning, hence OFF by default; the two levers
-  above are the validated win.  Per-block ``mu``/``w`` are stored in the payload.
+* **Stateless block-wise affine preconditioning (``precond_roles``).**  Real KV
+  has massive-activation channels with a large persistent per-channel mean.  HALO
+  can remove a per-channel mean ``mu_c`` (and optionally a scale ``w_c``) before
+  rotation.  The per-block ``mu``/``w`` are computed *from this block alone* and
+  stored in the payload (no cross-block / cross-layer EMA: an earlier EMA keyed
+  only on ``(role, head_dim)`` silently mixed the statistics of layer 0 and layer
+  31 -- and of successive requests -- through a shared codec instance, and was not
+  thread-safe; centering is now exactly stateless).  Mean-centering is PPL-safe
+  (attention weights sum to 1, so the added-back mean is exact); whitening lowers
+  raw MSE but can amplify attention-output error via the ``1/w_c`` un-whiten on
+  high-variance channels, so it stays opt-in.  A multi-architecture sweep (Llama,
+  Qwen2, Cohere) did not show a *robust* PPL win from preconditioning, hence OFF
+  by default; the scale/rotation levers above are the validated win.
 
 Copyright 2025-2026 Fujitsu Ltd.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import torch
 
@@ -99,13 +130,27 @@ class HALOCodec(KVCodec):
     Attributes:
         bits: Bits per coordinate for keys (and values unless ``value_bits``).
         value_bits: Optional separate bit-width for values (K>V asymmetry).
-        ls_scale: Store the MSE-optimal least-squares dequant scale instead of the
-            RMS (the quality lever; free, same fp16-per-vector storage).
-        center: Remove a running per-channel mean before rotation (research lever
-            against massive-activation bias).  Only active when ``precond_roles``
-            is non-empty; has no effect otherwise.
-        whiten: Divide by a running per-channel std before rotation.
-        momentum: EMA momentum for the per-channel mean / variance (online).
+        ls_scale: Legacy master switch for the dequant scale.  ``True`` -> the
+            MSE-optimal least-squares scale on *both* roles (the original HALO
+            quality lever); ``False`` -> the per-vector RMS on both roles
+            (faithful TurboQuant).  Ignored for a role when its explicit
+            ``key_scale_mode`` / ``value_scale_mode`` is set.
+        key_scale_mode: Per-role dequant scale for keys (overrides ``ls_scale``):
+            ``"nc"`` (norm-correct, recommended -- preserves the attention
+            logit), ``"ls"`` (least-squares / MSE-optimal), ``"rms"`` (per-vector
+            RMS), ``"ip"`` (inner-product-unbiased) or ``"ls_iter"`` (LS + one
+            Lloyd alternating-minimisation step).  ``None`` -> derive from
+            ``ls_scale``.
+        value_scale_mode: Per-role dequant scale for values (overrides
+            ``ls_scale``); same choices.  ``"ls"`` / ``"ls_iter"`` recommended
+            (values enter the output linearly, so MSE is the right objective).
+        center: Remove a per-block per-channel mean before rotation (research
+            lever against massive-activation bias).  Only active when
+            ``precond_roles`` is non-empty; has no effect otherwise.  Stateless:
+            ``mu`` is computed from the current block and stored in the payload.
+        whiten: Divide by a per-block per-channel std before rotation.
+        momentum: Deprecated / unused (kept for config back-compat).  Block-wise
+            statistics are now exactly stateless (no EMA).
         rotation_mode: ``"auto"`` (Hadamard-GEMM for power-of-two head dims, dense
             QR otherwise), ``"hadamard_gemm"`` (materialised Hadamard, one GEMM),
             ``"hadamard"`` (sequential WHT butterfly) or ``"dense"`` (QR random).
@@ -117,6 +162,12 @@ class HALOCodec(KVCodec):
     bits: int = 4
     value_bits: int = None
     ls_scale: bool = True
+    # Per-role dequant-scale modes (override ``ls_scale`` when set).  Leaving them
+    # ``None`` reproduces the legacy symmetric behaviour exactly (so every
+    # existing config / result is unchanged); the recommended HALO operating
+    # point is the asymmetric ``key_scale_mode="nc"`` + ``value_scale_mode="ls"``.
+    key_scale_mode: str = None
+    value_scale_mode: str = None
     center: bool = False
     # NB: whitening is OFF by default.  For *values*, un-whitening at decode
     # divides channel c by w_c, which *amplifies* the attention-output error on
@@ -151,8 +202,8 @@ class HALOCodec(KVCodec):
     eps: float = 1e-6
     key_axis: str = "token"
     value_axis: str = "token"
-    # Online per-channel (mean, var) EMA, keyed by ("k"/"v", head_dim).
-    _ema: dict = field(default_factory=dict, repr=False, compare=False)
+
+    _SCALE_MODES = ("rms", "ls", "nc", "ip", "ls_iter")
 
     def validate_params(self):
         if self.rotation_mode not in ("hadamard", "hadamard_gemm", "dense", "auto"):
@@ -160,9 +211,20 @@ class HALOCodec(KVCodec):
                 "rotation_mode must be 'auto', 'hadamard_gemm', 'hadamard' or 'dense'")
         if not (isinstance(self.bits, int) and 1 <= self.bits <= 8):
             raise ValueError(f"bits must be int in 1..8, got {self.bits!r}")
+        for mode in (self.key_scale_mode, self.value_scale_mode):
+            if mode is not None and mode not in self._SCALE_MODES:
+                raise ValueError(
+                    f"scale_mode must be one of {self._SCALE_MODES} or None, got {mode!r}")
 
     def _value_bits(self) -> int:
         return self.value_bits if self.value_bits is not None else self.bits
+
+    def _scale_mode_for(self, role: str) -> str:
+        """Resolve the per-role dequant-scale mode (explicit overrides legacy)."""
+        explicit = self.key_scale_mode if role == "k" else self.value_scale_mode
+        if explicit is not None:
+            return explicit
+        return "ls" if self.ls_scale else "rms"
 
     def _resolved_mode(self, d: int) -> str:
         """Resolve ``"auto"`` to the best speed-quality orthogonal transform.
@@ -177,24 +239,25 @@ class HALOCodec(KVCodec):
             return "hadamard_gemm" if d <= self.hadamard_gemm_max_dim else "hadamard"
         return "dense"
 
-    # --- online affine preconditioner (mean, scale) ----------------------
+    # --- stateless block-wise affine preconditioner (mean, scale) --------
     def _precondition(self, x: torch.Tensor, role: str):
-        """Return per-channel ``(mu, w)`` (each ``(d,)``), updating the EMA."""
+        """Return per-channel ``(mu, w)`` for *this block* (each ``(d,)`` or None).
+
+        Stateless: ``mu`` / ``w`` are computed from ``x`` alone and stored in the
+        payload, so decoding is exact and there is no cross-block / cross-layer /
+        cross-request contamination (the previous EMA, keyed only on
+        ``(role, head_dim)`` on a codec shared across all layers, mixed those
+        statistics and was not thread-safe).  ``None`` is returned for a lever
+        that is off so the caller skips the corresponding (identity) op.
+        """
         d = x.shape[-1]
-        if role not in self.precond_roles:
-            return (torch.zeros(d, device=x.device), torch.ones(d, device=x.device))
         flat = x.float().reshape(-1, d)
-        mu_b = flat.mean(dim=0) if self.center else torch.zeros(d, device=x.device)
-        var_b = flat.var(dim=0, unbiased=False) if self.whiten else torch.ones(d, device=x.device)
-        key = (role, d)
-        prev = self._ema.get(key)
-        if prev is None or prev[0].shape != mu_b.shape or prev[0].device != mu_b.device:
-            mu, var = mu_b, var_b
+        mu = flat.mean(dim=0) if self.center else None
+        if self.whiten:
+            var = flat.var(dim=0, unbiased=False)
+            w = (var + self.eps).rsqrt()
         else:
-            mu = self.momentum * prev[0] + (1.0 - self.momentum) * mu_b
-            var = self.momentum * prev[1] + (1.0 - self.momentum) * var_b
-        self._ema[key] = (mu.detach(), var.detach())
-        w = (var + self.eps).rsqrt() if self.whiten else torch.ones(d, device=x.device)
+            w = None
         return mu, w
 
     # --- rotation helpers -------------------------------------------------
@@ -225,35 +288,69 @@ class HALOCodec(KVCodec):
         q = _dense_rotation_on(m, self.seed, str(xr.device), torch.float32)
         return xr @ q.t()
 
+    # --- per-role dequant scale ------------------------------------------
+    @staticmethod
+    def _fit_scale(xr, cb, codes, rms, mode):
+        """Return ``(scale, codes)`` for the chosen ``mode`` (codes may update).
+
+        All modes store the same single fp16 per vector, so storage is identical
+        regardless of the choice (verified by the storage-neutral tests).
+        """
+        if mode == "rms":
+            return rms, codes
+        chat = cb[codes]
+        if mode == "nc":
+            # Norm-correcting scale: ``||x_hat|| = ||x_rot||`` exactly, so the
+            # attention logit ``q.k`` is shrunk only by ``cos(theta)`` (vs
+            # ``cos^2`` for LS).  c_hat is the (unnormalised) code direction.
+            cn = chat.norm(dim=-1, keepdim=True).clamp_min(1e-8)
+            return xr.norm(dim=-1, keepdim=True) / cn, codes
+        # least-squares family: s* = argmin_s ||xr - s*c_hat||^2 = <xr,c>/<c,c>.
+        num = (xr * chat).sum(dim=-1, keepdim=True)
+        den = (chat * chat).sum(dim=-1, keepdim=True).clamp_min(1e-8)
+        s_ls = num / den
+        if mode == "ls":
+            return s_ls, codes
+        if mode == "ip":
+            # Inner-product-unbiased: <x_hat, x> = ||x||^2 exactly.
+            return (xr * xr).sum(dim=-1, keepdim=True) / num.clamp_min(1e-8), codes
+        if mode == "ls_iter":
+            # One Lloyd alternating-minimisation step: re-quantise at the fitted
+            # scale, then re-fit the LS scale.  ||xr - s*c||^2 is monotone
+            # non-increasing (the codes-update and the scale-update each minimise
+            # the same objective along their coordinate).
+            codes2 = quantize_to_codebook(xr / s_ls.clamp_min(1e-8), cb)
+            chat2 = cb[codes2]
+            num2 = (xr * chat2).sum(dim=-1, keepdim=True)
+            den2 = (chat2 * chat2).sum(dim=-1, keepdim=True).clamp_min(1e-8)
+            return num2 / den2, codes2
+        raise ValueError(f"unknown scale mode {mode!r}")
+
     # --- per-tensor encode / decode --------------------------------------
     def _encode_tensor(self, x, bits, role):
         d = x.shape[-1]
         if self._resolved_mode(d) in ("hadamard", "hadamard_gemm") and not is_power_of_two(d):
             return None  # caller falls back to affine
-        # Online affine preconditioning -- only when this role opts in.  When it
-        # is off (the default), the (x-mu)*w step is the identity, so we skip it
-        # entirely instead of paying a full-tensor subtract-0 / multiply-1; this
-        # makes HALO's overhead equal to the bare rotated-Lloyd-Max path.
+        # Stateless block-wise affine preconditioning -- only when this role opts
+        # in.  When it is off (the default), the (x-mu)*w step is the identity, so
+        # we skip it entirely instead of paying a full-tensor subtract-0 /
+        # multiply-1; this makes HALO's overhead equal to the bare rotated
+        # Lloyd-Max path.
         do_precond = role in self.precond_roles and (self.center or self.whiten)
         if do_precond:
             mu, w = self._precondition(x, role)      # per-channel (mean, scale)
-            xw = (x.float() - mu) * w
+            xw = x.float()
+            if mu is not None:
+                xw = xw - mu
+            if w is not None:
+                xw = xw * w
         else:
             mu, w, xw = None, None, x
         xr, kind = self._rotate(xw, d)               # orthogonal rotation
         rms = xr.pow(2).mean(dim=-1, keepdim=True).sqrt().clamp_min(1e-8)  # per-vector RMS
         cb = _gaussian_codebook(bits).to(x.device)
         codes = quantize_to_codebook(xr / rms, cb)
-        if self.ls_scale:
-            # MSE-optimal dequant scale for the chosen codes:
-            # s* = argmin_s ||xr - s*c_hat||^2 = <xr,c_hat>/<c_hat,c_hat>.  Same
-            # single fp16/vector as RMS, provably <= RMS reconstruction error.
-            chat = cb[codes]
-            num = (xr * chat).sum(dim=-1, keepdim=True)
-            den = (chat * chat).sum(dim=-1, keepdim=True).clamp_min(1e-8)
-            scale = num / den
-        else:
-            scale = rms
+        scale, codes = self._fit_scale(xr, cb, codes, rms, self._scale_mode_for(role))
         return {"codes": codes, "scale": scale, "mu": mu, "w": w,
                 "bits": bits, "m": d, "kind": kind}
 
@@ -298,6 +395,8 @@ class HALOCodec(KVCodec):
     def get_kv_config(self) -> dict:
         cfg = super().get_kv_config()
         cfg.update({"value_bits": self.value_bits, "ls_scale": self.ls_scale,
+                    "key_scale_mode": self.key_scale_mode,
+                    "value_scale_mode": self.value_scale_mode,
                     "center": self.center, "whiten": self.whiten,
                     "precond_roles": list(self.precond_roles),
                     "momentum": self.momentum, "rotation_mode": self.rotation_mode,

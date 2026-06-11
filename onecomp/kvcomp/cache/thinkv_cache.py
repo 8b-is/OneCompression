@@ -164,6 +164,16 @@ class ThinKVCache(DynamicCache):
     # --- HF Cache API ------------------------------------------------------
     def update(self, key_states, value_states, layer_idx, *args, **kwargs):
         if key_states.shape[0] != 1:
+            # The live TBQ buffer is single-sequence (heads, n, dim); batched
+            # decoding silently falls back to an *uncompressed* DynamicCache.
+            # Warn once so a batch>1 evaluation does not report compression_ratio
+            # ~1.0 without the user realising TBQ never engaged.
+            if not getattr(self, "_warned_batch", False):
+                logger.warning(
+                    "ThinKVCache received batch size %d (>1); TBQ is single-sequence "
+                    "and this falls back to an uncompressed DynamicCache. Use batch=1 "
+                    "for faithful ThinKV quantization.", key_states.shape[0])
+                self._warned_batch = True
             return super().update(key_states, value_states, layer_idx, *args, **kwargs)
 
         while len(self.layers) <= layer_idx:
