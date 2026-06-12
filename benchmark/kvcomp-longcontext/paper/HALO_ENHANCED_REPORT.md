@@ -10,8 +10,10 @@ It is paired with:
 * `README.md` — reproduction harness and the running benchmark status log.
 * `onecomp/kvcomp/codec/halo.py` — the codec (the module docstring carries the
   same maths; this file is the *evaluation/claim* view).
-* `ichikawa_works/kvcomp_halo_asym/` and `ichikawa_works/kvcomp_halo_research/` —
-  array-level / CPU / GPU verification scripts.
+* `paper/tests/verify_halo_asym_scale.py`, `paper/tests/verify_halo_outlier.py`,
+  and `tests/onecomp/kvcomp/test_kvcomp.py` — the in-repo, data-free, CPU-only
+  verification (no external checkout needed; the scripts resolve the repo root
+  relative to themselves).
 
 ---
 
@@ -59,7 +61,7 @@ Identity `s_NC = √(s_LS·s_IP)`. Small-angle: `2(1−cosθ)=θ²+O(θ⁴)`,
 enter softmax through an inner product (a logit-faithful objective); values
 enter the output linearly `Σaᵢvᵢ` (an MSE objective). Hence NC keys + LS values.
 All scales store the same single fp16 per vector ⇒ storage-neutral. Verified
-element-by-element in `ichikawa_works/kvcomp_halo_asym/01_verify_asym_scale.py`.
+element-by-element in `paper/tests/verify_halo_asym_scale.py`.
 
 ---
 
@@ -211,12 +213,16 @@ bash submit_halo_enhanced.sh speed       # codec + e2e latency/throughput
 
 ## 5. Verification artifacts (data-free, before any GPU run)
 
+All verification is in-repo and self-contained (CPU-only, data-free; the scripts
+resolve the repo root relative to themselves, so no external checkout is needed):
+
 | Script / test | Proves |
 |---|---|
-| `ichikawa_works/kvcomp_halo_asym/01_verify_asym_scale.py` | lever-1 identities (`s_NC=√(s_LS·s_IP)`, MSE gaps), lever-2 monotonicity, lever-4 statelessness, storage neutrality, round-trip |
-| `ichikawa_works/kvcomp_halo_asym/04_verify_outlier.py` | lever-3 round-trip on pow2 / non-pow2 dims, mask cardinality, effective bit-width, iso-storage with TurboQuant, A-6/A-7 accounting |
+| `paper/tests/verify_halo_asym_scale.py` | lever-1 identities (`s_NC=√(s_LS·s_IP)`, MSE gaps), lever-2 monotonicity, lever-4 statelessness, storage neutrality, round-trip, NC-vs-LS attention-logit fidelity |
+| `paper/tests/verify_halo_outlier.py` | lever-3 round-trip on pow2 / non-pow2 dims, mask cardinality, effective bit-width, iso-storage with TurboQuant, A-6/A-7 accounting |
 | `tests/onecomp/kvcomp/test_kvcomp.py` (93 tests) | scale-mode storage neutrality, NC norm preservation, `ls_iter` monotone MSE, outlier round-trip/accounting, fallback + QJL accounting, vLLM mapping warnings + skip_layers |
 
+Run: `python paper/tests/verify_halo_asym_scale.py && python paper/tests/verify_halo_outlier.py && pytest tests/onecomp/kvcomp/test_kvcomp.py`.
 All 93 unit tests pass; both array-level scripts exit 0.
 
 ---

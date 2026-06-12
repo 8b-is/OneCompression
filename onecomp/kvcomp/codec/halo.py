@@ -4,9 +4,10 @@ HALO is the proposed data-free KV codec.  It shares TurboQuant's skeleton
 (orthogonal rotation -> per-vector scale -> Gaussian Lloyd-Max scalar quant) but
 wins on the **speed-quality** Pareto against the shipped TurboQuant default
 (``rotation_mode="hadamard"`` = butterfly WHT + RMS scale) through two
-verified, hardware-robust, storage-neutral levers (see
-``ichikawa_works/kvcomp_halo_research/`` and ``ichikawa_works/kvcomp_halo_asym/``
-for the measurements):
+verified, hardware-robust, storage-neutral levers (the maths is verified
+in-repo, data-free and CPU-only, by
+``benchmark/kvcomp-longcontext/paper/tests/verify_halo_asym_scale.py`` and
+``verify_halo_outlier.py``, and by ``tests/onecomp/kvcomp/test_kvcomp.py``):
 
 1. **Hadamard-GEMM rotation (speed, quality-neutral wrt WHT).**  The randomized
    Hadamard rotation ``(x * sign) @ H`` (``H`` the orthonormal Sylvester matrix)

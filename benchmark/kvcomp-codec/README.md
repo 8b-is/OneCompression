@@ -17,10 +17,11 @@ Two online-path optimizations (no quality change — both rotations are
 orthogonal and the codebook is identical):
 
 1. **`rotation_mode="auto"`** picks the cheapest orthogonal transform for the
-   head dim. A microbenchmark (`ichikawa_works/kvcomp_bench/speed_halo.py`)
-   shows a single dense cuBLAS GEMM beats the log₂(D) sequential Hadamard
-   butterfly at **every** realistic head dim (D ≤ 512) on GPU, so `auto` uses
-   dense there (WHT reserved for very large 2ᵏ D / non-matmul hardware).
+   head dim. The codec-speed harness (`codec_speed.py`, in this folder's sibling
+   `kvcomp-longcontext/`) shows a single dense/Hadamard cuBLAS GEMM beats the
+   log₂(D) sequential Hadamard butterfly at **every** realistic head dim
+   (D ≤ 512) on GPU, so `auto` uses the GEMM transform there (the sequential WHT
+   is reserved for very large 2ᵏ D / non-matmul hardware).
 2. **Skip dead preconditioning.** When preconditioning is off (the default),
    the `(x−μ)·w` step is the identity; HALO now skips it entirely instead of
    running a full-tensor subtract-0 / multiply-1, plus the per-call sign vector
@@ -89,10 +90,11 @@ srun --gres=gpu:1 .venv/bin/python -u codec_benchmark.py \
 
 **HALO paper preset** (`conf/paper_halo.yaml`, headline 4/3/2-bit, multi-model):
 ```bash
-# launch on three models in parallel via SLURM
-sbatch ichikawa_works/kvcomp_verification/run_paper_halo.sh                                                  # llama-3.1-8b-instruct
-MODEL=/.../models/DeepSeek-R1-Distill-Qwen-7B sbatch ichikawa_works/kvcomp_verification/run_paper_halo.sh    # 7B reasoning
-MODEL=/.../models/DeepSeek-R1-Distill-Qwen-1.5B sbatch ichikawa_works/kvcomp_verification/run_paper_halo.sh  # 1.5B fast
+# one model at a time (override model_path); ~25 min/model on one GPU
+srun --gres=gpu:1 .venv/bin/python codec_benchmark.py --config-name paper_halo \
+    model_path=/.../models/llama-3.1-8b-instruct            # llama-3.1-8b-instruct
+srun --gres=gpu:1 .venv/bin/python codec_benchmark.py --config-name paper_halo \
+    model_path=/.../models/DeepSeek-R1-Distill-Qwen-7B      # 7B reasoning
 ```
 
 Config: `conf/benchmark_codec.yaml`. Metrics per bit-width {2,3,4}: distortion

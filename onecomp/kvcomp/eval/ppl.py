@@ -5,8 +5,8 @@
 ``cache_factory`` so a codec is measured exactly the way it is used at decode
 time.  This is the KV analogue of the weight side's perplexity validation.
 
-Measurement-validity guards (see ichikawa_works review B-2)
------------------------------------------------------------
+Measurement-validity guards
+---------------------------
 * **Non-finite windows.**  A window whose summed loss is ``NaN``/``inf`` (e.g. a
   numerically unstable layer, logit overflow before soft-capping) is *excluded*
   from the average and counted in ``n_skipped_nonfinite`` instead of poisoning

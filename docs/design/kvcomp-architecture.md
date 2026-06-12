@@ -25,7 +25,7 @@
 > | vLLM plugin: FP8 -> native `kv_cache_dtype` mapping + entry-point (`vllm.general_plugins`) | done | `10` |
 > | Custom AttentionBackend for low-bit/eviction in vLLM, LongBench, Triton kernels, ILP bit allocation | todo | roadmap |
 >
-> Verification scripts live in `ichikawa_works/kvcomp_verification/` (llama-3.1-8b / DeepSeek-R1-Distill-Qwen-7B / 1.5B, on B200). Benchmark models follow the competing papers (TurboQuant: Llama-3.1-8B-Instruct + Ministral-8B; ThinKV/PM-KVQ: DeepSeek-R1-Distill family). Gemma is intentionally excluded — no KV-cache-compression baseline reports Gemma KV-cache results.
+> Verification is in-repo and self-contained: the unit suite `tests/onecomp/kvcomp/test_kvcomp.py` plus the CPU-only array-level proofs under `benchmark/kvcomp-longcontext/paper/tests/` (`verify_halo_asym_scale.py`, `verify_halo_outlier.py`, `taper_schedule.py`). Benchmark models follow the competing papers (TurboQuant: Llama-3.1-8B-Instruct + Ministral-8B; ThinKV/PM-KVQ: DeepSeek-R1-Distill family). Gemma is intentionally excluded — no KV-cache-compression baseline reports Gemma KV-cache results.
 >
 > ThinKV is mapped directly onto the paper (Ramachandran et al., ICLR 2026 submission):
 > its generation-loop code listing, problem formulation (TBQ/TBE), and Algorithm 1
@@ -51,7 +51,7 @@
 > compression over naive INT4) (`09`). The vLLM plugin maps the FP8 codec onto the native
 > `kv_cache_dtype='fp8_e4m3'`; its mapping/serialization is verified in `10`.
 >
-> ### Proposed methods (2026-06-01, OneComp original; benches in `ichikawa_works/kvcomp_bench/`)
+> ### Proposed methods (2026-06-01, OneComp original; benches in `benchmark/kvcomp-longcontext/` and `benchmark/kvcomp-codec/`)
 >
 > **TaperKV** (`recipe/taperkv.py` + `cache/taper_cache.py`) — **the verified proposed
 > method (wins)**: it replaces ThinKV's progressive *eviction* with progressive

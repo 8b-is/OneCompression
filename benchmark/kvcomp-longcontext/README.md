@@ -57,13 +57,20 @@ srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py \
 **TaperKV paper preset** (`conf/paper_taperkv.yaml`, iso-memory ~3-bit;
 TaperKV vs ThinKV/PM-KVQ/StreamingLLM/KIVI/TurboQuant/HALO/Uniform-INT3):
 ```bash
-sbatch ichikawa_works/kvcomp_verification/run_paper_taperkv.sh                                                # 7B headline
-MODEL=/.../models/DeepSeek-R1-Distill-Qwen-1.5B sbatch ichikawa_works/kvcomp_verification/run_paper_taperkv.sh  # 1.5B fast
+srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py \
+    --config-name paper_taperkv \
+    model_path=/.../models/DeepSeek-R1-Distill-Qwen-7B           # 7B headline
+# or submit the whole battery via the in-repo launcher:
+bash paper/submit_all.sh paper2
 ```
 
 **TurboQuant comparison preset** (`conf/turboquant_paper.yaml`, full bit grid 2/2.5/3/3.5/4 + HALO 2/3/4 + TaperKV-3bit on Llama-3.1-8B-Instruct):
 ```bash
-sbatch ichikawa_works/kvcomp_verification/run_turboquant_bench.sh
+srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py \
+    --config-name turboquant_paper \
+    model_path=/.../models/llama-3.1-8b-instruct
+# or: bash paper/submit_all.sh paper1   (HALO codec jobs)
+#     bash paper/submit_halo_enhanced.sh  (enhanced HALO battery)
 ```
 
 **Reasoning headline** (`conf/paper_aime.yaml`, ThinKV/PM-KVQ turf; GSM8K + MATH-500
@@ -304,13 +311,15 @@ Result JSON: `results_pareto/results_llama-3.1-8b-instruct.json`.
 
 ## Sub-validation
 
-Component smoke tests and the unit suite live in
-`ichikawa_works/kvcomp_bench/smoke_pmkvq.py` and
-`ichikawa_works/kvcomp_verification/01_unit_kvcomp.py` (58/58 pass).
-The faithful-ThinKV eval path (outlier skip + thought-classification capture)
-is checked end-to-end by
-`ichikawa_works/kvcomp_verification/09_thinkv_faithful_eval.py` (asserts the
-faithful path recovers reasoning vs the degenerate all-NVFP4 path).
+All component and codec verification is in-repo and self-contained:
+
+* `tests/onecomp/kvcomp/test_kvcomp.py` — the unit suite (93 pass): every codec
+  round-trip + bit-accounting, HALO scale modes / outlier split, fallback + QJL
+  accounting, and the vLLM mapping warnings / skip-layer propagation.
+* `paper/tests/verify_halo_asym_scale.py`, `paper/tests/verify_halo_outlier.py`
+  — CPU-only, data-free array-level proofs of the HALO levers (run anywhere; the
+  scripts resolve the repo root relative to themselves).
+* `paper/tests/taper_schedule.py` — the TaperKV avg-bits / memory predictor.
 
 Result JSONs are stored in `results/` (one file per model). Raw Hydra run logs
 (timestamped directories) are git-ignored; only the summary JSONs are tracked.

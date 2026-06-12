@@ -96,8 +96,9 @@ def signed_hadamard_matrix(dim: int, seed: int, device_str: str, dtype) -> torch
     superior incoherence.  ``HS`` is orthonormal (``HS HS^T = D_sign H H^T
     D_sign = I``), so the inverse rotation is ``xr @ HS.t()``.
 
-    Verified bit-for-bit identical to the ``(x*sign) @ H`` path
-    (``ichikawa_works/kvcomp_halo_research/01_halo_speed_quality.py``).
+    Verified bit-for-bit identical to the ``(x*sign) @ H`` path by
+    ``tests/onecomp/kvcomp/test_kvcomp.py`` (the ``hadamard_gemm`` round-trip and
+    speed-ablation tests).
     """
     sign = _cached_sign(int(dim), int(seed), str(device_str), dtype)   # (d,)
     h = hadamard_matrix(int(dim), str(device_str), dtype)              # (d, d)

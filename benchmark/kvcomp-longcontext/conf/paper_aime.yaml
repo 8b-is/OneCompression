@@ -112,9 +112,10 @@ thinkv:
 #       (onecomp.kvcomp.calibrate_pmkvq; cvxpy/pulp not installed, HiGHS used),
 #   (c) channel-wise reparameterization with positional-interpolation calibration
 #       (key K̂ = λ·Q_b(K/λ), positions scaled by pos_scale per Eq. 12).
-# Verified in ichikawa_works/kvcomp_verification/12_pmkvq_blockwise_verify.py
-# (1.5B + 7B, B0-B4 ALL PASS). The "simplified block allocation" caveat no
-# longer applies. Calibration adds a few short forward/backward passes at load.
+# Verified by the in-repo PM-KVQ tests in tests/onecomp/kvcomp/test_kvcomp.py
+# (block-wise IP allocation + channel reparam, B0-B4). The "simplified block
+# allocation" caveat no longer applies. Calibration adds a few short
+# forward/backward passes at load.
 pmkvq:
   key_bits: 8                 # initial high-precision window
   value_bits: 4
