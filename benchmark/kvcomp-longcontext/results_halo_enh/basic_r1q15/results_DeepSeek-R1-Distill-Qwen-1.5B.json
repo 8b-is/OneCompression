@@ -265,6 +265,44 @@
         "n_skipped_nonfinite": 0.0,
         "compression_ratio": 3.9331
       }
+    },
+    "HALO-NC-4bit": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.24,
+        "pass@1_stderr": 0.0429,
+        "pass@1_ci95": [
+          0.1559,
+          0.3241
+        ],
+        "avg_gen_len": 690.0,
+        "compression_ratio": 3.162,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.21,
+        "pass@1_stderr": 0.0409,
+        "pass@1_ci95": [
+          0.1298,
+          0.2902
+        ],
+        "avg_gen_len": 6438.7,
+        "compression_ratio": 3.208,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 206.5823,
+        "nll": 5.3307,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 3.2034
+      }
     }
   }
 }

@@ -484,29 +484,37 @@
         "task": "gsm8k",
         "n": 100,
         "k": 1,
-        "pass@1": 0.59,
-        "pass@1_stderr": 0.0494,
+        "pass@1": 0.57,
+        "pass@1_stderr": 0.0498,
         "pass@1_ci95": [
-          0.4931,
-          0.6869
+          0.4725,
+          0.6675
         ],
-        "avg_gen_len": 421.4,
-        "compression_ratio": 4.948,
+        "avg_gen_len": 432.9,
+        "compression_ratio": 4.951,
         "eviction_fired": true
       },
       "math500": {
         "task": "math500",
         "n": 100,
         "k": 1,
-        "pass@1": 0.54,
-        "pass@1_stderr": 0.0501,
+        "pass@1": 0.55,
+        "pass@1_stderr": 0.05,
         "pass@1_ci95": [
-          0.4418,
-          0.6382
+          0.452,
+          0.648
         ],
-        "avg_gen_len": 2870.1,
-        "compression_ratio": 5.046,
+        "avg_gen_len": 3016.7,
+        "compression_ratio": 5.044,
         "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 25.7359,
+        "nll": 3.2479,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 5.0791
       }
     },
     "HALO-4bit": {

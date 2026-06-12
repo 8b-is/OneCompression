@@ -379,6 +379,44 @@
         "n_skipped_nonfinite": 0.0,
         "compression_ratio": 2.554
       }
+    },
+    "HALO-NCIT-3bit": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.65,
+        "pass@1_stderr": 0.0479,
+        "pass@1_ci95": [
+          0.556,
+          0.744
+        ],
+        "avg_gen_len": 512.8,
+        "compression_ratio": 2.905,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.64,
+        "pass@1_stderr": 0.0482,
+        "pass@1_ci95": [
+          0.5454,
+          0.7346
+        ],
+        "avg_gen_len": 3034.7,
+        "compression_ratio": 2.934,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 54.0519,
+        "nll": 3.9899,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 2.9386
+      }
     }
   }
 }
