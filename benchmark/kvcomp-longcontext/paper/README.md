@@ -101,6 +101,31 @@ The enhanced variants are also wired into `conf/turboquant_paper.yaml`,
 `conf/paper_ablation.yaml` (`HALO-hg-NC/NCIT` lever rows), `conf/paper_aime.yaml`,
 and `conf/paper_taperkv.yaml`, so the full battery picks them up automatically.
 
+#### Inference speed (latency / throughput)
+
+Two harnesses measure speed; the enhanced HALO scale levers are *quality* levers
+with the same encode/decode cost as plain LS, so the goal is to show the gain is
+free (no latency/throughput regression vs the shipped TurboQuant default):
+
+* `codec_speed.py` — codec-level latency **and throughput** in both the prefill
+  (S=4096) and decode (S=1, matrix-vector) regimes: encode/decode ms, encode
+  speedup vs TurboQuant, throughput (Melem/s), per-token decode µs, tok/s/layer,
+  plus KV-MSE / attn-err / bits-per-element on the same tensors. Now includes
+  `HALO-hadamard_gemm-NC` and `-NCIT`.
+* `e2e_speed.py` — end-to-end on a real model: prefill latency (TTFT), decode
+  throughput (tok/s), per-token decode latency (ms/tok), and peak GPU memory for
+  `FullKV / TurboQuant / HALO / HALO-NC / HALO-NCIT` (codec on every layer, the
+  honest worst-case overhead).
+
+```bash
+bash submit_halo_enhanced.sh speed       # codec_speed (synth+Llama) + e2e (Llama/R1-Q7)
+# or directly:
+python codec_speed.py --device cuda --heads 32 --seq 4096 --dim 128 --bits 2 3 4 --repeats 50
+python e2e_speed.py --model <DIR> --prompt-len 4096 --gen-len 128 --bits 3
+```
+
+Results land in `results_codec_speed/{codec_speed_enh_*,e2e_*}.json`.
+
 ### Validated retrieval result (Llama-3.1-8B, completed)
 
 `needle = 45 cells (5 depths × 3 ctx × 3 seeds); RULER = 15 cells; PPL = WikiText-2`

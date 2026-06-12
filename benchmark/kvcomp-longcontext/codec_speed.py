@@ -48,12 +48,23 @@ from onecomp.kvcomp.codec.halo import HALOCodec
 
 
 def _codecs(bits: int) -> dict:
-    """The ablation matrix at a fixed bit-width (keys & values both ``bits``)."""
+    """The ablation matrix at a fixed bit-width (keys & values both ``bits``).
+
+    Adds the enhanced HALO scale levers (NC keys / LS values, and + ls_iter on
+    values).  These are *quality* levers with essentially the same encode/decode
+    cost as plain LS, so the speed table demonstrates the quality gain is free
+    (no latency / throughput regression vs the shipped TurboQuant default).
+    """
     return {
         "TurboQuant-hadamard": TurboQuantCodec(bits=bits, rotation_mode="hadamard", dist="beta"),
         "HALO-hadamard-noLS": HALOCodec(bits=bits, rotation_mode="hadamard", ls_scale=False),
         "HALO-hadamard_gemm-noLS": HALOCodec(bits=bits, rotation_mode="hadamard_gemm", ls_scale=False),
         "HALO-hadamard_gemm-LS": HALOCodec(bits=bits, rotation_mode="hadamard_gemm", ls_scale=True),
+        # Enhanced HALO (proposed): role-asymmetric scale, iso-storage to LS.
+        "HALO-hadamard_gemm-NC": HALOCodec(bits=bits, rotation_mode="hadamard_gemm",
+                                           key_scale_mode="nc", value_scale_mode="ls"),
+        "HALO-hadamard_gemm-NCIT": HALOCodec(bits=bits, rotation_mode="hadamard_gemm",
+                                             key_scale_mode="nc", value_scale_mode="ls_iter"),
         "HALO-dense-LS": HALOCodec(bits=bits, rotation_mode="dense", ls_scale=True),
     }
 
@@ -123,6 +134,38 @@ def _attn_err(k, v, kq, vq, q):
     return float((o - oq).norm() / o.norm().clamp_min(1e-8))
 
 
+def _bench_regime(codec, keys, vals, device, repeats):
+    """Time encode/decode and derive latency + throughput for one KV stack.
+
+    Returns a dict with per-layer median latency (ms) and throughput
+    (million KV-elements / second) for both encode and decode.  Throughput uses
+    the total elements (keys + values) processed per layer so prefill (S large)
+    and decode (S=1) regimes are directly comparable on the same scale.
+    """
+    payloads = [codec.encode(k, v) for k, v in zip(keys, vals)]
+
+    def enc():
+        for k, v in zip(keys, vals):
+            codec.encode(k, v)
+
+    def dec():
+        for c in payloads:
+            codec.decode(c)
+
+    n_layers = len(keys)
+    elem_per_layer = (keys[0].numel() + vals[0].numel())
+    tok_per_layer = keys[0].shape[0] * keys[0].shape[2]  # batch * seq positions
+    enc_ms = _time(enc, device, repeats) * 1e3 / n_layers
+    dec_ms = _time(dec, device, repeats) * 1e3 / n_layers
+    # throughput: elements (Melem/s) and KV-token positions (Mtok/s) per second
+    enc_melem_s = elem_per_layer / max(enc_ms, 1e-9) / 1e3
+    dec_melem_s = elem_per_layer / max(dec_ms, 1e-9) / 1e3
+    enc_mtok_s = tok_per_layer / max(enc_ms, 1e-9) / 1e3
+    return dict(enc_ms=enc_ms, dec_ms=dec_ms,
+                enc_melem_s=enc_melem_s, dec_melem_s=dec_melem_s,
+                enc_mtok_s=enc_mtok_s)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", default="cpu")
@@ -143,7 +186,11 @@ def main():
     d = keys[0].shape[-1]
     g = torch.Generator().manual_seed(1234)
     queries = [torch.randn(k.shape[0], k.shape[1], 32, d, generator=g).to(device) for k in keys]
-    n_elem = sum(k.numel() + v.numel() for k, v in zip(keys, vals))
+    # Decode-regime (incremental, q_len=1) tensors: the matrix-vector shape every
+    # generation step hits, where the GEMM advantage and per-token codec overhead
+    # differ from the prefill (S large) regime.  Same layers/heads/dim, S=1.
+    keys1 = [k[:, :, :1, :].contiguous() for k in keys]
+    vals1 = [v[:, :, :1, :].contiguous() for v in vals]
     print(f"device={device} layers={len(keys)} heads={keys[0].shape[1]} "
           f"seq={keys[0].shape[2]} dim={d} model={os.path.basename(args.model) if args.model else 'synthetic'}")
 
@@ -151,24 +198,17 @@ def main():
     for bits in args.bits:
         codecs = _codecs(bits)
         print(f"\n--- bits={bits} (median latency over {args.repeats} reps; quality mean over layers) ---")
-        print(f"{'codec':26} {'enc ms':>8} {'dec ms':>8} {'enc x':>7} {'KV-MSE':>10} "
-              f"{'mse x':>7} {'attn-err':>9} {'aerr x':>7} {'bits/el':>8}")
+        print(f"  [prefill S={keys[0].shape[2]}]            "
+              f"[decode S=1]")
+        print(f"{'codec':26} {'enc ms':>8} {'dec ms':>8} {'enc x':>6} "
+              f"{'enc Mel/s':>10} {'d1 enc us':>10} {'d1 dec us':>10} {'tok/s/L':>9} "
+              f"{'KV-MSE':>9} {'mse x':>7} {'attn-err':>9} {'bits/el':>8}")
         base = {}
         rows = {}
         for label, codec in codecs.items():
-            # pre-encode payloads for decode timing
+            pf = _bench_regime(codec, keys, vals, device, args.repeats)
+            de = _bench_regime(codec, keys1, vals1, device, max(args.repeats, 50))
             payloads = [codec.encode(k, v) for k, v in zip(keys, vals)]
-
-            def enc():
-                for k, v in zip(keys, vals):
-                    codec.encode(k, v)
-
-            def dec():
-                for c in payloads:
-                    codec.decode(c)
-
-            enc_ms = _time(enc, device, args.repeats) * 1e3 / len(keys)
-            dec_ms = _time(dec, device, args.repeats) * 1e3 / len(keys)
             ms_q, aerr_q, sb = [], [], []
             for (k, v, q, c) in zip(keys, vals, queries, payloads):
                 kq, vq = codec.decode(c)
@@ -176,12 +216,24 @@ def main():
                 aerr_q.append(_attn_err(k, v, kq, vq, q))
                 sb.append(c.meta["stored_bits"] / (k.numel() + v.numel()))
             mm = sum(ms_q) / len(ms_q); aa = sum(aerr_q) / len(aerr_q); bb = sum(sb) / len(sb)
-            rows[label] = dict(enc_ms=enc_ms, dec_ms=dec_ms, kv_mse=mm, attn_err=aa, bits_per_el=bb)
+            # decode step latency in microseconds (per layer); tok/s per layer is
+            # 1 token / (enc+dec) time -- the codec overhead a generated token pays.
+            d1_enc_us = de["enc_ms"] * 1e3
+            d1_dec_us = de["dec_ms"] * 1e3
+            tok_s_layer = 1.0 / max((de["enc_ms"] + de["dec_ms"]) / 1e3, 1e-9)
+            rows[label] = dict(
+                prefill=dict(enc_ms=pf["enc_ms"], dec_ms=pf["dec_ms"],
+                             enc_melem_s=pf["enc_melem_s"], dec_melem_s=pf["dec_melem_s"],
+                             enc_mtok_s=pf["enc_mtok_s"]),
+                decode=dict(enc_us=d1_enc_us, dec_us=d1_dec_us,
+                            tok_s_per_layer=tok_s_layer),
+                kv_mse=mm, attn_err=aa, bits_per_el=bb)
             if not base:
-                base = dict(enc=enc_ms, mse=mm, aerr=aa)
-            print(f"{label:26} {enc_ms:8.3f} {dec_ms:8.3f} {base['enc']/max(enc_ms,1e-9):6.2f}x "
-                  f"{mm:10.5f} {mm/max(base['mse'],1e-12):6.3f}x {aa:9.5f} "
-                  f"{aa/max(base['aerr'],1e-12):6.3f}x {bb:8.3f}")
+                base = dict(enc=pf["enc_ms"], mse=mm, aerr=aa)
+            print(f"{label:26} {pf['enc_ms']:8.3f} {pf['dec_ms']:8.3f} "
+                  f"{base['enc']/max(pf['enc_ms'],1e-9):5.2f}x "
+                  f"{pf['enc_melem_s']:10.2f} {d1_enc_us:10.2f} {d1_dec_us:10.2f} {tok_s_layer:9.0f} "
+                  f"{mm:9.5f} {mm/max(base['mse'],1e-12):6.3f}x {aa:9.5f} {bb:8.3f}")
         out["results"][bits] = rows
 
     if args.out:

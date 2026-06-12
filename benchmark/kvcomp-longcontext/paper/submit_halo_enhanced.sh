@@ -24,6 +24,7 @@
 #   bash submit_halo_enhanced.sh            # submit everything
 #   bash submit_halo_enhanced.sh retrieval  # instruct models (Llama/Ministral)
 #   bash submit_halo_enhanced.sh reason      # R1/QwQ reasoning models
+#   bash submit_halo_enhanced.sh speed       # latency / throughput (codec + e2e)
 #   DRYRUN=1 bash submit_halo_enhanced.sh    # print sbatch lines, submit nothing
 #
 # Overridable env: PY, MODELS, PART, EXCLUDE (same as submit_all.sh).
@@ -123,6 +124,32 @@ sub he-basic-qwq 24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name paper_aime model_path="$QWQ" \
     output_dir="$LC/results_halo_enh_basic_qwq" $basic \
     gsm8k_limit=30 math_limit=30 max_new_reason=6144 max_new_math=6144 "$REASON_METHODS"
+
+fi
+
+############################################################################
+# Inference speed: codec-level latency/throughput (prefill S=4096 + decode S=1)
+# and end-to-end TTFT / decode tok/s / peak memory on a real model.
+############################################################################
+if [ "$WHICH" = all ] || [ "$WHICH" = speed ]; then
+
+# Codec-level speed x quality (now includes HALO-NC / HALO-NCIT + decode S=1).
+sub he-speed-synth 01:00:00 "$LC" \
+    "$PY" -u codec_speed.py --device cuda --heads 32 --seq 4096 --dim 128 \
+    --bits 2 3 4 --repeats 50 --out "$LC/results_codec_speed/codec_speed_enh_cuda.json"
+sub he-speed-llama 01:00:00 "$LC" \
+    "$PY" -u codec_speed.py --device cuda --model "$LLAMA" \
+    --bits 2 3 4 --repeats 50 --out "$LC/results_codec_speed/codec_speed_enh_llama.json"
+
+# End-to-end generation latency/throughput (TTFT + decode tok/s + peak mem).
+sub he-e2e-llama 02:00:00 "$LC" \
+    "$PY" -u e2e_speed.py --model "$LLAMA" --device cuda \
+    --prompt-len 4096 --gen-len 128 --bits 2 3 4 --repeats 3 --dtype float16 \
+    --out "$LC/results_codec_speed/e2e_llama.json"
+sub he-e2e-r1q7 02:00:00 "$LC" \
+    "$PY" -u e2e_speed.py --model "$R1Q7" --device cuda \
+    --prompt-len 4096 --gen-len 128 --bits 2 3 4 --repeats 3 --dtype float16 \
+    --out "$LC/results_codec_speed/e2e_r1q7.json"
 
 fi
 
