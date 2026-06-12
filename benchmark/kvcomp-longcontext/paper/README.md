@@ -273,6 +273,113 @@ Before fix (OLD cascade-error code): R1-7B MATH=6%, QwQ-32B GSM=0%.
 
 ---
 
+---
+
+## Run status (2026-06-12 15:00 JST — 94% complete, rescue jobs submitted)
+
+### Rescue jobs submitted (2026-06-12)
+
+| JobID | 対象 | 欠損メソッド | 予想完了 |
+|---|---|---|---|
+| 47708 | basic/R1-L8 | KIVI-INT2, HALO-3bit | ~8h |
+| 47709 | basic/R1-Q7 | KIVI-INT2, HALO-3bit | ~8h |
+| 47710 | basic/R1-Q14 | Uniform-INT4, StreamingLLM | ~8h |
+| 47711 | basic/R1-Q15 | TurboTaper, KIVI-INT2 | ~8h |
+| 47712 | basic/QwQ | Uniform-INT4, StreamingLLM | ~12h |
+| 47713 | comp/R1-Q15 | Uniform-INT4, StreamingLLM, ThinKV, PM-KVQ (AIME) | ~16h |
+
+### Completion snapshot: 259/273 slots (94%)
+
+| セクション | 完了 | 残り |
+|---|:---:|:---:|
+| P1 retr/Llama, retr/Minis | ✅ 22+22 | 0 |
+| P1 lb/Llama, lb/Minis | ✅ 22+22 | 0 |
+| P1 ablation/codec_speed | ✅ | 0 |
+| P2 taperkv/Llama, R1-Q7/14/15/L8, QwQ | ✅ 11×6 | 0 |
+| P2 basic/R1-L8,Q7,Q14,Q15,QwQ | ⏳ 8/10 each | 10 (47708-47712) |
+| P2 comp/R1-Q7,L8,Q14-24,Q14-25 | ✅ 10×4 | 0 |
+| P2 comp/R1-Q15 | ⏳ 6/10 | 4 (47713) |
+| P2 comp/QwQ-24, QwQ-25 | ✅ 10+10 | 0 |
+
+---
+
+## Benchmark results (confirmed, 2026-06-12)
+
+### Paper 1 — HALO codec: Retrieval (Llama-3.1-8B, iso-memory)
+
+`Needle = 45 cells (5 depths × 3 ctx-len × 3 seeds); RULER = 15 cells`
+
+| Method | Needle ↑ | RULER ↑ | PPL ↓ | Mem |
+|---|---:|---:|---:|---:|
+| FullKV | 1.000 | 1.000 | 6.49 | 1.000 |
+| Uniform-INT3 | 1.000 | 0.867 | 8.54 | 0.197 |
+| Uniform-INT4 | 1.000 | 1.000 | 6.71 | 0.260 |
+| StreamingLLM (evict) | 0.400 | 0.067 | 6.49 | 0.282 |
+| KIVI-INT2 | 1.000 | 1.000 | 7.43 | 0.161 |
+| TurboQuant-3bit | 1.000 | 1.000 | 6.92 | 0.196 |
+| **HALO-3bit (proposed)** | **1.000** | **1.000** | **6.90** | **0.196** |
+| HALO-4bit | 1.000 | 0.933 | 6.59 | 0.258 |
+| TaperKV | 1.000 | 1.000 | 6.59 | 0.292 |
+| TurboTaper | 1.000 | 1.000 | 6.55 | 0.296 |
+
+**Key claim confirmed:** HALO-3bit = TurboQuant-3bit on retrieval/PPL at iso-memory, while being ≈3.8× faster to encode.
+
+---
+
+### Paper 2 — TaperKV: Retrieval headline (Llama-3.1-8B, iso-~3-bit ≈20% budget)
+
+| Method | Needle ↑ | PPL ↓ | Mem |
+|---|---:|---:|---:|
+| FullKV | 1.000 | 6.49 | 1.000 |
+| Uniform-INT3 | 1.000 | 8.50 | 0.197 |
+| StreamingLLM (evict) | **0.200** ❌ | 6.49 | 0.209 |
+| ThinKV | 1.000 | 6.64 | 0.313 |
+| PM-KVQ | 1.000 | 7.95 | 0.204 |
+| TurboQuant-3bit | 1.000 | 6.92 | 0.196 |
+| **HALO-3bit** | **1.000** | **6.91** | **0.196** |
+| **TaperKV** (standard) | **1.000** | **6.59** | **0.293** |
+| **TaperKV-3bit** (iso-3-bit) | **1.000** | **7.42** | **0.197** |
+| **TurboTaper-3bit** | **1.000** | **6.67** | **0.190** |
+
+**Key claim confirmed:** At iso-memory, StreamingLLM (eviction) collapses needle to 0.20 while TaperKV maintains needle=1.00 with PPL 6.59 (beats even Uniform-INT3 on PPL).
+
+---
+
+### Paper 2 — AIME competition math: R1-Qwen-7B
+
+| Method | AIME-2024 ↑ | AIME-2025 ↑ |
+|---|---:|---:|
+| FullKV | 0.342 | 0.233 |
+| Uniform-INT4 | 0.342 | 0.192 |
+| KIVI-INT2 | 0.567 | 0.400 |
+| ThinKV | 0.567 | 0.400 |
+| PM-KVQ | 0.033 | 0.067 |
+| **TaperKV** | **0.633** | **0.433** |
+| TurboTaper | 0.533 | 0.300 |
+| HALO-4bit | 0.533 | 0.367 |
+| HALO-3bit | 0.567 | 0.367 |
+
+**TaperKV (0.633 / 0.433) beats FullKV (0.342 / 0.233) — compression improves AIME on R1-Q7.**
+
+---
+
+### Paper 2 — AIME competition math: QwQ-32B
+
+| Method | AIME-2024 ↑ | AIME-2025 ↑ |
+|---|---:|---:|
+| FullKV | 0.300 | 0.267 |
+| KIVI-INT2 | 0.333 | 0.200 |
+| ThinKV | 0.000 ❌ | 0.000 ❌ |
+| PM-KVQ | 0.000 ❌ | 0.000 ❌ |
+| TaperKV | 0.200 | 0.167 |
+| TurboTaper | 0.300 | 0.167 |
+| **HALO-4bit** | **0.500** | **0.367** |
+| HALO-3bit | 0.200 | 0.167 |
+
+**Notable:** ThinKV / PM-KVQ = 0.000 on QwQ-32B (KV budget insufficient for 32B long-CoT). HALO-4bit (0.500/0.367) outperforms FullKV (0.300/0.267).
+
+---
+
 ## Run status (2026-06-06 01:20 JST — Round 3 実行中, ablation 完了)
 
 ### Bugs fixed (2026-06-04)
