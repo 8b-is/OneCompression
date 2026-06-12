@@ -21,7 +21,7 @@ defaults:
   - paper_taperkv
   - _self_
 
-output_dir: ${hydra:runtime.cwd}/results_ablation_budget
+output_dir: ${hydra:runtime.cwd}/results_ablation/budget
 
 methods:
   - FullKV

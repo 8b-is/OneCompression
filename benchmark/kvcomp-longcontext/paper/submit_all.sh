@@ -116,33 +116,33 @@ sub p1-halo-r1q15  02:00:00 "$CODEC" \
 # 1b. Codec speed x quality Pareto (codec_speed.py, CUDA).
 sub p1-speed-synth 01:00:00 "$LC" \
     "$PY" -u codec_speed.py --device cuda --heads 32 --seq 4096 --dim 128 \
-    --bits 2 3 4 --repeats 30 --out "$LC/results_codec_speed/codec_speed_cuda.json"
+    --bits 2 3 4 --repeats 30 --out "$LC/results_paper1/codec_speed/codec_speed_cuda.json"
 sub p1-speed-llama 01:00:00 "$LC" \
     "$PY" -u codec_speed.py --device cuda --model "$LLAMA" \
-    --bits 2 3 4 --repeats 30 --out "$LC/results_codec_speed/codec_speed_llama.json"
+    --bits 2 3 4 --repeats 30 --out "$LC/results_paper1/codec_speed/codec_speed_llama.json"
 
 # 1c. Retrieval grid (turboquant_paper): Needle + RULER + PPL, full bit grid.
 sub p1-tq-llama-retr 24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name turboquant_paper \
-    model_path="$LLAMA" output_dir="$LC/results_tq_llama_retr" run_longbench=false
+    model_path="$LLAMA" output_dir="$LC/results_paper1/retrieval_llama" run_longbench=false
 sub p1-tq-minis-retr 24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name turboquant_paper_ministral \
-    model_path="$MINISTRAL" output_dir="$LC/results_tq_minis_retr" run_longbench=false
+    model_path="$MINISTRAL" output_dir="$LC/results_paper1/retrieval_minis" run_longbench=false
 
 # 1d. LongBench-E downstream generation (Table 1).
 sub p1-tq-llama-lb 24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name turboquant_paper \
-    model_path="$LLAMA" output_dir="$LC/results_tq_llama_lb" \
+    model_path="$LLAMA" output_dir="$LC/results_paper1/longbench_llama" \
     run_needle=false run_ruler=false run_ppl=false run_longbench=true
 sub p1-tq-minis-lb 24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name turboquant_paper_ministral \
-    model_path="$MINISTRAL" output_dir="$LC/results_tq_minis_lb" \
+    model_path="$MINISTRAL" output_dir="$LC/results_paper1/longbench_minis" \
     run_needle=false run_ruler=false run_ppl=false run_longbench=true
 
 # 1e. End-task lever ablation (paper_ablation): HALO levers + TaperKV asymmetry.
 sub p1-ablation-llama 16:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name paper_ablation \
-    model_path="$LLAMA" output_dir="$LC/results_ablation_llama"
+    model_path="$LLAMA" output_dir="$LC/results_ablation/halo_llama"
 
 fi
 
@@ -155,38 +155,38 @@ if [ "$WHICH" = all ] || [ "$WHICH" = paper2 ]; then
 # Llama (instruct): needle/RULER ON (FullKV retrieves perfectly).
 sub p2-taper-llama 24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name paper_taperkv \
-    model_path="$LLAMA" output_dir="$LC/results_taperkv"
+    model_path="$LLAMA" output_dir="$LC/results_paper2/taperkv"
 
 # R1-Qwen (thinking): needle/RULER OFF; still measures GSM8K + MATH + PPL.
 NONEEDLE='run_needle=false run_ruler=false'
 sub p2-taper-r1q15 24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name paper_taperkv \
-    model_path="$R1Q15" output_dir="$LC/results_taperkv" $NONEEDLE
+    model_path="$R1Q15" output_dir="$LC/results_paper2/taperkv" $NONEEDLE
 sub p2-taper-r1q7 24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name paper_taperkv \
-    model_path="$R1Q7" output_dir="$LC/results_taperkv" $NONEEDLE
+    model_path="$R1Q7" output_dir="$LC/results_paper2/taperkv" $NONEEDLE
 sub p2-taper-r1q14 24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name paper_taperkv \
-    model_path="$R1Q14" output_dir="$LC/results_taperkv" \
+    model_path="$R1Q14" output_dir="$LC/results_paper2/taperkv" \
     $NONEEDLE gsm8k_limit=50 math_limit=50 "$CORE11"
 
 # 2b. Reasoning grid (paper_aime): basic = GSM8K + MATH-500 + PPL.
 aime_basic='run_livecodebench=false aime_years=[]'
 sub p2-basic-r1q15 24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name paper_aime model_path="$R1Q15" \
-    output_dir="$LC/results_aime_basic_r1q15" $aime_basic
+    output_dir="$LC/results_paper2/basic_r1q15" $aime_basic
 sub p2-basic-r1l8  24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name paper_aime model_path="$R1L8" \
-    output_dir="$LC/results_aime_basic_r1l8" $aime_basic
+    output_dir="$LC/results_paper2/basic_r1l8" $aime_basic
 sub p2-basic-r1q7  24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name paper_aime model_path="$R1Q7" \
-    output_dir="$LC/results_aime_basic_r1q7" $aime_basic
+    output_dir="$LC/results_paper2/basic_r1q7" $aime_basic
 sub p2-basic-r1q14 24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name paper_aime model_path="$R1Q14" \
-    output_dir="$LC/results_aime_basic_r1q14" $aime_basic gsm8k_limit=50 math_limit=50 "$CORE7"
+    output_dir="$LC/results_paper2/basic_r1q14" $aime_basic gsm8k_limit=50 math_limit=50 "$CORE7"
 sub p2-basic-qwq   24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name paper_aime model_path="$QWQ" \
-    output_dir="$LC/results_aime_basic_qwq" $aime_basic \
+    output_dir="$LC/results_paper2/basic_qwq" $aime_basic \
     gsm8k_limit=30 math_limit=30 max_new_reason=6144 max_new_math=6144 "$CORE7"
 
 # 2c. Reasoning grid (paper_aime): comp = AIME-2024 + AIME-2025 (split per year
@@ -194,25 +194,25 @@ sub p2-basic-qwq   24:00:00 "$LC" \
 aime_only='run_gsm8k=false run_math=false run_ppl=false run_livecodebench=false'
 sub p2-aime-r1q15  24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name paper_aime model_path="$R1Q15" \
-    output_dir="$LC/results_aime_comp_r1q15" $aime_only aime_years='[2024,2025]' aime_k=8
+    output_dir="$LC/results_paper2/comp_r1q15" $aime_only aime_years='[2024,2025]' aime_k=8
 sub p2-aime-r1l8   24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name paper_aime model_path="$R1L8" \
-    output_dir="$LC/results_aime_comp_r1l8" $aime_only aime_years='[2024,2025]' aime_k=4
+    output_dir="$LC/results_paper2/comp_r1l8" $aime_only aime_years='[2024,2025]' aime_k=4
 sub p2-aime-r1q7   24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name paper_aime model_path="$R1Q7" \
-    output_dir="$LC/results_aime_comp_r1q7" $aime_only aime_years='[2024,2025]' aime_k=4
+    output_dir="$LC/results_paper2/comp_r1q7" $aime_only aime_years='[2024,2025]' aime_k=4
 sub p2-aime24-r1q14 24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name paper_aime model_path="$R1Q14" \
-    output_dir="$LC/results_aime_comp_r1q14_24" $aime_only aime_years='[2024]' aime_k=2 max_new_aime=6144 "$CORE7"
+    output_dir="$LC/results_paper2/comp_r1q14_24" $aime_only aime_years='[2024]' aime_k=2 max_new_aime=6144 "$CORE7"
 sub p2-aime25-r1q14 24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name paper_aime model_path="$R1Q14" \
-    output_dir="$LC/results_aime_comp_r1q14_25" $aime_only aime_years='[2025]' aime_k=2 max_new_aime=6144 "$CORE7"
+    output_dir="$LC/results_paper2/comp_r1q14_25" $aime_only aime_years='[2025]' aime_k=2 max_new_aime=6144 "$CORE7"
 sub p2-aime24-qwq  24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name paper_aime model_path="$QWQ" \
-    output_dir="$LC/results_aime_comp_qwq_24" $aime_only aime_years='[2024]' aime_k=1 max_new_aime=6144 "$CORE7"
+    output_dir="$LC/results_paper2/comp_qwq_24" $aime_only aime_years='[2024]' aime_k=1 max_new_aime=6144 "$CORE7"
 sub p2-aime25-qwq  24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name paper_aime model_path="$QWQ" \
-    output_dir="$LC/results_aime_comp_qwq_25" $aime_only aime_years='[2025]' aime_k=1 max_new_aime=6144 "$CORE7"
+    output_dir="$LC/results_paper2/comp_qwq_25" $aime_only aime_years='[2025]' aime_k=1 max_new_aime=6144 "$CORE7"
 
 fi
 

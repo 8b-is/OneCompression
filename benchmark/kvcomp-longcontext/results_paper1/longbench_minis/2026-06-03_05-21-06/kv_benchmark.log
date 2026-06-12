@@ -1,0 +1,625 @@
+[2026-06-03 05:21:27,929][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:21:28,122][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:21:28,123][huggingface_hub.utils._http][WARNING] - Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+[2026-06-03 05:22:29,108][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:22:29,286][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:23:36,844][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:23:37,089][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:24:03,708][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:24:03,947][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:24:34,193][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:24:34,381][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:40:40,501][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:40:40,687][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:48:41,907][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:48:42,090][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:49:21,524][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:49:21,703][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:49:48,627][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:49:48,817][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:51:13,606][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:51:13,792][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:51:25,477][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:51:25,652][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:51:36,994][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:51:37,171][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:52:15,294][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:52:15,470][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:53:24,202][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:53:24,384][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:53:30,362][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:53:30,560][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:53:36,935][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:53:37,116][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:53:39,824][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:53:40,003][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:53:42,524][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:53:42,705][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:55:21,947][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:55:22,123][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:57:11,156][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:57:11,340][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:57:28,365][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:57:28,545][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:57:32,918][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:57:33,096][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:57:51,191][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:57:51,368][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:57:54,814][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:57:54,997][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:57:57,085][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:57:57,268][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:58:09,147][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:58:09,330][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:58:25,292][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:58:25,474][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:58:32,414][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:58:32,598][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:58:40,579][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:58:40,770][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:58:43,751][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:58:43,939][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 05:58:46,510][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 05:58:46,688][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:00:17,177][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:00:17,363][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:02:27,718][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:02:27,934][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:02:44,982][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:02:45,169][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:02:51,707][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:02:51,911][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:03:31,218][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:03:31,402][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:03:41,783][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:03:41,967][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:03:44,126][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:03:44,304][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:03:55,165][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:03:55,345][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:04:11,398][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:04:11,576][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:05:12,972][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:05:13,153][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:05:57,931][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:05:58,111][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:06:07,364][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:06:07,550][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:06:19,431][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:06:19,613][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:08:43,311][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:08:43,489][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:10:49,233][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:10:49,420][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:11:06,465][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:11:06,643][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:11:35,329][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:11:35,507][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:12:08,434][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:12:08,619][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:12:17,847][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:12:18,030][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:12:33,756][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:12:33,936][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:12:56,038][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:12:56,227][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:13:12,326][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:13:12,512][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:13:20,119][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:13:20,294][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:13:23,571][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:13:23,751][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:13:28,331][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:13:28,512][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:13:30,676][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:13:30,862][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:14:48,444][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:14:48,625][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:16:42,743][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:16:42,926][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:16:49,709][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:16:49,887][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:16:51,779][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:16:51,964][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:16:57,248][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:16:57,445][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:17:00,543][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:17:00,728][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:17:02,556][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:17:02,745][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:17:08,809][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:17:08,989][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:17:18,394][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:17:18,576][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:17:24,971][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:17:25,148][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:17:31,164][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:17:31,342][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:17:34,738][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:17:34,925][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:17:39,583][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:17:39,760][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:18:49,011][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:18:49,196][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:19:55,635][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:19:55,821][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:20:13,074][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:20:13,259][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:20:19,752][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:20:19,932][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:20:38,411][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:20:38,594][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:20:42,388][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:20:42,569][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:20:45,454][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:20:45,631][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:20:55,469][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:20:55,654][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:21:12,332][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:21:12,515][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:21:23,763][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:21:23,943][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:21:33,612][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:21:33,802][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:21:39,571][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:21:39,746][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:21:46,157][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:21:46,334][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:23:37,955][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:23:38,138][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:25:08,232][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:25:08,431][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:25:36,322][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:25:36,507][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:25:45,076][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:25:45,254][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:26:18,920][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:26:19,099][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:26:26,553][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:26:26,731][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:26:31,823][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:26:32,002][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:26:52,439][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:26:52,619][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:27:21,644][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:27:21,824][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:27:28,064][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:27:28,245][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:27:34,046][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:27:34,223][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:27:37,672][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:27:37,854][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:27:41,861][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:27:42,049][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:29:05,399][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:29:05,582][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:30:34,326][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:30:34,503][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:30:50,714][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:30:50,890][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:30:58,298][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:30:58,477][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:31:19,614][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:31:19,801][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:31:24,928][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:31:25,111][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:31:27,757][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:31:27,948][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:31:41,266][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:31:41,448][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:31:58,590][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:31:58,771][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:32:11,289][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:32:11,471][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:32:24,430][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:32:24,628][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:32:29,523][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:32:29,720][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:32:36,287][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:32:36,467][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:36:32,796][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:36:32,985][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:39:40,368][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:39:40,547][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:40:23,646][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:40:23,826][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:40:29,677][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:40:29,852][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:41:13,438][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:41:13,621][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:41:19,787][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:41:19,972][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:41:23,359][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:41:23,541][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:41:54,303][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:41:54,485][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:42:38,921][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:42:39,113][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:42:57,792][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:42:57,975][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:43:20,169][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:43:20,355][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:43:27,586][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:43:27,765][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:43:37,178][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:43:37,352][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:48:50,148][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:48:50,334][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:52:48,695][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:52:48,880][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:53:57,547][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:53:57,729][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:54:14,836][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:54:15,019][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:55:07,282][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:55:07,462][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:55:25,152][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:55:25,325][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:55:29,856][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:55:30,046][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:56:12,321][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:56:12,506][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:57:15,288][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:57:15,466][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:57:26,191][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:57:26,376][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:57:42,525][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:57:42,710][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:57:47,491][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:57:47,677][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 06:57:52,572][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 06:57:52,752][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:01:08,895][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:01:09,083][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:04:24,814][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:04:24,996][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:05:07,978][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:05:08,157][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:05:12,129][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:05:12,311][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:05:45,156][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:05:45,336][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:05:51,083][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:05:51,266][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:05:54,610][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:05:54,799][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:06:25,374][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:06:25,560][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:07:09,352][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:07:09,545][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:07:29,193][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:07:29,370][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:07:54,330][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:07:54,513][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:08:03,543][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:08:03,731][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:08:12,444][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:08:12,635][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:16:00,988][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:16:01,185][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:20:59,801][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:20:59,991][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:22:08,338][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:22:08,519][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:22:19,858][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:22:20,044][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:23:16,953][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:23:17,131][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:23:22,065][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:23:22,246][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:23:27,280][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:23:27,463][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:24:12,128][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:24:12,318][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:25:21,341][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:25:21,519][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:25:32,806][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:25:32,988][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:25:49,034][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:25:49,259][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:25:55,248][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:25:55,430][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:26:02,362][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:26:02,544][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:31:41,050][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:31:41,314][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:35:35,417][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:35:35,600][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:36:18,599][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:36:18,790][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:36:32,089][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:36:32,277][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:37:28,361][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:37:28,548][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:37:33,655][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:37:33,844][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:37:37,624][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:37:37,806][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:38:08,450][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:38:08,628][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:38:52,303][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:38:52,480][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:38:52,550][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:38:54,110][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:38:54,776][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:38:55,267][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:38:55,717][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:38:55,877][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:38:56,376][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:38:56,511][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:38:57,432][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:38:58,475][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:38:58,827][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:38:59,016][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:38:59,068][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:38:59,980][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:00,160][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:00,474][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:00,643][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:01,006][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:02,916][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:03,174][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:03,362][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:03,962][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:06,009][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:39:06,189][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:39:06,314][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:06,534][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:06,800][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:07,000][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:07,074][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:07,289][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:07,476][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:07,713][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:08,010][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:08,276][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:09,479][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:39:09,665][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:39:09,781][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:10,615][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:10,804][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:11,014][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:11,281][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:12,324][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:12,513][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:12,819][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:12,951][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:13,185][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:13,658][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:39:13,843][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:39:13,958][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:28,591][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:43,261][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:46,781][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:53,621][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:39:58,773][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:40:03,099][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:40:08,311][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:40:20,553][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:40:33,699][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:40:48,758][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:40:48,941][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:40:49,042][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:40:56,843][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:41:02,495][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:41:08,755][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:41:17,057][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:41:31,566][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:41:46,116][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:42:00,798][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:42:05,695][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:42:12,477][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:42:27,208][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:42:27,386][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:42:27,477][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:42:29,328][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:42:31,257][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:42:33,167][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:42:35,016][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:42:36,905][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:42:38,766][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:42:40,672][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:42:42,515][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:42:44,427][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:42:46,484][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:42:46,664][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:42:46,800][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:42:47,131][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:42:48,125][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:42:48,302][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:42:48,420][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:42:49,424][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:42:49,628][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:42:49,932][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:42:50,973][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:42:51,962][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:42:53,184][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:42:53,365][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:42:53,489][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:42:54,423][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:42:56,188][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:42:59,875][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:03,643][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:07,381][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:08,267][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:09,083][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:10,654][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:11,189][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:14,380][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:43:14,563][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:43:14,653][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:14,821][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:14,994][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:15,108][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:15,282][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:15,605][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:15,907][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:16,387][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:16,854][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:17,046][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:17,386][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:43:17,562][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:43:17,680][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:17,874][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:18,070][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:18,257][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:18,477][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:18,683][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:18,909][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:19,119][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:19,338][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:19,548][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:19,914][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:43:20,092][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:43:20,226][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:20,731][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:21,658][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:22,996][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:24,850][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:26,695][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:26,803][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:28,720][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:28,793][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:28,881][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:30,935][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:43:31,122][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:43:31,282][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:33,202][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:33,403][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:35,306][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:37,289][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:39,266][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:41,238][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:43,201][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:45,092][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:47,030][onecomp.kvcomp.cache.compressed_cache][WARNING] - Codec 'kivi' uses per-channel key quantization; incremental cache updates quantize per arriving token. Use the block/offline path for faithful per-channel results.
+[2026-06-03 07:43:49,196][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:43:49,379][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:43:57,357][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:43:57,541][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:44:05,716][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:44:05,896][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:44:09,421][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:44:09,592][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:44:12,893][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:44:13,072][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:46:30,037][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:46:30,218][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:48:29,713][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:48:29,894][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:48:56,744][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:48:56,935][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:49:02,142][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:49:02,319][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:49:26,049][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:49:26,257][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:49:30,752][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:49:30,932][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:49:33,524][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:49:33,707][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:49:48,922][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:49:49,107][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:50:16,221][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:50:16,401][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:50:23,541][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:50:23,725][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:50:32,103][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:50:32,287][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:50:35,768][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:50:35,946][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:50:40,344][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:50:40,522][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:53:00,049][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:53:00,234][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:54:55,518][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:54:55,696][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:55:22,259][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:55:22,437][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:55:26,506][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:55:26,690][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:55:57,833][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:55:58,039][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:56:01,702][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:56:01,882][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:56:04,536][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:56:04,722][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:56:18,678][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:56:18,855][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:56:43,569][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:56:43,757][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:56:52,151][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:56:52,333][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:57:02,042][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:57:02,227][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:57:06,393][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:57:06,586][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 07:57:12,099][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 07:57:12,280][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:00:20,592][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:00:20,778][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:02:15,270][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:02:15,448][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:02:42,061][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:02:42,241][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:02:51,902][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:02:52,087][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:03:30,829][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:03:31,016][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:03:34,513][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:03:34,698][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:03:37,476][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:03:37,663][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:03:51,269][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:03:51,448][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:04:18,687][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:04:18,872][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:04:23,855][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:04:24,035][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:04:29,175][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:04:29,353][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:04:31,920][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:04:32,102][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:04:35,195][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:04:35,375][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:05:58,405][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:05:58,589][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:07:23,568][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:07:23,750][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:07:39,922][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:07:40,108][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:07:44,237][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:07:44,414][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:08:03,920][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:08:04,101][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:08:07,617][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:08:07,809][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:08:09,850][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:08:10,031][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:08:21,578][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:08:21,761][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:08:38,412][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:08:38,593][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:08:45,011][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:08:45,195][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:08:52,005][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:08:52,180][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:08:55,777][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:08:55,961][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:08:59,915][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:09:00,103][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:11:13,853][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:11:14,044][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:12:51,916][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:12:52,104][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:13:13,757][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:13:13,943][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:13:19,245][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:13:19,424][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:13:48,694][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:13:48,880][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:13:53,324][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:13:53,504][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:13:55,876][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:13:56,055][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
+[2026-06-03 08:14:11,123][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
+[2026-06-03 08:14:11,300][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"

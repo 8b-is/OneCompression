@@ -32,7 +32,7 @@ defaults:
 
 model_path: ???
 
-output_dir: ${hydra:runtime.cwd}/results_taperkv
+output_dir: ${hydra:runtime.cwd}/results_paper2/taperkv
 
 # Iso-memory budget for the eviction window: matches ~3-bit avg quant (3/16=0.1875).
 target_mem: 0.20

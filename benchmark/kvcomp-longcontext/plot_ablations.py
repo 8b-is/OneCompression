@@ -93,10 +93,10 @@ def _model_tag(ax: plt.Axes, text: str) -> None:
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 def fig_bmin_sweep() -> None:
     datasets = [
-        (load(os.path.join(HERE, "results_ablation_bmin_llama",
+        (load(os.path.join(HERE, "results_ablation", "bmin_llama",
                            "results_llama-3.1-8b-instruct.json")),
          "Llama-3.1-8B"),
-        (load(os.path.join(HERE, "results_ablation_bmin_r1q7",
+        (load(os.path.join(HERE, "results_ablation", "bmin_r1q7",
                            "results_DeepSeek-R1-Distill-Qwen-7B.json")),
          "R1-Distill-Qwen-7B"),
     ]
@@ -166,7 +166,7 @@ def fig_budget_sweep() -> None:
     def load_budget_series(prefix: str):
         out: dict[str, dict[int, float]] = {}
         for p in budgets:
-            pat = os.path.join(HERE, f"results_ablation_budget_{prefix}_{p}",
+            pat = os.path.join(HERE, "results_ablation", f"budget_{prefix}_{p}",
                                "results_*.json")
             files = glob.glob(pat)
             if not files:
@@ -231,10 +231,10 @@ def fig_budget_sweep() -> None:
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 def fig_kv_asymmetry() -> None:
     datasets = [
-        (load(os.path.join(HERE, "results_ablation_minis",
+        (load(os.path.join(HERE, "results_ablation", "halo_minis",
                            "results_Ministral-8B-Instruct-2410.json")),
          "Ministral-8B"),
-        (load(os.path.join(HERE, "results_ablation_llama",
+        (load(os.path.join(HERE, "results_ablation", "halo_llama",
                            "results_llama-3.1-8b-instruct.json")),
          "Llama-3.1-8B"),
     ]
@@ -308,10 +308,10 @@ def fig_kv_asymmetry() -> None:
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 def fig_kv_asymmetry_reason() -> None:
     datasets = [
-        (os.path.join(HERE, "results_ablation_reason_r1q7",
+        (os.path.join(HERE, "results_ablation", "reason_r1q7",
                       "results_DeepSeek-R1-Distill-Qwen-7B.json"),
          "R1-Distill-Qwen-7B"),
-        (os.path.join(HERE, "results_ablation_reason_r1l8",
+        (os.path.join(HERE, "results_ablation", "reason_r1l8",
                       "results_DeepSeek-R1-Distill-Llama-8B.json"),
          "R1-Distill-Llama-8B"),
     ]
@@ -369,10 +369,10 @@ def fig_kv_asymmetry_reason() -> None:
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 def fig_halo_lever() -> None:
     datasets = [
-        (load(os.path.join(HERE, "results_ablation_minis",
+        (load(os.path.join(HERE, "results_ablation", "halo_minis",
                            "results_Ministral-8B-Instruct-2410.json")),
          "Ministral-8B"),
-        (load(os.path.join(HERE, "results_ablation_llama",
+        (load(os.path.join(HERE, "results_ablation", "halo_llama",
                            "results_llama-3.1-8b-instruct.json")),
          "Llama-3.1-8B"),
     ]
@@ -435,10 +435,10 @@ def fig_halo_lever() -> None:
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 def fig_halo_lever_reasoning() -> None:
     datasets = [
-        (load(os.path.join(HERE, "results_ablation_r1l8",
+        (load(os.path.join(HERE, "results_ablation", "halo_r1l8",
                            "results_DeepSeek-R1-Distill-Llama-8B.json")),
          "R1-Distill-Llama-8B"),
-        (load(os.path.join(HERE, "results_ablation_r1q7",
+        (load(os.path.join(HERE, "results_ablation", "halo_r1q7",
                            "results_DeepSeek-R1-Distill-Qwen-7B.json")),
          "R1-Distill-Qwen-7B"),
     ]

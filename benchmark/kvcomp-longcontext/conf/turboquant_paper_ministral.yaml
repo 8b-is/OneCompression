@@ -21,4 +21,4 @@ defaults:
 # Ministral-8B-Instruct-2410 (head_dim=128, power-of-two -> fast Hadamard rotation).
 model_path: /home/frj/yuma-ichikwa1/models/Ministral-8B-Instruct-2410
 
-output_dir: ${hydra:runtime.cwd}/results_turboquant_ministral
+output_dir: ${hydra:runtime.cwd}/results_paper1/retrieval_minis

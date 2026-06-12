@@ -82,19 +82,19 @@ if [ "$WHICH" = all ] || [ "$WHICH" = retrieval ]; then
 # Llama-3.1-8B-Instruct: needle + RULER + PPL (no LongBench, keep within budget).
 sub he-retr-llama 24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name turboquant_paper \
-    model_path="$LLAMA" output_dir="$LC/results_halo_enh_llama_retr" \
+    model_path="$LLAMA" output_dir="$LC/results_halo_enh/llama_retr" \
     run_longbench=false "$RETR_METHODS"
 
 # LongBench-E downstream generation (Table 1) on Llama.
 sub he-lb-llama 24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name turboquant_paper \
-    model_path="$LLAMA" output_dir="$LC/results_halo_enh_llama_lb" \
+    model_path="$LLAMA" output_dir="$LC/results_halo_enh/llama_lb" \
     run_needle=false run_ruler=false run_ppl=false run_longbench=true "$RETR_METHODS"
 
 # Ministral-8B-Instruct-2410: TurboQuant's 2nd model, same retrieval grid.
 sub he-retr-minis 24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name turboquant_paper_ministral \
-    model_path="$MINISTRAL" output_dir="$LC/results_halo_enh_minis_retr" \
+    model_path="$MINISTRAL" output_dir="$LC/results_halo_enh/minis_retr" \
     run_longbench=false "$RETR_METHODS"
 
 fi
@@ -109,20 +109,20 @@ basic='run_livecodebench=false aime_years=[] run_needle=false run_ruler=false'
 
 sub he-basic-r1q15 24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name paper_aime model_path="$R1Q15" \
-    output_dir="$LC/results_halo_enh_basic_r1q15" $basic "$REASON_METHODS"
+    output_dir="$LC/results_halo_enh/basic_r1q15" $basic "$REASON_METHODS"
 sub he-basic-r1l8 24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name paper_aime model_path="$R1L8" \
-    output_dir="$LC/results_halo_enh_basic_r1l8" $basic "$REASON_METHODS"
+    output_dir="$LC/results_halo_enh/basic_r1l8" $basic "$REASON_METHODS"
 sub he-basic-r1q7 24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name paper_aime model_path="$R1Q7" \
-    output_dir="$LC/results_halo_enh_basic_r1q7" $basic "$REASON_METHODS"
+    output_dir="$LC/results_halo_enh/basic_r1q7" $basic "$REASON_METHODS"
 sub he-basic-r1q14 24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name paper_aime model_path="$R1Q14" \
-    output_dir="$LC/results_halo_enh_basic_r1q14" $basic \
+    output_dir="$LC/results_halo_enh/basic_r1q14" $basic \
     gsm8k_limit=50 math_limit=50 "$REASON_METHODS"
 sub he-basic-qwq 24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name paper_aime model_path="$QWQ" \
-    output_dir="$LC/results_halo_enh_basic_qwq" $basic \
+    output_dir="$LC/results_halo_enh/basic_qwq" $basic \
     gsm8k_limit=30 math_limit=30 max_new_reason=6144 max_new_math=6144 "$REASON_METHODS"
 
 fi
@@ -136,20 +136,20 @@ if [ "$WHICH" = all ] || [ "$WHICH" = speed ]; then
 # Codec-level speed x quality (now includes HALO-NC / HALO-NCIT + decode S=1).
 sub he-speed-synth 01:00:00 "$LC" \
     "$PY" -u codec_speed.py --device cuda --heads 32 --seq 4096 --dim 128 \
-    --bits 2 3 4 --repeats 50 --out "$LC/results_codec_speed/codec_speed_enh_cuda.json"
+    --bits 2 3 4 --repeats 50 --out "$LC/results_paper1/codec_speed/codec_speed_enh_cuda.json"
 sub he-speed-llama 01:00:00 "$LC" \
     "$PY" -u codec_speed.py --device cuda --model "$LLAMA" \
-    --bits 2 3 4 --repeats 50 --out "$LC/results_codec_speed/codec_speed_enh_llama.json"
+    --bits 2 3 4 --repeats 50 --out "$LC/results_paper1/codec_speed/codec_speed_enh_llama.json"
 
 # End-to-end generation latency/throughput (TTFT + decode tok/s + peak mem).
 sub he-e2e-llama 02:00:00 "$LC" \
     "$PY" -u e2e_speed.py --model "$LLAMA" --device cuda \
     --prompt-len 4096 --gen-len 128 --bits 2 3 4 --repeats 3 --dtype float16 \
-    --out "$LC/results_codec_speed/e2e_llama.json"
+    --out "$LC/results_paper1/codec_speed/e2e_llama.json"
 sub he-e2e-r1q7 02:00:00 "$LC" \
     "$PY" -u e2e_speed.py --model "$R1Q7" --device cuda \
     --prompt-len 4096 --gen-len 128 --bits 2 3 4 --repeats 3 --dtype float16 \
-    --out "$LC/results_codec_speed/e2e_r1q7.json"
+    --out "$LC/results_paper1/codec_speed/e2e_r1q7.json"
 
 fi
 

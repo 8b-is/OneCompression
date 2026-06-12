@@ -1,0 +1,384 @@
+{
+  "model": "DeepSeek-R1-Distill-Llama-8B",
+  "config": {
+    "model_path": "/lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Llama-8B",
+    "device": "cuda:0",
+    "dtype": "bfloat16",
+    "attn_implementation": "eager",
+    "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_halo_enh_basic_r1l8",
+    "methods": [
+      "FullKV",
+      "HALO-3bit",
+      "HALO-4bit",
+      "HALO-NC-3bit",
+      "HALO-NC-4bit",
+      "HALO-NCIT-3bit",
+      "HALO-NCIT-4bit"
+    ],
+    "sink_tokens": 4,
+    "recent_tokens": 128,
+    "requant_stride": 16,
+    "target_mem": 0.25,
+    "uniform_bits": [
+      4
+    ],
+    "turboquant_variants": [],
+    "kivi_bits": [
+      2
+    ],
+    "halo_variants": [
+      {
+        "label": "HALO-4bit",
+        "bits": 4
+      },
+      {
+        "label": "HALO-3bit",
+        "bits": 3
+      },
+      {
+        "label": "HALO-NC-4bit",
+        "bits": 4,
+        "key_scale_mode": "nc",
+        "value_scale_mode": "ls"
+      },
+      {
+        "label": "HALO-NC-3bit",
+        "bits": 3,
+        "key_scale_mode": "nc",
+        "value_scale_mode": "ls"
+      },
+      {
+        "label": "HALO-NCIT-4bit",
+        "bits": 4,
+        "key_scale_mode": "nc",
+        "value_scale_mode": "ls_iter"
+      },
+      {
+        "label": "HALO-NCIT-3bit",
+        "bits": 3,
+        "key_scale_mode": "nc",
+        "value_scale_mode": "ls_iter"
+      }
+    ],
+    "codec_variants": [],
+    "turbotaper": {
+      "dist": "gaussian",
+      "rotation_mode": "hadamard",
+      "n_outlier_floor": 32,
+      "b_min_value": 3
+    },
+    "skip_outliers": true,
+    "outlier_ratio": 50.0,
+    "thinkv": {
+      "group_size": 16,
+      "precision": {
+        "R": 4,
+        "E": 4,
+        "T": 2
+      },
+      "auto_configure": true,
+      "calib_max_new": 300,
+      "capture_long": false
+    },
+    "pmkvq": {
+      "key_bits": 8,
+      "value_bits": 4,
+      "final_bits": 2,
+      "key_final_bits": 4,
+      "ladder_span": 256,
+      "block_allocation": true,
+      "channel_reparam": true,
+      "bit_options": [
+        2,
+        4,
+        8
+      ],
+      "avg_bit_budget": 2.5,
+      "pos_scale": 4
+    },
+    "taperkv": {
+      "key_bits": 8,
+      "value_bits": 4,
+      "b_min": 4,
+      "b_min_value": 2
+    },
+    "taperkv_sweep": [],
+    "turbotaper_sweep": [],
+    "context_lens": [
+      2048,
+      4096,
+      8192
+    ],
+    "depths": [
+      0.1,
+      0.25,
+      0.4,
+      0.5,
+      0.6,
+      0.75,
+      0.9
+    ],
+    "seeds": 3,
+    "max_new_needle": 64,
+    "run_ruler": false,
+    "ruler_keys": 4,
+    "ruler_seeds": 5,
+    "run_needle": false,
+    "run_gsm8k": true,
+    "gsm8k_limit": 100,
+    "max_new_reason": 8192,
+    "run_math": true,
+    "math_limit": 100,
+    "max_new_math": 8192,
+    "run_longbench": false,
+    "longbench_tasks": [],
+    "longbench_max_length": 7500,
+    "longbench_limit": 20,
+    "run_livecodebench": false,
+    "lcb_problems_path": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/data/lcb_functional.jsonl",
+    "lcb_dataset": "livecodebench/code_generation_lite",
+    "lcb_split": "test",
+    "lcb_limit": 50,
+    "lcb_k": 1,
+    "lcb_timeout": 6.0,
+    "max_new_code": 16384,
+    "run_ppl": true,
+    "ppl_max_length": 2048,
+    "ppl_stride": 1024,
+    "ppl_windows": 16,
+    "aime_years": [],
+    "aime_k": 8,
+    "aime_limit": 30,
+    "max_new_aime": 8192
+  },
+  "results": {
+    "FullKV": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.63,
+        "pass@1_stderr": 0.0485,
+        "pass@1_ci95": [
+          0.5349,
+          0.7251
+        ],
+        "avg_gen_len": 433.4,
+        "compression_ratio": 1.0,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.61,
+        "pass@1_stderr": 0.049,
+        "pass@1_ci95": [
+          0.5139,
+          0.7061
+        ],
+        "avg_gen_len": 2711.5,
+        "compression_ratio": 1.0,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 23.4957,
+        "nll": 3.1568,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 1.0
+      }
+    },
+    "HALO-4bit": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.62,
+        "pass@1_stderr": 0.0488,
+        "pass@1_ci95": [
+          0.5244,
+          0.7156
+        ],
+        "avg_gen_len": 439.3,
+        "compression_ratio": 3.789,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.56,
+        "pass@1_stderr": 0.0499,
+        "pass@1_ci95": [
+          0.4622,
+          0.6578
+        ],
+        "avg_gen_len": 3003.7,
+        "compression_ratio": 3.841,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 24.2393,
+        "nll": 3.188,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 3.8571
+      }
+    },
+    "HALO-3bit": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.59,
+        "pass@1_stderr": 0.0494,
+        "pass@1_ci95": [
+          0.4931,
+          0.6869
+        ],
+        "avg_gen_len": 421.4,
+        "compression_ratio": 4.948,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.54,
+        "pass@1_stderr": 0.0501,
+        "pass@1_ci95": [
+          0.4418,
+          0.6382
+        ],
+        "avg_gen_len": 2870.1,
+        "compression_ratio": 5.046,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 25.8339,
+        "nll": 3.2517,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 5.0791
+      }
+    },
+    "HALO-NC-4bit": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.58,
+        "pass@1_stderr": 0.0496,
+        "pass@1_ci95": [
+          0.4828,
+          0.6772
+        ],
+        "avg_gen_len": 440.6,
+        "compression_ratio": 3.789,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.6,
+        "pass@1_stderr": 0.0492,
+        "pass@1_ci95": [
+          0.5035,
+          0.6965
+        ],
+        "avg_gen_len": 2730.3,
+        "compression_ratio": 3.837,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 24.1185,
+        "nll": 3.183,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 3.8571
+      }
+    },
+    "HALO-NC-3bit": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.63,
+        "pass@1_stderr": 0.0485,
+        "pass@1_ci95": [
+          0.5349,
+          0.7251
+        ],
+        "avg_gen_len": 441.7,
+        "compression_ratio": 4.953,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.6,
+        "pass@1_stderr": 0.0492,
+        "pass@1_ci95": [
+          0.5035,
+          0.6965
+        ],
+        "avg_gen_len": 2763.7,
+        "compression_ratio": 5.043,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 25.7053,
+        "nll": 3.2467,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 5.0791
+      }
+    },
+    "HALO-NCIT-4bit": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.62,
+        "pass@1_stderr": 0.0488,
+        "pass@1_ci95": [
+          0.5244,
+          0.7156
+        ],
+        "avg_gen_len": 437.6,
+        "compression_ratio": 3.788,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.59,
+        "pass@1_stderr": 0.0494,
+        "pass@1_ci95": [
+          0.4931,
+          0.6869
+        ],
+        "avg_gen_len": 2704.5,
+        "compression_ratio": 3.838,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 24.0336,
+        "nll": 3.1795,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 3.8571
+      }
+    }
+  }
+}

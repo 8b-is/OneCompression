@@ -31,7 +31,7 @@ defaults:
 model_path: /lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct
 attn_implementation: sdpa
 
-output_dir: ${hydra:runtime.cwd}/results_ablation
+output_dir: ${hydra:runtime.cwd}/results_ablation/halo
 
 # ThinKV is not part of this ablation; skip its eager-attention calibration.
 thinkv:

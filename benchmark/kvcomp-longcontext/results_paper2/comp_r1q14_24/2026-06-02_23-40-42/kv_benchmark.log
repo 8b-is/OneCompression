@@ -1,0 +1,13 @@
+[2026-06-02 23:41:50,408][onecomp.kvcomp.recipe.pmkvq_calib][INFO] - PM-KVQ block allocation: 48 layers, bits used=[2, 4, 8], avg=3.29
+[2026-06-02 23:41:50,575][onecomp.kvcomp.recipe.pmkvq_calib][INFO] - PM-KVQ channel reparam: calibrated 41 layers (pos_scale=4)
+[2026-06-02 23:41:50,796][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/AI-MO/aimo-validation-aime/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+[2026-06-02 23:41:50,812][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/AI-MO/aimo-validation-aime/13f9e12f613e720c2a2b2f345dd04b998a29494d/README.md "HTTP/1.1 200 OK"
+[2026-06-02 23:41:50,999][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/AI-MO/aimo-validation-aime/resolve/13f9e12f613e720c2a2b2f345dd04b998a29494d/aimo-validation-aime.py "HTTP/1.1 404 Not Found"
+[2026-06-02 23:41:50,999][huggingface_hub.utils._http][WARNING] - Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+[2026-06-02 23:41:51,589][httpx][INFO] - HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/AI-MO/aimo-validation-aime/AI-MO/aimo-validation-aime.py "HTTP/1.1 404 Not Found"
+[2026-06-02 23:41:51,777][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/AI-MO/aimo-validation-aime/revision/13f9e12f613e720c2a2b2f345dd04b998a29494d "HTTP/1.1 200 OK"
+[2026-06-02 23:41:51,951][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/AI-MO/aimo-validation-aime/resolve/13f9e12f613e720c2a2b2f345dd04b998a29494d/.huggingface.yaml "HTTP/1.1 404 Not Found"
+[2026-06-02 23:41:52,359][httpx][INFO] - HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=AI-MO/aimo-validation-aime "HTTP/1.1 200 OK"
+[2026-06-02 23:41:52,579][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/AI-MO/aimo-validation-aime/tree/13f9e12f613e720c2a2b2f345dd04b998a29494d/data?recursive=true&expand=false "HTTP/1.1 200 OK"
+[2026-06-02 23:41:52,755][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/AI-MO/aimo-validation-aime/tree/13f9e12f613e720c2a2b2f345dd04b998a29494d?recursive=false&expand=false "HTTP/1.1 200 OK"
+[2026-06-02 23:41:52,928][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/AI-MO/aimo-validation-aime/resolve/13f9e12f613e720c2a2b2f345dd04b998a29494d/dataset_infos.json "HTTP/1.1 404 Not Found"

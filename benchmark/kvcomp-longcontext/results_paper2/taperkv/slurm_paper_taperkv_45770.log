@@ -1,0 +1,6 @@
+==============================
+TaperKV paper benchmark (iso-memory ~3-bit)
+Model: /lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct
+Started: Tue Jun  2 12:40:04 JST 2026
+==============================
+[2026-06-02T12:40:10.886] error: *** JOB 45770 ON kagura-gpu09 CANCELLED AT 2026-06-02T12:40:10 DUE to SIGNAL Terminated ***

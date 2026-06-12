@@ -19,7 +19,7 @@ defaults:
   - paper_taperkv
   - _self_
 
-output_dir: ${hydra:runtime.cwd}/results_ablation_bmin
+output_dir: ${hydra:runtime.cwd}/results_ablation/bmin
 
 methods:
   - FullKV

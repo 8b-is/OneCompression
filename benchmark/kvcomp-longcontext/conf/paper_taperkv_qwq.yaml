@@ -17,7 +17,7 @@ defaults:
   - _self_
 
 model_path: ???
-output_dir: ${hydra:runtime.cwd}/results_taperkv
+output_dir: ${hydra:runtime.cwd}/results_paper2/taperkv
 
 # QwQ-32B needs SDPA to avoid OOM at 16K context (eager OOMs at 38 GiB alloc).
 attn_implementation: sdpa

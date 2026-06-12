@@ -1,0 +1,4 @@
+[2026-06-06 05:56:56,528][onecomp.kvcomp.recipe.pmkvq_calib][INFO] - PM-KVQ block allocation: 64 layers, bits used=[2, 4], avg=2.50
+[2026-06-06 05:56:56,756][onecomp.kvcomp.recipe.pmkvq_calib][INFO] - PM-KVQ channel reparam: calibrated 64 layers (pos_scale=4)
+[2026-06-06 05:56:56,768][datasets.load][WARNING] - Using the latest cached version of the dataset since yentinglin/aime_2025 couldn't be found on the Hugging Face Hub (offline mode is enabled).
+[2026-06-06 05:56:56,774][datasets.packaged_modules.cache.cache][WARNING] - Found the latest cached dataset configuration 'default' at /lustre/home/frj/yuma-ichikawa/.cache/huggingface/datasets/yentinglin___aime_2025/default/0.0.0/6f71d77b0b89b9dabe07ab466c51df33f514df7f (last modified on Mon Jun  1 19:35:48 2026).
