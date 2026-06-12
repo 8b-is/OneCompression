@@ -36,28 +36,28 @@ methods:
   - Uniform-INT2
   - KIVI-INT2
   - StreamingLLM
+  # TurboQuant baselines (iso-storage reference)
   - TurboQuant-4bit
   - TurboQuant-3.5bit
   - TurboQuant-3bit
   - TurboQuant-2.5bit
   - TurboQuant-2bit
+  # HALO (default: NC keys + ls_iter values — the validated best operating point)
   - HALO-4bit
-  - HALO-3bit          # 3-bit HALO (proposed codec, iso-quality to TurboQuant-3bit)
+  - HALO-3.5bit
+  - HALO-3bit
+  - HALO-2.5bit
   - HALO-2bit
-  # Enhanced HALO (role-asymmetric scale): norm-correct keys (faithful attention
-  # logit) + least-squares values (MSE-optimal).  Storage-identical to plain HALO.
+  # HALO ablations (NC-only / legacy-LS / dense)
   - HALO-NC-4bit
   - HALO-NC-3.5bit
   - HALO-NC-3bit
   - HALO-NC-2.5bit
   - HALO-NC-2bit
-  # Enhanced HALO + ls_iter values (one Lloyd alternating-min step on values).
-  - HALO-NCIT-4bit
-  - HALO-NCIT-3.5bit
-  - HALO-NCIT-3bit
-  - HALO-NCIT-2.5bit
-  - HALO-NCIT-2bit
-  - HALO-dense-LS-4bit   # dense rotation + LS scale: best PPL at every bit (ablation)
+  - HALO-LS-4bit
+  - HALO-LS-3bit
+  - HALO-LS-2bit
+  - HALO-dense-LS-4bit
   - HALO-dense-LS-3bit
   - HALO-dense-LS-2bit
   - FP8
@@ -76,32 +76,29 @@ kivi_bits: [2]
 # codec_benchmark.py distortion results confirm HALO is no worse than TurboQuant at each
 # bit-width despite using gaussian rather than beta (the rotation + LS scale compensates).
 halo_variants:
-  - {label: "HALO-4bit", bits: 4}
-  - {label: "HALO-3bit", bits: 3}
-  - {label: "HALO-2bit", bits: 2}
-  # Enhanced HALO (proposed): per-role scale -- norm-correcting (nc) keys preserve
-  # the rotated norm so the attention logit is shrunk only by cos(theta) (vs
-  # cos^2 for plain LS), least-squares (ls) values are MSE-optimal.  Iso-storage.
-  - {label: "HALO-NC-4bit", bits: 4, key_scale_mode: nc, value_scale_mode: ls}
-  - {label: "HALO-NC-3bit", bits: 3, key_scale_mode: nc, value_scale_mode: ls}
-  - {label: "HALO-NC-2bit", bits: 2, key_scale_mode: nc, value_scale_mode: ls}
-  # Enhanced HALO at the outlier-split operating points (lever 3): 64 ch @ b+1 +
-  # 64 @ b = true 2.5 / 3.5-bit for head_dim=128, iso-memory to TurboQuant-{2.5,3.5}.
-  - {label: "HALO-NC-3.5bit", bits: 3, n_outlier: 64, outlier_bits: 4, key_scale_mode: nc, value_scale_mode: ls}
-  - {label: "HALO-NC-2.5bit", bits: 2, n_outlier: 64, outlier_bits: 3, key_scale_mode: nc, value_scale_mode: ls}
-  # Enhanced HALO + ls_iter on values: one Lloyd alternating-minimisation step
-  # (re-quantise at the fitted scale, re-fit) -> monotone-lower value MSE, free.
-  - {label: "HALO-NCIT-4bit", bits: 4, key_scale_mode: nc, value_scale_mode: ls_iter}
-  - {label: "HALO-NCIT-3bit", bits: 3, key_scale_mode: nc, value_scale_mode: ls_iter}
-  - {label: "HALO-NCIT-2bit", bits: 2, key_scale_mode: nc, value_scale_mode: ls_iter}
-  - {label: "HALO-NCIT-3.5bit", bits: 3, n_outlier: 64, outlier_bits: 4, key_scale_mode: nc, value_scale_mode: ls_iter}
-  - {label: "HALO-NCIT-2.5bit", bits: 2, n_outlier: 64, outlier_bits: 3, key_scale_mode: nc, value_scale_mode: ls_iter}
-  # Dense rotation + LS scale: same GEMM cost as folded-Hadamard at head_dim=128,
-  # marginally better Gaussianisation -> best PPL at every bit on Ministral/Llama.
-  # Included as a Pareto ablation alongside the default HALO (Hadamard-GEMM + LS).
-  - {label: "HALO-dense-LS-4bit", bits: 4, rotation_mode: dense, ls_scale: true}
-  - {label: "HALO-dense-LS-3bit", bits: 3, rotation_mode: dense, ls_scale: true}
-  - {label: "HALO-dense-LS-2bit", bits: 2, rotation_mode: dense, ls_scale: true}
+  # --- Default HALO (NC keys + ls_iter values, validated best across all models) ---
+  # These are the RECOMMENDED operating points as of June 2026.  key_scale_mode and
+  # value_scale_mode are written out explicitly so the labels remain unambiguous even
+  # if the codec defaults change in the future.
+  - {label: "HALO-4bit",    bits: 4, key_scale_mode: nc, value_scale_mode: ls_iter}
+  - {label: "HALO-3bit",    bits: 3, key_scale_mode: nc, value_scale_mode: ls_iter}
+  - {label: "HALO-2bit",    bits: 2, key_scale_mode: nc, value_scale_mode: ls_iter}
+  - {label: "HALO-3.5bit",  bits: 3, n_outlier: 64, outlier_bits: 4, key_scale_mode: nc, value_scale_mode: ls_iter}
+  - {label: "HALO-2.5bit",  bits: 2, n_outlier: 64, outlier_bits: 3, key_scale_mode: nc, value_scale_mode: ls_iter}
+  # --- Ablation: NC keys only (no ls_iter), to isolate the ls_iter contribution ---
+  - {label: "HALO-NC-4bit",    bits: 4, key_scale_mode: nc, value_scale_mode: ls}
+  - {label: "HALO-NC-3bit",    bits: 3, key_scale_mode: nc, value_scale_mode: ls}
+  - {label: "HALO-NC-2bit",    bits: 2, key_scale_mode: nc, value_scale_mode: ls}
+  - {label: "HALO-NC-3.5bit",  bits: 3, n_outlier: 64, outlier_bits: 4, key_scale_mode: nc, value_scale_mode: ls}
+  - {label: "HALO-NC-2.5bit",  bits: 2, n_outlier: 64, outlier_bits: 3, key_scale_mode: nc, value_scale_mode: ls}
+  # --- Ablation: legacy symmetric LS (both roles LS), iso to original HALO-*bit ---
+  - {label: "HALO-LS-4bit", bits: 4, key_scale_mode: ls, value_scale_mode: ls}
+  - {label: "HALO-LS-3bit", bits: 3, key_scale_mode: ls, value_scale_mode: ls}
+  - {label: "HALO-LS-2bit", bits: 2, key_scale_mode: ls, value_scale_mode: ls}
+  # --- Ablation: dense rotation + LS (Pareto reference) ---
+  - {label: "HALO-dense-LS-4bit", bits: 4, rotation_mode: dense, key_scale_mode: ls, value_scale_mode: ls}
+  - {label: "HALO-dense-LS-3bit", bits: 3, rotation_mode: dense, key_scale_mode: ls, value_scale_mode: ls}
+  - {label: "HALO-dense-LS-2bit", bits: 2, rotation_mode: dense, key_scale_mode: ls, value_scale_mode: ls}
 
 # Additional standalone-codec baselines (now reachable via the generic path):
 # FP8 (the recommended 2026 native baseline) and NVFP4 (4-bit E2M1 float).

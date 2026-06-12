@@ -1,0 +1,130 @@
+{
+  "meta": {
+    "model": "/lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Qwen-7B",
+    "device": "cuda",
+    "prompt_len": 4096,
+    "gen_len": 128,
+    "bits": [
+      2,
+      3,
+      4
+    ],
+    "repeats": 3,
+    "dtype": "float16",
+    "out": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_codec_speed/e2e_r1q7.json",
+    "prompt_len_actual": 4096
+  },
+  "results": {
+    "2": {
+      "FullKV": {
+        "ttft_ms": 62.05590700847097,
+        "decode_tok_s": 76.56813528719557,
+        "decode_ms_per_tok": 13.060263205433309,
+        "peak_mb": 16018.2021484375,
+        "compression_ratio": 1.0
+      },
+      "TurboQuant-2bit": {
+        "ttft_ms": 95.31202298239805,
+        "decode_tok_s": 19.663819428394678,
+        "decode_ms_per_tok": 50.85482012492414,
+        "peak_mb": 16018.34326171875,
+        "compression_ratio": 7.483142335160272
+      },
+      "HALO-2bit": {
+        "ttft_ms": 78.24205298675224,
+        "decode_tok_s": 33.46126258375961,
+        "decode_ms_per_tok": 29.885303864336212,
+        "peak_mb": 16018.48388671875,
+        "compression_ratio": 7.483142335160272
+      },
+      "HALO-NC-2bit": {
+        "ttft_ms": 78.38908501435071,
+        "decode_tok_s": 29.572414904004553,
+        "decode_ms_per_tok": 33.81529723717574,
+        "peak_mb": 16018.48388671875,
+        "compression_ratio": 7.483142335160272
+      },
+      "HALO-NCIT-2bit": {
+        "ttft_ms": 83.210846001748,
+        "decode_tok_s": 26.565752062192413,
+        "decode_ms_per_tok": 37.64245023664021,
+        "peak_mb": 16018.48388671875,
+        "compression_ratio": 7.483142335160272
+      }
+    },
+    "3": {
+      "FullKV": {
+        "ttft_ms": 62.11986398557201,
+        "decode_tok_s": 67.51423355731505,
+        "decode_ms_per_tok": 14.811691510221577,
+        "peak_mb": 16018.32763671875,
+        "compression_ratio": 1.0
+      },
+      "TurboQuant-3bit": {
+        "ttft_ms": 100.70848400937393,
+        "decode_tok_s": 17.763010254462397,
+        "decode_ms_per_tok": 56.296764212517495,
+        "peak_mb": 16018.46826171875,
+        "compression_ratio": 5.100101875259405
+      },
+      "HALO-3bit": {
+        "ttft_ms": 78.93639398389496,
+        "decode_tok_s": 33.77799233027543,
+        "decode_ms_per_tok": 29.605075109916864,
+        "peak_mb": 16018.48388671875,
+        "compression_ratio": 5.100101875259405
+      },
+      "HALO-NC-3bit": {
+        "ttft_ms": 78.13505199737847,
+        "decode_tok_s": 34.518935683761256,
+        "decode_ms_per_tok": 28.96960697633647,
+        "peak_mb": 16018.48388671875,
+        "compression_ratio": 5.100101875259405
+      },
+      "HALO-NCIT-3bit": {
+        "ttft_ms": 82.9394259781111,
+        "decode_tok_s": 27.52438569502114,
+        "decode_ms_per_tok": 36.33141938498882,
+        "peak_mb": 16018.48388671875,
+        "compression_ratio": 5.100101875259405
+      }
+    },
+    "4": {
+      "FullKV": {
+        "ttft_ms": 61.958587990375236,
+        "decode_tok_s": 69.38908301528225,
+        "decode_ms_per_tok": 14.411488904958723,
+        "peak_mb": 16018.32763671875,
+        "compression_ratio": 1.0
+      },
+      "TurboQuant-4bit": {
+        "ttft_ms": 99.61786700296216,
+        "decode_tok_s": 19.432176346837082,
+        "decode_ms_per_tok": 51.46103978017712,
+        "peak_mb": 16018.46826171875,
+        "compression_ratio": 3.8682425664653866
+      },
+      "HALO-4bit": {
+        "ttft_ms": 76.14315001410432,
+        "decode_tok_s": 37.51376997962625,
+        "decode_ms_per_tok": 26.65687827544661,
+        "peak_mb": 16018.48388671875,
+        "compression_ratio": 3.8682425664653866
+      },
+      "HALO-NC-4bit": {
+        "ttft_ms": 78.62139100325294,
+        "decode_tok_s": 33.52708150675089,
+        "decode_ms_per_tok": 29.8266343224251,
+        "peak_mb": 16018.48388671875,
+        "compression_ratio": 3.8682425664653866
+      },
+      "HALO-NCIT-4bit": {
+        "ttft_ms": 82.71401500678621,
+        "decode_tok_s": 30.084166770596642,
+        "decode_ms_per_tok": 33.24007633734333,
+        "peak_mb": 16018.48388671875,
+        "compression_ratio": 3.8682425664653866
+      }
+    }
+  }
+}

@@ -1,0 +1,1036 @@
+{
+  "model": "llama-3.1-8b-instruct",
+  "config": {
+    "model_path": "/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct",
+    "device": "cuda:0",
+    "dtype": "bfloat16",
+    "attn_implementation": "sdpa",
+    "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_halo_enh_llama_retr",
+    "methods": [
+      "FullKV",
+      "TurboQuant-2bit",
+      "TurboQuant-2.5bit",
+      "TurboQuant-3bit",
+      "TurboQuant-3.5bit",
+      "TurboQuant-4bit",
+      "HALO-2bit",
+      "HALO-3bit",
+      "HALO-4bit",
+      "HALO-NC-2bit",
+      "HALO-NC-2.5bit",
+      "HALO-NC-3bit",
+      "HALO-NC-3.5bit",
+      "HALO-NC-4bit",
+      "HALO-NCIT-2bit",
+      "HALO-NCIT-2.5bit",
+      "HALO-NCIT-3bit",
+      "HALO-NCIT-3.5bit",
+      "HALO-NCIT-4bit"
+    ],
+    "sink_tokens": 4,
+    "recent_tokens": 64,
+    "requant_stride": 16,
+    "target_mem": 0.27,
+    "uniform_bits": [
+      4,
+      3,
+      2
+    ],
+    "turboquant_variants": [
+      {
+        "label": "TurboQuant-4bit",
+        "bits": 4,
+        "dist": "beta"
+      },
+      {
+        "label": "TurboQuant-3.5bit",
+        "bits": 3,
+        "n_outlier": 64,
+        "outlier_bits": 4,
+        "dist": "beta"
+      },
+      {
+        "label": "TurboQuant-3bit",
+        "bits": 3,
+        "dist": "beta"
+      },
+      {
+        "label": "TurboQuant-2.5bit",
+        "bits": 2,
+        "n_outlier": 64,
+        "outlier_bits": 3,
+        "dist": "beta"
+      },
+      {
+        "label": "TurboQuant-2bit",
+        "bits": 2,
+        "dist": "beta"
+      }
+    ],
+    "kivi_bits": [
+      2
+    ],
+    "halo_variants": [
+      {
+        "label": "HALO-4bit",
+        "bits": 4
+      },
+      {
+        "label": "HALO-3bit",
+        "bits": 3
+      },
+      {
+        "label": "HALO-2bit",
+        "bits": 2
+      },
+      {
+        "label": "HALO-NC-4bit",
+        "bits": 4,
+        "key_scale_mode": "nc",
+        "value_scale_mode": "ls"
+      },
+      {
+        "label": "HALO-NC-3bit",
+        "bits": 3,
+        "key_scale_mode": "nc",
+        "value_scale_mode": "ls"
+      },
+      {
+        "label": "HALO-NC-2bit",
+        "bits": 2,
+        "key_scale_mode": "nc",
+        "value_scale_mode": "ls"
+      },
+      {
+        "label": "HALO-NC-3.5bit",
+        "bits": 3,
+        "n_outlier": 64,
+        "outlier_bits": 4,
+        "key_scale_mode": "nc",
+        "value_scale_mode": "ls"
+      },
+      {
+        "label": "HALO-NC-2.5bit",
+        "bits": 2,
+        "n_outlier": 64,
+        "outlier_bits": 3,
+        "key_scale_mode": "nc",
+        "value_scale_mode": "ls"
+      },
+      {
+        "label": "HALO-NCIT-4bit",
+        "bits": 4,
+        "key_scale_mode": "nc",
+        "value_scale_mode": "ls_iter"
+      },
+      {
+        "label": "HALO-NCIT-3bit",
+        "bits": 3,
+        "key_scale_mode": "nc",
+        "value_scale_mode": "ls_iter"
+      },
+      {
+        "label": "HALO-NCIT-2bit",
+        "bits": 2,
+        "key_scale_mode": "nc",
+        "value_scale_mode": "ls_iter"
+      },
+      {
+        "label": "HALO-NCIT-3.5bit",
+        "bits": 3,
+        "n_outlier": 64,
+        "outlier_bits": 4,
+        "key_scale_mode": "nc",
+        "value_scale_mode": "ls_iter"
+      },
+      {
+        "label": "HALO-NCIT-2.5bit",
+        "bits": 2,
+        "n_outlier": 64,
+        "outlier_bits": 3,
+        "key_scale_mode": "nc",
+        "value_scale_mode": "ls_iter"
+      },
+      {
+        "label": "HALO-dense-LS-4bit",
+        "bits": 4,
+        "rotation_mode": "dense",
+        "ls_scale": true
+      },
+      {
+        "label": "HALO-dense-LS-3bit",
+        "bits": 3,
+        "rotation_mode": "dense",
+        "ls_scale": true
+      },
+      {
+        "label": "HALO-dense-LS-2bit",
+        "bits": 2,
+        "rotation_mode": "dense",
+        "ls_scale": true
+      }
+    ],
+    "codec_variants": [
+      {
+        "label": "FP8",
+        "codec": "fp8"
+      },
+      {
+        "label": "NVFP4",
+        "codec": "nvfp4"
+      }
+    ],
+    "turbotaper": {
+      "dist": "gaussian",
+      "rotation_mode": "hadamard",
+      "n_outlier_floor": 32
+    },
+    "skip_outliers": true,
+    "outlier_ratio": 50.0,
+    "thinkv": {
+      "group_size": 16,
+      "precision": {
+        "R": 4,
+        "E": 4,
+        "T": 2
+      },
+      "auto_configure": false,
+      "calib_max_new": 200,
+      "capture_long": false
+    },
+    "pmkvq": {
+      "key_bits": 8,
+      "value_bits": 4,
+      "final_bits": 2,
+      "key_final_bits": 4,
+      "ladder_span": 256,
+      "block_allocation": false,
+      "channel_reparam": false,
+      "bit_options": [
+        2,
+        4,
+        8
+      ],
+      "avg_bit_budget": null,
+      "pos_scale": 4
+    },
+    "taperkv": {
+      "key_bits": 8,
+      "value_bits": 4,
+      "b_min": 4,
+      "b_min_value": 2
+    },
+    "taperkv_sweep": [
+      {
+        "label": "TaperKV-3bit",
+        "key_bits": 4,
+        "value_bits": 3,
+        "b_min": 3,
+        "b_min_value": 2
+      }
+    ],
+    "turbotaper_sweep": [],
+    "context_lens": [
+      4096,
+      8192,
+      16384
+    ],
+    "depths": [
+      0.1,
+      0.25,
+      0.5,
+      0.75,
+      0.9
+    ],
+    "seeds": 3,
+    "max_new_needle": 32,
+    "run_ruler": true,
+    "ruler_keys": 4,
+    "ruler_seeds": 5,
+    "run_needle": true,
+    "run_gsm8k": false,
+    "gsm8k_limit": 50,
+    "max_new_reason": 1024,
+    "run_math": false,
+    "math_limit": 50,
+    "max_new_math": 3072,
+    "run_longbench": false,
+    "longbench_tasks": [],
+    "longbench_max_length": 7500,
+    "longbench_limit": 10,
+    "run_livecodebench": false,
+    "lcb_problems_path": null,
+    "lcb_dataset": "livecodebench/code_generation_lite",
+    "lcb_split": "test",
+    "lcb_limit": 50,
+    "lcb_k": 1,
+    "lcb_timeout": 6.0,
+    "max_new_code": 4096,
+    "run_ppl": true,
+    "ppl_max_length": 4096,
+    "ppl_stride": 2048,
+    "ppl_windows": 16
+  },
+  "results": {
+    "FullKV": {
+      "needle": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.9213,
+          1.0
+        ],
+        "mem_fraction": 1.0,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.9333,
+        "accuracy_stderr": 0.0644,
+        "accuracy_ci95": [
+          0.7018,
+          0.9881
+        ],
+        "mem_fraction": 1.0,
+        "by_length": {
+          "4096": 0.8,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 6.4855,
+        "nll": 1.8696,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 1.0
+      }
+    },
+    "TurboQuant-4bit": {
+      "needle": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.9213,
+          1.0
+        ],
+        "mem_fraction": 0.2583,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.9333,
+        "accuracy_stderr": 0.0644,
+        "accuracy_ci95": [
+          0.7018,
+          0.9881
+        ],
+        "mem_fraction": 0.2583,
+        "by_length": {
+          "4096": 0.8,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 6.5653,
+        "nll": 1.8818,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 3.8679
+      }
+    },
+    "TurboQuant-3bit": {
+      "needle": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.9213,
+          1.0
+        ],
+        "mem_fraction": 0.1958,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.8,
+        "accuracy_stderr": 0.1033,
+        "accuracy_ci95": [
+          0.5481,
+          0.9295
+        ],
+        "mem_fraction": 0.1958,
+        "by_length": {
+          "4096": 0.6,
+          "8192": 0.8,
+          "16384": 1.0
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 6.9174,
+        "nll": 1.934,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 5.0995
+      }
+    },
+    "TurboQuant-2bit": {
+      "needle": {
+        "accuracy": 0.9333,
+        "accuracy_stderr": 0.0372,
+        "accuracy_ci95": [
+          0.8214,
+          0.9771
+        ],
+        "mem_fraction": 0.1334,
+        "by_length": {
+          "4096": 0.9333,
+          "8192": 0.8667,
+          "16384": 1.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.4,
+        "accuracy_stderr": 0.1265,
+        "accuracy_ci95": [
+          0.1982,
+          0.6425
+        ],
+        "mem_fraction": 0.1334,
+        "by_length": {
+          "4096": 0.4,
+          "8192": 0.6,
+          "16384": 0.2
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 10.1678,
+        "nll": 2.3192,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 7.4817
+      }
+    },
+    "HALO-4bit": {
+      "needle": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.9213,
+          1.0
+        ],
+        "mem_fraction": 0.2583,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.8667,
+        "accuracy_stderr": 0.0878,
+        "accuracy_ci95": [
+          0.6212,
+          0.9626
+        ],
+        "mem_fraction": 0.2583,
+        "by_length": {
+          "4096": 0.8,
+          "8192": 1.0,
+          "16384": 0.8
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 6.5845,
+        "nll": 1.8847,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 3.8679
+      }
+    },
+    "HALO-3bit": {
+      "needle": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.9213,
+          1.0
+        ],
+        "mem_fraction": 0.1958,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.8667,
+        "accuracy_stderr": 0.0878,
+        "accuracy_ci95": [
+          0.6212,
+          0.9626
+        ],
+        "mem_fraction": 0.1958,
+        "by_length": {
+          "4096": 0.8,
+          "8192": 0.8,
+          "16384": 1.0
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 6.9043,
+        "nll": 1.9321,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 5.0995
+      }
+    },
+    "HALO-2bit": {
+      "needle": {
+        "accuracy": 0.9111,
+        "accuracy_stderr": 0.0424,
+        "accuracy_ci95": [
+          0.7927,
+          0.9649
+        ],
+        "mem_fraction": 0.1334,
+        "by_length": {
+          "4096": 0.9333,
+          "8192": 1.0,
+          "16384": 0.8
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.4667,
+        "accuracy_stderr": 0.1288,
+        "accuracy_ci95": [
+          0.2481,
+          0.6988
+        ],
+        "mem_fraction": 0.1334,
+        "by_length": {
+          "4096": 0.6,
+          "8192": 0.4,
+          "16384": 0.4
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 10.0986,
+        "nll": 2.3124,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 7.4817
+      }
+    },
+    "HALO-NC-4bit": {
+      "needle": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.9213,
+          1.0
+        ],
+        "mem_fraction": 0.2583,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.8,
+        "accuracy_stderr": 0.1033,
+        "accuracy_ci95": [
+          0.5481,
+          0.9295
+        ],
+        "mem_fraction": 0.2583,
+        "by_length": {
+          "4096": 0.8,
+          "8192": 0.8,
+          "16384": 0.8
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 6.5745,
+        "nll": 1.8832,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 3.8679
+      }
+    },
+    "HALO-NC-3bit": {
+      "needle": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.9213,
+          1.0
+        ],
+        "mem_fraction": 0.1958,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.8667,
+        "accuracy_stderr": 0.0878,
+        "accuracy_ci95": [
+          0.6212,
+          0.9626
+        ],
+        "mem_fraction": 0.1958,
+        "by_length": {
+          "4096": 0.8,
+          "8192": 1.0,
+          "16384": 0.8
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 6.8998,
+        "nll": 1.9315,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 5.0995
+      }
+    },
+    "HALO-NC-2bit": {
+      "needle": {
+        "accuracy": 0.9111,
+        "accuracy_stderr": 0.0424,
+        "accuracy_ci95": [
+          0.7927,
+          0.9649
+        ],
+        "mem_fraction": 0.1334,
+        "by_length": {
+          "4096": 0.8667,
+          "8192": 0.9333,
+          "16384": 0.9333
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.4,
+        "accuracy_stderr": 0.1265,
+        "accuracy_ci95": [
+          0.1982,
+          0.6425
+        ],
+        "mem_fraction": 0.1334,
+        "by_length": {
+          "4096": 0.2,
+          "8192": 0.6,
+          "16384": 0.4
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 10.0078,
+        "nll": 2.3034,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 7.4817
+      }
+    },
+    "HALO-NCIT-4bit": {
+      "needle": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.9213,
+          1.0
+        ],
+        "mem_fraction": 0.2583,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.8667,
+        "accuracy_stderr": 0.0878,
+        "accuracy_ci95": [
+          0.6212,
+          0.9626
+        ],
+        "mem_fraction": 0.2583,
+        "by_length": {
+          "4096": 0.8,
+          "8192": 1.0,
+          "16384": 0.8
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 6.581,
+        "nll": 1.8842,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 3.8679
+      }
+    },
+    "HALO-NCIT-3bit": {
+      "needle": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.9213,
+          1.0
+        ],
+        "mem_fraction": 0.1958,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.8667,
+        "accuracy_stderr": 0.0878,
+        "accuracy_ci95": [
+          0.6212,
+          0.9626
+        ],
+        "mem_fraction": 0.1958,
+        "by_length": {
+          "4096": 0.8,
+          "8192": 0.8,
+          "16384": 1.0
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 6.8782,
+        "nll": 1.9284,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 5.0995
+      }
+    },
+    "HALO-NCIT-2bit": {
+      "needle": {
+        "accuracy": 0.9111,
+        "accuracy_stderr": 0.0424,
+        "accuracy_ci95": [
+          0.7927,
+          0.9649
+        ],
+        "mem_fraction": 0.1334,
+        "by_length": {
+          "4096": 0.8667,
+          "8192": 0.9333,
+          "16384": 0.9333
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.3333,
+        "accuracy_stderr": 0.1217,
+        "accuracy_ci95": [
+          0.1518,
+          0.5829
+        ],
+        "mem_fraction": 0.1334,
+        "by_length": {
+          "4096": 0.2,
+          "8192": 0.6,
+          "16384": 0.2
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 9.9662,
+        "nll": 2.2992,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 7.4817
+      }
+    },
+    "TurboQuant-3.5bit": {
+      "needle": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.9213,
+          1.0
+        ],
+        "mem_fraction": 0.2349,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.8667,
+        "accuracy_stderr": 0.0878,
+        "accuracy_ci95": [
+          0.6212,
+          0.9626
+        ],
+        "mem_fraction": 0.2349,
+        "by_length": {
+          "4096": 0.8,
+          "8192": 0.8,
+          "16384": 1.0
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 6.6964,
+        "nll": 1.9016,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 4.2531
+      }
+    },
+    "TurboQuant-2.5bit": {
+      "needle": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.9213,
+          1.0
+        ],
+        "mem_fraction": 0.1724,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.8,
+        "accuracy_stderr": 0.1033,
+        "accuracy_ci95": [
+          0.5481,
+          0.9295
+        ],
+        "mem_fraction": 0.1724,
+        "by_length": {
+          "4096": 0.8,
+          "8192": 0.6,
+          "16384": 1.0
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 7.7724,
+        "nll": 2.0506,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 5.7909
+      }
+    },
+    "HALO-NC-3.5bit": {
+      "needle": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.9213,
+          1.0
+        ],
+        "mem_fraction": 0.2349,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.8667,
+        "accuracy_stderr": 0.0878,
+        "accuracy_ci95": [
+          0.6212,
+          0.9626
+        ],
+        "mem_fraction": 0.2349,
+        "by_length": {
+          "4096": 0.8,
+          "8192": 0.8,
+          "16384": 1.0
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 6.6482,
+        "nll": 1.8944,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 4.2531
+      }
+    },
+    "HALO-NC-2.5bit": {
+      "needle": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.9213,
+          1.0
+        ],
+        "mem_fraction": 0.1724,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.7333,
+        "accuracy_stderr": 0.1142,
+        "accuracy_ci95": [
+          0.4805,
+          0.891
+        ],
+        "mem_fraction": 0.1724,
+        "by_length": {
+          "4096": 0.8,
+          "8192": 0.6,
+          "16384": 0.8
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 7.4287,
+        "nll": 2.0053,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 5.7909
+      }
+    },
+    "HALO-NCIT-3.5bit": {
+      "needle": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.9213,
+          1.0
+        ],
+        "mem_fraction": 0.2349,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.9333,
+        "accuracy_stderr": 0.0644,
+        "accuracy_ci95": [
+          0.7018,
+          0.9881
+        ],
+        "mem_fraction": 0.2349,
+        "by_length": {
+          "4096": 0.8,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 6.659,
+        "nll": 1.896,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 4.2531
+      }
+    },
+    "HALO-NCIT-2.5bit": {
+      "needle": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.9213,
+          1.0
+        ],
+        "mem_fraction": 0.1724,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.6667,
+        "accuracy_stderr": 0.1217,
+        "accuracy_ci95": [
+          0.4171,
+          0.8482
+        ],
+        "mem_fraction": 0.1724,
+        "by_length": {
+          "4096": 0.8,
+          "8192": 0.6,
+          "16384": 0.6
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 7.3928,
+        "nll": 2.0005,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 5.7909
+      }
+    }
+  }
+}

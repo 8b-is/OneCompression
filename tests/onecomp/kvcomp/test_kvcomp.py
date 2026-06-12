@@ -213,10 +213,12 @@ def test_halo_auto_resolves_hadamard_gemm_for_pow2():
 
 def test_halo_hadamard_gemm_matches_wht_quality():
     # The GEMM Hadamard must reconstruct identically to the butterfly WHT and to
-    # TurboQuant's hadamard mode (it is the SAME transform): a speed lever only.
+    # TurboQuant's hadamard mode (it is the SAME transform, speed lever only).
+    # Use RMS scale on both HALO variants to isolate the rotation effect.
     x, _ = _kv()
-    hg = HALOCodec(bits=4, rotation_mode="hadamard_gemm", ls_scale=False)
-    hw = HALOCodec(bits=4, rotation_mode="hadamard", ls_scale=False)
+    rms_kw = dict(key_scale_mode="rms", value_scale_mode="rms")
+    hg = HALOCodec(bits=4, rotation_mode="hadamard_gemm", **rms_kw)
+    hw = HALOCodec(bits=4, rotation_mode="hadamard", **rms_kw)
     tq = TurboQuantCodec(bits=4, rotation_mode="hadamard")
     m_hg = float((hg.decode(hg.encode(x, x))[0] - x).pow(2).mean())
     m_hw = float((hw.decode(hw.encode(x, x))[0] - x).pow(2).mean())
@@ -230,8 +232,10 @@ def test_halo_ls_scale_reduces_mse_and_is_storage_neutral():
     # lower reconstruction MSE; storage (one fp16/vector) is unchanged.
     x, _ = _kv()
     for bits in (2, 3, 4):
-        ls = HALOCodec(bits=bits, rotation_mode="hadamard_gemm", ls_scale=True)
-        rms = HALOCodec(bits=bits, rotation_mode="hadamard_gemm", ls_scale=False)
+        ls = HALOCodec(bits=bits, rotation_mode="hadamard_gemm",
+                       key_scale_mode="ls", value_scale_mode="ls")
+        rms = HALOCodec(bits=bits, rotation_mode="hadamard_gemm",
+                        key_scale_mode="rms", value_scale_mode="rms")
         e_ls, e_rms = ls.encode(x, x), rms.encode(x, x)
         m_ls = float((ls.decode(e_ls)[0] - x).pow(2).mean())
         m_rms = float((rms.decode(e_rms)[0] - x).pow(2).mean())
@@ -288,13 +292,18 @@ def test_halo_ls_iter_monotone_mse():
 
 
 def test_halo_legacy_ls_scale_backcompat():
-    # ls_scale derives the per-role modes and is bit-identical to explicit modes.
+    # New defaults: key_scale_mode="nc", value_scale_mode="ls_iter" (validated best).
     x, _ = _kv(h=2, s=128)
-    assert HALOCodec(bits=4)._scale_mode_for("k") == "ls"  # default
-    assert HALOCodec(bits=4, ls_scale=False)._scale_mode_for("v") == "rms"
-    o = HALOCodec(bits=4, ls_scale=False, key_scale_mode="nc")
+    assert HALOCodec(bits=4)._scale_mode_for("k") == "nc"        # new default
+    assert HALOCodec(bits=4)._scale_mode_for("v") == "ls_iter"   # new default
+    # Explicit modes always override ls_scale.
+    o = HALOCodec(bits=4, key_scale_mode="nc", value_scale_mode="rms")
     assert o._scale_mode_for("k") == "nc" and o._scale_mode_for("v") == "rms"
-    a = HALOCodec(bits=3, rotation_mode="hadamard_gemm", ls_scale=True)
+    # ls_scale fallback (only active when explicit modes are None).
+    o2 = HALOCodec(bits=4, key_scale_mode=None, value_scale_mode=None, ls_scale=False)
+    assert o2._scale_mode_for("k") == "rms" and o2._scale_mode_for("v") == "rms"
+    # Explicit ls on both is the old symmetric-LS behaviour.
+    a = HALOCodec(bits=3, rotation_mode="hadamard_gemm", key_scale_mode="ls", value_scale_mode="ls")
     b = HALOCodec(bits=3, rotation_mode="hadamard_gemm", key_scale_mode="ls", value_scale_mode="ls")
     assert torch.allclose(a.decode(a.encode(x, x))[0], b.decode(b.encode(x, x))[0])
 

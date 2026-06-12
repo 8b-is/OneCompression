@@ -1,0 +1,270 @@
+{
+  "model": "DeepSeek-R1-Distill-Qwen-7B",
+  "config": {
+    "model_path": "/lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Qwen-7B",
+    "device": "cuda:0",
+    "dtype": "bfloat16",
+    "attn_implementation": "eager",
+    "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_halo_enh_basic_r1q7",
+    "methods": [
+      "FullKV",
+      "HALO-3bit",
+      "HALO-4bit",
+      "HALO-NC-3bit",
+      "HALO-NC-4bit",
+      "HALO-NCIT-3bit",
+      "HALO-NCIT-4bit"
+    ],
+    "sink_tokens": 4,
+    "recent_tokens": 128,
+    "requant_stride": 16,
+    "target_mem": 0.25,
+    "uniform_bits": [
+      4
+    ],
+    "turboquant_variants": [],
+    "kivi_bits": [
+      2
+    ],
+    "halo_variants": [
+      {
+        "label": "HALO-4bit",
+        "bits": 4
+      },
+      {
+        "label": "HALO-3bit",
+        "bits": 3
+      },
+      {
+        "label": "HALO-NC-4bit",
+        "bits": 4,
+        "key_scale_mode": "nc",
+        "value_scale_mode": "ls"
+      },
+      {
+        "label": "HALO-NC-3bit",
+        "bits": 3,
+        "key_scale_mode": "nc",
+        "value_scale_mode": "ls"
+      },
+      {
+        "label": "HALO-NCIT-4bit",
+        "bits": 4,
+        "key_scale_mode": "nc",
+        "value_scale_mode": "ls_iter"
+      },
+      {
+        "label": "HALO-NCIT-3bit",
+        "bits": 3,
+        "key_scale_mode": "nc",
+        "value_scale_mode": "ls_iter"
+      }
+    ],
+    "codec_variants": [],
+    "turbotaper": {
+      "dist": "gaussian",
+      "rotation_mode": "hadamard",
+      "n_outlier_floor": 32,
+      "b_min_value": 3
+    },
+    "skip_outliers": true,
+    "outlier_ratio": 50.0,
+    "thinkv": {
+      "group_size": 16,
+      "precision": {
+        "R": 4,
+        "E": 4,
+        "T": 2
+      },
+      "auto_configure": true,
+      "calib_max_new": 300,
+      "capture_long": false
+    },
+    "pmkvq": {
+      "key_bits": 8,
+      "value_bits": 4,
+      "final_bits": 2,
+      "key_final_bits": 4,
+      "ladder_span": 256,
+      "block_allocation": true,
+      "channel_reparam": true,
+      "bit_options": [
+        2,
+        4,
+        8
+      ],
+      "avg_bit_budget": 2.5,
+      "pos_scale": 4
+    },
+    "taperkv": {
+      "key_bits": 8,
+      "value_bits": 4,
+      "b_min": 4,
+      "b_min_value": 2
+    },
+    "taperkv_sweep": [],
+    "turbotaper_sweep": [],
+    "context_lens": [
+      2048,
+      4096,
+      8192
+    ],
+    "depths": [
+      0.1,
+      0.25,
+      0.4,
+      0.5,
+      0.6,
+      0.75,
+      0.9
+    ],
+    "seeds": 3,
+    "max_new_needle": 64,
+    "run_ruler": false,
+    "ruler_keys": 4,
+    "ruler_seeds": 5,
+    "run_needle": false,
+    "run_gsm8k": true,
+    "gsm8k_limit": 100,
+    "max_new_reason": 8192,
+    "run_math": true,
+    "math_limit": 100,
+    "max_new_math": 8192,
+    "run_longbench": false,
+    "longbench_tasks": [],
+    "longbench_max_length": 7500,
+    "longbench_limit": 20,
+    "run_livecodebench": false,
+    "lcb_problems_path": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/data/lcb_functional.jsonl",
+    "lcb_dataset": "livecodebench/code_generation_lite",
+    "lcb_split": "test",
+    "lcb_limit": 50,
+    "lcb_k": 1,
+    "lcb_timeout": 6.0,
+    "max_new_code": 16384,
+    "run_ppl": true,
+    "ppl_max_length": 2048,
+    "ppl_stride": 1024,
+    "ppl_windows": 16,
+    "aime_years": [],
+    "aime_k": 8,
+    "aime_limit": 30,
+    "max_new_aime": 8192
+  },
+  "results": {
+    "FullKV": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.69,
+        "pass@1_stderr": 0.0465,
+        "pass@1_ci95": [
+          0.5989,
+          0.7811
+        ],
+        "avg_gen_len": 563.1,
+        "compression_ratio": 1.0,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.67,
+        "pass@1_stderr": 0.0473,
+        "pass@1_ci95": [
+          0.5774,
+          0.7626
+        ],
+        "avg_gen_len": 2891.4,
+        "compression_ratio": 1.0,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 50.8476,
+        "nll": 3.9288,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 1.0
+      }
+    },
+    "HALO-4bit": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.73,
+        "pass@1_stderr": 0.0446,
+        "pass@1_ci95": [
+          0.6425,
+          0.8175
+        ],
+        "avg_gen_len": 534.7,
+        "compression_ratio": 2.532,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.67,
+        "pass@1_stderr": 0.0473,
+        "pass@1_ci95": [
+          0.5774,
+          0.7626
+        ],
+        "avg_gen_len": 2948.0,
+        "compression_ratio": 2.553,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 52.4773,
+        "nll": 3.9604,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 2.554
+      }
+    },
+    "HALO-3bit": {
+      "gsm8k": {
+        "task": "gsm8k",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.67,
+        "pass@1_stderr": 0.0473,
+        "pass@1_ci95": [
+          0.5774,
+          0.7626
+        ],
+        "avg_gen_len": 583.2,
+        "compression_ratio": 2.905,
+        "eviction_fired": true
+      },
+      "math500": {
+        "task": "math500",
+        "n": 100,
+        "k": 1,
+        "pass@1": 0.69,
+        "pass@1_stderr": 0.0465,
+        "pass@1_ci95": [
+          0.5989,
+          0.7811
+        ],
+        "avg_gen_len": 2868.6,
+        "compression_ratio": 2.935,
+        "eviction_fired": true
+      },
+      "ppl": {
+        "ppl": 54.3315,
+        "nll": 3.9951,
+        "n_tokens": 17407.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 2.9386
+      }
+    }
+  }
+}
