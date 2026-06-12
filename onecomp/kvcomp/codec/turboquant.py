@@ -16,8 +16,15 @@ Faithful options
   per-vector L2 norm).
 * ``n_outlier`` / ``outlier_bits``: the paper's KV mixed-precision -- split the
   ``n_outlier`` highest-energy channels off and quantize them at
-  ``outlier_bits`` while the rest use ``bits`` (effective ``2.5``/``3.5`` bit:
-  ``32 ch @ 3 + 96 ch @ 2`` / ``32 @ 4 + 96 @ 3`` for ``head_dim=128``).
+  ``outlier_bits`` while the rest use ``bits``.  The effective payload bit-width
+  is ``(n_outlier*outlier_bits + (d-n_outlier)*bits) / d``; for ``head_dim=128``,
+  ``64 ch @ 3 + 64 @ 2`` = ``2.5`` bit and ``64 @ 4 + 64 @ 3`` = ``3.5`` bit
+  (``32 @ 3 + 96 @ 2`` = ``2.25``, ``32 @ 4 + 96 @ 3`` = ``3.25``).  The
+  outlier channel set is chosen *per encoded block* from that block's energy, so
+  under incremental decode (``q_len=1``) the channel mask is dynamic per step.
+  This is exact for the fake-quant research layer but is a layout a real kernel
+  cannot express statically -- the paper must state this per-block granularity
+  (memo A-8).
 * ``use_qjl``: a 1-bit residual (QJL-style) that refines the reconstruction
   toward the unbiased inner-product estimator (off by default; community
   evaluations agree it can harm softmax attention).
@@ -201,7 +208,9 @@ class TurboQuantCodec(KVCodec):
             no = self.n_outlier
             payload_bits = vecs * (no * self._outlier_bits() + (d - no) * bits)
             scale_bits = vecs * 2 * 16  # two per-vector norms
-        qjl_bits = x.numel() * 1 if self.use_qjl else 0
+        # QJL stores a 1-bit sign per element AND a per-vector fp16 residual RMS
+        # (``qjl_rms``); count both for honest whole-cache accounting (memo A-7).
+        qjl_bits = (x.numel() * 1 + vecs * 16) if self.use_qjl else 0
         return payload_bits + scale_bits + qjl_bits
 
     def encode(self, key, value, ctx=None) -> CompressedKV:
@@ -210,7 +219,13 @@ class TurboQuantCodec(KVCodec):
         if kp is None or vp is None:
             kq = fake_quantize_affine(key, self.bits, axis="token")
             vq = fake_quantize_affine(value, self._value_bits(), axis="token")
-            stored = key.numel() * self.bits + value.numel() * self._value_bits()
+            # Count the per-token affine scale + zero (two fp16 per vector), like
+            # the AffineKVCodec path, so the fallback's compression ratio is not
+            # over-stated (memo A-6).
+            kvecs = key.shape[0] * key.shape[1] * key.shape[2]
+            vvecs = value.shape[0] * value.shape[1] * value.shape[2]
+            stored = (key.numel() * self.bits + value.numel() * self._value_bits()
+                      + (kvecs + vvecs) * 2 * 16)
             return CompressedKV(key_q=kq, value_q=vq,
                                 meta={"dtype": key.dtype, "fallback": True,
                                       "stored_bits": int(stored), "passthrough": True})

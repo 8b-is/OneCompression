@@ -47,11 +47,15 @@ methods:
   # Enhanced HALO (role-asymmetric scale): norm-correct keys (faithful attention
   # logit) + least-squares values (MSE-optimal).  Storage-identical to plain HALO.
   - HALO-NC-4bit
+  - HALO-NC-3.5bit
   - HALO-NC-3bit
+  - HALO-NC-2.5bit
   - HALO-NC-2bit
   # Enhanced HALO + ls_iter values (one Lloyd alternating-min step on values).
   - HALO-NCIT-4bit
+  - HALO-NCIT-3.5bit
   - HALO-NCIT-3bit
+  - HALO-NCIT-2.5bit
   - HALO-NCIT-2bit
   - HALO-dense-LS-4bit   # dense rotation + LS scale: best PPL at every bit (ablation)
   - HALO-dense-LS-3bit
@@ -81,11 +85,17 @@ halo_variants:
   - {label: "HALO-NC-4bit", bits: 4, key_scale_mode: nc, value_scale_mode: ls}
   - {label: "HALO-NC-3bit", bits: 3, key_scale_mode: nc, value_scale_mode: ls}
   - {label: "HALO-NC-2bit", bits: 2, key_scale_mode: nc, value_scale_mode: ls}
+  # Enhanced HALO at the outlier-split operating points (lever 3): 64 ch @ b+1 +
+  # 64 @ b = true 2.5 / 3.5-bit for head_dim=128, iso-memory to TurboQuant-{2.5,3.5}.
+  - {label: "HALO-NC-3.5bit", bits: 3, n_outlier: 64, outlier_bits: 4, key_scale_mode: nc, value_scale_mode: ls}
+  - {label: "HALO-NC-2.5bit", bits: 2, n_outlier: 64, outlier_bits: 3, key_scale_mode: nc, value_scale_mode: ls}
   # Enhanced HALO + ls_iter on values: one Lloyd alternating-minimisation step
   # (re-quantise at the fitted scale, re-fit) -> monotone-lower value MSE, free.
   - {label: "HALO-NCIT-4bit", bits: 4, key_scale_mode: nc, value_scale_mode: ls_iter}
   - {label: "HALO-NCIT-3bit", bits: 3, key_scale_mode: nc, value_scale_mode: ls_iter}
   - {label: "HALO-NCIT-2bit", bits: 2, key_scale_mode: nc, value_scale_mode: ls_iter}
+  - {label: "HALO-NCIT-3.5bit", bits: 3, n_outlier: 64, outlier_bits: 4, key_scale_mode: nc, value_scale_mode: ls_iter}
+  - {label: "HALO-NCIT-2.5bit", bits: 2, n_outlier: 64, outlier_bits: 3, key_scale_mode: nc, value_scale_mode: ls_iter}
   # Dense rotation + LS scale: same GEMM cost as folded-Hadamard at head_dim=128,
   # marginally better Gaussianisation -> best PPL at every bit on Ministral/Llama.
   # Included as a Pareto ablation alongside the default HALO (Hadamard-GEMM + LS).
@@ -121,11 +131,14 @@ turbotaper:
 # Beta codebook (exact Beta((d-1)/2) law) + per-vector L2 norm is the faithful
 # TurboQuant; gaussian (RMS) is the high-d limit. head_dim=128 is power-of-two so
 # the fast Hadamard rotation applies for full-width variants.
+# True 2.5 / 3.5-bit on head_dim=128 = 64 outliers @ b+1 + 64 @ b (the prior
+# n_outlier=32 was an effective 2.25 / 3.25-bit -- see codec docstrings).  Both
+# TurboQuant and HALO use the same split so the comparison is exactly iso-memory.
 turboquant_variants:
   - {label: "TurboQuant-4bit",   bits: 4, dist: beta}
-  - {label: "TurboQuant-3.5bit", bits: 3, n_outlier: 32, outlier_bits: 4, dist: beta}
+  - {label: "TurboQuant-3.5bit", bits: 3, n_outlier: 64, outlier_bits: 4, dist: beta}
   - {label: "TurboQuant-3bit",   bits: 3, dist: beta}
-  - {label: "TurboQuant-2.5bit", bits: 2, n_outlier: 32, outlier_bits: 3, dist: beta}
+  - {label: "TurboQuant-2.5bit", bits: 2, n_outlier: 64, outlier_bits: 3, dist: beta}
   - {label: "TurboQuant-2bit",   bits: 2, dist: beta}
 
 # --- Needle-in-a-Haystack (paper §4.2: vary context, recall, 4x+ compression) ---

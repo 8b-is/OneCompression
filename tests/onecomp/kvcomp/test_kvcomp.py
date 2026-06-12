@@ -321,6 +321,70 @@ def test_halo_stateless_precond_no_ema():
     assert torch.allclose(enc_b_fresh.key_q["mu"], mu_true, atol=1e-4)
 
 
+# --- HALO outlier mixed-precision (lever 3) -------------------------------
+@pytest.mark.parametrize("rot", ["auto", "hadamard_gemm", "dense"])
+@pytest.mark.parametrize("n_o,ob,base,eff", [(64, 3, 2, 2.5), (64, 4, 3, 3.5),
+                                             (32, 3, 2, 2.25)])
+def test_halo_outlier_roundtrip_and_accounting(rot, n_o, ob, base, eff):
+    x, _ = _kv(h=4, s=64)  # head_dim 128
+    b, h, s, d = x.shape
+    c = HALOCodec(bits=base, n_outlier=n_o, outlier_bits=ob, rotation_mode=rot,
+                  key_scale_mode="nc", value_scale_mode="ls")
+    enc = c.encode(x, x)
+    k, v = c.decode(enc)
+    assert k.shape == x.shape and v.shape == x.shape
+    assert enc.key_q.get("outlier") and int(enc.key_q["mask"].sum()) == n_o
+    vecs = b * h * s * 2
+    payload = vecs * (n_o * ob + (d - n_o) * base)
+    assert enc.meta["stored_bits"] == payload + vecs * 2 * 16
+    assert abs(payload / (vecs * d) - eff) < 1e-6
+
+
+def test_halo_outlier_matches_turboquant_storage():
+    # HALO and TurboQuant compute identical mixed-precision storage at the same
+    # split, so the 2.5/3.5-bit comparison table is iso-memory.
+    x, _ = _kv(h=4, s=64)
+    hh = HALOCodec(bits=2, n_outlier=64, outlier_bits=3, rotation_mode="hadamard",
+                   key_scale_mode="nc", value_scale_mode="ls")
+    tq = TurboQuantCodec(bits=2, n_outlier=64, outlier_bits=3, rotation_mode="hadamard")
+    assert hh.encode(x, x).meta["stored_bits"] == tq.encode(x, x).meta["stored_bits"]
+
+
+def test_halo_outlier_beats_uniform_on_anisotropic_kv():
+    # With a few massive-activation channels, spending more bits on them lowers
+    # reconstruction MSE vs uniform base bits at the SAME nominal base.
+    x = torch.randn(2, 4, 64, 128)
+    x[..., [3, 17, 40, 91]] *= 12.0
+    mix = HALOCodec(bits=2, n_outlier=64, outlier_bits=3, rotation_mode="dense",
+                    key_scale_mode="nc")
+    uni = HALOCodec(bits=2, rotation_mode="dense", key_scale_mode="nc")
+    mse_mix = (mix.decode(mix.encode(x, x))[0] - x).pow(2).sum()
+    mse_uni = (uni.decode(uni.encode(x, x))[0] - x).pow(2).sum()
+    assert float(mse_mix) <= float(mse_uni)
+
+
+# --- honest fallback / QJL accounting (memo A-6, A-7) ---------------------
+def test_fallback_affine_accounting_counts_scale_zero():
+    # Non-power-of-two head dim falls back to per-token affine; the stored-bits
+    # must count the scale + zero metadata (two fp16 per vector), not just codes.
+    kf = torch.randn(1, 2, 8, 96)
+    for codec in (HALOCodec(bits=4, rotation_mode="hadamard"),
+                  TurboQuantCodec(bits=4, rotation_mode="hadamard")):
+        enc = codec.encode(kf, kf)
+        assert enc.meta.get("fallback")
+        vecs = 1 * 2 * 8
+        assert enc.meta["stored_bits"] == kf.numel() * 4 * 2 + (vecs * 2) * 2 * 16
+
+
+def test_turboquant_qjl_counts_residual_rms():
+    x, _ = _kv(h=4, s=64)
+    b, h, s, d = x.shape
+    s0 = TurboQuantCodec(bits=4, rotation_mode="hadamard", use_qjl=False).encode(x, x).meta["stored_bits"]
+    s1 = TurboQuantCodec(bits=4, rotation_mode="hadamard", use_qjl=True).encode(x, x).meta["stored_bits"]
+    vecs = b * h * s * 2
+    assert s1 - s0 == x.numel() * 2 * 1 + vecs * 16  # sign bits + per-vector fp16 rms
+
+
 @pytest.mark.parametrize(
     "codec",
     [KIVICodec(bits=2), FP8Codec(), NVFP4Codec(), TernaryCodec(), Int3Codec(), Int4Codec()],
@@ -743,9 +807,11 @@ def test_codec_speed_ablation_matrix():
     """The HALO lever ablation: GEMM is quality-neutral, LS lowers MSE, iso-storage."""
     cs = _import_benchmark_module("codec_speed")
     codecs = cs._codecs(4)
-    assert set(codecs) == {
-        "TurboQuant-hadamard", "HALO-hadamard-noLS", "HALO-hadamard_gemm-noLS",
-        "HALO-hadamard_gemm-LS", "HALO-dense-LS"}
+    # The legacy speed/quality levers plus the role-asymmetric enhanced variants
+    # (NC keys, NC keys + ls_iter values) that the paper benchmarks.
+    assert {"TurboQuant-hadamard", "HALO-hadamard-noLS", "HALO-hadamard_gemm-noLS",
+            "HALO-hadamard_gemm-LS", "HALO-dense-LS"} <= set(codecs)
+    assert {"HALO-hadamard_gemm-NC", "HALO-hadamard_gemm-NCIT"} <= set(codecs)
 
     torch.manual_seed(0)
     k = torch.randn(1, 2, 64, 128)

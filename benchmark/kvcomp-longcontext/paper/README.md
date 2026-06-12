@@ -67,6 +67,11 @@ The retrieval grid runs HALO at 2/3/4-bit against TurboQuant's full bit-grid
 (2/2.5/3/3.5/4) + Uniform-INT + KIVI + FP8 + NVFP4, all at matched memory, so the
 "iso-bit, faster, no worse" claim is backed end-to-end (not just codec MSE).
 
+> **Full technical write-up:** see [`HALO_ENHANCED_REPORT.md`](HALO_ENHANCED_REPORT.md)
+> for the method (all 7 levers + status), the complete review-memo audit
+> (A-1..A-8, B-1..3, C, vLLM 1-5), the fair TurboQuant positioning (what is / is
+> not novel, and the 4 superiority axes), and the verification artifacts.
+
 ### Enhanced HALO — role-asymmetric dequant scale (proposed upgrade)
 
 The default HALO uses one least-squares (LS) dequant scale for both K and V. LS
@@ -77,8 +82,14 @@ Enhanced HALO makes the scale **role-asymmetric** (iso-storage, same fp16/vector
 
 | variant | key scale | value scale | effect |
 |---|---|---|---|
-| `HALO-NC-{2,3,4}bit` | norm-correcting (`nc`) | least-squares (`ls`) | logit shrink `cos²θ → cosθ`; value MSE unchanged |
-| `HALO-NCIT-{2,3,4}bit` | `nc` | `ls_iter` | + one Lloyd alternating-min step on values (monotone-lower value MSE) |
+| `HALO-NC-{2,2.5,3,3.5,4}bit` | norm-correcting (`nc`) | least-squares (`ls`) | logit shrink `cos²θ → cosθ`; value MSE unchanged |
+| `HALO-NCIT-{2,2.5,3,3.5,4}bit` | `nc` | `ls_iter` | + one Lloyd alternating-min step on values (monotone-lower value MSE) |
+
+The **2.5 / 3.5-bit** points use lever 3 (outlier split, `n_outlier=64`,
+`outlier_bits=b+1` on head_dim=128) so HALO now covers TurboQuant's full
+headline bit-grid at exactly iso-memory. The needle/RULER filler is now a
+diverse 30-sentence bank (not a 4-sentence repeat), so retrieval actually
+stresses the codec.
 
 `s_NC = √(s_LS · s_IP)` is the geometric mean of the MSE-optimal and inner-product
 -unbiased scales; the NC MSE penalty vs LS is `O(θ⁴)`, so 3–4-bit converge while

@@ -52,7 +52,7 @@ R1Q14=$MODELS/DeepSeek-R1-Distill-Qwen-14B
 QWQ=$MODELS/QwQ-32B
 
 # Enhanced HALO + the iso-bit references it must match/beat.
-RETR_METHODS='methods=[FullKV,TurboQuant-2bit,TurboQuant-3bit,TurboQuant-4bit,HALO-2bit,HALO-3bit,HALO-4bit,HALO-NC-2bit,HALO-NC-3bit,HALO-NC-4bit,HALO-NCIT-2bit,HALO-NCIT-3bit,HALO-NCIT-4bit]'
+RETR_METHODS='methods=[FullKV,TurboQuant-2bit,TurboQuant-2.5bit,TurboQuant-3bit,TurboQuant-3.5bit,TurboQuant-4bit,HALO-2bit,HALO-3bit,HALO-4bit,HALO-NC-2bit,HALO-NC-2.5bit,HALO-NC-3bit,HALO-NC-3.5bit,HALO-NC-4bit,HALO-NCIT-2bit,HALO-NCIT-2.5bit,HALO-NCIT-3bit,HALO-NCIT-3.5bit,HALO-NCIT-4bit]'
 REASON_METHODS='methods=[FullKV,HALO-3bit,HALO-4bit,HALO-NC-3bit,HALO-NC-4bit,HALO-NCIT-3bit,HALO-NCIT-4bit]'
 
 WHICH=${1:-all}

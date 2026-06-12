@@ -65,12 +65,64 @@ def _number_hit(gold: str, text: str) -> bool:
 
 _CITIES = ["Paris", "Tokyo", "Cairo", "Lima", "Oslo", "Delhi", "Quito", "Accra",
            "Hanoi", "Sofia", "Riga", "Bern", "Doha", "Kyiv", "Amman", "Dakar"]
-_FILLER = (
-    "The history of cartography spans many centuries of patient observation. "
-    "Merchants traded spices along routes that crossed deserts and mountains. "
-    "Scholars debated the shape of coastlines while sailors charted the stars. "
-    "Libraries collected manuscripts describing distant provinces and rivers. "
-)
+
+# Diverse, high-entropy filler (memo C).  The old filler was the *same* four
+# sentences repeated to fill the context, which is so low-entropy that the model
+# can recover the needle from almost any surviving token -- unrealistically
+# forgiving to quantization noise and eviction.  We instead sample, without
+# immediate repetition, from a broad bank of unrelated essay-style sentences
+# (history, science, economics, nature, technology, art) so the haystack has the
+# token diversity of real long-context text and the retrieval task actually
+# stresses the codec.  Seeded, so every (length, depth, seed) cell is
+# deterministic and reproducible.
+_FILLER_BANK = [
+    "The history of cartography spans many centuries of patient observation.",
+    "Merchants traded spices along routes that crossed deserts and mountains.",
+    "Scholars debated the shape of coastlines while sailors charted the stars.",
+    "Libraries collected manuscripts describing distant provinces and rivers.",
+    "A startup succeeds when it makes something a small group of people want badly.",
+    "Compound interest rewards the investor who is patient through quiet decades.",
+    "Photosynthesis converts sunlight into the chemical energy that feeds the forest.",
+    "The printing press lowered the cost of copying ideas almost to nothing.",
+    "Glaciers carve valleys slowly, grinding granite into pale silt over millennia.",
+    "A good essay begins with a question the writer cannot yet answer.",
+    "Tides rise and fall as the moon pulls the patient oceans across the globe.",
+    "Markets aggregate the scattered knowledge of thousands of strangers into a price.",
+    "The cathedral took three generations of masons to lift its vaults skyward.",
+    "Bees navigate by polarized light and dance to share the bearing of flowers.",
+    "Encryption turns a private message into noise that only a key can undo.",
+    "Volcanic ash enriches the soil, and farmers return to the dangerous slopes.",
+    "A violin's tone depends on the slow seasoning of spruce and maple wood.",
+    "Railways shrank the continent, binding distant towns to a single timetable.",
+    "Antibiotics gave physicians a brief, astonishing power over old infections.",
+    "Rivers braid and wander, abandoning oxbow lakes as they search for the sea.",
+    "The chess endgame rewards calm calculation more than brilliant sacrifice.",
+    "Coral reefs build limestone cities that shelter a quarter of marine life.",
+    "Inflation quietly transfers wealth from savers to borrowers year by year.",
+    "Migratory birds cross oceans guided by stars, smell, and the earth's field.",
+    "A compiler translates human intention into instructions a machine obeys.",
+    "Monsoon winds reverse with the seasons, watering half the world's harvests.",
+    "The telescope turned wandering lights into worlds with moons of their own.",
+    "Sourdough rises because wild yeast and bacteria quietly digest the flour.",
+    "Supply chains thread raw ore through a dozen ports before it becomes a phone.",
+    "Desert foxes hunt at night, their great ears shedding the day's stored heat.",
+]
+
+
+def _build_filler(tokenizer, target_tokens: int, rng) -> str:
+    """Sample diverse sentences (no immediate repeat) until ~``target_tokens``."""
+    if target_tokens <= 0:
+        return ""
+    out, ntok, prev = [], 0, -1
+    while ntok < target_tokens:
+        i = rng.randrange(len(_FILLER_BANK))
+        if i == prev and len(_FILLER_BANK) > 1:
+            i = (i + 1) % len(_FILLER_BANK)
+        prev = i
+        s = _FILLER_BANK[i] + " "
+        out.append(s)
+        ntok += len(tokenizer(s).input_ids)
+    return "".join(out)
 
 
 @dataclass
@@ -106,10 +158,8 @@ def make_needle_prompt(tokenizer, context_tokens: int, depth: float = 0.5, seed:
     magic = rng.randint(1000, 9999)
     city = rng.choice(_CITIES)
     needle = f" The magic number for {city} is {magic}. "
-    filler_tok = max(1, len(tokenizer(_FILLER).input_ids))
-    reps = max(2, context_tokens // filler_tok)
-    pre = _FILLER * int(reps * depth)
-    post = _FILLER * int(reps * (1.0 - depth))
+    pre = _build_filler(tokenizer, int(context_tokens * depth), rng)
+    post = _build_filler(tokenizer, int(context_tokens * (1.0 - depth)), rng)
     haystack = pre + needle + post
     question = (f"\n\nQuestion: What is the magic number for {city}? "
                 f"Answer with only the number.\nAnswer:")
@@ -259,9 +309,6 @@ def make_multikey_prompt(tokenizer, context_tokens: int, num_keys: int = 4,
     facts = {c: rng.randint(1000, 9999) for c in cities}
     target = rng.choice(cities)
 
-    filler_tok = max(1, len(tokenizer(_FILLER).input_ids))
-    reps = max(2, context_tokens // filler_tok)
-
     # Place each needle at a fractional position in [0, 1): the *target* sits at
     # ``depth`` (so retrieval can be probed at a controlled context depth) and the
     # distractors are spread evenly across the remaining context, forcing the
@@ -276,10 +323,10 @@ def make_multikey_prompt(tokenizer, context_tokens: int, num_keys: int = 4,
     prev = 0.0
     for c in ordered:
         f = pos[c]
-        body += _FILLER * max(0, int(round((f - prev) * reps)))
+        body += _build_filler(tokenizer, int(round((f - prev) * context_tokens)), rng)
         body += f" The magic number for {c} is {facts[c]}. "
         prev = f
-    body += _FILLER * max(0, int(round((1.0 - prev) * reps)))
+    body += _build_filler(tokenizer, int(round((1.0 - prev) * context_tokens)), rng)
 
     question = (f"\n\nQuestion: What is the magic number for {target}? "
                 f"Answer with only the number.\nAnswer:")
