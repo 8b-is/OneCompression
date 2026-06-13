@@ -198,6 +198,7 @@ def longbench_e(
     max_length: int = 7500,
     limit_per_task: int = 20,
     evict: bool = False,
+    attn_capture: bool = False,
 ) -> LongBenchResult:
     """LongBench-E score under ``cache_factory`` (macro-avg over tasks, x100).
 
@@ -208,6 +209,10 @@ def longbench_e(
             head + tail) exactly as the official LongBench harness does.
         limit_per_task: samples per task (the -E split has ~150-300 each).
         evict: call ``cache.evict_now()`` after prefill (for eviction caches).
+        attn_capture: materialise ``attn_weights`` via ``output_attentions=True``
+            and feed them into a :class:`ThinKVCache`'s thought classifier.
+            Requires ``attn_implementation='eager'`` and has an OOM risk on
+            large models; disabled by default.
     """
     from transformers import DynamicCache
     from .longcontext import greedy_answer
@@ -239,7 +244,7 @@ def longbench_e(
             cache = cache_factory() if cache_factory is not None else DynamicCache()
             pp = (lambda c: c.evict_now()) if evict else None
             gen = greedy_answer(model, ids, cache, max_new_tokens=max_gen,
-                                post_prefill=pp, eos=eos)
+                                post_prefill=pp, eos=eos, attn_capture=attn_capture)
             pred = tokenizer.decode(gen[0], skip_special_tokens=True)
             golds = row["answers"] if isinstance(row["answers"], list) else [row["answers"]]
             s = max(metric(pred, g, **({"all_classes": row.get("all_classes")}

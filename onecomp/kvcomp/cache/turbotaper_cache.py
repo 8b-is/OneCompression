@@ -92,12 +92,6 @@ class TurboTaperCache(TaperKVCache):
                 out[:, :, mask, :] = codec._decode_tensor(payload, torch.float32)
         return out
 
-    def _rot_quant(self, x: torch.Tensor, bits: torch.Tensor) -> torch.Tensor:
-        """Legacy full-cache rotated quantization (floor = min of bits)."""
-        quant = [int(b) for b in torch.unique(bits).tolist() if b < 16]
-        floor_bit = min(quant) if quant else None
-        return self._rot_quant_group(x, bits, floor_bit)
-
     def _meta_bits(self, bits_vec, heads):
         """Rotated Lloyd-Max metadata: one fp16 per-vector norm per quantized
         token (no zero point, unlike affine).  The outlier-protected *floor* band

@@ -43,7 +43,7 @@ Copyright 2025-2026 Fujitsu Ltd.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from .._base import KVPolicy
 from .._registry import register_kv_policy
@@ -80,7 +80,7 @@ class PMKVQPolicy(KVPolicy):
     key_bits: int = 8
     value_bits: int = 4
     final_bits: int = 2            # value floor (Fbit)
-    key_final_bits: int = None     # key floor; defaults to max(final_bits, 4) (MKLV: K>V)
+    key_final_bits: Optional[int] = None  # key floor; defaults to max(final_bits, 4) (MKLV: K>V)
     recent_window: int = 64
     ladder_span: int = 256
     sensitive_layers: List[int] = field(default_factory=list)

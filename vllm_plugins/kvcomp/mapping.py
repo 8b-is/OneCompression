@@ -203,6 +203,8 @@ def plan_from_kv_config(
         # OneComp FP8 is data-free / online -> let vLLM compute scales online.
         plan.calculate_kv_scales = True
         _set_native(dtype, f"Codec '{name}' -> native vLLM kv_cache_dtype='{dtype}'.")
+        # Propagate outlier/boundary layer protection for FP8 as well.
+        plan.skip_layers = [int(x) for x in (codec.get("skip_layers") or [])]
     elif name in ("turboquant", "halo"):
         preset, kb, vb = _turboquant_preset(codec)
         if preset is not None:
@@ -254,6 +256,8 @@ def plan_from_kv_config(
     elif name in _NATIVE_OTHER:
         dtype = _NATIVE_OTHER[name]
         _set_native(dtype, f"Codec '{name}' -> native vLLM kv_cache_dtype='{dtype}'.")
+        # Propagate outlier/boundary layer protection for INT8/NVFP4 as well.
+        plan.skip_layers = [int(x) for x in (codec.get("skip_layers") or [])]
     elif name in _NEEDS_CUSTOM_BACKEND:
         plan.needs_custom_backend = True
         plan.native_supported = False

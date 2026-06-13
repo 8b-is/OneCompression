@@ -56,20 +56,39 @@ def _capture_real_kv(model, tok, max_tokens=2048):
 
 
 @torch.no_grad()
-def _relmse(codec, x):
-    kq, _ = codec.decode(codec.encode(x, x))
-    return float((kq.float() - x).pow(2).sum() / x.float().pow(2).sum().clamp_min(1e-12))
+def _relmse(codec, x, role="k"):
+    """Relative MSE for one KV role.
+
+    ``role='k'`` measures key reconstruction quality; ``role='v'`` measures
+    value reconstruction quality.  Passing the same tensor as both key and
+    value lets the codec apply role-specific settings (e.g. HALO's NC scale
+    for keys and LS scale for values) independently -- the decoded output for
+    the requested role is then compared back to the original tensor.
+    """
+    kd, vd = codec.decode(codec.encode(x, x))
+    decoded = kd if role == "k" else vd
+    return float((decoded.float() - x).pow(2).sum() / x.float().pow(2).sum().clamp_min(1e-12))
 
 
 @torch.no_grad()
 def _ms_per_encode(codec, x, iters=50, warmup=10):
+    """Encode-only latency (ms) and throughput (Melem/s).
+
+    Only times ``codec.encode``; ``codec.decode`` is excluded because the
+    encode step corresponds to prefill cost (the critical path for large KV
+    caches) and the two have different complexity profiles.  Warmup runs
+    encode+decode so that any lazy device allocations happen before timing.
+    """
+    dev = x.device
     for _ in range(warmup):
         codec.decode(codec.encode(x, x))
-    torch.cuda.synchronize()
+    if dev.type == "cuda":
+        torch.cuda.synchronize(dev)
     t0 = time.perf_counter()
     for _ in range(iters):
-        codec.decode(codec.encode(x, x))
-    torch.cuda.synchronize()
+        codec.encode(x, x)
+    if dev.type == "cuda":
+        torch.cuda.synchronize(dev)
     ms = (time.perf_counter() - t0) / iters * 1e3
     melem = x.numel() / (ms * 1e-3) / 1e6
     return ms, melem
@@ -136,8 +155,8 @@ def main(cfg: DictConfig):
         results[bits] = {}
         for name, codec in _codecs(bits).items():
             entry = {}
-            entry["distortion_key"] = round(_relmse(codec, ks), 5)
-            entry["distortion_value"] = round(_relmse(codec, vs), 5)
+            entry["distortion_key"] = round(_relmse(codec, ks, role="k"), 5)
+            entry["distortion_value"] = round(_relmse(codec, vs, role="v"), 5)
             ms, melem = _ms_per_encode(codec, timing_x, cfg.timing_iters)
             entry["ms_per_encode"] = round(ms, 4)
             entry["throughput_Melem_s"] = round(melem, 1)

@@ -398,7 +398,8 @@ def main(cfg: DictConfig):
                 tasks=list(cfg.get("longbench_tasks", [])) or None,
                 max_length=cfg.get("longbench_max_length", 7500),
                 limit_per_task=cfg.get("longbench_limit", 20),
-                evict=spec["evict"])
+                evict=spec["evict"],
+                attn_capture=cap_long)
             entry["longbench"] = lb.as_dict()
             print("  longbench:", entry["longbench"], flush=True)
 

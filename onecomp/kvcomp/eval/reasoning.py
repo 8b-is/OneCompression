@@ -45,14 +45,19 @@ class ReasoningResult:
     eviction_fired: bool = True            # False if an eviction cache never trimmed
 
     def as_dict(self) -> dict:
+        # Use "pass@k" as the metric key when k>1 (any-correct over k samples),
+        # and "pass@1" for k=1 where both definitions coincide.  The _stderr
+        # and _ci95 suffixes follow the same key so downstream parsers stay
+        # consistent regardless of k.
+        metric_key = f"pass@{self.k}"
         return {
             "task": self.task,
             "n": self.n,
             "k": self.k,
-            "pass@1": round(self.pass_at_1, 4),
-            "pass@1_stderr": round(self.pass_at_1_stderr, 4),
-            "pass@1_ci95": [round(self.pass_at_1_ci95[0], 4),
-                            round(self.pass_at_1_ci95[1], 4)],
+            metric_key: round(self.pass_at_1, 4),
+            f"{metric_key}_stderr": round(self.pass_at_1_stderr, 4),
+            f"{metric_key}_ci95": [round(self.pass_at_1_ci95[0], 4),
+                                   round(self.pass_at_1_ci95[1], 4)],
             "avg_gen_len": round(self.avg_gen_len, 1),
             "compression_ratio": round(self.compression_ratio, 3),
             "eviction_fired": self.eviction_fired,
@@ -249,7 +254,7 @@ def _eval_dataset(
         per_q.append({"gold": gold, "pass@k": pass_at_k,
                       "avg_sample_acc": avg_sample_acc, "k": k})
         if verbose:
-            logger.info("[%s] q%d gold=%s pass@1=%.2f", task, n, gold, p1)
+            logger.info("[%s] q%d gold=%s pass@%d=%.2f", task, n, gold, k, p1)
     # Detect whether an eviction cache actually trimmed (else its result is FullKV).
     probe = cache_factory() if cache_factory is not None else None
     if probe is not None and hasattr(probe, "evict_now"):

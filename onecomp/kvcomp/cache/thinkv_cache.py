@@ -274,6 +274,22 @@ def _attn_hook(cache: ThinKVCache, layer_idx: int, rel_threshold: float,
                 attn_weights = o
                 break
     if attn_weights is None:
+        # Attention weights are only materialised when the model is called with
+        # ``output_attentions=True`` and ``attn_implementation="eager"``.  If
+        # either condition is missing (e.g. sdpa/flash or attn_capture=False),
+        # the hook silently returns and thought classification stays disabled.
+        # Warn once per cache instance so the user knows why ThinKV falls back
+        # to uniform quantisation.
+        if not getattr(cache, "_warned_no_attn_weights", False):
+            logger.warning(
+                "ThinKVCache._attn_hook: no attention-weight tensor found in "
+                "layer %d output.  ThinKV thought classification is disabled.  "
+                "Ensure the model is loaded with attn_implementation='eager' "
+                "and greedy_answer / generate is called with attn_capture=True "
+                "(output_attentions=True).",
+                layer_idx,
+            )
+            cache._warned_no_attn_weights = True  # type: ignore[attr-defined]
         return
     last = attn_weights[:, :, -1, :]  # (batch, heads, kv_len)
     sp = attention_sparsity(last.float(), rel_threshold).mean()
