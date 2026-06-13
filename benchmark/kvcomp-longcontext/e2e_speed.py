@@ -60,7 +60,8 @@ def _methods(bits, model_config):
         f"TurboQuant-{bits}bit": comp(build_codec(
             "turboquant", bits=bits, rotation_mode="hadamard", dist="beta")),
         f"HALO-{bits}bit": comp(build_codec(
-            "halo", bits=bits, rotation_mode="hadamard_gemm", ls_scale=True)),
+            "halo", bits=bits, rotation_mode="hadamard_gemm",
+            key_scale_mode="nc", value_scale_mode="ls_iter")),
         f"HALO-NC-{bits}bit": comp(build_codec(
             "halo", bits=bits, rotation_mode="hadamard_gemm",
             key_scale_mode="nc", value_scale_mode="ls")),

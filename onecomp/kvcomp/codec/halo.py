@@ -69,9 +69,12 @@ TurboQuant presets as the standard.
 
 The default operating point is ``key_scale_mode="nc"`` + ``value_scale_mode="ls_iter"``
 (validated as the best across all tested models and bit-widths).
-The legacy symmetric least-squares scale (``ls_scale=True`` -> LS on both
-roles, ``key_scale_mode`` / ``value_scale_mode`` both ``None``) is retained for
-backwards comparability via explicit ``key_scale_mode="ls", value_scale_mode="ls"``.
+The legacy symmetric least-squares scale is retained for backwards
+comparability via explicit ``key_scale_mode="ls", value_scale_mode="ls"``.
+``ls_scale=False`` still selects pure RMS (TurboQuant-faithful) mode when
+``key_scale_mode`` / ``value_scale_mode`` are left at their ``None`` defaults.
+``ls_scale=True`` (the default) now resolves to the same validated smart
+defaults (NC for keys, ls_iter for values).
 
 Optional research levers (OFF by default):
 
@@ -150,17 +153,18 @@ class HALOCodec(KVCodec):
             quality lever); ``False`` -> the per-vector RMS on both roles
             (faithful TurboQuant).  Ignored for a role when its explicit
             ``key_scale_mode`` / ``value_scale_mode`` is set.
-        key_scale_mode: Per-role dequant scale for keys.  Default ``"nc"``
-            (norm-correct) preserves the attention logit (logit shrink
-            ``cos theta`` instead of ``cos^2 theta``).  Other choices:
+        key_scale_mode: Per-role dequant scale for keys.  ``None`` (default)
+            falls through to the ``ls_scale`` smart-default ("nc" when
+            ``ls_scale=True``, "rms" when ``ls_scale=False``).  Explicit
+            choices: ``"nc"`` (norm-correct, preserves attention logit),
             ``"ls"`` (least-squares / MSE-optimal), ``"rms"`` (per-vector
             RMS), ``"ip"`` (inner-product-unbiased), ``"ls_iter"`` (LS + one
             Lloyd alternating-minimisation step).
-        value_scale_mode: Per-role dequant scale for values.  Default
-            ``"ls_iter"`` (LS + one Lloyd alternating-minimisation step):
-            values enter the output linearly, so MSE is the right objective,
-            and the extra Lloyd step monotonically reduces MSE.  Same choices
-            as ``key_scale_mode``.
+        value_scale_mode: Per-role dequant scale for values.  ``None``
+            (default) falls through to the ``ls_scale`` smart-default
+            ("ls_iter" when ``ls_scale=True``, "rms" when
+            ``ls_scale=False``).  Same explicit choices as
+            ``key_scale_mode``.
         center: Remove a per-block per-channel mean before rotation (research
             lever against massive-activation bias).  Only active when
             ``precond_roles`` is non-empty; has no effect otherwise.  Stateless:
@@ -192,12 +196,16 @@ class HALOCodec(KVCodec):
     n_outlier: int = 0
     outlier_bits: int = None
     ls_scale: bool = True
-    # Per-role dequant-scale modes.  Benchmarks (Llama-3.1-8B, Ministral-8B,
-    # June 2026) confirm NC+ls_iter ("HALO-NCIT") beats TurboQuant at every
+    # Per-role dequant-scale modes.  ``None`` (default) defers to the
+    # ``ls_scale`` smart defaults: NC for keys / ls_iter for values when
+    # ``ls_scale=True`` (validated best, June 2026 Llama/Ministral benchmarks),
+    # RMS for both when ``ls_scale=False`` (TurboQuant-faithful baseline).
+    # Pass explicit strings to override regardless of ``ls_scale``.
+    # Benchmarks confirm NC+ls_iter ("HALO-NCIT") beats TurboQuant at every
     # tested bit-width in PPL.  Set key_scale_mode="ls", value_scale_mode="ls"
     # to reproduce the old symmetric-LS behaviour.
-    key_scale_mode: str = "nc"
-    value_scale_mode: str = "ls_iter"
+    key_scale_mode: str = None
+    value_scale_mode: str = None
     center: bool = False
     # NB: whitening is OFF by default.  For *values*, un-whitening at decode
     # divides channel c by w_c, which *amplifies* the attention-output error on
@@ -245,6 +253,8 @@ class HALOCodec(KVCodec):
             if mode is not None and mode not in self._SCALE_MODES:
                 raise ValueError(
                     f"scale_mode must be one of {self._SCALE_MODES} or None, got {mode!r}")
+        if not (isinstance(self.n_outlier, int) and self.n_outlier >= 0):
+            raise ValueError(f"n_outlier must be a non-negative int, got {self.n_outlier!r}")
 
     def _value_bits(self) -> int:
         return self.value_bits if self.value_bits is not None else self.bits
@@ -256,12 +266,21 @@ class HALOCodec(KVCodec):
         """Resolve the per-role dequant-scale mode.
 
         Explicit ``key_scale_mode`` / ``value_scale_mode`` take precedence.
-        ``None`` falls back to the ``ls_scale`` legacy flag ("ls" or "rms").
+        When the role's mode is ``None`` (the class default):
+        * ``ls_scale=False``  → ``"rms"`` (TurboQuant-faithful baseline).
+        * ``ls_scale=True``   → validated smart defaults: ``"nc"`` for keys,
+          ``"ls_iter"`` for values (June 2026 benchmarks confirm this is the
+          best operating point across all tested models and bit-widths).
+
+        This means ``HALOCodec(ls_scale=False)`` correctly yields RMS scaling
+        (it was silently ignored when the class defaults were "nc"/"ls_iter").
         """
         explicit = self.key_scale_mode if role == "k" else self.value_scale_mode
         if explicit is not None:
             return explicit
-        return "ls" if self.ls_scale else "rms"
+        if not self.ls_scale:
+            return "rms"
+        return "nc" if role == "k" else "ls_iter"
 
     def _resolved_mode(self, d: int) -> str:
         """Resolve ``"auto"`` to the best speed-quality orthogonal transform.
@@ -350,7 +369,10 @@ class HALOCodec(KVCodec):
             return s_ls, codes
         if mode == "ip":
             # Inner-product-unbiased: <x_hat, x> = ||x||^2 exactly.
-            return (xr * xr).sum(dim=-1, keepdim=True) / num.clamp_min(1e-8), codes
+            # Preserve the sign of num (clamp_min would flip negative inner products
+            # to a large positive scale, which is wrong -- use sign-aware clamping).
+            num_safe = num.sign() * num.abs().clamp_min(1e-8)
+            return (xr * xr).sum(dim=-1, keepdim=True) / num_safe, codes
         if mode == "ls_iter":
             # One Lloyd alternating-minimisation step: re-quantise at the fitted
             # scale, then re-fit the LS scale.  ||xr - s*c||^2 is monotone
@@ -445,7 +467,12 @@ class HALOCodec(KVCodec):
     def _stored_bits(self, x, bits, precond=False):
         b, h, s, d = x.shape
         vecs = b * h * s
-        precond_bits = d * 32 if precond else 0
+        # When center and whiten are both on, *both* mu (d float32) and w (d
+        # float32) are written into the payload -- count them separately.
+        if precond:
+            precond_bits = (d * 32 if self.center else 0) + (d * 32 if self.whiten else 0)
+        else:
+            precond_bits = 0
         if 0 < self.n_outlier < d:
             no = self.n_outlier
             # two subsets -> two per-vector fp16 scales; codes at mixed bit-width.

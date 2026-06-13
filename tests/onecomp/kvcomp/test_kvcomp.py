@@ -292,16 +292,19 @@ def test_halo_ls_iter_monotone_mse():
 
 
 def test_halo_legacy_ls_scale_backcompat():
-    # New defaults: key_scale_mode="nc", value_scale_mode="ls_iter" (validated best).
+    # Default (key/value modes=None, ls_scale=True) -> smart NC+ls_iter.
     x, _ = _kv(h=2, s=128)
-    assert HALOCodec(bits=4)._scale_mode_for("k") == "nc"        # new default
-    assert HALOCodec(bits=4)._scale_mode_for("v") == "ls_iter"   # new default
+    assert HALOCodec(bits=4)._scale_mode_for("k") == "nc"        # smart default
+    assert HALOCodec(bits=4)._scale_mode_for("v") == "ls_iter"   # smart default
     # Explicit modes always override ls_scale.
     o = HALOCodec(bits=4, key_scale_mode="nc", value_scale_mode="rms")
     assert o._scale_mode_for("k") == "nc" and o._scale_mode_for("v") == "rms"
-    # ls_scale fallback (only active when explicit modes are None).
-    o2 = HALOCodec(bits=4, key_scale_mode=None, value_scale_mode=None, ls_scale=False)
+    # ls_scale=False -> RMS on both (TurboQuant-faithful), regardless of explicit modes.
+    o2 = HALOCodec(bits=4, ls_scale=False)
     assert o2._scale_mode_for("k") == "rms" and o2._scale_mode_for("v") == "rms"
+    # ls_scale=False with explicit key_scale_mode -> explicit wins for that role.
+    o3 = HALOCodec(bits=4, ls_scale=False, key_scale_mode="nc")
+    assert o3._scale_mode_for("k") == "nc" and o3._scale_mode_for("v") == "rms"
     # Explicit ls on both is the old symmetric-LS behaviour.
     a = HALOCodec(bits=3, rotation_mode="hadamard_gemm", key_scale_mode="ls", value_scale_mode="ls")
     b = HALOCodec(bits=3, rotation_mode="hadamard_gemm", key_scale_mode="ls", value_scale_mode="ls")

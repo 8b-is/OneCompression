@@ -96,7 +96,10 @@ def _codecs(bits):
         "TurboQuant-dense": TurboQuantCodec(bits=bits, rotation_mode="dense"),
         "HALO-RMS": HALOCodec(bits=bits, rotation_mode="auto", ls_scale=False),
         "HALO-auto": HALOCodec(bits=bits, rotation_mode="auto"),
-        "HALO-dense-LS": HALOCodec(bits=bits, rotation_mode="dense", ls_scale=True),
+        # Explicit symmetric LS (key_scale_mode="ls") so the label stays correct
+        # regardless of the class default for key_scale_mode / value_scale_mode.
+        "HALO-dense-LS": HALOCodec(bits=bits, rotation_mode="dense",
+                                    key_scale_mode="ls", value_scale_mode="ls"),
     }
 
 

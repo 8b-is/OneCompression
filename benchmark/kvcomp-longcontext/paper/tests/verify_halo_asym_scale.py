@@ -169,18 +169,27 @@ def section_3_storage_neutral_and_roundtrip():
 
 
 def section_4_legacy_backcompat():
-    print("\n[4] Legacy back-compat: ls_scale derives modes, defaults unchanged")
+    print("\n[4] Legacy back-compat: ls_scale derives modes, smart defaults")
     x = torch.randn(1, 2, 128, 128)
+    # Default (ls_scale=True, explicit modes=None) -> smart NC+ls_iter.
     d = HALOCodec(bits=4)
-    check("default resolves K=ls, V=ls", d._scale_mode_for("k") == "ls" and d._scale_mode_for("v") == "ls")
+    check("default resolves K=nc, V=ls_iter",
+          d._scale_mode_for("k") == "nc" and d._scale_mode_for("v") == "ls_iter")
+    # ls_scale=False, no explicit modes -> RMS on both (TurboQuant-faithful).
     r = HALOCodec(bits=4, ls_scale=False)
-    check("ls_scale=False resolves K=rms, V=rms", r._scale_mode_for("k") == "rms" and r._scale_mode_for("v") == "rms")
+    check("ls_scale=False resolves K=rms, V=rms",
+          r._scale_mode_for("k") == "rms" and r._scale_mode_for("v") == "rms")
+    # Explicit mode overrides ls_scale for that role only.
     o = HALOCodec(bits=4, ls_scale=False, key_scale_mode="nc")
-    check("explicit key_scale_mode overrides ls_scale", o._scale_mode_for("k") == "nc" and o._scale_mode_for("v") == "rms")
-    a = HALOCodec(bits=3, rotation_mode="hadamard_gemm", ls_scale=True)
-    b = HALOCodec(bits=3, rotation_mode="hadamard_gemm", key_scale_mode="ls", value_scale_mode="ls")
+    check("explicit key_scale_mode overrides ls_scale",
+          o._scale_mode_for("k") == "nc" and o._scale_mode_for("v") == "rms")
+    # Symmetric LS is available via explicit modes (legacy behaviour).
+    a = HALOCodec(bits=3, rotation_mode="hadamard_gemm",
+                  key_scale_mode="ls", value_scale_mode="ls")
+    b = HALOCodec(bits=3, rotation_mode="hadamard_gemm",
+                  key_scale_mode="ls", value_scale_mode="ls")
     ka, _ = a.decode(a.encode(x, x)); kb, _ = b.decode(b.encode(x, x))
-    check("ls_scale=True == explicit K=ls/V=ls (bit-identical)", rel(ka, kb) < 1e-12)
+    check("explicit K=ls/V=ls is deterministic (bit-identical)", rel(ka, kb) < 1e-12)
 
 
 def section_5_stateless_precond():

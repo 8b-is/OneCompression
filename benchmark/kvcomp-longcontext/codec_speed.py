@@ -59,13 +59,17 @@ def _codecs(bits: int) -> dict:
         "TurboQuant-hadamard": TurboQuantCodec(bits=bits, rotation_mode="hadamard", dist="beta"),
         "HALO-hadamard-noLS": HALOCodec(bits=bits, rotation_mode="hadamard", ls_scale=False),
         "HALO-hadamard_gemm-noLS": HALOCodec(bits=bits, rotation_mode="hadamard_gemm", ls_scale=False),
-        "HALO-hadamard_gemm-LS": HALOCodec(bits=bits, rotation_mode="hadamard_gemm", ls_scale=True),
+        # Symmetric LS: explicit modes so the label stays correct regardless of class defaults.
+        "HALO-hadamard_gemm-LS": HALOCodec(bits=bits, rotation_mode="hadamard_gemm",
+                                            key_scale_mode="ls", value_scale_mode="ls"),
         # Enhanced HALO (proposed): role-asymmetric scale, iso-storage to LS.
         "HALO-hadamard_gemm-NC": HALOCodec(bits=bits, rotation_mode="hadamard_gemm",
                                            key_scale_mode="nc", value_scale_mode="ls"),
         "HALO-hadamard_gemm-NCIT": HALOCodec(bits=bits, rotation_mode="hadamard_gemm",
                                              key_scale_mode="nc", value_scale_mode="ls_iter"),
-        "HALO-dense-LS": HALOCodec(bits=bits, rotation_mode="dense", ls_scale=True),
+        # Symmetric LS with dense rotation: explicit to avoid default-ambiguity.
+        "HALO-dense-LS": HALOCodec(bits=bits, rotation_mode="dense",
+                                    key_scale_mode="ls", value_scale_mode="ls"),
     }
 
 

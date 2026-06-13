@@ -146,12 +146,12 @@ def lloyd_max_gaussian(bits: int, iters: int = 64, grid: int = 4096) -> torch.Te
     for _ in range(iters):
         boundaries = (centroids[1:] + centroids[:-1]) / 2.0
         region = torch.searchsorted(boundaries, xs)  # in [0, levels-1]
-        new = centroids.clone()
-        for k in range(levels):
-            mask = region == k
-            w = pdf[mask].sum()
-            if w > 0:
-                new[k] = (xs[mask] * pdf[mask]).sum() / w
+        # Vectorized centroid update: scatter-sum xs*pdf and pdf per region,
+        # then divide.  Avoids a Python loop over all 2**bits levels.
+        one_hot = (region.unsqueeze(0) == torch.arange(levels).unsqueeze(1))  # (L, grid)
+        pdf_sum = (one_hot * pdf.unsqueeze(0)).sum(-1)  # (L,)
+        xs_sum = (one_hot * (xs * pdf).unsqueeze(0)).sum(-1)  # (L,)
+        new = torch.where(pdf_sum > 0, xs_sum / pdf_sum.clamp_min(1e-30), centroids)
         if torch.allclose(new, centroids, atol=1e-7):
             centroids = new
             break
@@ -180,12 +180,11 @@ def lloyd_max_beta(bits: int, d: int, iters: int = 64, grid: int = 4096) -> torc
     for _ in range(iters):
         boundaries = (centroids[1:] + centroids[:-1]) / 2.0
         region = torch.searchsorted(boundaries, xs)
-        new = centroids.clone()
-        for k in range(levels):
-            mask = region == k
-            w = pdf[mask].sum()
-            if w > 0:
-                new[k] = (xs[mask] * pdf[mask]).sum() / w
+        # Vectorized centroid update (same scatter-sum pattern as lloyd_max_gaussian).
+        one_hot = (region.unsqueeze(0) == torch.arange(levels).unsqueeze(1))
+        pdf_sum = (one_hot * pdf.unsqueeze(0)).sum(-1)
+        xs_sum = (one_hot * (xs * pdf).unsqueeze(0)).sum(-1)
+        new = torch.where(pdf_sum > 0, xs_sum / pdf_sum.clamp_min(1e-30), centroids)
         if torch.allclose(new, centroids, atol=1e-7):
             centroids = new
             break

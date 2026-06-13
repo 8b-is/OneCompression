@@ -47,6 +47,10 @@ turbotaper:
   dist: gaussian            # RMS-normalised rotated Lloyd-Max (real-KV default)
   rotation_mode: hadamard   # fast WHT for power-of-two head_dim
   n_outlier_floor: 0        # >0 protects N highest-energy channels at the floor (+1 bit)
+  # SAFETY: Hadamard rotation + 2-bit value floor is catastrophic on Qwen-based
+  # reasoning models (GSM8K/MATH drop to 0%; verified in paper_aime.yaml).
+  # Override to 3 for Qwen/DeepSeek-R1-Distill-Qwen models.  Llama is safe at 2.
+  b_min_value: 2            # override to 3 for Qwen reasoning models
 
 # Skip massive-activation (outlier) layers in *every* quant method (fair, K23).
 skip_outliers: true

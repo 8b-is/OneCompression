@@ -109,6 +109,8 @@ class TurboQuantCodec(KVCodec):
             raise ValueError("dist must be 'gaussian' or 'beta'")
         if not (isinstance(self.bits, int) and 1 <= self.bits <= 8):
             raise ValueError(f"bits must be int in 1..8, got {self.bits!r}")
+        if not (isinstance(self.n_outlier, int) and self.n_outlier >= 0):
+            raise ValueError(f"n_outlier must be a non-negative int, got {self.n_outlier!r}")
 
     def _value_bits(self) -> int:
         return self.value_bits if self.value_bits is not None else self.bits

@@ -89,10 +89,13 @@ methods:
   - HALO-NCIT-3bit
 
 halo_variants:
-  - {label: "HALO-4bit", bits: 4}
-  - {label: "HALO-3bit", bits: 3}
+  # Legacy symmetric-LS baseline (ablation reference; both roles LS).
+  - {label: "HALO-4bit", bits: 4, key_scale_mode: ls, value_scale_mode: ls}
+  - {label: "HALO-3bit", bits: 3, key_scale_mode: ls, value_scale_mode: ls}
+  # Ablation step 1: NC keys only (isolates the key-scale lever).
   - {label: "HALO-NC-4bit", bits: 4, key_scale_mode: nc, value_scale_mode: ls}
   - {label: "HALO-NC-3bit", bits: 3, key_scale_mode: nc, value_scale_mode: ls}
+  # Ablation step 2: NC keys + ls_iter values (full proposed method, validated best).
   - {label: "HALO-NCIT-4bit", bits: 4, key_scale_mode: nc, value_scale_mode: ls_iter}
   - {label: "HALO-NCIT-3bit", bits: 3, key_scale_mode: nc, value_scale_mode: ls_iter}
 kivi_bits: [2]

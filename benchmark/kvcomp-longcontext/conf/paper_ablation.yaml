@@ -63,20 +63,22 @@ methods:
 uniform_bits: []          # no uniform baselines in the ablation
 kivi_bits: []
 
-# HALO levers: rotation_mode x ls_scale at fixed bits (iso storage).
+# HALO levers: rotation_mode x scale_mode at fixed bits (iso storage).
+# All variants use explicit key_scale_mode / value_scale_mode so their
+# behaviour is stable regardless of the class default for those fields.
 halo_variants:
-  - {label: "HALO-h-noLS-3",   bits: 3, rotation_mode: hadamard,      ls_scale: false}
-  - {label: "HALO-hg-noLS-3",  bits: 3, rotation_mode: hadamard_gemm, ls_scale: false}
-  - {label: "HALO-hg-LS-3",    bits: 3, rotation_mode: hadamard_gemm, ls_scale: true}
-  - {label: "HALO-hg-NC-3",    bits: 3, rotation_mode: hadamard_gemm, key_scale_mode: nc, value_scale_mode: ls}
-  - {label: "HALO-hg-NCIT-3",  bits: 3, rotation_mode: hadamard_gemm, key_scale_mode: nc, value_scale_mode: ls_iter}
-  - {label: "HALO-dense-LS-3", bits: 3, rotation_mode: dense,         ls_scale: true}
-  - {label: "HALO-h-noLS-4",   bits: 4, rotation_mode: hadamard,      ls_scale: false}
-  - {label: "HALO-hg-noLS-4",  bits: 4, rotation_mode: hadamard_gemm, ls_scale: false}
-  - {label: "HALO-hg-LS-4",    bits: 4, rotation_mode: hadamard_gemm, ls_scale: true}
-  - {label: "HALO-hg-NC-4",    bits: 4, rotation_mode: hadamard_gemm, key_scale_mode: nc, value_scale_mode: ls}
-  - {label: "HALO-hg-NCIT-4",  bits: 4, rotation_mode: hadamard_gemm, key_scale_mode: nc, value_scale_mode: ls_iter}
-  - {label: "HALO-dense-LS-4", bits: 4, rotation_mode: dense,         ls_scale: true}
+  - {label: "HALO-h-noLS-3",   bits: 3, rotation_mode: hadamard,      key_scale_mode: rms, value_scale_mode: rms}
+  - {label: "HALO-hg-noLS-3",  bits: 3, rotation_mode: hadamard_gemm, key_scale_mode: rms, value_scale_mode: rms}
+  - {label: "HALO-hg-LS-3",    bits: 3, rotation_mode: hadamard_gemm, key_scale_mode: ls,  value_scale_mode: ls}
+  - {label: "HALO-hg-NC-3",    bits: 3, rotation_mode: hadamard_gemm, key_scale_mode: nc,  value_scale_mode: ls}
+  - {label: "HALO-hg-NCIT-3",  bits: 3, rotation_mode: hadamard_gemm, key_scale_mode: nc,  value_scale_mode: ls_iter}
+  - {label: "HALO-dense-LS-3", bits: 3, rotation_mode: dense,         key_scale_mode: ls,  value_scale_mode: ls}
+  - {label: "HALO-h-noLS-4",   bits: 4, rotation_mode: hadamard,      key_scale_mode: rms, value_scale_mode: rms}
+  - {label: "HALO-hg-noLS-4",  bits: 4, rotation_mode: hadamard_gemm, key_scale_mode: rms, value_scale_mode: rms}
+  - {label: "HALO-hg-LS-4",    bits: 4, rotation_mode: hadamard_gemm, key_scale_mode: ls,  value_scale_mode: ls}
+  - {label: "HALO-hg-NC-4",    bits: 4, rotation_mode: hadamard_gemm, key_scale_mode: nc,  value_scale_mode: ls}
+  - {label: "HALO-hg-NCIT-4",  bits: 4, rotation_mode: hadamard_gemm, key_scale_mode: nc,  value_scale_mode: ls_iter}
+  - {label: "HALO-dense-LS-4", bits: 4, rotation_mode: dense,         key_scale_mode: ls,  value_scale_mode: ls}
 
 # Faithful TurboQuant references (beta codebook) at the same bit-widths.
 turboquant_variants:
