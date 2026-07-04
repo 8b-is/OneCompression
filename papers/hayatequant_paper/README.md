@@ -395,6 +395,31 @@ paper_hayatequant_ablation`)を追加。各行は HayateQuant-auto から**ち�
 
 生データ: `benchmark/kvcomp-codec/results_ablation/results_llama-3.1-8b-instruct.json`
 
+### 3-way ロングコンテキスト最終結果 (job 59004 完了, Llama-3.1-8B-Instruct, 5h51m)
+
+TurboQuant / HALO / HayateQuant を同一プロトコル(Needle 45 prompts x 3 長,
+RULER, LongBench-E n=10, WikiText-2 PPL 16 windows)で比較(v5/v6 コード):
+
+| bits | 指標 | TurboQuant | HALO | **HayateQuant** |
+|---|---|---:|---:|---:|
+| 2 | Needle acc | 0.933 | 0.911 | **1.000** |
+| 2 | RULER acc | 0.400 | 0.333 | **0.733** |
+| 2 | PPL | 10.168 | 9.966 | **9.046** |
+| 2.5 | RULER acc | 0.800 | 0.667 | **0.800** |
+| 2.5 | PPL | 7.772 | 7.393 | **7.192** |
+| 3 | PPL | 6.917 | 6.878 | **6.810** |
+| 3.5 | PPL | 6.696 | 6.659 | **6.631** |
+| 4 | PPL | 6.565 | 6.581 | 6.569 |
+
+- **2-bit が決定的**: Needle 満点(TQ/HALO は取りこぼし)、RULER +0.33/+0.40、
+  PPL −1.12/−0.92。block-VQ の space-filling gain が最も効く動作点で
+  ダウンストリームでも明確に勝つ。
+- 2.5/3/3.5-bit も全指標で最良または同率。4-bit は 3 手法が noise 内で並ぶ
+  (量子化誤差自体が小さく差が出ない、想定どおり)。
+- 参考: Uniform-INT2 は PPL 407(崩壊)、KIVI-INT2 は PPL 7.42 だが
+  RULER 0.60 で HayateQuant-2.5bit(mem 同水準)に全面的に劣る。
+- 生データ: `benchmark/kvcomp-longcontext/results_paper1/hayatequant_v4/results_llama-3.1-8b-instruct.json`
+
 ### vLLM 再 E2E (job 59051, DeepSeek-R1-Distill-Qwen-1.5B, A100)
 
 現コード(v6 修正込み)で 3 ケース全て合格(`ALL_E2E_CHECKS_PASSED`):
