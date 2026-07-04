@@ -104,6 +104,15 @@ def _check_rotation_for_native(codec: dict, name: str, plan: "KVCompVLLMPlan"):
     *and* different accuracy.  Warn explicitly instead of silently swapping
     the rotation (the whole reason dense was chosen would be lost).
     """
+    if codec.get("calibration"):
+        plan.warnings.append(
+            f"Codec '{name}' has a SpinQuant-style calibration loaded "
+            f"(digest {codec['calibration']}); vLLM's native TurboQuant "
+            "kernel cannot apply a learned rotation/codebook -- the native "
+            "preset would quantize under the data-free transform instead "
+            "(the calibration gain would be lost). Use the HF cache path "
+            "for faithful calibrated results.")
+        return
     mode = codec.get("rotation_mode")
     block_size = codec.get("block_size")
     if mode == "hybrid" and block_size is not None and int(block_size) <= 1:

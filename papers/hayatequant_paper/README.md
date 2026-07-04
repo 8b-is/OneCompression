@@ -499,6 +499,125 @@ b=8 @ 2-bit を本当に取るには構造化符号帳 (E8 lattice / QuIP# 系) 
 
 ---
 
+## v8 オプショナル SpinQuant 風キャリブレーション + K/V 非対称ビット (2026-07-05)
+
+第 4 ラウンド。今回から検証モデルを 3 つ(Llama-3.1-8B-Instruct / **Qwen3-8B**(新規) /
+R1-Qwen-1.5B)に広げ、PPL だけでなく Needle / RULER でも採否を判定した。
+
+### 候補 1: SpinQuant 風キャリブレーション → **optional として採用** (デフォルトは不変)
+
+`onecomp/kvcomp/codec/hayatequant_calib.py`(新規)+ `HayateQuantCodec(calibration=...)`:
+
+- **学習回転**: 役割別(K/V 別)の直交回転 `W = W0 @ cayley(A)` を、実 KV サンプルの
+  ブロック量子化歪みを目的関数に Adam+Cayley 縮約(SpinQuant と同じ多様体最適化)で学習。
+  `W0` はコーデック自身のデータフリー回転(v7 レート適応 auto)なので **step 0 =
+  データフリー版**、さらに held-out シャードで最良点を選ぶため、成果物がデータフリー版より
+  悪くなることは構造上ない(`test_hayatequant_calibration_never_worse_on_holdout`)。
+- **実データ符号帳**: 学習回転と交互に、実 z ブロック上で閉形式 Lloyd 再学習。
+- 成果物はモデルごとに ~200KB(`HayateQuantCalibration.save/load`)。ランタイムコストは
+  **ゼロ**(同じ 1 GEMM の中身が変わるだけ; 実測 ms_per_encode 不変)。fit は 1 モデル
+  あたり数秒〜十数秒(A100)。キャリブデータは WikiText-2 **train**(評価は test — リーク無し)。
+- ペイロードの rot タグ/`cb_cal` に成果物の content digest を保存し、decode 側で
+  同一成果物のロードを検証(不一致は即例外 — 別回転で silent に壊れない)。
+- vLLM ネイティブプリセットは学習回転を再現できないため、mapping が明示警告して
+  HF キャッシュパスを案内(`turboquant_*` への silent フォールバックはしない)。
+
+分解測定(`bench_calib_v8.py`, jobs 59102-59104; PPL 32 窓):
+
+| モデル | bits | datafree v7 | rot のみ | cb のみ | **rot+cb (推奨)** |
+|---|---|---:|---:|---:|---:|
+| Llama-3.1-8B | 2 | 8.872 | 8.892 | 8.809 | 8.857 |
+| Llama-3.1-8B | 3 | 7.020 | 7.011 | 7.017 | **7.010** |
+| Qwen3-8B | 2 | 9.963 | 9.836 | 10.130 | **9.784 (−0.18)** |
+| Qwen3-8B | 3 | 8.800 | 8.781 | 8.763 | 8.782 |
+| R1-Qwen-1.5B | 2 | 168.6 | 174.0 | 170.3 | **167.6** |
+| R1-Qwen-1.5B | 3 | 168.0 | 168.9 | 164.6 | 167.1 |
+
+- 単独レバーはモデル依存で符号が揺れる(cb のみは Qwen3 2-bit で悪化)が、
+  **rot+cb 同時学習は全 6 点で datafree 以上**。効果が大きいのはデータフリー回転と
+  分布の相性が悪いモデル(Qwen3 2-bit −0.18)で、SpinQuant の動機と整合。
+- ダウンストリーム 2-bit(`calib_check_*`, jobs 59109-59110): Qwen3 は Needle
+  0.956→**1.000** / PPL 改善、RULER −0.067(±0.17 の noise 内)。Llama は全指標
+  noise 内で datafree と同等(Needle −0.044/RULER −0.067, いずれも 1σ 未満)。
+- **結論**: 精度を最後まで搾りたいモデル(特に Qwen 系)向けの opt-in。
+  デフォルトは従来どおり完全データフリー。
+
+使い方:
+
+```python
+from onecomp.kvcomp.codec import HayateQuantCodec
+from onecomp.kvcomp.codec.hayatequant_calib import capture_kv_samples
+
+codec = HayateQuantCodec(bits=2)
+kc, vc = capture_kv_samples(model, tok, texts)      # 実KVを収集 (train split)
+cal = codec.calibrate({"key": kc, "value": vc})     # 数秒~十数秒 (A100)
+cal.save("calib_llama_2bit.pt")
+# 以後はロードするだけ (ランタイムコスト0):
+codec = HayateQuantCodec(bits=2, calibration="calib_llama_2bit.pt")
+```
+
+### 候補 2: K/V 非対称ビット配分 (K4V2) → **推奨動作点として採用**
+
+コーデックが元々持つ `value_bits`(K>V 非対称)を初めて等平均ビットで実測
+(`bench_kvasym_v8.py`, jobs 59112/59117)。平均 3.0 bit/coord で:
+
+| モデル | K3V3 uniform (v7) | **K4V2** | K2V4 |
+|---|---:|---:|---:|
+| Llama-3.1-8B | 7.020 | **6.933 (−0.087)** | 8.444 (崩壊気味) |
+| Qwen3-8B | 8.800 | **8.648 (−0.152)** | 9.715 |
+
+- **キーが感度支配的**(KIVI/KVQuant の知見と整合)。同じ平均ビットで K に厚く
+  配るだけで両モデルとも uniform 3-bit を上回る。逆配分 (K2V4) は大きく悪化 —
+  attention ロジット経由で全トークンに波及するキー誤差の方が高くつく。
+- ダウンストリーム(`asym_check_*`, jobs 59121/59125): Needle は両モデル満点で
+  uniform と同点。RULER は Llama で **0.733→0.800 に改善**、Qwen3 で 1.0→0.933
+  (±0.14 の noise 内)。長文 PPL(4096 窓)も両モデルで K4V2 勝ち
+  (Llama 6.832→6.738 / Qwen3 8.423→8.311)。値側を 2-bit に落としても
+  検索系タスクは劣化しない — 感度が本当にキー側に集中していることの
+  ダウンストリーム確認。
+- 平均 2.5 bit は K3V2 が Llama で勝つ(7.204 vs 7.384)が Qwen3 で負ける
+  (8.838 vs 8.733)ため、既定の outlier 方式(64ch@+1bit)を維持し K3V2 は
+  モデル依存の代替として記録。
+- `codec_benchmark.py` に `HayateQuant-K4V2` 行(bits=3 実行時のみ)を追加。
+  API 変更はなし(`value_bits` は既存パラメータ)。
+
+### 候補 3: 全部乗せ (K4V2 + キャリブレーション) → **加算的に最良**
+
+`bench_combo_v8.py` (jobs 59118-59119):
+
+| モデル | K3V3 v7 | K4V2 datafree | **K4V2 + calib** |
+|---|---:|---:|---:|
+| Llama-3.1-8B | 7.020 | 6.933 | **6.922** |
+| Qwen3-8B | 8.800 | **8.648** | 8.660 (±noise) |
+
+新レバーは干渉せず(回転/符号帳はサブセット単位、ビット配分はロール単位で直交)、
+組み合わせは単独最良と同等以上。Llama の平均 3.0 bit 最終値 6.922 は
+TurboQuant-hadamard 3-bit の 7.097 に対し **−0.175**。
+
+### 追加テスト・検証
+
+- ユニットテスト +3 本(roundtrip + digest guard / holdout 非退行 + Cayley 直交性 /
+  config 反映 + n_outlier ガード)。vLLM プラグイン含め全テスト pass。
+- 速度無回帰: ms_per_encode は datafree/calib で同一(表参照)、K4V2 は
+  4-bit K + 2-bit V で uniform 3-bit と同じエンコードパス数。
+
+### v8 再現
+
+```bash
+cd ichikawa_works/kvcomp_hayatequant
+sbatch run_calib_v8.sh [model]     # キャリブレーション分解 (rot/cb/both x 2,3-bit)
+sbatch run_kvasym_v8.sh [model]    # K/V 非対称ビット (3.0/2.5 平均)
+sbatch run_combo_v8.sh [model]     # 全部乗せ (K4V2 + calib)
+sbatch run_calib_check.sh calib_check_llama   # Needle/RULER (calib_check_qwen3,
+sbatch run_calib_check.sh asym_check_llama    #  asym_check_qwen3 も同様)
+```
+
+生データ: `ichikawa_works/kvcomp_hayatequant/results/{calib,kvasym,combo}_v8_<model>.json`、
+`benchmark/kvcomp-longcontext/results_paper1/hayatequant_{calib,asym}/`、
+キャリブ成果物 `results/calib_<model>_{2bit,3bit,k4v2}.pt`。
+
+---
+
 ## CPU-only 数理検証・テスト
 
 - `verify_hayatequant_vq_gain.py`: block_size=1 の TurboQuant bit-for-bit 一致、

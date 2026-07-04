@@ -151,6 +151,12 @@ def _codecs(bits, ablation=False):
         "HayateQuant-dense-LS": HayateQuantCodec(bits=bits, block_size=None,
                                                  rotation_mode="dense",
                                                  key_scale_mode="ls", value_scale_mode="ls"),
+        # K/V-asymmetric bit allocation at the SAME average bits/coord as the
+        # uniform row (keys are the sensitive role: v8 measured K4V2 beating
+        # uniform 3-bit PPL by -0.09/-0.15 on Llama/Qwen3-8B). Only emitted
+        # for bits=3 (the 3.0-avg operating point).
+        **({"HayateQuant-K4V2": HayateQuantCodec(bits=4, value_bits=2)}
+           if bits == 3 else {}),
     }
     if not ablation:
         return codecs

@@ -1,0 +1,260 @@
+{
+  "model": "Qwen3-8B",
+  "config": {
+    "model_path": "/lustre/home/frj/yuma-ichikawa/conference/models/Qwen3-8B",
+    "device": "cuda:0",
+    "dtype": "bfloat16",
+    "attn_implementation": "sdpa",
+    "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_paper1/hayatequant_asym",
+    "methods": [
+      "FullKV",
+      "HayateQuant-3bit",
+      "HayateQuant-K4V2"
+    ],
+    "sink_tokens": 4,
+    "recent_tokens": 64,
+    "requant_stride": 16,
+    "target_mem": 0.27,
+    "uniform_bits": [
+      4,
+      2
+    ],
+    "turboquant_variants": [],
+    "kivi_bits": [],
+    "hayatequant_variants": [
+      {
+        "label": "HayateQuant-3bit",
+        "bits": 3
+      },
+      {
+        "label": "HayateQuant-K4V2",
+        "bits": 4,
+        "value_bits": 2
+      }
+    ],
+    "halo_variants": [],
+    "codec_variants": [],
+    "turbotaper": {
+      "dist": "gaussian",
+      "rotation_mode": "hadamard",
+      "n_outlier_floor": 0,
+      "b_min_value": 2
+    },
+    "skip_outliers": true,
+    "outlier_ratio": 50.0,
+    "thinkv": {
+      "group_size": 16,
+      "precision": {
+        "R": 4,
+        "E": 4,
+        "T": 2
+      },
+      "auto_configure": false,
+      "calib_max_new": 200,
+      "capture_long": false
+    },
+    "pmkvq": {
+      "key_bits": 8,
+      "value_bits": 4,
+      "final_bits": 2,
+      "key_final_bits": 4,
+      "ladder_span": 256,
+      "block_allocation": false,
+      "channel_reparam": false,
+      "bit_options": [
+        2,
+        4,
+        8
+      ],
+      "avg_bit_budget": null,
+      "pos_scale": 4
+    },
+    "taperkv": {
+      "key_bits": 8,
+      "value_bits": 4,
+      "b_min": 4,
+      "b_min_value": 2
+    },
+    "taperkv_sweep": [
+      {
+        "label": "TaperKV-aggr",
+        "key_bits": 4,
+        "value_bits": 2,
+        "b_min": 2,
+        "b_min_value": 2,
+        "recent_tokens": 32
+      },
+      {
+        "label": "TaperKV-mid",
+        "key_bits": 6,
+        "value_bits": 3,
+        "b_min": 2,
+        "b_min_value": 2,
+        "recent_tokens": 48
+      }
+    ],
+    "turbotaper_sweep": [],
+    "context_lens": [
+      4096,
+      8192,
+      16384
+    ],
+    "depths": [
+      0.1,
+      0.25,
+      0.5,
+      0.75,
+      0.9
+    ],
+    "seeds": 3,
+    "max_new_needle": 32,
+    "run_ruler": true,
+    "ruler_keys": 4,
+    "ruler_seeds": 5,
+    "run_needle": true,
+    "run_gsm8k": false,
+    "gsm8k_limit": 50,
+    "max_new_reason": 1024,
+    "run_math": false,
+    "math_limit": 50,
+    "max_new_math": 3072,
+    "run_longbench": false,
+    "longbench_tasks": [],
+    "longbench_max_length": 7500,
+    "longbench_limit": 20,
+    "run_livecodebench": false,
+    "lcb_problems_path": null,
+    "lcb_dataset": "livecodebench/code_generation_lite",
+    "lcb_split": "test",
+    "lcb_limit": 50,
+    "lcb_k": 1,
+    "lcb_timeout": 6.0,
+    "max_new_code": 4096,
+    "run_ppl": true,
+    "ppl_max_length": 4096,
+    "ppl_stride": 2048,
+    "ppl_windows": 16
+  },
+  "results": {
+    "FullKV": {
+      "needle": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.9213,
+          1.0
+        ],
+        "mem_fraction": 1.0,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.7961,
+          1.0
+        ],
+        "mem_fraction": 1.0,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 8.261,
+        "nll": 2.1115,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 1.0
+      }
+    },
+    "HayateQuant-3bit": {
+      "needle": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.9213,
+          1.0
+        ],
+        "mem_fraction": 0.2852,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.7961,
+          1.0
+        ],
+        "mem_fraction": 0.2852,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 8.4231,
+        "nll": 2.131,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 3.5036
+      }
+    },
+    "HayateQuant-K4V2": {
+      "needle": {
+        "accuracy": 1.0,
+        "accuracy_stderr": 0.0,
+        "accuracy_ci95": [
+          0.9213,
+          1.0
+        ],
+        "mem_fraction": 0.2852,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 1.0
+        },
+        "n": 45
+      },
+      "ruler": {
+        "accuracy": 0.9333,
+        "accuracy_stderr": 0.0644,
+        "accuracy_ci95": [
+          0.7018,
+          0.9881
+        ],
+        "mem_fraction": 0.2852,
+        "by_length": {
+          "4096": 1.0,
+          "8192": 1.0,
+          "16384": 0.8
+        },
+        "n": 15
+      },
+      "ppl": {
+        "ppl": 8.311,
+        "nll": 2.1176,
+        "n_tokens": 34815.0,
+        "n_windows": 16.0,
+        "n_skipped_nonfinite": 0.0,
+        "compression_ratio": 3.5036
+      }
+    }
+  }
+}

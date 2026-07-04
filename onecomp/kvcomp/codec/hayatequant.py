@@ -281,6 +281,16 @@ class HayateQuantCodec(KVCodec):
             for true fractional-bit operating points (e.g. 2.5/3.5-bit).
         use_qjl: Optional 1-bit QJL-style residual refinement (off by default).
         seed: Seed for the deterministic rotations.
+        calibration: Optional SpinQuant-style per-model artifact
+            (:class:`.hayatequant_calib.HayateQuantCalibration` instance, or a
+            path to one saved with ``.save()``). When set, the per-role
+            *learned* orthogonal rotation replaces the data-free one (same
+            single GEMM, zero runtime cost) and, if present in the artifact,
+            the real-data-refit codebook replaces the shipped Gaussian one
+            (same ``K``). Payload rot tags then carry the artifact's content
+            digest, and decode verifies the same artifact is loaded (fail
+            fast instead of silently decoding under a different rotation).
+            Default ``None`` keeps the codec fully data-free.
     """
 
     flag_calibration: bool = False
@@ -299,11 +309,22 @@ class HayateQuantCodec(KVCodec):
     outlier_bits: int = None
     use_qjl: bool = False
     seed: int = 0
+    calibration: object = None
     key_axis: str = "token"
     value_axis: str = "token"
 
     _SCALE_MODES = ("rms", "ls", "nc", "ip", "ls_iter")
     _BLOCK_SIZES = (None, 1, 2, 4, 8)
+
+    def _calib(self):
+        """The loaded :class:`HayateQuantCalibration`, or None (data-free)."""
+        if self.calibration is None:
+            return None
+        if isinstance(self.calibration, str):
+            from .hayatequant_calib import HayateQuantCalibration
+            # Load once; replace the path with the object (idempotent).
+            self.calibration = HayateQuantCalibration.load(self.calibration)
+        return self.calibration
 
     def validate_params(self):
         if self.rotation_mode not in ("auto", "hybrid", "hadamard_gemm", "hadamard", "dense"):
@@ -325,6 +346,17 @@ class HayateQuantCodec(KVCodec):
                 raise ValueError(f"scale_mode must be one of {self._SCALE_MODES} or None, got {mode!r}")
         if not (isinstance(self.n_outlier, int) and self.n_outlier >= 0):
             raise ValueError(f"n_outlier must be a non-negative int, got {self.n_outlier!r}")
+        if self.calibration is not None:
+            from .hayatequant_calib import HayateQuantCalibration
+            if not isinstance(self.calibration, (str, HayateQuantCalibration)):
+                raise ValueError(
+                    "calibration must be None, a path, or a HayateQuantCalibration, "
+                    f"got {type(self.calibration).__name__}")
+            if self.n_outlier:
+                raise ValueError("calibration is not supported with n_outlier>0 "
+                                 "(subset dims differ from the calibrated head_dim)")
+        # OneComp convention: the flag (not the folder) marks calibrated codecs.
+        self.flag_calibration = self.calibration is not None
 
     def _value_bits(self) -> int:
         return self.value_bits if self.value_bits is not None else self.bits
@@ -370,7 +402,8 @@ class HayateQuantCodec(KVCodec):
         return "dense"
 
     # --- rotation ----------------------------------------------------------
-    def _rotate(self, x: torch.Tensor, m: int, block_size: int, bits: int):
+    def _rotate(self, x: torch.Tensor, m: int, block_size: int, bits: int,
+                role: str = "k"):
         """Rotate ``x`` (``..., m``); returns ``(x_rotated, rot_tag)``.
 
         Any rotation that structurally requires a power-of-two ``m``
@@ -385,6 +418,14 @@ class HayateQuantCodec(KVCodec):
         between encode and decode -- the same self-describing-payload
         convention as the stored ``dist``/``bits``/``block_size``.
         """
+        cal = self._calib()
+        if cal is not None:
+            w = cal.rotation_on(role, m, x.device)
+            if w is not None:
+                # Learned (SpinQuant-style) rotation: same single GEMM as the
+                # data-free path; the tag carries the artifact digest so
+                # decode can verify the matching artifact is loaded.
+                return x.float() @ w, ("c", role, cal.digest)
         mode = self._resolved_mode(m, block_size, bits)
         x = x.float()
         if mode == "hybrid" and is_power_of_two(m):
@@ -406,6 +447,15 @@ class HayateQuantCodec(KVCodec):
 
     def _unrotate(self, xr: torch.Tensor, m: int, rot) -> torch.Tensor:
         kind, bs = rot[0], rot[1]
+        if kind == "c":  # calibrated: rot == ("c", role, digest)
+            role, digest = rot[1], rot[2]
+            cal = self._calib()
+            if cal is None or cal.digest != digest:
+                raise ValueError(
+                    "payload was encoded with a calibrated rotation "
+                    f"(digest {digest}) but the codec has "
+                    f"{'no' if cal is None else 'a different'} calibration loaded")
+            return xr @ cal.rotation_on(role, m, xr.device).t()
         # Pre-fix payloads stored 2-tuples without the seed; fall back to the
         # instance seed for those (the historical behaviour).
         seed = rot[2] if len(rot) > 2 else self.seed
@@ -471,18 +521,27 @@ class HayateQuantCodec(KVCodec):
     def _quant_rotor(self, xsub: torch.Tensor, bits: int, role: str) -> dict:
         m = xsub.shape[-1]
         block_size = resolve_block_size(bits, self.block_size, self.max_codebook_bits, m)
-        xr, rot = self._rotate(xsub, m, block_size, bits)
+        xr, rot = self._rotate(xsub, m, block_size, bits, role)
         # One RMS scale per whole subset vector (not per block) -- matches
         # TurboQuant/HALO's storage convention exactly (a single fp16 scale
         # per vector regardless of block_size).
         rms = xr.pow(2).mean(dim=-1, keepdim=True).sqrt().clamp_min(1e-8)
         device_str = str(xsub.device)
-        cb = _block_codebook_on(bits, block_size, self.dist, m, device_str)
+        cal = self._calib()
+        cb_cal = (cal.codebook_on(role, bits, block_size, xsub.device)
+                  if cal is not None and m == cal.head_dim else None)
+        cb = cb_cal if cb_cal is not None \
+            else _block_codebook_on(bits, block_size, self.dist, m, device_str)
         n_blocks = m // block_size
         n_total_blocks = max(1, xr.numel() // block_size)
         lut_spec = self._use_lut(block_size, bits, n_total_blocks, xr.is_cuda)
-        lut = (_block_lut_on(bits, block_size, self.dist, m, lut_spec[0], lut_spec[1], device_str)
-               if lut_spec is not None else None)
+        if lut_spec is None:
+            lut = None
+        elif cb_cal is not None:
+            lut = cal.lut_on(role, bits, block_size, lut_spec[0], lut_spec[1], xsub.device)
+        else:
+            lut = _block_lut_on(bits, block_size, self.dist, m,
+                                lut_spec[0], lut_spec[1], device_str)
 
         def _lookup(vec_full):
             vb = vec_full.reshape(*vec_full.shape[:-1], n_blocks, block_size)
@@ -506,6 +565,10 @@ class HayateQuantCodec(KVCodec):
         # encode and decode.
         payload = {"codes": codes, "scale": scale, "bits": bits, "m": m,
                    "block_size": block_size, "rot": rot, "dist": self.dist}
+        if cb_cal is not None:
+            # Decode must gather from the SAME learned codebook; record the
+            # role + artifact digest (same convention as the "c" rot tag).
+            payload["cb_cal"] = (role, cal.digest)
         if self.use_qjl:
             recon = lookup_codewords(cb, codes).reshape(*codes.shape[:-1], m) * scale
             resid = xr - recon
@@ -515,7 +578,17 @@ class HayateQuantCodec(KVCodec):
 
     def _decode_rotor(self, p: dict, device, dtype) -> torch.Tensor:
         dist = p.get("dist", self.dist)  # pre-fix payloads lack "dist"
-        cb = _block_codebook_on(p["bits"], p["block_size"], dist, p["m"], str(device))
+        if "cb_cal" in p:
+            role, digest = p["cb_cal"]
+            cal = self._calib()
+            if cal is None or cal.digest != digest:
+                raise ValueError(
+                    "payload was encoded with a calibrated codebook "
+                    f"(digest {digest}) but the codec has "
+                    f"{'no' if cal is None else 'a different'} calibration loaded")
+            cb = cal.codebook_on(role, p["bits"], p["block_size"], device)
+        else:
+            cb = _block_codebook_on(p["bits"], p["block_size"], dist, p["m"], str(device))
         chat = lookup_codewords(cb, p["codes"]).reshape(*p["codes"].shape[:-1], p["m"])
         xr = chat * p["scale"]
         if "qjl_sign" in p:
@@ -579,6 +652,29 @@ class HayateQuantCodec(KVCodec):
         qjl_bits = (x.numel() * 1 + vecs * (2 if split else 1) * 16) if self.use_qjl else 0
         return payload_bits + scale_bits + qjl_bits
 
+    def calibrate(self, kv_stats, ctx=None):
+        """Fit and load a SpinQuant-style calibration (learned per-role
+        rotation + real-data codebook refit) from captured KV samples.
+
+        Args:
+            kv_stats: ``{"key": (N, head_dim), "value": (N, head_dim)}`` real
+                KV vectors (e.g. from
+                :func:`.hayatequant_calib.capture_kv_samples`).
+            ctx: Optional kwargs forwarded to
+                :func:`.hayatequant_calib.calibrate_hayatequant`
+                (``steps``, ``lr``, ``learn_rotation``, ``learn_codebook``...).
+
+        Returns:
+            The fitted :class:`.hayatequant_calib.HayateQuantCalibration`
+            (also installed on this codec; save it with ``.save(path)`` and
+            reload via ``HayateQuantCodec(calibration=path)``).
+        """
+        from .hayatequant_calib import calibrate_hayatequant
+        self.calibration = calibrate_hayatequant(
+            self, kv_stats["key"], kv_stats["value"], **(ctx or {}))
+        self.flag_calibration = True
+        return self.calibration
+
     def encode(self, key, value, ctx=None) -> CompressedKV:
         kp = self._encode_tensor(key, self.bits, "k")
         vp = self._encode_tensor(value, self._value_bits(), "v")
@@ -600,4 +696,7 @@ class HayateQuantCodec(KVCodec):
             "value_scale_mode": self.value_scale_mode, "n_outlier": self.n_outlier,
             "outlier_bits": self.outlier_bits, "use_qjl": self.use_qjl,
         })
+        cal = self._calib()
+        if cal is not None:
+            cfg["calibration"] = cal.digest
         return cfg

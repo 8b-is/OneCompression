@@ -43,6 +43,13 @@ high-budget Lloyd codebook artifacts (distortion down at every point, 2-bit
 PPL -0.12) and the rate-aware auto rotation (2-bit PPL -0.21 on Llama).
 Final 2-bit Llama PPL: 8.825 vs TurboQuant-hadamard 10.161 / -dense 9.942.
 
+**v8 round** (paper README v8): adds the optional SpinQuant-style calibration
+(`HayateQuantCodec(calibration=...)`, learned per-role Cayley rotation +
+real-data codebook refit; opt-in, PPL never worse and -0.18 on Qwen3-8B
+2-bit) and the K/V-asymmetric `HayateQuant-K4V2` row at the 3.0-avg-bit
+point (keys are the sensitive role: -0.09/-0.15 PPL vs uniform 3-bit on
+Llama/Qwen3-8B, RULER +0.067 on Llama, same storage).
+
 ## Run
 
 **Standard run:**

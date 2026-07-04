@@ -600,6 +600,71 @@ def test_hayatequant_codebook_artifacts_loaded_when_present():
     assert not torch.equal(online, art)
 
 
+def _tiny_calibration(codec, x, steps=8):
+    from onecomp.kvcomp.codec.hayatequant_calib import calibrate_hayatequant
+    flat = x.reshape(-1, x.shape[-1])
+    return calibrate_hayatequant(codec, flat, flat, steps=steps, refit_every=4,
+                                 batch_vectors=256, device="cpu")
+
+
+def test_hayatequant_calibration_roundtrip_and_digest_guard(tmp_path):
+    # Calibrated encode/decode roundtrips; payloads carry the artifact digest
+    # and decoding with a missing/different artifact fails fast instead of
+    # silently unrotating with the wrong matrix.
+    torch.manual_seed(0)
+    x, _ = _kv(h=2, s=48, d=32)
+    codec = HayateQuantCodec(bits=3)
+    cal = codec.calibrate({"key": x.reshape(-1, 32), "value": x.reshape(-1, 32)},
+                          ctx={"steps": 8, "refit_every": 4, "batch_vectors": 256,
+                               "device": "cpu"})
+    assert codec.flag_calibration
+    comp = codec.encode(x, x)
+    assert comp.key_q["main"]["rot"][0] == "c"
+    assert "cb_cal" in comp.key_q["main"]
+    kd, vd = codec.decode(comp)
+    assert kd.shape == x.shape
+    rel = float((kd.float() - x).pow(2).sum() / x.pow(2).sum())
+    assert rel < 0.05
+    # Save/load: a fresh codec pointing at the saved artifact decodes the
+    # same payload bit-identically.
+    p = str(tmp_path / "cal.pt")
+    cal.save(p)
+    codec2 = HayateQuantCodec(bits=3, calibration=p)
+    kd2, _ = codec2.decode(comp)
+    assert torch.equal(kd, kd2)
+    # Digest guard: decoding without the artifact must raise.
+    with pytest.raises(ValueError, match="calibrat"):
+        HayateQuantCodec(bits=3).decode(comp)
+
+
+def test_hayatequant_calibration_never_worse_on_holdout():
+    # The best-on-holdout selection guarantees the artifact's holdout
+    # distortion is <= the data-free starting point (step 0 is the data-free
+    # rotation/codebook, so 'after' can only improve on 'before').
+    torch.manual_seed(1)
+    x, _ = _kv(h=2, s=64, d=32)
+    codec = HayateQuantCodec(bits=2)
+    cal = _tiny_calibration(codec, x)
+    for role in ("k", "v"):
+        assert cal.meta[f"{role}_dist_after"] <= cal.meta[f"{role}_dist_before"] + 1e-9
+        assert cal.rot[role].shape == (32, 32)
+        # Learned rotation stays orthogonal (Cayley retraction).
+        eye = cal.rot[role] @ cal.rot[role].t()
+        assert torch.allclose(eye, torch.eye(32), atol=1e-4)
+
+
+def test_hayatequant_calibration_config_and_outlier_guard():
+    x, _ = _kv(h=2, s=32, d=32)
+    codec = HayateQuantCodec(bits=2)
+    cal = _tiny_calibration(codec, x, steps=4)
+    c = HayateQuantCodec(bits=2, calibration=cal)
+    assert c.get_kv_config()["calibration"] == cal.digest
+    with pytest.raises(ValueError, match="n_outlier"):
+        HayateQuantCodec(bits=2, calibration=cal, n_outlier=4)
+    with pytest.raises(ValueError, match="calibration must be"):
+        HayateQuantCodec(bits=2, calibration=123)
+
+
 def test_hayatequant_invalid_value_or_outlier_bits_raise():
     with pytest.raises(Exception):
         HayateQuantCodec(bits=4, value_bits=99)
