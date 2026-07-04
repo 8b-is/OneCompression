@@ -557,6 +557,49 @@ def test_hayatequant_invalid_encoder_raises():
         HayateQuantCodec(bits=4, encoder="magic")
 
 
+def test_hayatequant_auto_rotation_is_rate_aware():
+    # Measured policy (v7 rotation-x-scale attribution, Llama-3.1-8B): at
+    # coarse rates (bits<=2) the fixed +-1 Hadamard factor correlates the
+    # quantization error and dense wins PPL (-0.21); at bits>=3 the hybrid's
+    # Hadamard incoherence wins. auto must implement exactly that.
+    hq = HayateQuantCodec(bits=2)
+    assert hq._resolved_mode(128, 4, 2) == "dense"
+    assert hq._resolved_mode(128, 4, 1) == "dense"
+    assert hq._resolved_mode(128, 2, 3) == "hybrid"
+    assert hq._resolved_mode(128, 2, 4) == "hybrid"
+    assert hq._resolved_mode(96, 2, 4) == "dense"     # non power-of-two dim
+    assert hq._resolved_mode(128, 1, 4) == "hadamard_gemm"  # scalar path
+    # Explicit rotation_mode always wins over the rate-aware default.
+    assert HayateQuantCodec(bits=2, rotation_mode="hybrid")._resolved_mode(128, 4, 2) == "hybrid"
+    # End-to-end: the payload rot tag records the resolved rotation.
+    x, _ = _kv(h=2, s=16, d=64)
+    enc2 = HayateQuantCodec(bits=2).encode(x, x)
+    assert enc2.key_q["main"]["rot"][0] == "d"
+    enc3 = HayateQuantCodec(bits=3).encode(x, x)
+    assert enc3.key_q["main"]["rot"][0] == "y"
+
+
+def test_hayatequant_codebook_artifacts_loaded_when_present():
+    # The committed high-budget Lloyd artifacts (codebooks/gauss_b*_k*.pt)
+    # must be preferred over the online fit for the default fit params, and
+    # ignored for non-default fit params (those callers asked for a specific
+    # online fit).
+    import os
+    from onecomp.kvcomp.codec import _vq
+    art_dir = os.path.join(os.path.dirname(_vq.__file__), "codebooks")
+    if not os.path.isfile(os.path.join(art_dir, "gauss_b4_k256.pt")):
+        pytest.skip("codebook artifacts not present")
+    _vq.lloyd_vq_gaussian_block.cache_clear()
+    _vq._gaussian_codebook_artifact.cache_clear()
+    cb = _vq.lloyd_vq_gaussian_block(2, 4)
+    art = torch.load(os.path.join(art_dir, "gauss_b4_k256.pt"),
+                     map_location="cpu", weights_only=True)
+    assert torch.equal(cb, art) and cb.shape == (256, 4)
+    # Non-default fit params bypass the artifact (different tensor).
+    online = _vq.lloyd_vq_gaussian_block(2, 4, n_samples=50_000)
+    assert not torch.equal(online, art)
+
+
 def test_hayatequant_invalid_value_or_outlier_bits_raise():
     with pytest.raises(Exception):
         HayateQuantCodec(bits=4, value_bits=99)

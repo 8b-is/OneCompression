@@ -239,8 +239,11 @@ class HayateQuantCodec(KVCodec):
             still using ``block_size>1`` (block-VQ) at 2/3/4-bit -- raise it
             (e.g. 12+) to trade encode latency for a larger, more accurate
             block codebook at higher bit-widths.
-        rotation_mode: ``"auto"`` (default; picks ``"hybrid"`` when
-            ``block_size>1`` and the subset dim is a power of two, else
+        rotation_mode: ``"auto"`` (default; rate-aware: picks ``"dense"``
+            when ``block_size>1`` and the subset's rate is coarse
+            (``bits<=2``, where the fixed +-1 Hadamard structure measurably
+            hurts PPL -- see ``_resolved_mode``), ``"hybrid"`` when
+            ``block_size>1`` at ``bits>=3`` on a power-of-two dim,
             ``"hadamard_gemm"``/``"hadamard"`` when ``block_size==1``, else
             ``"dense"``), ``"hybrid"`` (global Hadamard-GEMM + per-block dense,
             requires power-of-two dim; folded offline into ONE orthogonal GEMM
@@ -333,18 +336,41 @@ class HayateQuantCodec(KVCodec):
         explicit = self.key_scale_mode if role == "k" else self.value_scale_mode
         return resolve_scale_mode(explicit, self.ls_scale, role)
 
-    def _resolved_mode(self, d: int, block_size: int) -> str:
-        """Resolve ``"auto"`` to a concrete rotation given the block size."""
+    def _resolved_mode(self, d: int, block_size: int, bits: int) -> str:
+        """Resolve ``"auto"`` to a concrete rotation given block size and rate.
+
+        Block-VQ (``block_size>1``) needs each rotated block to be close to
+        isotropic (the codebook is fit to an isotropic law); both the hybrid
+        (Hadamard + per-block Haar) and the plain Haar-dense rotation provide
+        that at identical runtime cost (one folded GEMM). Which one wins is
+        rate-dependent, measured per-lever on real KV (Llama-3.1-8B PPL,
+        ``paper_hayatequant_ablation`` + the v7 rotation-x-scale attribution
+        run, scale held fixed at NC/ls_iter):
+
+        * ``bits >= 3``: hybrid wins (3-bit 7.013 vs dense 7.034; 4-bit
+          6.759 vs 6.770) -- the Hadamard factor's stronger global
+          incoherence still pays at moderate rates.
+        * ``bits <= 2``: dense wins decisively (2-bit 8.915 vs 9.123,
+          -0.21 PPL; confirmed at both scale settings, and neutral on
+          R1-Qwen-1.5B) -- at coarse rates the fixed +-1 Hadamard structure
+          correlates the quantization error across tokens, which a fully
+          Haar-random rotation decorrelates. The 2-bit distortion is
+          slightly *higher* under dense, so this is an attention-level
+          effect, not an MSE one -- exactly why the policy is set by
+          measured PPL, not by distortion.
+        """
         if self.rotation_mode != "auto":
             return self.rotation_mode
         if block_size > 1:
+            if bits <= 2:
+                return "dense"
             return "hybrid" if is_power_of_two(d) else "dense"
         if is_power_of_two(d):
             return "hadamard_gemm" if d <= self.hadamard_gemm_max_dim else "hadamard"
         return "dense"
 
     # --- rotation ----------------------------------------------------------
-    def _rotate(self, x: torch.Tensor, m: int, block_size: int):
+    def _rotate(self, x: torch.Tensor, m: int, block_size: int, bits: int):
         """Rotate ``x`` (``..., m``); returns ``(x_rotated, rot_tag)``.
 
         Any rotation that structurally requires a power-of-two ``m``
@@ -359,7 +385,7 @@ class HayateQuantCodec(KVCodec):
         between encode and decode -- the same self-describing-payload
         convention as the stored ``dist``/``bits``/``block_size``.
         """
-        mode = self._resolved_mode(m, block_size)
+        mode = self._resolved_mode(m, block_size, bits)
         x = x.float()
         if mode == "hybrid" and is_power_of_two(m):
             # Folded hybrid rotation: the global signed-Hadamard and the
@@ -445,7 +471,7 @@ class HayateQuantCodec(KVCodec):
     def _quant_rotor(self, xsub: torch.Tensor, bits: int, role: str) -> dict:
         m = xsub.shape[-1]
         block_size = resolve_block_size(bits, self.block_size, self.max_codebook_bits, m)
-        xr, rot = self._rotate(xsub, m, block_size)
+        xr, rot = self._rotate(xsub, m, block_size, bits)
         # One RMS scale per whole subset vector (not per block) -- matches
         # TurboQuant/HALO's storage convention exactly (a single fp16 scale
         # per vector regardless of block_size).

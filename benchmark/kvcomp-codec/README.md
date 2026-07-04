@@ -4,8 +4,11 @@ Main experiment for the data-free rotated KV codecs, the analogue of the
 weight-side `benchmark/<model>-<recipe>/` runs.
 
 **HayateQuant** (`onecomp/kvcomp/codec/hayatequant.py`) is the proposed
-method: block-VQ (data-free K-means codebook) + folded hybrid rotation
-(single GEMM) + role-asymmetric scales (NC keys / ls_iter values), with a
+method: block-VQ (data-free K-means codebook, shipped high-budget Lloyd
+artifacts in `onecomp/kvcomp/codec/codebooks/`) + folded rate-aware rotation
+(single GEMM; auto resolves to Haar-dense at bits<=2 and hybrid at bits>=3,
+per the measured v7 rotation-x-scale attribution) + role-asymmetric scales
+(NC keys / ls_iter values), with a
 candidate-list grid-LUT encoder that keeps encode latency independent of the
 codebook size. It is a strict superset of both baselines: `block_size=1`
 reproduces TurboQuant/HALO bit-for-bit (enforced by unit tests and by the
@@ -32,6 +35,13 @@ positively at 2/3-bit (block-VQ is dominant: 2-bit PPL 10.02 -> 9.51 -> 9.15
 for bs1 -> bs2 -> bs4; scale -0.05, hybrid rotation -0.03), and none hurts --
 see `papers/hayatequant_paper/README.md` (v6) for the full table. Results ->
 `results_ablation/`.
+
+**v7 round** (paper README v7): candidates measured and *rejected* with
+evidence: residual VQ (loses to single-stage block-VQ at every rate on the
+data-free source law) and LUT T=4 (no PPL gain). Adopted: committed
+high-budget Lloyd codebook artifacts (distortion down at every point, 2-bit
+PPL -0.12) and the rate-aware auto rotation (2-bit PPL -0.21 on Llama).
+Final 2-bit Llama PPL: 8.825 vs TurboQuant-hadamard 10.161 / -dense 9.942.
 
 ## Run
 

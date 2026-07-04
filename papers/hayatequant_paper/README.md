@@ -435,6 +435,70 @@ RULER, LongBench-E n=10, WikiText-2 PPL 16 windows)で比較(v5/v6 コード):
 
 ---
 
+## v7 レート適応回転・高予算符号帳 (2026-07-05): 測定駆動の第3ラウンド
+
+「論文レベルの工夫を候補に挙げ、実測で効くものだけ採用する」方針で 4 候補を測定した
+(データフリー光源での歪み: `bench_rvq_gain.py` job 59088 / 実モデル PPL での
+レバー分解: `bench_policy_v7.py` jobs 59091-59092, Llama-3.1-8B + R1-Qwen-1.5B)。
+
+### 候補と採否 (すべて実測に基づく)
+
+| 候補 | 実測結果 | 採否 |
+|---|---|---|
+| 残差ブロック VQ (RVQ, b=8 を 8+8bit の 2 段に分解) | 2-bit 光源 MSE/dim: 単段 b=4 0.0986 に対し greedy 0.1057 / 交互再探索付き 0.1056 / 符号帳共同再学習込み 0.1040 と**全変種で劣化**。3-bit (12+12) 0.0310 vs 単段 b=4 0.0279、4-bit (8+8) 0.0105 vs 単段 b=2 0.0090 も同様。エンコードも 6-18 倍遅い (1.02ms → 5.9-11.9ms @4.2M 座標) | **不採用** |
+| LUT 候補数 T=2→4 (2-bit の LUT 過剰歪み対策) | Llama 2-bit PPL 9.136 vs T=2 の 9.123 — noise 内で改善なし、gather コストのみ倍増 | **不採用** |
+| 高予算 Lloyd 符号帳 (サンプル 16 倍・60 iters・8 restarts をオフライン 1 回で fit し、成果物をコミット) | 光源 MSE/dim が全点で改善: b4K256 −1.4% (0.09862→0.09693)、b4K4096 −2.6%、b2K256 −12% (0.00904→0.00795)。実 KV でも歪み一貫改善 (4-bit dist(K) 0.0084→0.0075)、Llama 2-bit PPL −0.12。ランタイムコストゼロ+符号帳がマシン非依存で bit 再現可能に | **採用** |
+| 2-bit の回転を dense に (レート適応 auto) | スケールを固定した純粋な回転効果として測定: Llama 2-bit hybrid 9.123 vs **dense 8.915 (−0.21)**、両スケール設定で再現、R1-Qwen では中立 (166.6 vs 166.9)。3/4-bit は hybrid が勝つ (v6 ablation: 3-bit 7.013 vs 7.034) | **採用 (bits≤2 のみ)** |
+
+実装 (計 3 ファイル + 成果物):
+
+1. **`codebooks/` パッケージ** (`onecomp/kvcomp/codec/codebooks/`): `fit_codebooks.py` が
+   デフォルト構成の全 (block_size, K) 点を高予算で fit し `gauss_b{b}_k{K}.pt`
+   (合計 ~90KB) として保存。`lloyd_vq_gaussian_block` はデフォルト fit パラメータの
+   とき成果物を優先し、無ければ従来のオンライン fit に自動フォールバック
+   (成果物は必須ではない)。非デフォルトの fit パラメータ指定はオンライン fit のまま。
+   fit は従来と同じ合成 N(0,1) サンプルのみ使用 — **データフリー性は不変**。
+2. **レート適応 auto 回転** (`hayatequant.py: _resolved_mode`): block-VQ 時、
+   subset の bits≤2 なら dense、bits≥3 なら hybrid に解決。2-bit では歪みは
+   hybrid の方が僅かに良い (0.0983 vs 0.0996) のに PPL は dense が明確に勝つ —
+   粗いレートでは固定 ±1 Hadamard 構造が量子化誤差をトークン間で相関させ、
+   Haar-dense がそれを無相関化する attention レベルの効果であり、
+   「歪みではなく PPL で方針を決める」本プロジェクトの方法論の好例。
+   folded 1-GEMM なのでコストは同一。outlier 分割時も subset ごとの実効 bits で
+   一貫して解決される (例: 2.5-bit = inlier 2-bit→dense / outlier 3-bit→hybrid)。
+
+### v7 最終検証 (job 59097: フルグリッド再実行 + 速度回帰チェック)
+
+Llama-3.1-8B-Instruct (WikiText-2 PPL 32 windows, A100):
+
+| bits | TurboQuant-hadamard | TurboQuant-dense | HayateQuant-auto v6 | **HayateQuant-auto v7** |
+|---|---:|---:|---:|---:|
+| 2 | 10.161 | 9.942 | 9.138 | **8.825** (TQ 比 −1.34 / −1.12) |
+| 3 | 7.097 | 7.144 | 7.004 | 7.038 (noise 内; dist(K) は 0.0290→0.0284 改善) |
+| 4 | 6.786 | 6.783 | 6.766 | **6.758** (dist(K) −10%: 0.0084→0.0075) |
+
+R1-Qwen-1.5B は全動作点 noise 内 (この模型の PPL は bits と単調でなく判定材料に
+ならないことは v3 から既知; 推奨構成 dense-LS の優位は不変)。
+
+速度は無回帰 (job 59097 [3/4]-[4/4]): e2e TTFT 117.6ms (TQ 111.2ms, +5.7%)、
+デコード 26.2 tok/s (TQ 19.2, **+36%**)、コーデック単体 decode-step dec 64us
+(TQ 440us, **6.9 倍**)。auto 回転の変更は folded GEMM の中身が変わるだけで
+コスト同一、符号帳成果物はロードのみなので当然の結果。
+
+vLLM E2E も再実行 (job 59099): 3 ケース全て `ALL_E2E_CHECKS_PASSED`。
+ユニットテストは +2 本 (レート適応 auto の解決規則 / 成果物ロードの優先順位) を
+含め **262 テスト全 pass** (`tests/onecomp/kvcomp` + `tests/vllm_plugins/kvcomp`
+全体, kagura CPU, 346s)。
+
+### v7 の教訓 (負の結果も記録する)
+
+RVQ は「b=8 の space-filling gain を 2 段で近似する」正攻法だが、データフリー光源
+ですら stage-2 残差の非ガウス性・非等方性で greedy/joint とも単段 b=4 に届かなかった。
+b=8 @ 2-bit を本当に取るには構造化符号帳 (E8 lattice / QuIP# 系) が必要で、
+それは将来課題として `bench_rvq_gain.py` と本節に測定条件ごと記録した。
+
+---
+
 ## CPU-only 数理検証・テスト
 
 - `verify_hayatequant_vq_gain.py`: block_size=1 の TurboQuant bit-for-bit 一致、
@@ -475,6 +539,12 @@ sbatch run_hayatequant_ablation.sh
 
 # 7. vLLM 実機 E2E (ネイティブ bs=1 + block-VQ スカラーフォールバック)
 sbatch run_vllm_hadamard_e2e.sh
+
+# 8. v7 候補測定の再現 (RVQ/高予算符号帳のデータフリー歪み, 実PPLレバー分解)
+sbatch run_rvq_gain.sh
+sbatch run_policy_v7.sh          # 引数でモデル切替可
+sbatch run_fit_codebooks.sh      # 公式符号帳成果物の再fit (repo内に上書き)
+sbatch run_hayatequant_bench_v7.sh  # v7 最終検証 (フルグリッド + 速度)
 ```
 
 ## 生データ
@@ -484,6 +554,10 @@ sbatch run_vllm_hadamard_e2e.sh
 - `ichikawa_works/kvcomp_hayatequant/results_speed/e2e_speed_llama-3.1-8b-instruct_v3b.json` — e2e 速度 (最終)
 - `onecomp-lab/benchmark/kvcomp-longcontext/results_paper1/hayatequant/results_llama-3.1-8b-instruct.json` — paper-level
 - `onecomp-lab/benchmark/kvcomp-codec/results_ablation/results_llama-3.1-8b-instruct.json` — レバー分離 ablation (v6)
+- `ichikawa_works/kvcomp_hayatequant/results_v7/results_<model>.json` — 品質 (v7 最終, レート適応回転+高予算符号帳)
+- `ichikawa_works/kvcomp_hayatequant/results_speed/{codec_speed,e2e_speed}*_v7.json` — 速度 (v7 無回帰確認)
+- `ichikawa_works/kvcomp_hayatequant/results/rvq_gain.json` — RVQ 不採用判定の光源歪み実測 (job 59088)
+- `ichikawa_works/kvcomp_hayatequant/results/policy_v7_<model>.json` — 回転x スケール分解・LUT T・bigfit の実PPL (jobs 59091-59092)
 - `results_v2/`, `results_speed/*_v2_*` — v2(修正前後比較用に保持)
 
 ## ファイル構造
@@ -492,8 +566,10 @@ sbatch run_vllm_hadamard_e2e.sh
 onecomp-lab/
 ├── papers/hayatequant_paper/README.md   ← このファイル
 ├── onecomp/kvcomp/codec/
-│   ├── hayatequant.py    ← メイン Codec (encoder="auto": adaptive LUT/exact)
+│   ├── hayatequant.py    ← メイン Codec (encoder="auto": adaptive LUT/exact,
+│   │                        レート適応 auto 回転: bits<=2 は dense)
 │   ├── _vq.py            ← block-VQ 符号帳 + 候補リスト LUT + fp16 厳密探索
+│   ├── codebooks/        ← 高予算 Lloyd 符号帳成果物 (.pt, データフリー) + fit_codebooks.py
 │   ├── _scale.py         ← 役割非対称スケール (HALO と共有)
 │   └── rotation.py       ← hybrid_rotation_matrix (folded 1-GEMM 回転)
 ├── vllm_plugins/kvcomp/  ← mapping.py + vllm_plugin.py (EngineArgs 自動フック)

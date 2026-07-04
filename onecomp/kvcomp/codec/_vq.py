@@ -50,9 +50,20 @@ Copyright 2025-2026 Fujitsu Ltd.
 from __future__ import annotations
 
 import math
+import os
 from functools import lru_cache
 
 import torch
+
+# Precomputed high-budget Lloyd codebook artifacts (see
+# ``codebooks/fit_codebooks.py``).  The online fit below uses a budget sized
+# for an acceptable first-encode latency (100k samples, 25 iters, 4
+# restarts); fitting offline with ~8-16x that budget measurably improves the
+# codebook (block distortion -1.4% at the 2-bit ``(b=4, K=256)`` point and
+# -2.6% at the 3-bit ``(b=4, K=4096)`` point, ``bench_rvq_gain.py``), is
+# free at runtime, and makes the codebook bit-exactly reproducible across
+# machines/BLAS builds (the artifact is committed, not refit).
+_CODEBOOK_DIR = os.path.join(os.path.dirname(__file__), "codebooks")
 
 # Candidate block sizes considered by :func:`resolve_block_size`, largest first.
 _BLOCK_CANDIDATES = (8, 4, 2, 1)
@@ -185,6 +196,27 @@ def _gaussian_block_samples(block_size: int, n_samples: int, seed: int) -> torch
 
 
 @lru_cache(maxsize=32)
+def _gaussian_codebook_artifact(block_size: int, k: int) -> "torch.Tensor | None":
+    """Load the precomputed high-budget Gaussian codebook, if shipped.
+
+    Artifacts are plain ``(K, block_size)`` fp32 tensors named
+    ``gauss_b{block_size}_k{k}.pt`` under :data:`_CODEBOOK_DIR` (or the
+    ``KVCOMP_CODEBOOK_DIR`` override, used by the fit tooling to A/B new
+    artifacts). Missing artifact -> ``None`` (online fit fallback), so the
+    codec never *requires* the files.
+    """
+    for base in (os.environ.get("KVCOMP_CODEBOOK_DIR"), _CODEBOOK_DIR):
+        if not base:
+            continue
+        path = os.path.join(base, f"gauss_b{block_size}_k{k}.pt")
+        if os.path.isfile(path):
+            cb = torch.load(path, map_location="cpu", weights_only=True)
+            if tuple(cb.shape) == (k, block_size):
+                return cb.to(torch.float32)
+    return None
+
+
+@lru_cache(maxsize=32)
 def lloyd_vq_gaussian_block(
     bits: int, block_size: int, iters: int = 25, n_samples: int = 100_000,
     seed: int = 0, restarts: int = 4,
@@ -196,8 +228,20 @@ def lloyd_vq_gaussian_block(
     to synthetic Gaussian samples. ``block_size=1`` recovers
     :func:`rotation.lloyd_max_gaussian` (up to Lloyd-iteration noise; both
     converge to the same 1-D Lloyd-Max optimum).
+
+    When a precomputed high-budget artifact exists for ``(block_size, K)``
+    (see ``codebooks/fit_codebooks.py``) it is preferred over the online fit:
+    same law, same algorithm, ~8-16x the sample/restart budget (measured
+    -1.4% block distortion at 2-bit ``K=256`` and -2.6% at 3-bit ``K=4096``),
+    zero runtime cost, and bit-exact reproducibility across machines.
+    Callers passing non-default fit hyperparameters keep the online fit.
     """
     k = 1 << (bits * block_size)
+    default_fit = (iters, n_samples, seed, restarts) == (25, 100_000, 0, 4)
+    if default_fit and block_size > 1:
+        art = _gaussian_codebook_artifact(block_size, k)
+        if art is not None:
+            return art
     n_samples = min(n_samples, max(20_000, 2_000_000_000 // max(k, 1)))
     samples = _gaussian_block_samples(block_size, n_samples, seed)
     return _kmeans_best_of(samples, k, iters, seed, restarts)
