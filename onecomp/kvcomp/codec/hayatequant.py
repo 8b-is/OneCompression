@@ -141,6 +141,7 @@ from ._vq import (
     lloyd_vq_gaussian_block,
     lloyd_vq_beta_block,
     quantize_and_lookup,
+    lookup_codewords,
     lut_spec_for,
     build_vq_lut,
     quantize_via_lut,
@@ -390,24 +391,22 @@ class HayateQuantCodec(KVCodec):
     def _use_lut(self, block_size: int, bits: int, n_total_blocks: int) -> "tuple[int, int] | None":
         """``(bins, T)`` LUT spec to use for this call, or None for exact search.
 
-        Measured policy (A100, Llama-3.1-8B KV shapes, codec_speed.py):
+        Measured policy (A100, real ``batch*heads*seq`` block counts,
+        ``paper/tests/bench_encoder_paths.py``, fp16 candidate distances):
 
         * Tiny calls (``n_blocks * K`` below :data:`_LUT_MIN_WORK`, i.e. the
           per-decode-step encode of one new token): the exact GEMM is one
           small kernel; the LUT's several-kernel gather pipeline only adds
           launch overhead -- use exact.
-        * ``b=2`` (``T=2``) prefill: the LUT wins outright -- 4.3ms vs
-          20-45ms for the exact chunked GEMM at K=64-256 (4.8-10.4x); this
-          is what puts 3/4-bit prefill within ~2.5x of TurboQuant's scalar
-          encode.
-        * ``b=4`` with small ``K`` (<=512, e.g. the default 2-bit K=256):
-          the exact GEMM is *faster* (29.9ms vs 71.9ms) -- ``T=8`` candidate
-          gathers cost more than a tensor-core matmul against a small
-          codebook -- use exact.
-        * ``b=4`` with large ``K`` (>512, e.g. the max_codebook_bits=12
-          3-bit K=4096 point): the exact GEMM explodes (~280ms) while the
-          LUT's K-independent cost stays flat -- LUT wins by >4x and makes
-          the large-codebook accuracy affordable at all.
+        * ``b=2`` (``T=2``) prefill: the LUT wins outright -- 0.26ms vs
+          1.5-3.1ms for the exact chunked GEMM at K=64-256 (5.8-11.7x); this
+          is what puts 3/4-bit prefill on par with TurboQuant's scalar encode.
+        * ``b=4`` prefill: with the fp16 candidate-distance step the LUT now
+          wins at *every* codebook size -- 1.21ms vs 1.56ms at the default
+          2-bit K=256 (1.3x; it used to lose at 5.4ms with fp32 gathers,
+          which is why older revisions excluded ``b>=4, K<=512``), and
+          1.80ms vs 19.4ms at the ``max_codebook_bits=12`` 3-bit K=4096
+          point (10.8x) -- so the small-K exclusion is gone.
         """
         if block_size <= 1 or self.encoder == "exact":
             return None
@@ -417,11 +416,8 @@ class HayateQuantCodec(KVCodec):
             if self.encoder == "lut":
                 raise ValueError(f"encoder='lut' infeasible for block_size={block_size}")
             return None
-        if self.encoder == "auto":
-            if n_total_blocks * k < self._LUT_MIN_WORK:
-                return None
-            if block_size >= 4 and k <= 512:
-                return None
+        if self.encoder == "auto" and n_total_blocks * k < self._LUT_MIN_WORK:
+            return None
         return spec
 
     # --- rotate + block-VQ + role-asymmetric scale for one channel subset --
@@ -445,7 +441,7 @@ class HayateQuantCodec(KVCodec):
             vb = vec_full.reshape(*vec_full.shape[:-1], n_blocks, block_size)
             if lut is not None:
                 codes_ = quantize_via_lut(vb, lut, lut_spec[0], cb)
-                chat_b = cb[codes_]
+                chat_b = lookup_codewords(cb, codes_)
             else:
                 codes_, chat_b = quantize_and_lookup(vb, cb)
             return codes_, chat_b.reshape(*vec_full.shape[:-1], m)
@@ -464,7 +460,7 @@ class HayateQuantCodec(KVCodec):
         payload = {"codes": codes, "scale": scale, "bits": bits, "m": m,
                    "block_size": block_size, "rot": rot, "dist": self.dist}
         if self.use_qjl:
-            recon = cb[codes].reshape(*codes.shape[:-1], m) * scale
+            recon = lookup_codewords(cb, codes).reshape(*codes.shape[:-1], m) * scale
             resid = xr - recon
             payload["qjl_sign"] = (resid >= 0)
             payload["qjl_rms"] = resid.abs().mean(dim=-1, keepdim=True)
@@ -473,7 +469,7 @@ class HayateQuantCodec(KVCodec):
     def _decode_rotor(self, p: dict, device, dtype) -> torch.Tensor:
         dist = p.get("dist", self.dist)  # pre-fix payloads lack "dist"
         cb = _block_codebook_on(p["bits"], p["block_size"], dist, p["m"], str(device))
-        chat = cb[p["codes"]].reshape(*p["codes"].shape[:-1], p["m"])
+        chat = lookup_codewords(cb, p["codes"]).reshape(*p["codes"].shape[:-1], p["m"])
         xr = chat * p["scale"]
         if "qjl_sign" in p:
             sign = torch.where(p["qjl_sign"], 1.0, -1.0).to(xr.dtype)

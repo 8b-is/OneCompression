@@ -11,14 +11,18 @@
 > (2) 単一 GEMM に折り畳んだ Hadamard+block-dense ハイブリッド回転 (Folded Rotation)、
 > (3) 候補リスト Grid-LUT による符号帳サイズ非依存 O(T) エンコーダ、により
 > 同一ビット数で両者より厳密に低い歪み・PPL・下流タスク精度を達成しつつ、
-> **decode スループットで TurboQuant の 1.4 倍、TTFT も 3/4-bit で同等**を実現する。
+> **decode スループットで TurboQuant の 1.34-1.38 倍、TTFT も全ビット幅で同等 (+2〜6%)**
+> を実現する。
 
 - **ディレクトリ:** `papers/hayatequant_paper/`
-- **現在の状態 (v4, 2026-07-04):** 品質(歪み/PPL, 2モデル)・速度(codec/e2e)・
+- **現在の状態 (v5, 2026-07-04):** 品質(歪み/PPL, 2モデル)・速度(codec/e2e)・
   paper-level ロングコンテキスト(Needle/RULER/LongBench-E/PPL, job 58907)まで**全て完了**。
   v4 監査で `dist="beta"` の正規化不一致 (CRITICAL) 等を修正し、HALO 主体だった全実験
   設定・submit スクリプトを HayateQuant 主体に世代交代 (詳細は paper README の v4 節)。
-  v4 再検証ベンチ: jobs 59000-59004。
+  v5 でエンコーダ/デコーダをマイクロベンチ駆動で高速化(2-bit prefill enc 5.2 倍・
+  dec 8.7 倍、TTFT 290→117ms; paper README の v5 節)。TurboQuant arXiv 論文との
+  軸別比較は `hayatequant_paper/TURBOQUANT_COMPARISON.md`。
+  再検証ベンチ: jobs 59000-59004 (v4), 59042-59047 (v5)。
 - **HALO との関係:** HALO はコードベースに残置(削除しない)。比較対象として恒久保持。
 - **vLLM プラグイン:** `mapping.py` に `HayateQuantCodec` 対応 + デフォルト設定での
   `int(None)` クラッシュ修正 + 専用テスト 9 件 (`tests/vllm_plugins/kvcomp/`)。
@@ -41,15 +45,15 @@
 | R1-Qwen-1.5B | 2 | HALO-dense-LS (旧最良PPL) | 0.1119 | 0.1141 | 159.38 |
 | R1-Qwen-1.5B | 2 | **HayateQuant-dense-LS** | **0.0992** | **0.0967** | **157.45** |
 
-**推論速度 (e2e v3b, Llama-3.1-8B-Instruct, prompt=4096, gen=128):**
+**推論速度 (e2e v5, Llama-3.1-8B-Instruct, prompt=4096, gen=128):**
 
 | 手法 | TTFT | decode tok/s | 備考 |
 |---|---:|---:|---|
-| FullKV | 72.7ms | 78.1 | baseline |
-| TurboQuant-3bit | 112.0ms | 19.5 | — |
-| HALO-NC-3bit | 92.4ms | 33.0 | — |
-| **HayateQuant-3bit** | **115.3ms** | **27.4** | TTFT は TQ と同等、decode は TQ の 1.4 倍 |
-| **HayateQuant-2bit** | 323.2ms | **27.5** | 2-bit のみ TTFT 2.9 倍(正直な残存コスト) |
+| FullKV | 71.4ms | 77.7 | baseline |
+| TurboQuant-3bit | 111.3ms | 19.6 | — |
+| HALO-NCIT-3bit | 95.1ms | 30.3 | — |
+| **HayateQuant-3bit** | **113.6ms** | **27.1** | TTFT は TQ と同等、decode は TQ の 1.38 倍 |
+| **HayateQuant-2bit** | **117.2ms** | **27.0** | v4 の TTFT 2.6 倍問題は v5 で解消 (290→117ms) |
 
 **Paper-level ロングコンテキスト (job 58907, Llama-3.1-8B):** 低ビット域で全指標勝利 —
 2-bit Needle **100%** (TQ 93.3/HALO 91.1)、2.5-bit RULER **0.933 = FullKV と同値** (TQ 0.800)、
@@ -176,9 +180,10 @@ python papers/aggregate_results.py
 3. **R1-Qwen 系の codec PPL 異常高**  
    - 外れ値チャネルが原因。`codec_benchmark.py` での skip_layers 適用が必要
 
-4. **HayateQuant の残存コスト (v3 で大幅縮小、2-bit prefill のみ)**  
-   - v3 の Folded Rotation + 候補リスト LUT + fp16 探索により decode は TurboQuant の
-     1.4 倍 (27.5 vs 19.5 tok/s)、TTFT も 3/4-bit で同等まで改善。
-   - 唯一 2-bit prefill (block_size=4, K=256 の厳密探索がメモリバウンド) のみ
-     TTFT 2.9 倍 (323ms vs 112ms) が残る。品質側の優位 (Needle 100%, LongBench +5.5pt,
-     PPL -1.0) とのトレードオフとして正直に報告。
+4. **HayateQuant の残存コスト (v5 で解消)**  
+   - v3 の Folded Rotation + 候補リスト LUT + fp16 探索で decode は TurboQuant の
+     1.4 倍まで改善したが、2-bit prefill の TTFT 2.6-2.9 倍が残っていた。
+   - v5 (LUT T=2 スペック + int16 LUT + `take` ギャザー経路) で 2-bit prefill
+     enc 5.2 倍・dec 8.7 倍高速化し、**全ビット幅で TTFT が TurboQuant と同等
+     (+2〜6%) に到達**。品質コストは 2-bit auto の PPL +0.075 (9.07→9.15) のみで、
+     2-bit 推奨バリアント dense-LS (PPL 8.96) には影響なし。

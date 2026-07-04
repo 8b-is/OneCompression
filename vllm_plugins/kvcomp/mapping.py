@@ -35,6 +35,7 @@ Copyright 2025-2026 Fujitsu Ltd.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -298,16 +299,45 @@ def plan_from_kv_config(
         # TurboQuant kernel only implements scalar Lloyd-Max on a Hadamard- or
         # Dense-rotated vector); needs the custom backend / HF cache path to
         # get HayateQuant's actual accuracy gain over the scalar presets.
-        plan.needs_custom_backend = True
-        plan.native_supported = False
-        plan.kv_cache_dtype = "auto"
-        plan.notes.append(
-            f"Codec 'hayatequant' with block_size={codec.get('block_size')} > 1 "
-            "(block-VQ) has no native vLLM kv_cache_dtype; use the HF cache path "
-            "to get its accuracy gain over the scalar turboquant_* presets. "
-            "Use block_size=1 (the TurboQuant/HALO-equivalent scalar mode) for "
-            "the native vLLM fast path."
-        )
+        #
+        # Escape hatch: ``KVCOMP_VLLM_SCALAR_FALLBACK=1`` opts into serving the
+        # model with the nearest *scalar* turboquant_* preset instead of an
+        # uncompressed KV cache.  HayateQuant at block_size=1 IS that scalar
+        # codec (superset guarantee), so the fallback is well-defined -- it
+        # keeps the compression ratio and trades away only the block-VQ
+        # accuracy delta.  It is opt-in (default stays honest: no silent
+        # accuracy downgrade) and always loudly warned about.
+        fallback = os.environ.get("KVCOMP_VLLM_SCALAR_FALLBACK", "").strip() in (
+            "1", "true", "yes")
+        preset = None
+        if fallback:
+            preset, kb, vb = _turboquant_preset(codec)
+        if preset is not None:
+            _set_native(
+                preset,
+                f"Codec 'hayatequant' (block-VQ) served via scalar fallback "
+                f"kv_cache_dtype='{preset}' (KVCOMP_VLLM_SCALAR_FALLBACK=1): "
+                "equivalent to HayateQuant at block_size=1.")
+            _check_rotation_for_native(codec, name, plan)
+            plan.skip_layers = [int(x) for x in (codec.get("skip_layers") or [])]
+            plan.warnings.append(
+                "KVCOMP_VLLM_SCALAR_FALLBACK=1: HayateQuant's block-VQ accuracy "
+                f"gain is NOT reproduced by the scalar preset '{preset}'; expect "
+                "the TurboQuant-level (block_size=1) accuracy. Use the HF cache "
+                "path for faithful block-VQ results.")
+        else:
+            plan.needs_custom_backend = True
+            plan.native_supported = False
+            plan.kv_cache_dtype = "auto"
+            plan.notes.append(
+                f"Codec 'hayatequant' with block_size={codec.get('block_size')} > 1 "
+                "(block-VQ) has no native vLLM kv_cache_dtype; use the HF cache path "
+                "to get its accuracy gain over the scalar turboquant_* presets. "
+                "Use block_size=1 (the TurboQuant/HALO-equivalent scalar mode) for "
+                "the native vLLM fast path, or set KVCOMP_VLLM_SCALAR_FALLBACK=1 "
+                "to serve with the nearest scalar turboquant_* preset (compressed, "
+                "TurboQuant-level accuracy) instead of an uncompressed cache."
+            )
     elif name in ("turboquant", "halo", "hayatequant"):
         preset, kb, vb = _turboquant_preset(codec)
         if preset is not None:

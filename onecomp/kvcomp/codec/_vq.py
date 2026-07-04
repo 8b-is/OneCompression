@@ -261,9 +261,18 @@ def quantize_to_vq_codebook(z: torch.Tensor, cb: torch.Tensor) -> torch.Tensor:
     flat = z.reshape(-1, block_size)
     if block_size == 1:
         from .rotation import quantize_to_codebook  # local import: avoid a cycle
-        sorted_cb, order = cb.squeeze(-1).sort()
-        sorted_codes = quantize_to_codebook(flat.squeeze(-1), sorted_cb)
-        codes = order[sorted_codes]
+        cb1 = cb.squeeze(-1)
+        sorted_cb, order = cb1.sort()
+        # 1-D Lloyd-Max codebooks are already sorted (Lloyd iterations preserve
+        # centroid order), so the permutation is the identity for every
+        # codebook this codec actually builds; skipping the full-N
+        # ``order[codes]`` gather then makes this path exactly the raw
+        # TurboQuant/HALO searchsorted (measured ~3x faster at real block
+        # counts). The K-element equality check is a negligible sync.
+        if torch.equal(sorted_cb, cb1):
+            codes = quantize_to_codebook(flat.squeeze(-1), cb1)
+        else:
+            codes = order[quantize_to_codebook(flat.squeeze(-1), sorted_cb)]
         return codes.reshape(z.shape[:-1])
 
     # On CUDA, run the scoring GEMM in fp16 (fp32 accumulate on tensor
@@ -290,6 +299,43 @@ def quantize_to_vq_codebook(z: torch.Tensor, cb: torch.Tensor) -> torch.Tensor:
     return codes.reshape(z.shape[:-1])
 
 
+# Below this many gathered rows the extra index-arithmetic kernels of the
+# flattened-take path cost more than they save (the pathological advanced-
+# indexing kernel only dominates at large N); measured crossover is well
+# below 64k rows on A100 either way, so a single conservative constant works.
+_TAKE_MIN_ROWS = 65536
+
+
+def lookup_codewords(cb: torch.Tensor, codes: torch.Tensor) -> torch.Tensor:
+    """Gather codewords: ``cb[codes]`` with the fast kernel per block size.
+
+    ``(K, b)`` row gathers hit a pathologically slow path in PyTorch's
+    advanced-indexing/index_select kernels for small row sizes ``b >= 4``
+    (measured 2.16ms vs 0.11ms for a *flattened 1-D* ``take`` of the same
+    bytes at ``b=4, K=256``, 4.2M rows on A100 -- 19x; see
+    ``paper/tests/bench_lut_spec_sweep.py``). This helper dispatches:
+
+    * ``b >= 4`` on CUDA with a large row count: flatten to a 1-D ``take``
+      of ``b`` consecutive scalars per code (19x faster at prefill sizes;
+      below :data:`_TAKE_MIN_ROWS` the extra index-arithmetic kernels would
+      instead add ~30us to a decode-step-sized gather, so small calls keep
+      ``index_select``).
+    * otherwise: ``index_select`` over the flattened codes (itself ~1.6x
+      faster than ``cb[codes]``'s advanced indexing at ``b=2``).
+
+    This is the decode path's dominant cost, and also the candidate-gather
+    inside the LUT encoder.
+    """
+    k, b = cb.shape
+    flat = codes.reshape(-1)
+    if b >= 4 and flat.is_cuda and flat.numel() >= _TAKE_MIN_ROWS:
+        idx = flat.unsqueeze(-1) * b + torch.arange(b, device=flat.device)
+        out = cb.reshape(-1).take(idx)
+    else:
+        out = torch.index_select(cb, 0, flat)
+    return out.reshape(*codes.shape, b)
+
+
 def quantize_and_lookup(z: torch.Tensor, cb: torch.Tensor):
     """Return ``(codes, chat)``: nearest-codeword indices and their vectors.
 
@@ -298,7 +344,7 @@ def quantize_and_lookup(z: torch.Tensor, cb: torch.Tensor):
     """
     cb = cb.to(device=z.device, dtype=z.dtype)
     codes = quantize_to_vq_codebook(z, cb)
-    return codes, cb[codes]
+    return codes, lookup_codewords(cb, codes)
 
 
 # --- Grid-LUT (cell-indexed candidate-list) fast nearest-codeword encoder ---
@@ -342,30 +388,44 @@ def lut_spec_for(block_size: int, k: int) -> "tuple[int, int] | None":
     search -- under the default ``max_codebook_bits`` cap, ``b=8`` only occurs
     at 1-bit where ``K=256`` keeps the exact search cheap anyway).
 
+    The encode cost is dominated by the ``T``-candidate gather+distance step
+    (nearly independent of ``bins``), so the specs trade grid resolution
+    (memory) for a smaller ``T`` where the measured excess distortion stays
+    negligible (A100 sweep: ``paper/tests/bench_lut_spec_sweep.py``):
+
     * ``b=2``: 256 bins -> 65k cells; cell width ``~0.04 sigma`` is far below
       the 2-D codeword spacing (``>= ~0.4 sigma`` at ``K<=512``), so ``T=2``
       already makes boundary misassignment unmeasurable.
-    * ``b=4``: 32 bins -> 1.05M cells (8 MB at T=8/int16); cells are coarse
-      (``~0.31 sigma``) relative to 4-D spacing, so accuracy comes from the
-      candidate list, not the grid: ``T=8`` for ``K <= 512``, ``T=16`` for
-      the large-codebook points (``K`` up to 4096).
+    * ``b=4``, ``K <= 512`` (the default 2-bit point): ``bins=64, T=2`` --
+      measured 5.0x faster than the previous ``(32, 8)`` (0.96ms vs 4.76ms
+      per 4.2M-block pass) at +0.19% excess block distortion (vs -0.001%);
+      the LUT is 134 MB but built once per codebook and cached.
+    * ``b=4``, large ``K`` (the ``max_codebook_bits=12`` quality-ceiling
+      points, ``K`` up to 4096): accuracy comes from the candidate list --
+      keep ``T=16`` (excess -0.02%), still ~11x faster than the exact GEMM.
     """
     if block_size == 2:
         return 256, min(2, k)
     if block_size == 4:
-        return 32, min(8 if k <= 512 else 16, k)
+        return (64, min(2, k)) if k <= 512 else (32, min(16, k))
     return None
 
 
 def build_vq_lut(
     cb: torch.Tensor, bins: int, top_t: int, lim: float = _LUT_LIM
 ) -> torch.Tensor:
-    """Precompute the ``(bins**b, T)`` int32 cell -> candidate-codewords table.
+    """Precompute the ``(bins**b, T)`` integer cell -> candidate-codewords table.
 
     Every cell stores the ``T`` codewords nearest to its centre (exact,
     chunked scoring). The table build is the only place an O(cells * K) cost
     is ever paid -- once per (codebook, resolution); thereafter every encode
     is O(T) per block regardless of ``K``.
+
+    Indices are stored as int16 when they fit (``K <= 32767`` -- always true
+    under ``max_codebook_bits <= 15``): the table's random-access gather is
+    the encoder's dominant memory traffic, so halving the element size halves
+    both the resident table size (e.g. 67MB instead of 134MB at
+    ``bins=64, T=2, b=4``) and the per-encode gather bytes.
     """
     k, b = cb.shape
     axis = ((torch.arange(bins, dtype=torch.float32, device=cb.device) + 0.5)
@@ -375,11 +435,12 @@ def build_vq_lut(
     csq = cb.pow(2).sum(dim=1)
     n = centers.shape[0]
     chunk = max(1, min(n, _MAX_SCORE_ELEMENTS // max(k, 1)))
-    out = torch.empty(n, top_t, dtype=torch.int32, device=cb.device)
+    idx_dtype = torch.int16 if k <= 32767 else torch.int32
+    out = torch.empty(n, top_t, dtype=idx_dtype, device=cb.device)
     for start in range(0, n, chunk):
         end = min(start + chunk, n)
         scores = centers[start:end] @ cb.t() - 0.5 * csq.unsqueeze(0)
-        out[start:end] = scores.topk(top_t, dim=1).indices.to(torch.int32)
+        out[start:end] = scores.topk(top_t, dim=1).indices.to(idx_dtype)
     return out
 
 
@@ -409,7 +470,17 @@ def quantize_via_lut(
     cands = lut[flat].long()                       # (..., T)
     if cands.shape[-1] == 1:
         return cands.squeeze(-1)
-    cw = cb[cands]                                 # (..., T, b)
+    # On CUDA, compute the T-candidate distances in fp16: halves the gather /
+    # arithmetic traffic of the dominant candidate-gather + reduction step
+    # (measured 4.5x at (b=4, K=256, T=8) and 5.7x at (b=4, K=4096, T=16) on
+    # A100 -- see paper/tests/bench_encoder_paths.py). Same argument as the
+    # fp16 exact-GEMM scoring: the candidate list itself is exact, only the
+    # argmin over T sees fp16 rounding, and the measured excess distortion is
+    # noise-level (<0.02%).
+    if z.is_cuda and z.dtype == torch.float32:
+        z = z.half()
+        cb = cb.half()
+    cw = lookup_codewords(cb, cands)               # (..., T, b)
     dist = (cw - z.unsqueeze(-2)).pow(2).sum(-1)   # (..., T) exact distances
     best = dist.argmin(dim=-1, keepdim=True)
     return cands.gather(-1, best).squeeze(-1)

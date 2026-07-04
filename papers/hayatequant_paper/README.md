@@ -5,9 +5,16 @@
 **主張:** HayateQuant は TurboQuant (arXiv:2504.19874) と HALO の**完全な上位互換**である
 データ不要 KV キャッシュ量子化 Codec。`block_size=1` で両者を数値的にもレイテンシ的にも完全再現しつつ
 (`test_hayatequant_block_size_1_matches_turboquant`, `test_hayatequant_block_size_1_matches_halo_scale_modes`)、
-**同じビット数で厳密に低い歪み・PPL・下流タスク精度**を達成し、v3 のシステム最適化
-(Folded Rotation + 候補リスト LUT + fp16 スコアリング)により **decode スループットでは
-TurboQuant を 1.4 倍上回り、TTFT も 3/4-bit で TurboQuant と同等 (+3%)** まで到達した。
+**同じビット数で厳密に低い歪み・PPL・下流タスク精度**を達成し、v3-v5 のシステム最適化
+(Folded Rotation + 候補リスト LUT + fp16 スコアリング + ギャザー経路修正)により
+**decode スループットでは TurboQuant を 1.34-1.38 倍上回り、TTFT も全ビット幅で
+TurboQuant と同等 (+2〜6%)** まで到達した(v5 実測、下記)。
+
+**TurboQuant 論文との精密比較:** `TURBOQUANT_COMPARISON.md` —
+arXiv:2504.19874 の主張・理論(下界 4^{-b}、上界 √3π/2≈2.72 倍)・実験プロトコル
+に対する HayateQuant の相違点/強化点を軸ごとに整理(block-VQ による
+space-filling gain 回収、Folded Hybrid Rotation、役割非対称スケール、
+候補リスト LUT、QJL の扱い、同一土俵ベンチの勝敗)。
 
 **概念図:**
 
@@ -172,6 +179,11 @@ KIVI-INT2 (needle 100%, RULER 0.6, PPL 7.42, mem 0.161) に対しても、同等
 - `vllm_plugins/kvcomp/mapping.py` が `hayatequant` を認識: `block_size=1` は vLLM
   ネイティブ `turboquant_*` プリセットへ、block-VQ(`block_size>1`/auto)はカスタム
   バックエンド要と明示(silent downgrade しない)。
+- **opt-in スカラーフォールバック** (`KVCOMP_VLLM_SCALAR_FALLBACK=1`): block-VQ
+  設定のモデルを vLLM で「非圧縮」ではなく最寄りのスカラー `turboquant_*`
+  プリセット(= HayateQuant `block_size=1` と同一の量子化)で提供する明示的
+  escape hatch。block-VQ の精度利得は落ちる旨を必ず警告付きで通知
+  (デフォルトは従来通り正直に custom-backend 要と報告)。
 - **回転族チェック(Hadamard 対応)**: vLLM ネイティブ TurboQuant カーネルは
   randomized **Hadamard** 回転を内蔵する。mapping は codec の `rotation_mode` を検査し、
   Hadamard 族(`hadamard` / `hadamard_gemm` / `auto` / `hybrid`+`block_size=1` の退化形)
@@ -262,6 +274,71 @@ codec 品質 x2 モデル / codec_speed / e2e_speed / 3-way ロングコンテ�
 
 decode スループットで TurboQuant の 1.59 倍・HALO 超え、TTFT は TurboQuant と同等、
 ピークメモリ・圧縮率 (5.10x) は全手法同一。
+
+---
+
+## v5 エンコーダ/デコーダ高速化 (2026-07-04 夜): データ駆動での「効く強化」の実装
+
+v4 の残存弱点は速度側に 2 つあった: (1) 2-bit の prefill encode 21.6ms(TTFT 290ms、
+TurboQuant の 2.6 倍)、(2) 2-bit の prefill decode 4.64ms(3-bit の 10 倍)。
+GPU マイクロベンチ(`paper/tests/bench_encoder_paths.py` / `bench_lut_spec_sweep.py`,
+A100, 実ブロック数)で原因を特定し、**測って効いたものだけ**を採用した:
+
+1. **LUT 候補距離の fp16 化** (`_vq.py: quantize_via_lut`): 候補ギャザー+距離計算が
+   支配的で、fp16 化で (b=4,K=256,T=8) 4.5 倍・(b=4,K=4096,T=16) 5.7 倍。過剰歪みは
+   noise (<0.02%)。これにより従来「exact GEMM の方が速い」だった b=4 小 K 域でも
+   LUT が勝つようになり、`_use_lut` の除外ルールを撤廃。
+2. **2-bit LUT スペック再設計** (`lut_spec_for`): エンコードコストは bins にほぼ非依存で
+   T に線形 → 格子を細かく(bins 32→64)して T を 8→2 に削減。単パス 4.76ms→0.96ms
+   (5.0 倍)、過剰歪み +0.19%(2-bit KV-MSE で 0.294→0.295、PPL 9.07→9.15。それでも
+   TurboQuant 10.16 / HALO 10.02 より圧倒的に良く、2-bit 推奨は据え置き dense-LS 8.96)。
+   K=4096 の品質上限点は T=16 を維持(excess −0.02%)。
+3. **LUT の int16 化** (`build_vq_lut`): K≤32767 では候補表を int16 で保持。
+   常駐メモリとギャザー帯域を半減(bins=64,T=2,b=4 で 134MB→67MB)。
+4. **`cb[codes]` ギャザーの経路修正** (`_vq.py: lookup_codewords`): PyTorch の
+   advanced-indexing / index_select は小行 (b≥4) の行ギャザーで病的に遅い
+   (b=4,K=256, 4.2M 行で 2.16ms; 同バイト数の平坦化 1-D `take` は 0.11ms = **19 倍**)。
+   デコード・LUT 候補ギャザー・encode 内 lookup を全て `lookup_codewords`
+   (大 N の b≥4 は take、それ以外は index_select)に置換。decode-step サイズの
+   小ギャザーでは take の索引算術が逆に ~30us 損なので閾値 (`_TAKE_MIN_ROWS`) で回避。
+5. **block_size=1 のソート短絡** (`quantize_to_vq_codebook`): Lloyd-Max 符号帳は常に
+   ソート済みなのに毎回 sort + 全 N の `order[codes]` ギャザーを払っていた。
+   ソート済みなら直接 searchsorted(実測 3 倍: 0.062ms→0.021ms/4.2M 要素)。
+
+**採用しなかった強化(効果なしと実測判定)**: b=2 の LUT fp16 化(T=2 では gather が
+支配的で差なし)、bins>64 の T=4 スペック(T=2 に速度で全敗、excess の改善も PPL に
+現れない)、decode-step への take 適用(閾値未満では逆効果)。
+
+### v5 実測 (codec_speed v6b, 32 heads x 4096 seq x dim128, A100)
+
+| bits | 指標 | v4 | **v5** | TurboQuant | 対 TQ |
+|---|---|---:|---:|---:|---:|
+| 2 | prefill enc | 21.57ms | **4.17ms** (5.2x) | 1.70ms | 2.4x 遅 |
+| 2 | prefill dec | 4.64ms | **0.53ms** (8.7x) | 1.67ms | **3.1x 速** |
+| 3 | prefill enc | 4.27ms | **3.94ms** | 1.73ms | 2.3x 遅 |
+| 3 | prefill dec | 0.48ms | **0.41ms** | 1.67ms | **4.0x 速** |
+| 3 | decode-step enc | 453us | **437us** | 506us | **1.2x 速** |
+| 3 | decode-step dec | 57us | **63us** | 441us | **7.0x 速** |
+
+品質は全ビット幅で不変(4-bit PPL 6.759 / 3-bit 7.013 / 2-bit 9.147 (auto),
+8.955 (dense-LS); 全て全ベースライン最良)。
+
+### v5 e2e 推論速度 (Llama-3.1-8B, prompt=4096, gen=128)
+
+| bits | 手法 | TTFT | decode tok/s | 対 TurboQuant decode |
+|---|---|---:|---:|---:|
+| 2 | TurboQuant | 110.8ms | 20.1 | 1.00x |
+| 2 | **HayateQuant** | **117.2ms** (v4: 290ms) | **27.0** | **1.34x** |
+| 3 | TurboQuant | 111.3ms | 19.6 | 1.00x |
+| 3 | **HayateQuant** | **113.6ms** | **27.1** | **1.38x** |
+| 4 | TurboQuant | 111.5ms | 19.5 | 1.00x |
+| 4 | **HayateQuant** | **113.6ms** | **27.0** | **1.38x** |
+
+**→ 全ビット幅で TTFT は TurboQuant と同等(+2〜6%)、decode は 1.34-1.38 倍。**
+prompt 4096 + 128 トークン生成の総時間では HayateQuant 4.8s vs TurboQuant 6.6s
+(**27% 短縮**)。v4 で唯一残っていた 2-bit の TTFT 2.6 倍問題は解消した。
+生データ: `benchmark/kvcomp-longcontext/{codec_speed,e2e_speed}_v6b.json`
+(v5 コード; `_v5/_v6.json` は途中段階の ablation 記録)。
 
 ---
 
