@@ -342,6 +342,74 @@ prompt 4096 + 128 トークン生成の総時間では HayateQuant 4.8s vs Turbo
 
 ---
 
+## v6 再監査 (2026-07-04 深夜): 堅牢性修正・レバー分離 ablation・vLLM 再 E2E
+
+コア 4 ファイル(`hayatequant.py` / `_vq.py` / `rotation.py` / `_scale.py`)を全行再精読し、
+将来の開発・拡張で事故になり得る箇所を 4 点修正した(数値結果は全て不変):
+
+1. **回転 seed のペイロード保存** (`hayatequant.py: _rotate/_unrotate`): 従来 rot タグは
+   `("y", block_size)` 等で、decode は**インスタンスの** `self.seed` に依存していた。
+   encode と decode の間に codec が別 seed で再構成されると静かに壊れる(`dist` は保存
+   していたのに seed は保存していなかった非対称)。rot タグを `(kind, block_size, seed)` に
+   拡張し decode はペイロードの seed を使う。旧 2-tuple ペイロードも後方互換で読める。
+   TurboQuant 側は元から rot タグに seed を埋めており、これで規約が揃った。
+2. **QJL+outlier の bit 会計修正** (`_stored_bits`): outlier 分割時は QJL の residual-RMS が
+   subset ごと(=ベクトルあたり 2 個)保存されるのに 1 個分しか計上していなかった
+   (ベクトルあたり fp16 1 個分の過少申告; QJL はデフォルト off なので既存結果に影響なし)。
+3. **`value_bits`/`outlier_bits` のバリデーション追加** (`validate_params`): 従来は
+   `bits` のみ検証され、`value_bits=99` が encode 時までエラーにならなかった。
+4. **auto エンコーダの LUT を CUDA 限定に** (`_use_lut`): LUT/exact のクロスオーバーは
+   GPU (A100) でしか測っておらず、CPU では O(bins^b×K) の表構築の償却も難しい。
+   `encoder="auto"` は CPU では常に exact chunked-GEMM(予測可能)を使い、
+   `encoder="lut"` の強制はどのデバイスでも従来どおり動く(CPU ユニットテストが使用)。
+
+追加テスト 4 本(payload-seed 独立性、旧 rot タグ後方互換、value_bits 検証、QJL+outlier
+会計)を含め **135 テスト全 pass**(kagura CPU, 181s)。
+
+### レバー分離 ablation (job 59050, Llama-3.1-8B-Instruct, WikiText-2 PPL 32 windows)
+
+`codec_benchmark.py` に opt-in の ablation グリッド(`--config-name
+paper_hayatequant_ablation`)を追加。各行は HayateQuant-auto から**ちょうど 1 つ**の
+レバーを外す:
+
+| 2-bit | dist(K) | dist(V) | PPL | 読み取り |
+|---|---:|---:|---:|---|
+| TurboQuant-hadamard (ベースライン) | 0.1095 | 0.1171 | 10.161 | |
+| HayateQuant-bs1 (スカラー=HALO 相当) | 0.1118 | 0.1158 | 10.022 | block-VQ なし |
+| HayateQuant-bs2 | 0.1053 | 0.1054 | 9.512 | b=2 で −0.51 |
+| **HayateQuant-auto (b=4)** | **0.0983** | **0.0964** | **9.147** | b=4 でさらに −0.36 |
+| HayateQuant-noscale (RMS 両ロール) | 0.0966 | 0.0978 | 9.198 | scale レバー = −0.051 |
+| HayateQuant-hadamard-bvq (hybrid なし) | 0.0983 | 0.0958 | 9.178 | hybrid レバー = −0.031 |
+| HayateQuant-beta (厳密有限次元則) | 0.0981 | 0.0962 | 9.155 | gaussian と同等 |
+
+- **block-VQ が支配的レバー**: bs1→bs2→bs4 で PPL 10.02→9.51→9.15 と単調改善
+  (実 KV 上で古典的 space-filling gain 曲線どおり)。3/4-bit では auto が b=2 に解決される
+  ため bs2 行 = auto 行(生きた sanity check として一致を確認)。
+- **役割非対称スケール**: 全 bit で一貫して +(2-bit −0.051 / 3-bit −0.024 / 4-bit −0.013 PPL)。
+- **hybrid 回転**: 低 bit で一貫して +(2-bit −0.031 / 3-bit −0.034; 4-bit は noise 内)。
+  等方性検証(`verify_hayatequant_isotropy.py`)の予測と整合。
+- **dist="beta"**: 歪みはわずかに改善するが PPL は gaussian と同等(±0.02)。
+  デフォルト gaussian(符号帳がヘッド次元非依存でキャッシュ効率が良い)を維持。
+- どのレバーも負に働く bit 幅はなく、「効いていない部分」は見つからなかった。
+  外せるものを外すと必ず悪化する=現構成が最小十分であることの実測確認。
+
+生データ: `benchmark/kvcomp-codec/results_ablation/results_llama-3.1-8b-instruct.json`
+
+### vLLM 再 E2E (job 59051, DeepSeek-R1-Distill-Qwen-1.5B, A100)
+
+現コード(v6 修正込み)で 3 ケース全て合格(`ALL_E2E_CHECKS_PASSED`):
+
+1. HayateQuant(bs=1, hadamard_gemm) → プラグインが `turboquant_4bit_nc` を自動設定、
+   実生成 OK(`HADAMARD_NATIVE_KV_OK`)。
+2. ベースライン(設定なし) → `auto` のまま(誤圧縮なし, `BASELINE_OK`)。
+3. **新規**: HayateQuant デフォルト(auto → block-VQ)+ `KVCOMP_VLLM_SCALAR_FALLBACK=1`
+   → 最近傍スカラープリセット `turboquant_4bit_nc` で圧縮サーブ、生成品質正常
+   (`BLOCKVQ_SCALAR_FALLBACK_OK`)。フォールバックの生成例: "A Hadamard matrix is a
+   square matrix whose entries are either +1 or -1, and whose rows are mutually
+   orthogonal." — 正しい出力。
+
+---
+
 ## CPU-only 数理検証・テスト
 
 - `verify_hayatequant_vq_gain.py`: block_size=1 の TurboQuant bit-for-bit 一致、
@@ -375,6 +443,13 @@ sbatch run_hayatequant_speed_v3b.sh
 
 # 5. Paper-level ロングコンテキスト (Needle/RULER/LongBench-E/PPL)
 sbatch run_hayatequant_paper_bench.sh
+
+# 6. レバー分離 ablation (noscale / hadamard-bvq / beta / bs2)
+sbatch run_hayatequant_ablation.sh
+# = codec_benchmark.py --config-name paper_hayatequant_ablation model_path=...
+
+# 7. vLLM 実機 E2E (ネイティブ bs=1 + block-VQ スカラーフォールバック)
+sbatch run_vllm_hadamard_e2e.sh
 ```
 
 ## 生データ
@@ -383,6 +458,7 @@ sbatch run_hayatequant_paper_bench.sh
 - `ichikawa_works/kvcomp_hayatequant/results_speed/codec_speed_llama_shapes_v3b.json` — 単体速度 (最終)
 - `ichikawa_works/kvcomp_hayatequant/results_speed/e2e_speed_llama-3.1-8b-instruct_v3b.json` — e2e 速度 (最終)
 - `onecomp-lab/benchmark/kvcomp-longcontext/results_paper1/hayatequant/results_llama-3.1-8b-instruct.json` — paper-level
+- `onecomp-lab/benchmark/kvcomp-codec/results_ablation/results_llama-3.1-8b-instruct.json` — レバー分離 ablation (v6)
 - `results_v2/`, `results_speed/*_v2_*` — v2(修正前後比較用に保持)
 
 ## ファイル構造

@@ -312,6 +312,9 @@ class HayateQuantCodec(KVCodec):
             raise ValueError("dist must be 'gaussian' or 'beta'")
         if not (isinstance(self.bits, int) and 1 <= self.bits <= 8):
             raise ValueError(f"bits must be int in 1..8, got {self.bits!r}")
+        for label, b in (("value_bits", self.value_bits), ("outlier_bits", self.outlier_bits)):
+            if b is not None and not (isinstance(b, int) and 1 <= b <= 8):
+                raise ValueError(f"{label} must be None or int in 1..8, got {b!r}")
         if self.block_size not in self._BLOCK_SIZES:
             raise ValueError(f"block_size must be one of {self._BLOCK_SIZES}, got {self.block_size!r}")
         for mode in (self.key_scale_mode, self.value_scale_mode):
@@ -349,6 +352,12 @@ class HayateQuantCodec(KVCodec):
         falls back to the dense QR rotation when ``m`` is not a power of two
         (e.g. an outlier-split subset) -- correctness is never compromised,
         only the specific transform requested.
+
+        The rot tag ``(kind, block_size, seed)`` is stored in the payload so
+        decode reconstructs the *exact* rotation used at encode time, even if
+        the codec instance is reconfigured (e.g. a different ``seed``)
+        between encode and decode -- the same self-describing-payload
+        convention as the stored ``dist``/``bits``/``block_size``.
         """
         mode = self._resolved_mode(m, block_size)
         x = x.float()
@@ -359,28 +368,31 @@ class HayateQuantCodec(KVCodec):
             # rotation costs exactly as much as a plain dense rotation at
             # runtime -- the Hadamard/Dense interpolation is free.
             w = hybrid_rotation_matrix(m, block_size, self.seed, str(x.device), torch.float32)
-            return x @ w, ("y", block_size)
+            return x @ w, ("y", block_size, self.seed)
         if mode == "hadamard_gemm" and is_power_of_two(m):
             hs = signed_hadamard_matrix(m, self.seed, str(x.device), torch.float32)
-            return x @ hs, ("hg", None)
+            return x @ hs, ("hg", None, self.seed)
         if mode == "hadamard" and is_power_of_two(m):
             sign = random_sign(m, self.seed, device=x.device, dtype=torch.float32)
-            return rotate(x, sign), ("h", None)
+            return rotate(x, sign), ("h", None, self.seed)
         q = _dense_rotation_on(m, self.seed, str(x.device), torch.float32)
-        return x @ q, ("d", None)
+        return x @ q, ("d", None, self.seed)
 
     def _unrotate(self, xr: torch.Tensor, m: int, rot) -> torch.Tensor:
-        kind, bs = rot
+        kind, bs = rot[0], rot[1]
+        # Pre-fix payloads stored 2-tuples without the seed; fall back to the
+        # instance seed for those (the historical behaviour).
+        seed = rot[2] if len(rot) > 2 else self.seed
         if kind == "y":
-            w = hybrid_rotation_matrix(m, bs, self.seed, str(xr.device), torch.float32)
+            w = hybrid_rotation_matrix(m, bs, seed, str(xr.device), torch.float32)
             return xr @ w.t()
         if kind == "hg":
-            hs = signed_hadamard_matrix(m, self.seed, str(xr.device), torch.float32)
+            hs = signed_hadamard_matrix(m, seed, str(xr.device), torch.float32)
             return xr @ hs.t()
         if kind == "h":
-            sign = random_sign(m, self.seed, device=xr.device, dtype=torch.float32)
+            sign = random_sign(m, seed, device=xr.device, dtype=torch.float32)
             return unrotate(xr, sign)
-        q = _dense_rotation_on(m, self.seed, str(xr.device), torch.float32)
+        q = _dense_rotation_on(m, seed, str(xr.device), torch.float32)
         return xr @ q.t()
 
     # Below this many (blocks * codewords) score products the exact GEMM is a
@@ -388,7 +400,9 @@ class HayateQuantCodec(KVCodec):
     # token), so the LUT's multi-kernel gather pipeline only adds overhead.
     _LUT_MIN_WORK = 2_000_000
 
-    def _use_lut(self, block_size: int, bits: int, n_total_blocks: int) -> "tuple[int, int] | None":
+    def _use_lut(
+        self, block_size: int, bits: int, n_total_blocks: int, is_cuda: bool
+    ) -> "tuple[int, int] | None":
         """``(bins, T)`` LUT spec to use for this call, or None for exact search.
 
         Measured policy (A100, real ``batch*heads*seq`` block counts,
@@ -407,6 +421,12 @@ class HayateQuantCodec(KVCodec):
           which is why older revisions excluded ``b>=4, K<=512``), and
           1.80ms vs 19.4ms at the ``max_codebook_bits=12`` 3-bit K=4096
           point (10.8x) -- so the small-K exclusion is gone.
+        * CPU: the crossover above was measured on GPU only, and the one-time
+          table build (O(bins**b * K) scoring, up to ~seconds on CPU at the
+          large-``K`` specs) is much harder to amortise there -- ``"auto"``
+          therefore stays on the exact chunked GEMM off-CUDA. Forcing
+          ``encoder="lut"`` still works on any device (used by the CPU unit
+          tests, which exercise the LUT path on small codebooks).
         """
         if block_size <= 1 or self.encoder == "exact":
             return None
@@ -416,7 +436,8 @@ class HayateQuantCodec(KVCodec):
             if self.encoder == "lut":
                 raise ValueError(f"encoder='lut' infeasible for block_size={block_size}")
             return None
-        if self.encoder == "auto" and n_total_blocks * k < self._LUT_MIN_WORK:
+        if self.encoder == "auto" and (
+                not is_cuda or n_total_blocks * k < self._LUT_MIN_WORK):
             return None
         return spec
 
@@ -433,7 +454,7 @@ class HayateQuantCodec(KVCodec):
         cb = _block_codebook_on(bits, block_size, self.dist, m, device_str)
         n_blocks = m // block_size
         n_total_blocks = max(1, xr.numel() // block_size)
-        lut_spec = self._use_lut(block_size, bits, n_total_blocks)
+        lut_spec = self._use_lut(block_size, bits, n_total_blocks, xr.is_cuda)
         lut = (_block_lut_on(bits, block_size, self.dist, m, lut_spec[0], lut_spec[1], device_str)
                if lut_spec is not None else None)
 
@@ -519,14 +540,17 @@ class HayateQuantCodec(KVCodec):
         """
         b, h, s, d = x.shape
         vecs = b * h * s
-        if self.n_outlier <= 0 or self.n_outlier >= d:
+        split = 0 < self.n_outlier < d  # outlier split => two subsets per vector
+        if not split:
             payload_bits = x.numel() * bits
             scale_bits = vecs * 16
         else:
             no = self.n_outlier
             payload_bits = vecs * (no * self._outlier_bits() + (d - no) * bits)
             scale_bits = vecs * 2 * 16
-        qjl_bits = (x.numel() * 1 + vecs * 16) if self.use_qjl else 0
+        # QJL residual: 1 sign bit per coordinate + one fp16 residual-RMS per
+        # encoded subset vector (two subsets when the outlier split is active).
+        qjl_bits = (x.numel() * 1 + vecs * (2 if split else 1) * 16) if self.use_qjl else 0
         return payload_bits + scale_bits + qjl_bits
 
     def encode(self, key, value, ctx=None) -> CompressedKV:

@@ -98,7 +98,7 @@ def _ms_per_encode(codec, x, iters=50, warmup=10):
     return ms, melem
 
 
-def _codecs(bits):
+def _codecs(bits, ablation=False):
     # Pareto / lever ablation for the HayateQuant paper (HayateQuant-auto is
     # the proposed method; TurboQuant and HALO rows are baselines):
     #   TurboQuant-hadamard : Hadamard incoherence via the WHT *butterfly* (slow).
@@ -115,7 +115,7 @@ def _codecs(bits):
     #                         marginally better Gaussianisation than +-1 Hadamard,
     #                         which matters at the coarse low-bit codebook, so this
     #                         fixes the 2-bit PPL edge cases while keeping LS.
-    return {
+    codecs = {
         "TurboQuant-hadamard": TurboQuantCodec(bits=bits, rotation_mode="hadamard"),
         "TurboQuant-dense": TurboQuantCodec(bits=bits, rotation_mode="dense"),
         "HALO-RMS": HALOCodec(bits=bits, rotation_mode="auto", ls_scale=False),
@@ -152,6 +152,38 @@ def _codecs(bits):
                                                  rotation_mode="dense",
                                                  key_scale_mode="ls", value_scale_mode="ls"),
     }
+    if not ablation:
+        return codecs
+    # Lever-isolation ablations (opt-in via `ablation: true`, see
+    # conf/paper_hayatequant_ablation.yaml). Each row disables exactly ONE of
+    # HayateQuant-auto's levers, so (auto - variant) reads off that lever's
+    # marginal contribution on real KV:
+    codecs.update({
+        # (a) scale lever off: block-VQ + hybrid rotation with the
+        # TurboQuant-faithful plain RMS scale on both roles. (auto - noscale)
+        # = the NC/ls_iter role-asymmetric scale's contribution;
+        # (noscale - TurboQuant-dense) = the pure block-VQ gain with zero
+        # confound from the scale.
+        "HayateQuant-noscale": HayateQuantCodec(bits=bits, block_size=None,
+                                                rotation_mode="auto", ls_scale=False),
+        # (b) hybrid-rotation lever off: block-VQ straight on the global
+        # signed-Hadamard-GEMM output, NO per-block dense factor. The block
+        # codebook is fit to an isotropic law, so this mismatch should cost
+        # accuracy exactly where verify_hayatequant_isotropy.py predicts.
+        "HayateQuant-hadamard-bvq": HayateQuantCodec(bits=bits, block_size=None,
+                                                     rotation_mode="hadamard_gemm"),
+        # (c) source-law lever: exact finite-d Beta/Dirichlet block law
+        # instead of the d->inf Gaussian limit (head_dim is 64-128 in
+        # practice, where the two laws are already close).
+        "HayateQuant-beta": HayateQuantCodec(bits=bits, block_size=None,
+                                             rotation_mode="auto", dist="beta"),
+        # (d) block-size monotonicity on real KV: explicit b=2 between the
+        # scalar bs1 row and the auto row (auto resolves b=4 at 2-bit,
+        # b=2 at 3/4-bit under the default max_codebook_bits=9).
+        "HayateQuant-bs2": HayateQuantCodec(bits=bits, block_size=2,
+                                            rotation_mode="auto"),
+    })
+    return codecs
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="benchmark_codec")
@@ -185,7 +217,7 @@ def main(cfg: DictConfig):
     results = {}
     for bits in list(cfg.bits):
         results[bits] = {}
-        for name, codec in _codecs(bits).items():
+        for name, codec in _codecs(bits, ablation=bool(getattr(cfg, "ablation", False))).items():
             entry = {}
             entry["distortion_key"] = round(_relmse(codec, ks, role="k"), 5)
             entry["distortion_value"] = round(_relmse(codec, vs, role="v"), 5)

@@ -1,0 +1,32 @@
+# HayateQuant lever-isolation ablation grid.
+#
+# Extends conf/paper_hayatequant.yaml with `ablation: true`, which adds four
+# rows to the codec grid (see codec_benchmark.py `_codecs(..., ablation=True)`),
+# each disabling exactly ONE of HayateQuant-auto's levers:
+#
+#   * HayateQuant-noscale       -- role-asymmetric NC/ls_iter scale OFF
+#                                  (plain RMS both roles): (auto - noscale)
+#                                  = the scale lever's marginal gain;
+#                                  (noscale - TurboQuant) = the pure
+#                                  block-VQ gain, no scale confound.
+#   * HayateQuant-hadamard-bvq  -- per-block dense rotation factor OFF
+#                                  (block-VQ straight on the signed-Hadamard
+#                                  output): the hybrid rotation's gain, i.e.
+#                                  the codebook/rotation isotropy match.
+#   * HayateQuant-beta          -- exact finite-d Beta block law instead of
+#                                  the d->inf Gaussian limit.
+#   * HayateQuant-bs2           -- explicit block_size=2 (between bs1 and
+#                                  auto's b=4 at 2-bit): block-size
+#                                  monotonicity on real KV.
+#
+# Run (one model at a time):
+#   srun --gres=gpu:1 .../python codec_benchmark.py \
+#       --config-name paper_hayatequant_ablation \
+#       model_path=/lustre/.../models/llama-3.1-8b-instruct
+
+defaults:
+  - paper_hayatequant
+  - _self_
+
+ablation: true
+output_dir: results_ablation

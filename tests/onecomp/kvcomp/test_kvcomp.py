@@ -557,6 +557,57 @@ def test_hayatequant_invalid_encoder_raises():
         HayateQuantCodec(bits=4, encoder="magic")
 
 
+def test_hayatequant_invalid_value_or_outlier_bits_raise():
+    with pytest.raises(Exception):
+        HayateQuantCodec(bits=4, value_bits=99)
+    with pytest.raises(Exception):
+        HayateQuantCodec(bits=4, outlier_bits=0)
+    assert HayateQuantCodec(bits=4, value_bits=2, outlier_bits=5).value_bits == 2
+
+
+def test_hayatequant_decode_uses_payload_seed():
+    # The rotation seed is stored in the payload (rot tag), so decode must
+    # reconstruct the encode-time rotation even if the decoding instance was
+    # configured with a different seed -- same self-describing-payload
+    # convention as the stored "dist".
+    torch.manual_seed(0)
+    x, _ = _kv(h=2, s=32, d=64)
+    for rotation_mode in ("hybrid", "hadamard_gemm", "hadamard", "dense"):
+        enc_c = HayateQuantCodec(bits=4, rotation_mode=rotation_mode, seed=7)
+        dec_c = HayateQuantCodec(bits=4, rotation_mode=rotation_mode, seed=123)
+        enc = enc_c.encode(x, x)
+        ref_k, ref_v = enc_c.decode(enc)
+        got_k, got_v = dec_c.decode(enc)
+        assert torch.equal(got_k, ref_k) and torch.equal(got_v, ref_v)
+
+
+def test_hayatequant_decode_accepts_legacy_rot_tag():
+    # Payloads written before the seed was stored carried 2-tuple rot tags;
+    # decode must fall back to the instance seed for those.
+    torch.manual_seed(0)
+    x, _ = _kv(h=2, s=16, d=64)
+    c = HayateQuantCodec(bits=4, rotation_mode="hybrid", seed=7)
+    enc = c.encode(x, x)
+    ref_k, _ = c.decode(enc)
+    for payload in (enc.key_q, enc.value_q):
+        p = payload["main"]
+        p["rot"] = tuple(p["rot"][:2])
+    got_k, _ = c.decode(enc)
+    assert torch.equal(got_k, ref_k)
+
+
+def test_hayatequant_qjl_outlier_accounting_counts_two_rms():
+    # With the outlier split active, QJL stores one residual-RMS per subset
+    # vector (2 per full vector), plus 1 sign bit per coordinate.
+    x, _ = _kv(h=4, s=64)
+    b, h, s, d = x.shape
+    kw = dict(bits=4, block_size=1, n_outlier=16, rotation_mode="hadamard")
+    s0 = HayateQuantCodec(use_qjl=False, **kw).encode(x, x).meta["stored_bits"]
+    s1 = HayateQuantCodec(use_qjl=True, **kw).encode(x, x).meta["stored_bits"]
+    vecs = b * h * s * 2  # key + value
+    assert s1 - s0 == x.numel() * 2 * 1 + vecs * 2 * 16
+
+
 def test_hayatequant_large_codebook_not_worse_at_3bit():
     # max_codebook_bits=12 lets 3-bit resolve block_size=4 (K=4096), which the
     # O(T) LUT encoder makes affordable; the bigger joint codebook must not do

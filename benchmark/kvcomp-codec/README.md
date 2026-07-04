@@ -22,6 +22,17 @@ Ablation rows included in every run: `HayateQuant-bs1` (superset guard),
 `HayateQuant-exact` (LUT off), `HayateQuant-K12` (large-codebook quality
 ceiling), `HayateQuant-dense-LS` (Qwen-family PPL operating point).
 
+**Lever-isolation ablation** (`--config-name paper_hayatequant_ablation`, sets
+`ablation: true`) adds four more rows, each disabling exactly one of
+HayateQuant-auto's levers: `HayateQuant-noscale` (RMS both roles),
+`HayateQuant-hadamard-bvq` (no per-block dense rotation factor),
+`HayateQuant-beta` (exact finite-d source law), `HayateQuant-bs2` (explicit
+block size). Measured on Llama-3.1-8B (job 59050): every lever contributes
+positively at 2/3-bit (block-VQ is dominant: 2-bit PPL 10.02 -> 9.51 -> 9.15
+for bs1 -> bs2 -> bs4; scale -0.05, hybrid rotation -0.03), and none hurts --
+see `papers/hayatequant_paper/README.md` (v6) for the full table. Results ->
+`results_ablation/`.
+
 ## Run
 
 **Standard run:**
