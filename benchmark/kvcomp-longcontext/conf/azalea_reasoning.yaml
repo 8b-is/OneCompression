@@ -19,14 +19,14 @@ methods:
   - PM-KVQ
   - TaperKV
   - TurboTaper
-  - HALO-4bit
-  - HALO-3bit
+  - HayateQuant-4bit
+  - HayateQuant-3bit
 
 uniform_bits: [4]
 kivi_bits: [2]
-halo_variants:
-  - {label: HALO-4bit, bits: 4}
-  - {label: HALO-3bit, bits: 3}
+hayatequant_variants:
+  - {label: HayateQuant-4bit, bits: 4}
+  - {label: HayateQuant-3bit, bits: 3}
 
 thinkv:
   group_size: 16

@@ -2,8 +2,9 @@
 # ===========================================================================
 # Full paper-benchmark battery for the two KV-compression papers, on kagura.
 #
-#   Paper 1 -- HALO codec     (codec quality/speed + retrieval/long-context)
-#              proposed: HALO   competitor: TurboQuant (arXiv:2504.19874)
+#   Paper 1 -- HayateQuant codec (codec quality/speed + retrieval/long-context)
+#              proposed: HayateQuant (supersedes HALO)
+#              competitors: TurboQuant (arXiv:2504.19874), HALO (prior best)
 #   Paper 2 -- TaperKV recipe  (iso-memory retrieval + reasoning)
 #              proposed: TaperKV / TurboTaper   competitors: ThinKV, PM-KVQ
 #
@@ -13,7 +14,7 @@
 #
 # Usage:
 #   bash submit_all.sh            # submit everything
-#   bash submit_all.sh paper1     # HALO codec jobs only
+#   bash submit_all.sh paper1     # HayateQuant codec jobs only
 #   bash submit_all.sh paper2     # TaperKV recipe jobs only
 #   DRYRUN=1 bash submit_all.sh   # print sbatch lines without submitting
 #
@@ -69,10 +70,10 @@ QWQ=$MODELS/QwQ-32B
 
 # Reduced method sets for the big (14B/32B) models so each HF-generate job fits
 # the 24 h limit; small models run their config's full method list.
-#   CORE7  -- paper_aime reasoning grid (proposed + ThinKV/PM-KVQ/KIVI/HALO)
+#   CORE7  -- paper_aime reasoning grid (proposed + ThinKV/PM-KVQ/KIVI)
 #   CORE11 -- paper_taperkv iso-memory grid (adds eviction + uniform + 3-bit pts)
-CORE7='methods=[FullKV,KIVI-INT2,ThinKV,PM-KVQ,TaperKV,TurboTaper,HALO-3bit]'
-CORE11='methods=[FullKV,Uniform-INT3,KIVI-INT2,StreamingLLM,ThinKV,PM-KVQ,TurboQuant-3bit,HALO-3bit,TaperKV,TaperKV-3bit,TurboTaper-3bit]'
+CORE7='methods=[FullKV,KIVI-INT2,ThinKV,PM-KVQ,TaperKV,TurboTaper,HayateQuant-3bit]'
+CORE11='methods=[FullKV,Uniform-INT3,KIVI-INT2,StreamingLLM,ThinKV,PM-KVQ,TurboQuant-3bit,HayateQuant-3bit,TaperKV,TaperKV-3bit,TurboTaper-3bit]'
 
 WHICH=${1:-all}
 DRYRUN=${DRYRUN:-0}
@@ -95,22 +96,22 @@ sub() {
 }
 
 ############################################################################
-# PAPER 1 -- HALO codec vs TurboQuant
+# PAPER 1 -- HayateQuant codec vs TurboQuant (HALO retained as baseline)
 ############################################################################
 if [ "$WHICH" = all ] || [ "$WHICH" = paper1 ]; then
 
-# 1a. Codec intrinsic quality (codec_benchmark.py, paper_halo): KV-MSE / attn err.
-sub p1-halo-llama  02:00:00 "$CODEC" \
-    "$PY" -u codec_benchmark.py --config-name paper_halo \
+# 1a. Codec intrinsic quality (codec_benchmark.py, paper_hayatequant): KV-MSE / attn err.
+sub p1-hq-llama  02:00:00 "$CODEC" \
+    "$PY" -u codec_benchmark.py --config-name paper_hayatequant \
     model_path="$LLAMA" output_dir="$CODEC/results_paper_llama"
-sub p1-halo-minis  02:00:00 "$CODEC" \
-    "$PY" -u codec_benchmark.py --config-name paper_halo \
+sub p1-hq-minis  02:00:00 "$CODEC" \
+    "$PY" -u codec_benchmark.py --config-name paper_hayatequant \
     model_path="$MINISTRAL" output_dir="$CODEC/results_paper_ministral"
-sub p1-halo-r1q7   02:00:00 "$CODEC" \
-    "$PY" -u codec_benchmark.py --config-name paper_halo \
+sub p1-hq-r1q7   02:00:00 "$CODEC" \
+    "$PY" -u codec_benchmark.py --config-name paper_hayatequant \
     model_path="$R1Q7" output_dir="$CODEC/results_paper_r1q7"
-sub p1-halo-r1q15  02:00:00 "$CODEC" \
-    "$PY" -u codec_benchmark.py --config-name paper_halo \
+sub p1-hq-r1q15  02:00:00 "$CODEC" \
+    "$PY" -u codec_benchmark.py --config-name paper_hayatequant \
     model_path="$R1Q15" output_dir="$CODEC/results_paper_r1q15"
 
 # 1b. Codec speed x quality Pareto (codec_speed.py, CUDA).
@@ -139,7 +140,7 @@ sub p1-tq-minis-lb 24:00:00 "$LC" \
     model_path="$MINISTRAL" output_dir="$LC/results_paper1/longbench_minis" \
     run_needle=false run_ruler=false run_ppl=false run_longbench=true
 
-# 1e. End-task lever ablation (paper_ablation): HALO levers + TaperKV asymmetry.
+# 1e. End-task lever ablation (paper_ablation, legacy HALO levers + TaperKV asymmetry).
 sub p1-ablation-llama 16:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name paper_ablation \
     model_path="$LLAMA" output_dir="$LC/results_ablation/halo_llama"

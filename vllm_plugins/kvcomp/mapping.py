@@ -9,11 +9,15 @@ Design (see ``docs/design/kvcomp-architecture.md`` section 11).  Recent vLLM
 ships native KV-cache dtypes well beyond FP8, so the bridge maps onto them:
 
 * **FP8** -> ``"fp8_e4m3"`` / ``"fp8_e5m2"`` (data-free, ``calculate_kv_scales``).
-* **TurboQuant** (and the TurboQuant-family **HALO**) -> the native
-  ``turboquant_*`` presets (``turboquant_k8v4``, ``turboquant_4bit_nc``,
-  ``turboquant_k3v4_nc``, ``turboquant_3bit_nc``) chosen by ``(key_bits,
-  value_bits)`` -- vLLM runs Hadamard rotation + Lloyd-Max keys + uniform values
-  with automatic boundary-layer protection (FlashAttention-2).
+* **TurboQuant** (and the TurboQuant-family **HALO**, **HayateQuant** at
+  ``block_size=1``) -> the native ``turboquant_*`` presets
+  (``turboquant_k8v4``, ``turboquant_4bit_nc``, ``turboquant_k3v4_nc``,
+  ``turboquant_3bit_nc``) chosen by ``(key_bits, value_bits)`` -- vLLM runs
+  Hadamard rotation + Lloyd-Max keys + uniform values with automatic
+  boundary-layer protection (FlashAttention-2). HayateQuant's block-VQ
+  (``block_size>1``) and hybrid rotation have no native vLLM preset (vLLM's
+  kernel only implements scalar Lloyd-Max) and need the custom backend / HF
+  cache path -- see the ``hayatequant`` branch below.
 * **NVFP4** -> ``"nvfp4"``; **INT8** -> ``"int8_per_token_head"``.
 * Remaining low-bit/asymmetric codecs (INT4/INT3/INT2, KIVI, Ternary) and
   token-eviction selectors (SnapKV, ThinKV TBE) / adaptive per-token policies
@@ -77,6 +81,90 @@ def _turboquant_preset(codec: dict):
     vbits = codec.get("value_bits")
     vbits = int(vbits) if vbits is not None else bits
     return _TURBOQUANT_PRESETS.get((bits, vbits)), bits, vbits
+
+
+# Rotation modes whose transform family matches vLLM's native TurboQuant
+# kernel (a randomized *Hadamard* rotation).  ``hadamard_gemm`` is the same
+# signed-Hadamard transform merely folded into one GEMM;  ``auto`` resolves to
+# a Hadamard variant for every power-of-two head dim (the norm for supported
+# models) when ``block_size==1``, so it is treated as Hadamard-compatible.
+_HADAMARD_COMPAT_ROTATIONS = (None, "auto", "hadamard", "hadamard_gemm")
+
+
+def _check_rotation_for_native(codec: dict, name: str, plan: "KVCompVLLMPlan"):
+    """Flag rotation-semantics mismatches for the native ``turboquant_*`` path.
+
+    vLLM's native TurboQuant KV cache always applies a randomized **Hadamard**
+    rotation inside its kernel; the preset has no knob to swap it for a dense
+    (QR random-orthogonal) or hybrid rotation.  OneComp codecs configured with
+    ``rotation_mode='dense'`` (recommended for Qwen-family / used by the
+    dense-LS variants) or ``'hybrid'`` therefore cannot be reproduced by the
+    native path -- quantizing under a different rotation gives different codes
+    *and* different accuracy.  Warn explicitly instead of silently swapping
+    the rotation (the whole reason dense was chosen would be lost).
+    """
+    mode = codec.get("rotation_mode")
+    block_size = codec.get("block_size")
+    if mode == "hybrid" and block_size is not None and int(block_size) <= 1:
+        # Hybrid at block_size=1 degenerates to signed-Hadamard with extra
+        # per-coordinate sign flips -- still the Hadamard transform family.
+        plan.notes.append(
+            f"Codec '{name}' rotation_mode='hybrid' with block_size=1 "
+            "degenerates to a signed-Hadamard rotation (1x1 block rotations "
+            "are sign flips), matching vLLM's native Hadamard kernel.")
+        return
+    if mode in _HADAMARD_COMPAT_ROTATIONS:
+        if mode in ("auto", None):
+            plan.notes.append(
+                f"Codec '{name}' rotation_mode='auto' resolves to the "
+                "(signed-)Hadamard transform for power-of-two head dims, "
+                "matching vLLM's native Hadamard rotation kernel (non-power-"
+                "of-two head dims resolve to dense -- check the model's "
+                "head_dim if it is unusual).")
+        else:
+            plan.notes.append(
+                f"Codec '{name}' rotation_mode='{mode}' matches vLLM's native "
+                "Hadamard rotation kernel (hadamard_gemm is the same transform "
+                "folded into one GEMM).")
+        return
+    plan.warnings.append(
+        f"Codec '{name}' rotation_mode='{mode}' does NOT match vLLM's native "
+        "TurboQuant kernel, which always applies a randomized Hadamard "
+        "rotation; the native preset would quantize under a different "
+        "transform (different codes, different accuracy -- e.g. the "
+        "dense-rotation PPL advantage on Qwen-family models would be lost). "
+        "Use the HF cache path for faithful results with this rotation.")
+
+
+def _hayatequant_uses_block_vq(codec: dict) -> bool:
+    """Best-effort, torch-free check: will HayateQuant's ``block_size`` resolve
+    to ``>1`` (block-VQ) for this codec config?
+
+    Mirrors the feasibility half of
+    :func:`onecomp.kvcomp.codec._vq.resolve_block_size` (``bits * block_size
+    <= max_codebook_bits``) without needing the actual head dim (not
+    available at this layer, and this module intentionally stays torch-free
+    -- see module docstring) -- so this can only rule out block-VQ when even
+    ``block_size=2`` provably cannot fit the codebook budget, and is
+    otherwise conservative (assumes the codec's default "auto" behaviour,
+    which is to use the largest block size that fits).
+
+    ``block_size`` is ``None`` (not absent) in a real ``get_kv_config()``
+    dict when the codec was built with its "auto" default -- ``codec.get(
+    "block_size", 1)`` would silently return ``None`` in that case (the key
+    exists), so this helper must handle ``None`` explicitly rather than
+    relying on ``dict.get``'s default.
+    """
+    block_size = codec.get("block_size")
+    if block_size is not None and int(block_size) <= 1:
+        return False
+    bits = int(codec.get("bits", 4))
+    value_bits = codec.get("value_bits")
+    value_bits = int(value_bits) if value_bits is not None else bits
+    max_codebook_bits = int(codec.get("max_codebook_bits") or 9)
+    # Keys and values resolve block_size independently (at possibly different
+    # bit-widths); block-VQ is "in play" if *either* role could use it.
+    return min(bits, value_bits) * 2 <= max_codebook_bits
 
 
 @dataclass
@@ -205,7 +293,22 @@ def plan_from_kv_config(
         _set_native(dtype, f"Codec '{name}' -> native vLLM kv_cache_dtype='{dtype}'.")
         # Propagate outlier/boundary layer protection for FP8 as well.
         plan.skip_layers = [int(x) for x in (codec.get("skip_layers") or [])]
-    elif name in ("turboquant", "halo"):
+    elif name == "hayatequant" and _hayatequant_uses_block_vq(codec):
+        # Block-VQ / hybrid rotation has no native vLLM kv_cache_dtype (vLLM's
+        # TurboQuant kernel only implements scalar Lloyd-Max on a Hadamard- or
+        # Dense-rotated vector); needs the custom backend / HF cache path to
+        # get HayateQuant's actual accuracy gain over the scalar presets.
+        plan.needs_custom_backend = True
+        plan.native_supported = False
+        plan.kv_cache_dtype = "auto"
+        plan.notes.append(
+            f"Codec 'hayatequant' with block_size={codec.get('block_size')} > 1 "
+            "(block-VQ) has no native vLLM kv_cache_dtype; use the HF cache path "
+            "to get its accuracy gain over the scalar turboquant_* presets. "
+            "Use block_size=1 (the TurboQuant/HALO-equivalent scalar mode) for "
+            "the native vLLM fast path."
+        )
+    elif name in ("turboquant", "halo", "hayatequant"):
         preset, kb, vb = _turboquant_preset(codec)
         if preset is not None:
             _set_native(
@@ -214,6 +317,9 @@ def plan_from_kv_config(
                 f"'{preset}' (requires a vLLM build with native TurboQuant KV "
                 "cache + FlashAttention-2; boundary layers auto-protected).",
             )
+            # The native kernel hard-codes a randomized *Hadamard* rotation;
+            # verify the codec's rotation family matches (or warn loudly).
+            _check_rotation_for_native(codec, name, plan)
             # Propagate boundary/outlier layer protection (1-line fix the OneComp
             # outlier-layer detector already produces but the plugin used to drop).
             plan.skip_layers = [int(x) for x in (codec.get("skip_layers") or [])]
@@ -240,11 +346,12 @@ def plan_from_kv_config(
                     f"Codec '{name}' use_qjl=True is ignored: upstream vLLM "
                     "intentionally omits the QJL residual (it amplifies variance "
                     "through softmax and harms attention quality).")
-            if name == "halo":
+            if name in ("halo", "hayatequant"):
                 plan.warnings.append(
-                    "HALO's Hadamard-GEMM / role-asymmetric (NC key, LS value) "
-                    "scale refinements run only in the HF cache path; the vLLM "
-                    "preset uses norm-correction on keys only.")
+                    f"{'HALO' if name == 'halo' else 'HayateQuant'}'s Hadamard-GEMM "
+                    "/ role-asymmetric (NC key, LS value) scale refinements run "
+                    "only in the HF cache path; the vLLM preset uses "
+                    "norm-correction on keys only.")
         else:
             plan.needs_custom_backend = True
             plan.kv_cache_dtype = "auto"

@@ -210,3 +210,147 @@ def quantize_to_codebook(z: torch.Tensor, centroids: torch.Tensor) -> torch.Tens
     """Map each element of ``z`` to the index of the nearest centroid."""
     boundaries = (centroids[1:] + centroids[:-1]) / 2.0
     return torch.searchsorted(boundaries.to(z.device), z.contiguous())
+
+
+# --- Block-dense rotation (HayateQuant) -----------------------------------
+#
+# Motivation (see ``hayatequant.py`` module docstring for the full derivation):
+# a single dense random-orthogonal D x D rotation gives the best incoherence
+# (hence the best per-coordinate Gaussianisation) but costs O(D^2); the
+# Walsh-Hadamard / signed-Hadamard-GEMM rotation costs only O(D log D) /
+# O(D^2) BLAS-friendly GEMM but is a *fixed* (non-Haar-random beyond the sign
+# flip) structured transform, so on small blocks its output is less
+# isotropic than a true Haar-random rotation.  HayateQuant's block-VQ needs
+# each ``block_size``-dim block of the rotated vector to be close to an
+# *isotropic* Gaussian/Beta block (that is what the offline codebook in
+# ``_vq.py`` is fit to) -- so we compose:
+#
+#   R = HS_D  followed by  (Q_b_1 (+) Q_b_2 (+) ... (+) Q_b_{D/b})   ((+) = block-diagonal)
+#
+# i.e. the cheap global signed-Hadamard-GEMM (for full-vector decorrelation,
+# O(D^2) as one GEMM, or O(D log D) as a butterfly) *then* a distinct small
+# dense Haar-random rotation applied independently to each contiguous block
+# of ``block_size`` coordinates (O(D * block_size), block_size << D).  Both
+# factors are orthogonal, so the composition is orthogonal (norm-preserving,
+# invertible by applying the transposes in reverse order) and the two-stage
+# cost O(D log D + D * b) is far below the O(D^2) of a single dense D x D
+# rotation while giving each block much better local isotropy than the
+# Hadamard-only rotation alone (verified by
+# ``benchmark/kvcomp-longcontext/paper/tests/verify_hayatequant_isotropy.py``).
+#
+# This directly answers the trade-off discussed for HALO/TurboQuant ("Hadamard
+# is faster, Dense is more accurate -- can we interpolate?"): the block size
+# ``b`` is exactly that interpolation knob.  ``b=1`` recovers the pure
+# Hadamard rotation (no block-dense factor applied); ``b=D`` recovers a full
+# dense rotation (up to the harmless extra Hadamard pre-mix).
+
+
+@lru_cache(maxsize=64)
+def block_dense_matrices(
+    n_blocks: int, block_size: int, seed: int, device_str: str, dtype
+) -> torch.Tensor:
+    """Return ``(n_blocks, block_size, block_size)`` independent Haar-random
+    orthogonal matrices (one per contiguous block), cached per call signature.
+
+    Each block gets its own seed (``seed * 100003 + block_index``, matching
+    :func:`_hybrid_matrix_cpu`) so that the ``n_blocks`` factors are
+    independent draws, maximising the incoherence gained per bit of extra
+    compute versus reusing a single shared matrix.
+
+    Reference (two-stage) API used by the equivalence tests; the runtime hot
+    path uses the folded single-GEMM :func:`hybrid_rotation_matrix`.
+    """
+    mats = torch.stack(
+        [random_orthogonal(block_size, seed * 100003 + i) for i in range(n_blocks)],
+        dim=0,
+    )
+    return mats.to(device=torch.device(device_str), dtype=dtype)
+
+
+def apply_block_rotation(x: torch.Tensor, block_mats: torch.Tensor) -> torch.Tensor:
+    """Apply per-block dense rotations ``block_mats`` (n_blocks, b, b) to the
+    last dimension of ``x`` (``..., n_blocks * b``), block ``i`` transformed
+    by ``block_mats[i]`` (row-vector convention: ``y_i = x_i @ block_mats[i]``).
+    """
+    n_blocks, b, _ = block_mats.shape
+    orig_shape = x.shape
+    xb = x.reshape(*orig_shape[:-1], n_blocks, b)
+    yb = torch.einsum("...nb,nbc->...nc", xb, block_mats)
+    return yb.reshape(orig_shape)
+
+
+def unapply_block_rotation(y: torch.Tensor, block_mats: torch.Tensor) -> torch.Tensor:
+    """Inverse of :func:`apply_block_rotation` (each block's matrix is
+    orthogonal, so the inverse is the transpose)."""
+    n_blocks, b, _ = block_mats.shape
+    orig_shape = y.shape
+    yb = y.reshape(*orig_shape[:-1], n_blocks, b)
+    xb = torch.einsum("...nc,nbc->...nb", yb, block_mats)
+    return xb.reshape(orig_shape)
+
+
+def hybrid_rotate(
+    x: torch.Tensor, sign: torch.Tensor, block_mats: torch.Tensor
+) -> torch.Tensor:
+    """Global signed-Hadamard rotation followed by per-block dense rotation.
+
+    ``x``'s last dimension must be a power of two matching ``sign`` and equal
+    to ``block_mats.shape[0] * block_mats.shape[1]``.
+
+    Reference (two-stage) implementation; the runtime hot path uses the
+    mathematically identical single-GEMM :func:`hybrid_rotation_matrix`
+    instead (see that function's docstring).
+    """
+    xr = rotate(x, sign)
+    return apply_block_rotation(xr, block_mats)
+
+
+def hybrid_unrotate(
+    xr: torch.Tensor, sign: torch.Tensor, block_mats: torch.Tensor
+) -> torch.Tensor:
+    """Inverse of :func:`hybrid_rotate`."""
+    xh = unapply_block_rotation(xr, block_mats)
+    return unrotate(xh, sign)
+
+
+@lru_cache(maxsize=32)
+def _hybrid_matrix_cpu(dim: int, block_size: int, seed: int) -> torch.Tensor:
+    """Fold the two-stage hybrid rotation into one ``(dim, dim)`` matrix.
+
+    The hybrid rotation is ``y = (x @ HS) @ blockdiag(Q_1, ..., Q_{dim/b})``
+    (row-vector convention), so precomputing ``W = HS @ blockdiag(Q_i)`` --
+    an orthogonal matrix, being a product of orthogonals -- turns the whole
+    two-stage transform into **one GEMM**, mathematically identical to
+    :func:`hybrid_rotate` (verified by
+    ``test_hybrid_rotation_matrix_matches_two_stage``).
+
+    This is the "folded rotation" trick that makes the hybrid rotation
+    *free* at runtime: the butterfly WHT (``log2(d)`` memory-bound passes)
+    plus the per-block einsum are replaced by a single BLAS GEMM with
+    exactly the same cost as a plain dense random rotation -- i.e. the
+    Hadamard-vs-Dense interpolation no longer costs anything beyond either
+    endpoint. Composed in float64 for accuracy, cast to float32 once.
+
+    Block seeds match :func:`block_dense_matrices` (``seed * 100003 + i``)
+    so the folded and two-stage paths use the *same* random rotations.
+    """
+    h = hadamard_matrix(dim, "cpu", torch.float64)
+    sign = _cached_sign(dim, seed, "cpu", torch.float64)
+    hs = sign.unsqueeze(1) * h  # diag(sign) @ H, orthonormal
+    w = hs.clone()
+    n_blocks = dim // block_size
+    for i in range(n_blocks):
+        q = random_orthogonal(block_size, seed * 100003 + i, dtype=torch.float64)
+        cols = slice(i * block_size, (i + 1) * block_size)
+        # (HS @ blockdiag(Q))[:, cols] = HS[:, cols] @ Q_i
+        w[:, cols] = hs[:, cols] @ q
+    return w.to(torch.float32)
+
+
+@lru_cache(maxsize=64)
+def hybrid_rotation_matrix(
+    dim: int, block_size: int, seed: int, device_str: str, dtype
+) -> torch.Tensor:
+    """Device-resident folded hybrid-rotation matrix (see :func:`_hybrid_matrix_cpu`)."""
+    return _hybrid_matrix_cpu(int(dim), int(block_size), int(seed)).to(
+        device=torch.device(device_str), dtype=dtype)

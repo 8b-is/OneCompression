@@ -1,4 +1,4 @@
-# KV codec (HALO vs TurboQuant) speed-quality benchmark config (Hydra).
+# KV codec (HayateQuant vs HALO vs TurboQuant) speed-quality benchmark config (Hydra).
 #   python codec_benchmark.py model_path=/lustre/.../models/llama-3.1-8b-instruct
 
 model_path: ???

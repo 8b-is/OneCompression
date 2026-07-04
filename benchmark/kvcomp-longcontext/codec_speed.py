@@ -1,13 +1,13 @@
-"""KV codec speed-quality micro-benchmark (the HALO Pareto ablation).
+"""KV codec speed-quality micro-benchmark (the HayateQuant Pareto ablation).
 
 The long-context harness (``kv_benchmark.py``) scores *accuracy/PPL/memory*; it
-does not measure the codec's own encode/decode latency.  The proposed HALO codec
-claims a **speed-quality** win over the shipped TurboQuant default, so the paper
-needs the orthogonal *throughput* axis measured under identical conditions.  This
-script produces that table directly: for each codec it times encode and decode
-(warmup + median over repeats, CUDA-synchronised) **and** measures the
-reconstruction quality (KV-MSE and softmax attention-output error) on the *same*
-tensors, then reports each lever's effect:
+does not measure the codec's own encode/decode latency.  HALO and HayateQuant
+both claim a **speed-quality** win over the shipped TurboQuant default, so the
+paper needs the orthogonal *throughput* axis measured under identical
+conditions.  This script produces that table directly: for each codec it times
+encode and decode (warmup + median over repeats, CUDA-synchronised) **and**
+measures the reconstruction quality (KV-MSE and softmax attention-output error)
+on the *same* tensors, then reports each lever's effect:
 
   * ``TurboQuant-hadamard``      -- shipped default (butterfly WHT + RMS scale).
   * ``HALO-hadamard-noLS``       -- HALO with the butterfly + RMS  (== TurboQuant
@@ -18,10 +18,26 @@ tensors, then reports each lever's effect:
                                    isolates the QUALITY lever (full HALO default).
   * ``HALO-dense-LS``            -- Haar-random dense rotation instead of Hadamard:
                                    isolates the rotation choice (quality regresses).
+  * ``HayateQuant-bs1``          -- block_size=1 sanity check: must be within
+                                   noise of ``HALO-hadamard_gemm-NCIT`` (the
+                                   superset property -- HayateQuant *is* HALO at
+                                   ``block_size=1``), isolates the ADDED encode
+                                   overhead of the block-VQ machinery itself
+                                   (codebook lookup vs. scalar Lloyd-Max lookup)
+                                   even when block-VQ is a no-op.
+  * ``HayateQuant-auto``         -- the proposed default (block-VQ, auto block
+                                   size): the actual speed/quality this codec
+                                   ships with, so a reader sees the honest
+                                   encode-latency cost of the accuracy gain
+                                   (dominated by the ``O(K)`` codebook GEMM,
+                                   ``K = 2**(bits*block_size)``) rather than
+                                   only the CPU-only distortion numbers.
 
-So GEMM buys speed at equal quality, LS buys quality at equal storage, and the
-Hadamard rotation is needed (dense regresses) -- a clean three-way ablation that
-substantiates "faster *and* no worse than TurboQuant".
+So GEMM buys speed at equal quality, LS buys quality at equal storage, the
+Hadamard rotation is needed (dense regresses), and HayateQuant's block-VQ buys
+*more* quality at a measured (not hand-waved) encode-latency cost -- a clean
+ablation that substantiates "more accurate than TurboQuant/HALO, with an
+honestly reported latency trade-off" rather than "strictly free".
 
 Synthetic Gaussian KV by default; ``--model DIR`` captures real KV instead.
 
@@ -45,6 +61,7 @@ import torch
 
 from onecomp.kvcomp.codec.turboquant import TurboQuantCodec
 from onecomp.kvcomp.codec.halo import HALOCodec
+from onecomp.kvcomp.codec.hayatequant import HayateQuantCodec
 
 
 def _codecs(bits: int) -> dict:
@@ -54,6 +71,9 @@ def _codecs(bits: int) -> dict:
     values).  These are *quality* levers with essentially the same encode/decode
     cost as plain LS, so the speed table demonstrates the quality gain is free
     (no latency / throughput regression vs the shipped TurboQuant default).
+    HayateQuant is added at both ``block_size=1`` (superset sanity check --
+    isolates the block-VQ machinery's fixed overhead) and ``block_size=None``
+    ("auto", the shipped default -- the actual proposed operating point).
     """
     return {
         "TurboQuant-hadamard": TurboQuantCodec(bits=bits, rotation_mode="hadamard", dist="beta"),
@@ -70,6 +90,20 @@ def _codecs(bits: int) -> dict:
         # Symmetric LS with dense rotation: explicit to avoid default-ambiguity.
         "HALO-dense-LS": HALOCodec(bits=bits, rotation_mode="dense",
                                     key_scale_mode="ls", value_scale_mode="ls"),
+        # HayateQuant (proposed, replaces HALO): superset sanity + shipped default
+        # + the paper ablation variants (aligned with codec_benchmark.py).
+        "HayateQuant-bs1": HayateQuantCodec(bits=bits, block_size=1, rotation_mode="auto"),
+        "HayateQuant-auto": HayateQuantCodec(bits=bits, block_size=None, rotation_mode="auto"),
+        # Exact-GEMM encoder (LUT ablation: isolates the LUT's speed contribution).
+        "HayateQuant-exact": HayateQuantCodec(bits=bits, block_size=None,
+                                              rotation_mode="auto", encoder="exact"),
+        # Large-codebook quality ceiling (K up to 4096), affordable thanks to the LUT.
+        "HayateQuant-K12": HayateQuantCodec(bits=bits, block_size=None,
+                                            rotation_mode="auto", max_codebook_bits=12),
+        # Dense rotation + symmetric LS (Qwen-family PPL point, iso to HALO-dense-LS).
+        "HayateQuant-dense-LS": HayateQuantCodec(bits=bits, block_size=None,
+                                                 rotation_mode="dense",
+                                                 key_scale_mode="ls", value_scale_mode="ls"),
     }
 
 

@@ -29,8 +29,11 @@ turboquant_variants: []
 # KIVI baseline (arXiv:2402.02750): per-channel key, per-token value. Empty=skip.
 kivi_bits: []
 
-# HALO codec variants (fast rotated Lloyd-Max). Each entry is a codec kwargs
-# dict {label, bits, ...}; empty = skip HALO.
+# HayateQuant codec variants (PROPOSED: block-VQ + folded hybrid rotation).
+# Each entry is a codec kwargs dict {label, bits, ...}; empty = skip.
+hayatequant_variants: []
+
+# HALO codec variants (superseded baseline). Same format; empty = skip HALO.
 halo_variants: []
 
 # Generic codec methods: benchmark ANY registered codec by name. Each entry is

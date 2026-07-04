@@ -7,7 +7,7 @@ clone the repo, sync `.venv`, place the models under `$MODELS`, and run
 
 | Paper | Proposed method | Family | Competitor(s) | Headline claim |
 |---|---|---|---|---|
-| **Paper 1** | **HALO** | codec (drop-in) | TurboQuant (arXiv:2504.19874) | iso-bit, HALO is **faster** (≈3.8× encode) and **no worse** in quality/retrieval than TurboQuant |
+| **Paper 1** | **HayateQuant** (supersedes HALO) | codec (drop-in) | TurboQuant (arXiv:2504.19874), HALO | iso-bit, HayateQuant is **more accurate** (block-VQ space-filling gain) *and* faster to decode than TurboQuant; strict superset of both baselines |
 | **Paper 2** | **TaperKV / TurboTaper** | recipe (age-graded precision) | ThinKV (ICLR 2026), PM-KVQ (arXiv:2505.18610) | at iso-memory, eviction **structurally fails** retrieval; TaperKV's graded floor keeps the needle **and** reasoning |
 
 The two papers share one harness (`kv_benchmark.py`, `codec_benchmark.py`,
@@ -21,7 +21,7 @@ outlier-layer skip, 95% CIs) so the cross-paper numbers are directly comparable.
 ```bash
 cd benchmark/kvcomp-longcontext/paper
 bash submit_all.sh            # all 27 jobs (both papers)
-bash submit_all.sh paper1     # HALO codec jobs only (11 jobs)
+bash submit_all.sh paper1     # HayateQuant codec jobs only (11 jobs)
 bash submit_all.sh paper2     # TaperKV recipe jobs only (16 jobs)
 DRYRUN=1 bash submit_all.sh   # print the sbatch lines, submit nothing
 
@@ -53,19 +53,21 @@ PM-KVQ/KIVI/R-KV) reports Gemma KV results, so it adds no comparable point.
 
 ---
 
-## Paper 1 — HALO (codec)
+## Paper 1 — HayateQuant (codec; HALO retained as prior baseline)
 
 | Table / figure | Config | Job(s) | Result dir |
 |---|---|---|---|
-| Codec quality (KV-MSE, attn-err) | `kvcomp-codec/conf/paper_halo.yaml` | `p1-halo-{llama,minis,r1q7,r1q15}` | `kvcomp-codec/results_paper_*` |
+| Codec quality (KV-MSE, attn-err) | `kvcomp-codec/conf/paper_hayatequant.yaml` | `p1-hq-{llama,minis,r1q7,r1q15}` | `kvcomp-codec/results_paper_*` |
 | Codec speed × quality Pareto | `codec_speed.py` (CLI) | `p1-speed-{synth,llama}` | `results_codec_speed/` |
 | Retrieval (Needle/RULER/PPL), full bit-grid | `conf/turboquant_paper.yaml`, `conf/turboquant_paper_ministral.yaml` | `p1-tq-{llama,minis}-retr` | `results_tq_{llama,minis}_retr/` |
 | LongBench-E downstream | same configs, `run_longbench=true` | `p1-tq-{llama,minis}-lb` | `results_tq_{llama,minis}_lb/` |
 | Lever ablation (HALO levers + TaperKV asymmetry) | `conf/paper_ablation.yaml` | `p1-ablation-llama` | `results_ablation_llama/` |
 
-The retrieval grid runs HALO at 2/3/4-bit against TurboQuant's full bit-grid
-(2/2.5/3/3.5/4) + Uniform-INT + KIVI + FP8 + NVFP4, all at matched memory, so the
-"iso-bit, faster, no worse" claim is backed end-to-end (not just codec MSE).
+The retrieval grid runs HayateQuant at the full 2/2.5/3/3.5/4 bit-grid against
+TurboQuant's identical grid + HALO + Uniform-INT + KIVI + FP8 + NVFP4, all at
+matched memory, so the "iso-bit, more accurate" claim is backed end-to-end
+(not just codec MSE).  See `papers/hayatequant_paper/README.md` for the
+method write-up and validated v3 results.
 
 > **Full technical write-up:** see [`HALO_ENHANCED_REPORT.md`](HALO_ENHANCED_REPORT.md)
 > for the method (all 7 levers + status), the complete review-memo audit

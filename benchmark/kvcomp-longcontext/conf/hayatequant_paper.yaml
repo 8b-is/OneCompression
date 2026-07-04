@@ -1,0 +1,119 @@
+# Paper-level HayateQuant benchmark, run under the exact same long-context
+# harness/protocol as the TurboQuant-faithful comparison (see
+# ``conf/turboquant_paper.yaml``): Needle-in-a-Haystack recall, LongBench-E
+# end-to-end generation, RULER retrieval stress, and WikiText-2 PPL, all on
+# Llama-3.1-8B-Instruct (the TurboQuant paper's own 1st KV-cache model).
+#
+# This config answers the question the codec-only micro-benchmarks
+# (``codec_benchmark.py`` distortion/PPL, ``codec_speed.py`` / ``e2e_speed.py``
+# latency) cannot: does HayateQuant's measured distortion/latency advantage
+# actually translate into better *downstream task* accuracy (retrieval recall,
+# LongBench score) at matched bit-width, not just lower MSE?
+#
+# The HALO ablation variants (-NC / -LS / -dense-LS) are intentionally omitted
+# here (already benchmarked in ``results_paper1/turboquant``) to keep this run
+# focused on the three-way TurboQuant vs. HALO vs. HayateQuant comparison at
+# each paper bit-width, plus the same non-quantization baselines (KIVI,
+# StreamingLLM, FP8, NVFP4) for context.
+#
+# Run (GPU node):
+#   srun --gres=gpu:1 .../python -u kv_benchmark.py --config-name hayatequant_paper
+
+defaults:
+  - benchmark_longcontext
+  - _self_
+
+model_path: /lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct
+attn_implementation: sdpa
+
+output_dir: ${hydra:runtime.cwd}/results_paper1/hayatequant
+
+thinkv:
+  auto_configure: false
+
+methods:
+  - FullKV
+  - Uniform-INT4
+  - Uniform-INT3
+  - Uniform-INT2
+  - KIVI-INT2
+  - StreamingLLM
+  # TurboQuant baselines (iso-storage reference, paper-canonical)
+  - TurboQuant-4bit
+  - TurboQuant-3.5bit
+  - TurboQuant-3bit
+  - TurboQuant-2.5bit
+  - TurboQuant-2bit
+  # HALO (default operating point: NC keys + ls_iter values)
+  - HALO-4bit
+  - HALO-3.5bit
+  - HALO-3bit
+  - HALO-2.5bit
+  - HALO-2bit
+  # HayateQuant (proposed, replaces HALO as the recommended default):
+  # block-VQ (auto block_size) + hybrid rotation + inherited HALO scale levers.
+  - HayateQuant-4bit
+  - HayateQuant-3.5bit
+  - HayateQuant-3bit
+  - HayateQuant-2.5bit
+  - HayateQuant-2bit
+  - FP8
+  - NVFP4
+
+uniform_bits: [4, 3, 2]
+kivi_bits: [2]
+
+turboquant_variants:
+  - {label: "TurboQuant-4bit",   bits: 4, dist: beta}
+  - {label: "TurboQuant-3.5bit", bits: 3, n_outlier: 64, outlier_bits: 4, dist: beta}
+  - {label: "TurboQuant-3bit",   bits: 3, dist: beta}
+  - {label: "TurboQuant-2.5bit", bits: 2, n_outlier: 64, outlier_bits: 3, dist: beta}
+  - {label: "TurboQuant-2bit",   bits: 2, dist: beta}
+
+halo_variants:
+  - {label: "HALO-4bit",    bits: 4, key_scale_mode: nc, value_scale_mode: ls_iter}
+  - {label: "HALO-3bit",    bits: 3, key_scale_mode: nc, value_scale_mode: ls_iter}
+  - {label: "HALO-2bit",    bits: 2, key_scale_mode: nc, value_scale_mode: ls_iter}
+  - {label: "HALO-3.5bit",  bits: 3, n_outlier: 64, outlier_bits: 4, key_scale_mode: nc, value_scale_mode: ls_iter}
+  - {label: "HALO-2.5bit",  bits: 2, n_outlier: 64, outlier_bits: 3, key_scale_mode: nc, value_scale_mode: ls_iter}
+
+# HayateQuant: same role-asymmetric scale defaults as HALO (ls_scale=True ->
+# nc keys / ls_iter values), block_size left at its "auto" default (None) so
+# this is exactly the shipped, recommended configuration -- not a cherry-picked
+# block_size.  rotation_mode="auto" picks the hybrid rotation whenever
+# block-VQ is actually in play (see HayateQuantCodec._resolved_mode).
+hayatequant_variants:
+  - {label: "HayateQuant-4bit",   bits: 4}
+  - {label: "HayateQuant-3bit",   bits: 3}
+  - {label: "HayateQuant-2bit",   bits: 2}
+  - {label: "HayateQuant-3.5bit", bits: 3, n_outlier: 64, outlier_bits: 4}
+  - {label: "HayateQuant-2.5bit", bits: 2, n_outlier: 64, outlier_bits: 3}
+
+codec_variants:
+  - {label: "FP8", codec: fp8}
+  - {label: "NVFP4", codec: nvfp4}
+
+# --- Needle-in-a-Haystack ---
+run_needle: true
+context_lens: [4096, 8192, 16384]
+depths: [0.1, 0.25, 0.5, 0.75, 0.9]
+seeds: 3
+max_new_needle: 32
+
+# --- LongBench-E ---
+run_longbench: true
+longbench_tasks: []
+longbench_max_length: 7500
+longbench_limit: 10
+
+run_gsm8k: false
+run_math: false
+run_ruler: true
+ruler_keys: 4
+ruler_seeds: 5
+
+# --- perplexity sanity ---
+run_ppl: true
+ppl_max_length: 4096
+ppl_stride: 2048
+ppl_windows: 16

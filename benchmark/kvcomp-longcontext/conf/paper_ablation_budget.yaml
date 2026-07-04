@@ -30,7 +30,7 @@ methods:
   - TaperKV
   - TaperKV-3bit
   - KIVI-INT2
-  - HALO-3bit
+  - HayateQuant-3bit
 
 # Focused benchmark: needle + PPL (fast feedback on retrieval quality)
 run_gsm8k: false

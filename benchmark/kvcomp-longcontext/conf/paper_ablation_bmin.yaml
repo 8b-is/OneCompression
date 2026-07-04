@@ -7,7 +7,7 @@
 #       b_min = 2, 3, 4, 5  — how strict is the floor constraint?
 #   (B) 4-bit slot (key_bits=6 / value_bits=3):
 #       b_min = 2, 4, 6     — does a higher ceiling amplify the floor sensitivity?
-#   (C) Reference codecs at 3-bit (TurboQuant-3bit, HALO-3bit):
+#   (C) Reference codecs at 3-bit (TurboQuant-3bit, HayateQuant-3bit):
 #       iso-memory, no age schedule, to show uniform allocation is suboptimal.
 #
 # Run:
@@ -34,7 +34,7 @@ methods:
   - TaperKV-4bit-bmin6
   # --- Reference codecs (iso-memory, no age schedule) ---
   - TurboQuant-3bit
-  - HALO-3bit
+  - HayateQuant-3bit
   - KIVI-INT2
 
 taperkv_sweep:

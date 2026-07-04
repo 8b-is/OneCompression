@@ -1,4 +1,4 @@
-# CPU-feasible retrieval run on azalea (no GPU): HALO vs TurboQuant turf.
+# CPU-feasible retrieval run on azalea (no GPU): HayateQuant vs TurboQuant turf.
 # Small grid/contexts so it finishes on CPU; produces every retrieval metric
 # (Needle, RULER, PPL) for the full codec method set with error bars.
 defaults:
@@ -22,9 +22,9 @@ methods:
   - TurboQuant-4bit
   - TurboQuant-3bit
   - TurboQuant-2bit
-  - HALO-4bit
-  - HALO-3bit
-  - HALO-2bit
+  - HayateQuant-4bit
+  - HayateQuant-3bit
+  - HayateQuant-2bit
   - FP8
   - NVFP4
   - TaperKV
@@ -36,10 +36,10 @@ turboquant_variants:
   - {label: TurboQuant-4bit, bits: 4}
   - {label: TurboQuant-3bit, bits: 3}
   - {label: TurboQuant-2bit, bits: 2}
-halo_variants:
-  - {label: HALO-4bit, bits: 4}
-  - {label: HALO-3bit, bits: 3}
-  - {label: HALO-2bit, bits: 2}
+hayatequant_variants:
+  - {label: HayateQuant-4bit, bits: 4}
+  - {label: HayateQuant-3bit, bits: 3}
+  - {label: HayateQuant-2bit, bits: 2}
 codec_variants:
   - {label: FP8, codec: fp8}
   - {label: NVFP4, codec: nvfp4}

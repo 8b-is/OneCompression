@@ -1,5 +1,6 @@
 """
-plot_ablations.py  –  paper-quality ablation figures for TaperKV / HALO
+plot_ablations.py  –  paper-quality ablation figures for TaperKV / HayateQuant
+(fig_halo_lever* are legacy HALO-paper figures, kept for reproducibility)
 
 Outputs
 -------
@@ -108,14 +109,17 @@ def fig_bmin_sweep() -> None:
 
     for ax, (results, model_name) in zip(axes, datasets):
         fkv  = results["FullKV"]["needle"]["accuracy"]
-        halo = results.get("HALO-3bit", {}).get("needle", {}).get("accuracy")
+        # Reference codec line: HayateQuant-3bit (proposed); fall back to the
+        # legacy HALO-3bit label for old result JSONs.
+        ref_label = "HayateQuant-3bit" if "HayateQuant-3bit" in results else "HALO-3bit"
+        ref = results.get(ref_label, {}).get("needle", {}).get("accuracy")
 
         # reference horizontal lines (plotted behind data)
         ax.axhline(fkv, color='black', linestyle=':', linewidth=1.4, zorder=1,
                    label=f"FullKV  ({fkv:.3f})")
-        if halo is not None:
-            ax.axhline(halo, color=COLORS[3], linestyle='--', linewidth=1.2, zorder=1,
-                       label=f"HALO-3bit  ({halo:.3f})")
+        if ref is not None:
+            ax.axhline(ref, color=COLORS[3], linestyle='--', linewidth=1.2, zorder=1,
+                       label=f"{ref_label}  ({ref:.3f})")
 
         # b_min sweep lines
         vals3 = [results.get(f"TaperKV-3bit-bmin{b}", {}).get("needle", {})
@@ -158,6 +162,7 @@ def fig_budget_sweep() -> None:
         ("StreamingLLM",  "StreamingLLM"),
         ("ThinKV",        "ThinKV"),
         ("KIVI-INT2",     "KIVI-INT2"),
+        ("HayateQuant-3bit", "HayateQuant-3bit"),
         ("HALO-3bit",     "HALO-3bit"),
         ("TaperKV-3bit",  "TaperKV-3bit"),
         ("TaperKV",       "TaperKV"),

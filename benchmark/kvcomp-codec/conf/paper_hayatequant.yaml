@@ -1,0 +1,54 @@
+# HayateQuant paper: data-free block-VQ rotated KV codec — speed-quality grid.
+#
+# Defines the headline experiment for the HayateQuant paper:
+#   * **Bits**: {4, 3, 2}.  3-bit is the iso-quality operating point most
+#     KV-quant papers headline on (KIVI, TurboQuant Table 1, KVTuner Fig 4),
+#     so it is the bit width readers expect to compare HayateQuant at.
+#   * **Codecs** (see codec_benchmark.py `_codecs`): HayateQuant-auto
+#     (proposed: block-VQ + folded hybrid rotation + NC/ls_iter scales) plus
+#     its -exact / -K12 / -dense-LS ablations, vs HALO-auto (superseded
+#     scalar predecessor) and TurboQuant-hadamard / -dense.  All share the
+#     same data-free per-coordinate bit budget, so quality differences come
+#     from the codec design only.
+#   * **Models**: Llama-3.1-8B-Instruct (the TurboQuant paper headline model)
+#     plus DeepSeek-R1-Distill-Qwen-7B and -1.5B for the reasoning regime.
+#   * **Metrics**: distortion (relMSE on real-KV), WikiText-2 PPL under
+#     CompressedDynamicCache, encode latency (ms/encode, Melem/s).
+#
+# Run (one model at a time):
+#   srun --gres=gpu:1 .../python codec_benchmark.py --config-name paper_hayatequant \
+#       model_path=/lustre/.../models/llama-3.1-8b-instruct
+#
+# Estimated wall-clock: ~30 min/model on a single GPU.
+
+defaults:
+  - benchmark_codec
+  - _self_
+
+model_path: ???
+device: cuda:0
+
+# Headline grid: 4-bit (mild), 3-bit (sweet spot), 2-bit (aggressive).
+bits: [4, 3, 2]
+
+# Real-KV capture: 2048 tokens covers the typical inference regime.
+capture_tokens: 2048
+
+# Latency measurement: 100 iters at S=1024,H=8 for a tight mean.
+timing_heads: 8
+timing_seq: 1024
+timing_iters: 100
+
+# PPL: 32 WikiText-2 windows for low-noise comparison.
+run_ppl: true
+ppl_max_length: 2048
+ppl_stride: 1024
+ppl_windows: 32
+
+# Outlier layers: massive-activation layers (common in small Qwen R1-Distill models)
+# destroy generation quality when quantized at any bit-width.  Detect them once and
+# skip uniformly for ALL codecs so the comparison stays fair.  Set to false to
+# reproduce the raw codec-only baseline (e.g. for distortion-only analysis on a model
+# without outlier layers like Llama-3.1-8B-Instruct).
+skip_outliers: true
+outlier_ratio: 50.0

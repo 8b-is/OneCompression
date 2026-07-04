@@ -1,21 +1,22 @@
 #!/usr/bin/env bash
 # ===========================================================================
-# Final paper benchmark battery — comprehensive re-run with HALO-NCIT default.
+# Final paper benchmark battery — comprehensive run with HayateQuant as the
+# PRIMARY method (block-VQ + folded hybrid rotation; HALO = prior baseline).
 #
 # Fills all gaps identified in the June 2026 audit:
 #
-#   [P1] Paper1 full comparison table (HALO-NCIT + ALL baselines)
-#        turboquant_paper.yaml now has HALO-*bit = NC+ls_iter (default).
+#   [P1] Paper1 full comparison table (HayateQuant + ALL baselines)
+#        turboquant_paper.yaml now has HayateQuant-*bit as the primary rows.
 #        Results land in results_final/ (separate from old results_paper1/).
 #
-#   [P2] Ministral-8B LongBench with HALO-NCIT (was missing entirely).
+#   [P2] Ministral-8B LongBench with HayateQuant (was missing entirely).
 #
 #   [P3] R1-1.5B AIME comp gap fill (Uniform-INT4 / StreamingLLM / ThinKV /
 #        PM-KVQ were missing in both results_paper2/comp_r1q15 and
 #        results_aime_comp_r1q15).
 #
-#   [P4] HALO-enhanced basic R1-1.5B gap fill (HALO-NC-3bit / HALO-NCIT-3bit /
-#        HALO-NCIT-4bit were missing in results_halo_enh/basic_r1q15).
+#   [P4] HayateQuant reasoning gap fill on R1-1.5B (HayateQuant-3bit /
+#        HayateQuant-4bit into the paper_aime basic grid).
 #
 # Usage:
 #   bash submit_paper_final.sh            # submit everything
@@ -48,9 +49,8 @@ R1Q14=$MODELS/DeepSeek-R1-Distill-Qwen-14B
 QWQ=$MODELS/QwQ-32B
 
 # Core methods for the final paper comparison table.
-# HALO-*bit now maps to the NC+ls_iter default (validated best).
-# Ablation variants (HALO-NC-* / HALO-LS-* / HALO-dense-LS-*) are included
-# in turboquant_paper.yaml's full list so they run automatically.
+# HayateQuant-*bit is the proposed method (block-VQ, NC keys + ls_iter values);
+# HALO-*bit rows are the strongest prior baseline (NC+ls_iter).
 WHICH=${1:-all}
 DRYRUN=${DRYRUN:-0}
 NSUB=0
@@ -72,7 +72,7 @@ sub() {
 
 ############################################################################
 # [P1] Final paper1 retrieval+PPL grid (needle + RULER + PPL, all methods).
-#      Uses turboquant_paper.yaml which now has HALO-NCIT as default HALO.
+#      Uses turboquant_paper.yaml (HayateQuant primary, HALO baseline).
 #      Output goes to results_final/ to preserve existing results_paper1/.
 ############################################################################
 if [ "$WHICH" = all ] || [ "$WHICH" = paper1 ]; then
@@ -98,7 +98,7 @@ sub p1f-retr-minis 24:00:00 "$LC" \
     output_dir="$LC/results_final/retrieval_minis" \
     run_longbench=false
 
-# [P2] Ministral-8B LongBench with HALO-NCIT (previously entirely missing).
+# [P2] Ministral-8B LongBench with HayateQuant (previously entirely missing).
 sub p1f-lb-minis 24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name turboquant_paper_ministral \
     model_path="$MINISTRAL" \
@@ -135,16 +135,15 @@ sub p3-aime-r1q15 24:00:00 "$LC" \
     "$MISSING_R1Q15"
 
 ############################################################################
-# [P4] HALO-enhanced basic R1-1.5B gap fill.
-#      Missing: HALO-NC-3bit, HALO-NCIT-3bit, HALO-NCIT-4bit.
+# [P4] HayateQuant reasoning gap fill on R1-1.5B (paper_aime basic grid).
 ############################################################################
-MISSING_BASIC='methods=[HALO-NC-3bit,HALO-NCIT-3bit,HALO-NCIT-4bit]'
+MISSING_BASIC='methods=[HayateQuant-3bit,HayateQuant-4bit]'
 BASIC='run_livecodebench=false aime_years=[] run_needle=false run_ruler=false'
 
 sub p4-basic-r1q15 24:00:00 "$LC" \
     "$PY" -u kv_benchmark.py --config-name paper_aime \
     model_path="$R1Q15" \
-    output_dir="$LC/results_halo_enh/basic_r1q15" \
+    output_dir="$LC/results_paper2/basic_r1q15" \
     $BASIC "$MISSING_BASIC"
 
 fi

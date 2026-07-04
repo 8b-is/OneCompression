@@ -270,6 +270,20 @@ def build_methods(cfg: DictConfig, model, tok):
             evict=False,
             reason=lambda c=codec: CompressedDynamicCache(codec=c, config=mc, sink_tokens=sink))
 
+    # HayateQuant (block-VQ + hybrid-rotation + role-asymmetric scale; strict
+    # superset of TurboQuant/HALO, see onecomp/kvcomp/codec/hayatequant.py).
+    # Each entry is a codec kwargs dict {label, bits, [block_size, ...]}, same
+    # shape as ``halo_variants`` -- ``block_size`` defaults to ``None`` (auto)
+    # so the paper number is the shipped, recommended operating point.
+    for variant in (cfg.get("hayatequant_variants", None) or []):
+        v = dict(variant)
+        label = v.pop("label")
+        codec = build_codec("hayatequant", skip_layers=skip, **v)
+        methods[label] = dict(
+            make=lambda ctx, c=codec: CompressedDynamicCache(codec=c, config=mc, sink_tokens=sink),
+            evict=False,
+            reason=lambda c=codec: CompressedDynamicCache(codec=c, config=mc, sink_tokens=sink))
+
     # Generic codec methods: benchmark ANY registered codec by name so no
     # implemented codec is unreachable from the harness (fp8, nvfp4, ternary,
     # int8, ...).  Each entry is {label, codec, **codec_kwargs}, e.g.

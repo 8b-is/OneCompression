@@ -16,11 +16,12 @@
 > | **baseline: PM-KVQ** (recipe `pmkvq` + `PMKVQCache`, progressive dynamic precision + block-wise layer allocation + K>V) | done | `01`, `smoke_pmkvq`, `kv_benchmark` |
 > | **shared base `GradedQuantCache`** (per-token variable bits, sink/skip, accounting; shared by TaperKV/PM-KVQ) | done | `01` |
 > | **proposed: TaperKV** (recipe `taperkv` + `TaperKVCache`, age-graded precision, no eviction, K>V) | done (verified, wins, multi-arch) | `01`, `kv_benchmark` |
-> | **proposed: HALO** (codec `halo`, preconditioning off by default; `auto` rotation + skip-preconditioning is 2.9× faster than TurboQuant at equal quality) | done (wins on speed-quality) | `01`, `speed_halo`, `codec_benchmark` |
+> | **proposed: HALO** (codec `halo`, preconditioning off by default; `auto` rotation + skip-preconditioning is 2.9× faster than TurboQuant at equal quality; role-asymmetric NC/LS scale is a validated *quality* lever) | done (wins on speed-quality); **superseded by HayateQuant, kept as the baseline it must beat** | `01`, `speed_halo`, `codec_benchmark` |
+> | **proposed: HayateQuant** (codec `hayatequant` — strict superset of TurboQuant + HALO: data-free block-VQ + Hadamard/block-dense hybrid rotation + HALO's role-asymmetric scale, all storage-neutral) | done (`block_size=1` reproduces TurboQuant/HALO bit-for-bit; block-VQ strictly reduces distortion at equal bits) | `verify_hayatequant_vq_gain`, `test_kvcomp.py`, `codec_benchmark` |
 > | HF integration `CompressedDynamicCache` + `ThinKVCache` (live TBQ) + `StreamingLLMEvictCache` (eviction baseline) | done | `02`, `05`, `07`, `08`, `kv_benchmark` |
 > | eval: `eval/{metrics,ppl,zeroshot,reasoning,longcontext}` (PPL / 0-shot / GSM8K · MATH500 / **Needle/RULER**) | done | `08`, `09`, `kv_benchmark` |
 > | **main experiment `benchmark/kvcomp-longcontext/`** (Full/uniform/evict/ThinKV/PM-KVQ/TaperKV, iso-memory) | done | llama-3.1-8b, R1-Distill-Qwen-7B/1.5B |
-> | **main experiment `benchmark/kvcomp-codec/`** (HALO vs TurboQuant: distortion/PPL/overhead) | done | llama-8b / Qwen-1.5B |
+> | **main experiment `benchmark/kvcomp-codec/`** (HayateQuant vs TurboQuant/HALO: distortion/PPL/overhead) | done | llama-8b / Qwen-1.5B |
 > | Runner `kv_config` -> `config.json` dual-config | done | `03` |
 > | vLLM plugin: FP8 -> native `kv_cache_dtype` mapping + entry-point (`vllm.general_plugins`) | done | `10` |
 > | Custom AttentionBackend for low-bit/eviction in vLLM, LongBench, Triton kernels, ILP bit allocation | todo | roadmap |
@@ -113,6 +114,40 @@
 > Faithful live per-channel-key (KIVI), token eviction (TBE), and low-bit codecs running inside
 > vLLM all require a custom AttentionBackend and are scheduled for v0.2–0.3 (see § HF integration
 > / § vLLM integration).
+>
+> **HayateQuant** (`codec/hayatequant.py`, registered as `"hayatequant"`) — **closes the gap this
+> document flags above as "Lever 5 / future work"** and replaces `halo` as the recommended codec.
+> HALO's own honest finding above is that *rotation choice and preconditioning* are a
+> speed lever, not a quality lever — the one HALO addition that *did* survive multi-architecture
+> validation is the **role-asymmetric reconstruction scale** (NC for keys — preserves the attention
+> logit via `cos(theta)` instead of `cos^2(theta)` — and LS/LS-iter for values, the correct
+> objective for a linearly-consumed tensor). HayateQuant inherits that lever verbatim
+> (`codec/_scale.py`, shared by both codecs) and adds the genuinely new, previously-unexplored one:
+> - **Data-free block vector quantization** (`codec/_vq.py`): TurboQuant's own paper proves its
+>   *scalar* Lloyd-Max codebook is within a constant factor (`<= sqrt(3*pi/2) ~= 2.7x`) of the
+>   distortion-rate optimum; classical high-rate quantization theory (Gersho & Gray 1992) identifies
+>   the residual as exactly the **space-filling / shape gain** any *joint* (vector) quantizer of
+>   dimension `>1` can capture and an independent scalar quantizer cannot. HayateQuant fits a
+>   `block_size`-dimensional codebook by batched Lloyd's algorithm (multi-restart K-means) to
+>   synthetic samples from TurboQuant's own source law (i.i.d. Gaussian, or the exact finite-`d`
+>   Beta/Dirichlet marginal) — still fully data-free, just generalized from dimension 1 to
+>   `block_size`. `block_size=1` reduces to the scalar codebook exactly, so HayateQuant can never do
+>   worse than TurboQuant/HALO at the same bit-rate.
+> - **Hybrid rotation** (`codec/rotation.py`: `hybrid_rotate`/`unrotate`): block-VQ needs each
+>   rotated block to be close to *isotropic* for the codebook to fit well, but a fixed Hadamard
+>   transform (randomized only by a global sign flip) is not Haar-random at the block level.
+>   HayateQuant composes the cheap global signed-Hadamard-GEMM with independent small dense
+>   Haar-random rotations per block (`O(D log D + D*b)` vs. `O(D^2)` for a single full dense
+>   rotation), which is the concrete answer to the "can we interpolate between Hadamard's speed and
+>   Dense's isotropy?" question raised during HayateQuant's design — `block_size` is literally that
+>   interpolation knob (`b=1` recovers pure Hadamard, `b=D` recovers pure dense).
+> Verified CPU-only and data-free in `benchmark/kvcomp-longcontext/paper/tests/verify_hayatequant_vq_gain.py`:
+> block-VQ distortion decreases as `block_size` grows `1->2->4->8` at equal bits (both the Gaussian
+> and exact Beta source laws), the hybrid rotation's block marginals are measurably more isotropic
+> than Hadamard-only on structured (non-i.i.d.) input, and outlier mixed-precision (`n_outlier`,
+> inherited from HALO/TurboQuant) keeps the guarantee under real massive-activation-style
+> anisotropy. `HALOCodec` is kept in the codebase (not deleted) purely as the baseline
+> `codec_benchmark.py` must show HayateQuant beating — new work should use `hayatequant`.
 
 ---
 

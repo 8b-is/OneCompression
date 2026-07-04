@@ -1,0 +1,181 @@
+{
+  "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+  "head_dim": 128,
+  "config": {
+    "model_path": "/lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Qwen-1.5B",
+    "device": "cuda:0",
+    "dtype": "bfloat16",
+    "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/kvcomp_hayatequant/results",
+    "bits": [
+      4,
+      3,
+      2
+    ],
+    "sink_tokens": 4,
+    "capture_tokens": 2048,
+    "timing_heads": 8,
+    "timing_seq": 1024,
+    "timing_iters": 100,
+    "run_ppl": true,
+    "ppl_max_length": 2048,
+    "ppl_stride": 1024,
+    "ppl_windows": 32,
+    "skip_outliers": true,
+    "outlier_ratio": 50.0
+  },
+  "results": {
+    "4": {
+      "TurboQuant-hadamard": {
+        "distortion_key": 0.00827,
+        "distortion_value": 0.00915,
+        "ms_per_encode": 0.518,
+        "throughput_Melem_s": 2024.4,
+        "ppl": 174.63
+      },
+      "TurboQuant-dense": {
+        "distortion_key": 0.00899,
+        "distortion_value": 0.00925,
+        "ms_per_encode": 0.1585,
+        "throughput_Melem_s": 6615.0,
+        "ppl": 170.9428
+      },
+      "HALO-RMS": {
+        "distortion_key": 0.00827,
+        "distortion_value": 0.00915,
+        "ms_per_encode": 0.1604,
+        "throughput_Melem_s": 6535.4,
+        "ppl": 173.1335
+      },
+      "HALO-auto": {
+        "distortion_key": 0.00816,
+        "distortion_value": 0.00878,
+        "ms_per_encode": 0.3164,
+        "throughput_Melem_s": 3313.8,
+        "ppl": 176.1103
+      },
+      "HALO-dense-LS": {
+        "distortion_key": 0.00883,
+        "distortion_value": 0.00908,
+        "ms_per_encode": 0.2452,
+        "throughput_Melem_s": 4276.1,
+        "ppl": 170.9582
+      },
+      "HayateQuant-bs1": {
+        "distortion_key": 0.00816,
+        "distortion_value": 0.00878,
+        "ms_per_encode": 1.1168,
+        "throughput_Melem_s": 938.9,
+        "ppl": 175.1649
+      },
+      "HayateQuant-auto": {
+        "distortion_key": 0.00758,
+        "distortion_value": 0.00829,
+        "ms_per_encode": 3.0241,
+        "throughput_Melem_s": 346.7,
+        "ppl": 173.9539
+      }
+    },
+    "3": {
+      "TurboQuant-hadamard": {
+        "distortion_key": 0.03043,
+        "distortion_value": 0.03323,
+        "ms_per_encode": 0.5225,
+        "throughput_Melem_s": 2006.9,
+        "ppl": 170.1781
+      },
+      "TurboQuant-dense": {
+        "distortion_key": 0.03229,
+        "distortion_value": 0.03352,
+        "ms_per_encode": 0.1598,
+        "throughput_Melem_s": 6561.1,
+        "ppl": 164.6786
+      },
+      "HALO-RMS": {
+        "distortion_key": 0.03043,
+        "distortion_value": 0.03323,
+        "ms_per_encode": 0.1606,
+        "throughput_Melem_s": 6530.0,
+        "ppl": 171.0826
+      },
+      "HALO-auto": {
+        "distortion_key": 0.0301,
+        "distortion_value": 0.03228,
+        "ms_per_encode": 0.3166,
+        "throughput_Melem_s": 3311.8,
+        "ppl": 171.0279
+      },
+      "HALO-dense-LS": {
+        "distortion_key": 0.03182,
+        "distortion_value": 0.0331,
+        "ms_per_encode": 0.2467,
+        "throughput_Melem_s": 4250.3,
+        "ppl": 163.2065
+      },
+      "HayateQuant-bs1": {
+        "distortion_key": 0.0301,
+        "distortion_value": 0.03228,
+        "ms_per_encode": 0.6989,
+        "throughput_Melem_s": 1500.4,
+        "ppl": 170.4866
+      },
+      "HayateQuant-auto": {
+        "distortion_key": 0.02576,
+        "distortion_value": 0.02631,
+        "ms_per_encode": 16.6052,
+        "throughput_Melem_s": 63.1,
+        "ppl": 169.3744
+      }
+    },
+    "2": {
+      "TurboQuant-hadamard": {
+        "distortion_key": 0.09668,
+        "distortion_value": 0.113,
+        "ms_per_encode": 0.5211,
+        "throughput_Melem_s": 2012.2,
+        "ppl": 168.2214
+      },
+      "TurboQuant-dense": {
+        "distortion_key": 0.11263,
+        "distortion_value": 0.1148,
+        "ms_per_encode": 0.1591,
+        "throughput_Melem_s": 6592.1,
+        "ppl": 162.123
+      },
+      "HALO-RMS": {
+        "distortion_key": 0.09668,
+        "distortion_value": 0.113,
+        "ms_per_encode": 0.1592,
+        "throughput_Melem_s": 6586.4,
+        "ppl": 169.1185
+      },
+      "HALO-auto": {
+        "distortion_key": 0.094,
+        "distortion_value": 0.11166,
+        "ms_per_encode": 0.3148,
+        "throughput_Melem_s": 3331.2,
+        "ppl": 174.6548
+      },
+      "HALO-dense-LS": {
+        "distortion_key": 0.11189,
+        "distortion_value": 0.11408,
+        "ms_per_encode": 0.2484,
+        "throughput_Melem_s": 4221.6,
+        "ppl": 159.3812
+      },
+      "HayateQuant-bs1": {
+        "distortion_key": 0.094,
+        "distortion_value": 0.11166,
+        "ms_per_encode": 0.5408,
+        "throughput_Melem_s": 1938.8,
+        "ppl": 175.4901
+      },
+      "HayateQuant-auto": {
+        "distortion_key": 0.09371,
+        "distortion_value": 0.09531,
+        "ms_per_encode": 2.1784,
+        "throughput_Melem_s": 481.3,
+        "ppl": 166.1281
+      }
+    }
+  }
+}

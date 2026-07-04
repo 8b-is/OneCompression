@@ -10,15 +10,22 @@ The research cache is fake-quant (encode->decode keeps an fp16 tensor), so the
 per-step codec overhead each generated token pays.  The enhanced HALO scale
 levers (NC keys / LS values, +ls_iter) are quality levers with the same
 encode/decode cost as plain LS, so this table shows the quality win is free.
+HayateQuant's block-VQ is *not* free -- this table is exactly where that
+honest cost (extra ``ms/tok`` and lower peak ``tok/s`` vs. TurboQuant/HALO at
+equal bits) is reported, alongside its accuracy gain measured elsewhere
+(``codec_benchmark.py`` / ``verify_hayatequant_vq_gain.py``).
 
 Methods (each at the same bit-width, codec applied to *every* layer so the
 overhead is the honest worst case -- no outlier-layer skip):
 
     FullKV            transformers.DynamicCache (fp16 upper bound)
     TurboQuant-Nbit   shipped rotated Lloyd-Max (beta + butterfly Hadamard)
-    HALO-Nbit         HALO default (hadamard_gemm + LS)
-    HALO-NC-Nbit      enhanced: norm-correcting keys / LS values
-    HALO-NCIT-Nbit    enhanced + ls_iter values
+    HALO-NCIT-Nbit    strongest prior baseline (hadamard_gemm + NC/ls_iter;
+                      superseded by HayateQuant)
+    HayateQuant-bs1-Nbit   HayateQuant, block_size=1 (superset-of-HALO sanity;
+                           isolates the block-VQ machinery's fixed overhead)
+    HayateQuant-Nbit       HayateQuant, block_size=None ("auto", shipped
+                           default) -- the PROPOSED operating point
 
 Run (GPU node):
     python e2e_speed.py --model <DIR> --prompt-len 4096 --gen-len 128 \
@@ -59,15 +66,13 @@ def _methods(bits, model_config):
         "FullKV": lambda: DynamicCache(config=model_config),
         f"TurboQuant-{bits}bit": comp(build_codec(
             "turboquant", bits=bits, rotation_mode="hadamard", dist="beta")),
-        f"HALO-{bits}bit": comp(build_codec(
-            "halo", bits=bits, rotation_mode="hadamard_gemm",
-            key_scale_mode="nc", value_scale_mode="ls_iter")),
-        f"HALO-NC-{bits}bit": comp(build_codec(
-            "halo", bits=bits, rotation_mode="hadamard_gemm",
-            key_scale_mode="nc", value_scale_mode="ls")),
         f"HALO-NCIT-{bits}bit": comp(build_codec(
             "halo", bits=bits, rotation_mode="hadamard_gemm",
             key_scale_mode="nc", value_scale_mode="ls_iter")),
+        f"HayateQuant-bs1-{bits}bit": comp(build_codec(
+            "hayatequant", bits=bits, block_size=1, rotation_mode="auto")),
+        f"HayateQuant-{bits}bit": comp(build_codec(
+            "hayatequant", bits=bits, block_size=None, rotation_mode="auto")),
     }
 
 

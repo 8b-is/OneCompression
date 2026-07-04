@@ -1,17 +1,21 @@
-"""KV codec benchmark: HALO vs TurboQuant (speed-quality trade-off).
+"""KV codec benchmark: HayateQuant vs HALO vs TurboQuant (quality + speed).
 
-Main experiment for the *data-free rotated-scalar* KV codecs, the analogue of
-the weight-side `benchmark/<model>-<recipe>/` runs.  HALO and TurboQuant share
-the same quality core (random orthogonal rotation + data-free Gaussian
-Lloyd-Max), so the comparison is a **speed-quality trade-off** at *equal*
-quality:
+Main experiment for the *data-free rotated* KV codecs, the analogue of the
+weight-side `benchmark/<model>-<recipe>/` runs.
 
-* **TurboQuant (hadamard)** -- the shipped default rotation (WHT).
-* **TurboQuant (dense)**     -- dense random-orthogonal matmul rotation.
-* **HALO (auto)**            -- proposed: picks the cheapest orthogonal transform
-  per head dim (dense GEMM at realistic D; WHT only for very large power-of-two
-  D) and skips preconditioning math when it is off (the default).  Quality is
-  identical to TurboQuant; the win is **overhead**.
+* **TurboQuant (hadamard/dense)** -- the paper baseline: scalar Lloyd-Max on a
+  Hadamard- or dense-rotated vector.
+* **HALO (auto/RMS/dense-LS)**   -- this repo's prior work: same scalar
+  codebook as TurboQuant, adds Hadamard-GEMM (overhead lever) and
+  role-asymmetric LS/NC scale (quality lever). Kept here as the baseline
+  HayateQuant must beat, not as recommended new work (see
+  ``onecomp/kvcomp/codec/hayatequant.py`` module docstring).
+* **HayateQuant (bs1)**          -- superset sanity check: block_size=1 with
+  HALO's scale modes must reproduce HALO-auto to numerical precision.
+* **HayateQuant (auto)**         -- the proposed method: adds data-free
+  block-VQ (closes TurboQuant's own stated space-filling-gain slack) and the
+  Hadamard+block-dense hybrid rotation on top of HALO's scale levers. This is
+  the row that must win distortion/PPL at equal bits.
 
 Metrics (per bit-width in {2,3,4}):
 * distortion -- relative reconstruction MSE on captured real KV;
@@ -38,7 +42,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from onecomp.kvcomp import CompressedDynamicCache, detect_outlier_layers
 from onecomp.kvcomp.eval import wikitext2_perplexity
-from onecomp.kvcomp.codec import HALOCodec, TurboQuantCodec
+from onecomp.kvcomp.codec import HALOCodec, TurboQuantCodec, HayateQuantCodec
 
 
 @torch.no_grad()
@@ -95,7 +99,8 @@ def _ms_per_encode(codec, x, iters=50, warmup=10):
 
 
 def _codecs(bits):
-    # Pareto / lever ablation for the HALO paper:
+    # Pareto / lever ablation for the HayateQuant paper (HayateQuant-auto is
+    # the proposed method; TurboQuant and HALO rows are baselines):
     #   TurboQuant-hadamard : Hadamard incoherence via the WHT *butterfly* (slow).
     #   TurboQuant-dense    : dense random-orthogonal rotation (fast, lower quality).
     #   HALO-RMS            : Hadamard incoherence via a *single GEMM* (folded
@@ -119,6 +124,33 @@ def _codecs(bits):
         # regardless of the class default for key_scale_mode / value_scale_mode.
         "HALO-dense-LS": HALOCodec(bits=bits, rotation_mode="dense",
                                     key_scale_mode="ls", value_scale_mode="ls"),
+        # Superset sanity check: block_size=1 + HALO's smart scale defaults
+        # must equal HALO-auto to numerical precision (see
+        # test_hayatequant_block_size_1_matches_halo_scale_modes). Included in
+        # every run as a live regression guard, not just a unit test.
+        "HayateQuant-bs1": HayateQuantCodec(bits=bits, block_size=1, rotation_mode="auto"),
+        # The proposed method: auto block-VQ (largest block that fits the
+        # max_codebook_bits budget) + folded hybrid rotation + grid-LUT O(1)
+        # encoder (encoder="auto" default) + HALO's scale levers.
+        "HayateQuant-auto": HayateQuantCodec(bits=bits, block_size=None, rotation_mode="auto"),
+        # LUT-approximation ablation: identical codec with the exact O(K)
+        # nearest-codeword search, to quantify the LUT's excess distortion on
+        # real KV (expected ~0; the LUT approximates assignment only).
+        "HayateQuant-exact": HayateQuantCodec(bits=bits, block_size=None,
+                                              rotation_mode="auto", encoder="exact"),
+        # Large-codebook operating point the O(1) LUT encoder newly makes
+        # affordable: max_codebook_bits=12 lets 3-bit resolve block_size=4
+        # (K=4096, previously latency-prohibitive -- 280ms/encode with the
+        # exact search) for extra space-filling gain at the same stored bits.
+        "HayateQuant-K12": HayateQuantCodec(bits=bits, block_size=None,
+                                            rotation_mode="auto", max_codebook_bits=12),
+        # Dense-rotation variant for architectures whose KV distributions
+        # interact badly with the +-1 Hadamard mix (observed on Qwen-family:
+        # HALO-dense-LS beat every Hadamard-based codec's PPL on R1-Qwen).
+        # Same block-VQ + LUT, global Haar-dense rotation, symmetric LS scale.
+        "HayateQuant-dense-LS": HayateQuantCodec(bits=bits, block_size=None,
+                                                 rotation_mode="dense",
+                                                 key_scale_mode="ls", value_scale_mode="ls"),
     }
 
 

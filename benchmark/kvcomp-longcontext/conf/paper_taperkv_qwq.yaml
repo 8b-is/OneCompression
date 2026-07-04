@@ -34,7 +34,7 @@ methods:
   - KIVI-INT2
   - PM-KVQ
   - TurboQuant-3bit
-  - HALO-3bit
+  - HayateQuant-3bit
   - TaperKV
   - TaperKV-3bit
   - TurboTaper-3bit

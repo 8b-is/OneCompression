@@ -67,11 +67,13 @@ lcb_k: 1
 max_new_code: 16384
 
 # Both proposed methods evaluated on the reasoning models, not just TaperKV:
-#   - HALO (proposed codec, beats TurboQuant): static rotated Lloyd-Max at 3/4-bit.
-#   - TurboTaper (proposed recipe): TaperKV age-ladder + HALO/TurboQuant core.
-# So the reasoning table carries HALO + TaperKV + TurboTaper vs ThinKV/PM-KVQ/KIVI.
+#   - HayateQuant (PROPOSED codec, supersedes HALO / beats TurboQuant):
+#     block-VQ + folded hybrid rotation + NC/ls_iter scales at 3/4-bit.
+#   - TurboTaper (proposed recipe): TaperKV age-ladder + rotated Lloyd-Max core.
+# So the reasoning table carries HayateQuant + TaperKV + TurboTaper vs
+# ThinKV/PM-KVQ/KIVI, with HALO-NCIT retained as the strongest prior baseline.
 
-# Explicitly limit to the 8 methods in the paper table (prevents extra baselines from
+# Explicitly limit to the methods in the paper table (prevents extra baselines from
 # running when new methods are registered in the future).
 methods:
   - FullKV
@@ -81,21 +83,17 @@ methods:
   - PM-KVQ
   - TaperKV
   - TurboTaper
-  - HALO-4bit
-  - HALO-3bit
-  - HALO-NC-4bit       # enhanced HALO (norm-correct keys / LS values)
-  - HALO-NC-3bit
-  - HALO-NCIT-4bit     # enhanced HALO + ls_iter values
+  - HayateQuant-4bit   # proposed
+  - HayateQuant-3bit   # proposed
+  - HALO-NCIT-4bit     # strongest prior (superseded by HayateQuant)
   - HALO-NCIT-3bit
 
+hayatequant_variants:
+  - {label: "HayateQuant-4bit", bits: 4}
+  - {label: "HayateQuant-3bit", bits: 3}
+
 halo_variants:
-  # Legacy symmetric-LS baseline (ablation reference; both roles LS).
-  - {label: "HALO-4bit", bits: 4, key_scale_mode: ls, value_scale_mode: ls}
-  - {label: "HALO-3bit", bits: 3, key_scale_mode: ls, value_scale_mode: ls}
-  # Ablation step 1: NC keys only (isolates the key-scale lever).
-  - {label: "HALO-NC-4bit", bits: 4, key_scale_mode: nc, value_scale_mode: ls}
-  - {label: "HALO-NC-3bit", bits: 3, key_scale_mode: nc, value_scale_mode: ls}
-  # Ablation step 2: NC keys + ls_iter values (full proposed method, validated best).
+  # Strongest prior operating point (NC keys + ls_iter values), kept as baseline.
   - {label: "HALO-NCIT-4bit", bits: 4, key_scale_mode: nc, value_scale_mode: ls_iter}
   - {label: "HALO-NCIT-3bit", bits: 3, key_scale_mode: nc, value_scale_mode: ls_iter}
 kivi_bits: [2]

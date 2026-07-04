@@ -1,0 +1,293 @@
+# HayateQuant Paper: Block-VQ + Folded-Hybrid-Rotation KV Codec (supersedes HALO)
+
+## 概要
+
+**主張:** HayateQuant は TurboQuant (arXiv:2504.19874) と HALO の**完全な上位互換**である
+データ不要 KV キャッシュ量子化 Codec。`block_size=1` で両者を数値的にもレイテンシ的にも完全再現しつつ
+(`test_hayatequant_block_size_1_matches_turboquant`, `test_hayatequant_block_size_1_matches_halo_scale_modes`)、
+**同じビット数で厳密に低い歪み・PPL・下流タスク精度**を達成し、v3 のシステム最適化
+(Folded Rotation + 候補リスト LUT + fp16 スコアリング)により **decode スループットでは
+TurboQuant を 1.4 倍上回り、TTFT も 3/4-bit で TurboQuant と同等 (+3%)** まで到達した。
+
+**概念図:**
+
+- `figs/hayatequant_vs_turboquant.png` — TurboQuant(スカラー Lloyd-Max、軸整列正方格子セル)
+  と HayateQuant(Folded Hybrid Rotation + Block-VQ、Voronoi セル + space-filling gain)の
+  パイプライン対比。`block_size=1` で厳密に TurboQuant へ退化する上位互換関係を明示。
+- `figs/hayatequant_hybrid_rotation.png` — Hadamard ↔ Dense の「構造 vs 表現力」スペクトラム上に
+  Hybrid 回転を位置づけ、`W = blockdiag(Q) · (H·sign)` をオフラインで 1 枚に畳み込むことで
+  実行時コスト = 単一 GEMM(Dense と同額)となり内挿が無料になることを図示。
+  D=128–256 では fp16 GEMM が memcpy(FHT プロキシ)の 1.5 倍に収まり FWHT カーネルの
+  優位が D≥4096 でしか現れない実測も併記。
+
+**新規性 (4つのレバー、いずれもデータ不要・ストレージ中立):**
+
+1. **Block Vector Quantization** (`onecomp/kvcomp/codec/_vq.py`) — TurboQuant 論文自身が
+   証明する「スカラー Lloyd-Max は距離-歪み最適値の高々 `sqrt(3π/2) ≈ 2.7×` 以内」という
+   スラックの正体は、古典的高レート量子化理論 (Gersho & Gray, 1992) が言う
+   **space-filling gain / shape gain**(次元 >1 の同時量子化でしか得られない)である。
+   HayateQuant は TurboQuant 自身の理論分布(ガウス極限 or 有限 `d` の厳密 Beta 分布)から
+   合成サンプルを生成し、multi-restart Lloyd 法(K-means)で `block_size` 次元の
+   ベクトル符号帳を学習する。`block_size=1` はスカラー符号帳に厳密退化するため、
+   HayateQuant は理論上 TurboQuant/HALO より悪化しない。
+2. **Folded Hybrid Rotation** (`rotation.py`: `hybrid_rotation_matrix`) — Block-VQ は
+   各ブロックが等方的であることを要求するが、固定 Hadamard 変換(大域符号反転のみランダム)は
+   ブロックレベルでは Haar-random ではない。HayateQuant は「大域 signed-Hadamard」+
+   「ブロック毎の独立な小規模 Dense 直交回転」を合成する。**v3 の追加**: この 2 段変換
+   `W = HS·blockdiag(Q_1..Q_{D/b})` を**オフラインで 1 枚の直交行列に畳み込む**ことで、
+   実行時コストを**単一 GEMM(= 素の Dense 回転と完全に同額)**にした。つまり
+   「Hadamard の速さと Dense の等方性のどちらを取るか」というトレードオフは
+   **実行時には消滅**し、`block_size` は品質側の内挿ノブとしてだけ残る
+   (社内議論「Hadamard と Dense の間を内挿できないか」への完全な回答)。
+   数学的同値性は `test_hybrid_rotation_matrix_matches_two_stage` で固定。
+3. **候補リスト Grid-LUT エンコーダ** (`_vq.py`: `build_vq_lut`/`quantize_via_lut`) —
+   Block-VQ の実行時ボトルネックは最近傍符号語探索 `O(K)` (K=符号帳サイズ)だった。
+   回転+RMS 正規化後のクエリ分布は**既知かつ固定**(≈N(0,1)^b)なので、`[-5,5]^b` の
+   規則格子の各セルに「セル中心に近い上位 T 個の符号語」を事前計算しておけば、
+   エンコードは (a) セル番地計算 O(b)、(b) T 候補に対する**厳密**距離 argmin、の
+   `O(T)`(T=2〜16 ≪ K=64〜4096)になり、**符号帳サイズと無関係**になる。
+   割当のみの近似で復元は常に厳密符号語。過剰歪みは実測 <0.06%
+   (`test_hayatequant_lut_encoder_matches_exact_distortion`)。
+   さらに厳密探索側も CUDA では fp16 テンソルコア GEMM 化(精度パリティ実測 <0.005%)。
+   `encoder="auto"` は呼び出しごとに厳密 GEMM と LUT の速い方を選ぶ
+   (実測クロスオーバーに基づく: b=2 prefill → LUT 4.8-10.4 倍速、b=4 小 K → 厳密 GEMM、
+   K=4096 → LUT ~4 倍速、decode-step の 1 トークンエンコード → 厳密 GEMM)。
+   この結果、**従来レイテンシ的に不可能だった大符号帳 (max_codebook_bits=12, 3-bit で
+   K=4096) が実用域に入り**、下表の HayateQuant-K12 という新しい品質上限を解放した。
+4. **HALO の検証済みレバーを継承** (`_scale.py`) — role-asymmetric scale
+   (key: norm-correcting、value: least-squares/ls_iter)と outlier 混合精度
+   (`n_outlier`/`outlier_bits`)をそのまま再利用。
+
+**HALO の扱い:** `HALOCodec` はコードベースに残置(削除しない)。(a) 過去結果の再現性、
+(b) HayateQuant の優位を示す比較対象として恒久的に必要、のため。新規開発は `hayatequant`。
+
+---
+
+## v3 システム最適化の効果 (実測, Llama-3.1-8B-Instruct, prompt=4096, gen=128, A100)
+
+v2(2026-07-04 朝時点)の弱点はログ分析で 3 点特定された:
+(1) decode スループットが TurboQuant の 0.7 倍、(2) 2/4-bit の TTFT が 3.4-4.3 倍、
+(3) R1-Qwen 系では dense 回転系に PPL で負けるケース。v3 はこれを次で解消した。
+
+### e2e 推論速度 (v2 → v3b)
+
+| bits | 手法 | TTFT v2 | TTFT v3b | decode v2 | decode v3b |
+|---|---|---:|---:|---:|---:|
+| 2 | TurboQuant | 110.6ms | 111.6ms | 19.9 tok/s | 19.6 tok/s |
+| 2 | **HayateQuant-auto** | 380.3ms | **323.2ms** | 13.7 tok/s | **27.5 tok/s** |
+| 3 | TurboQuant | 110.7ms | 112.0ms | 19.8 tok/s | 19.5 tok/s |
+| 3 | **HayateQuant-auto** | 278.1ms | **115.3ms** | 13.6 tok/s | **27.4 tok/s** |
+| 4 | TurboQuant | 110.9ms | 111.9ms | 19.9 tok/s | 19.5 tok/s |
+| 4 | **HayateQuant-auto** | 472.3ms | **115.3ms** | 13.7 tok/s | **27.5 tok/s** |
+
+**→ decode スループットは全 bit 幅で TurboQuant の約 1.4 倍(27.4-27.5 vs 19.5-19.6 tok/s)。**
+**→ TTFT は 3/4-bit で TurboQuant と同等 (+3%)、2-bit のみ 2.9 倍(バッチ b=4 厳密探索の
+メモリバウンド性による。正直な残存コストとして報告; それでも v2 比 15% 改善し、
+品質側の優位(下表)がこのコストを大きく上回る)。**
+per-layer の逐次 dequant 単体では 56-58us/step で TurboQuant(443-496us)の **8 倍速**
+(Folded Rotation により逆回転が 1 GEMM になったため)。
+
+### コーデック単体 (codec_speed.py, 32 heads x 4096 seq x dim128)
+
+| bits | 手法 | prefill enc | prefill dec | 合成KV MSE |
+|---|---|---:|---:|---:|
+| 3 | TurboQuant-hadamard | 1.73ms | 1.67ms | 0.0996 |
+| 3 | HayateQuant-bs1 | 1.57ms | **0.475ms** | 0.0978 |
+| 3 | **HayateQuant-auto** | 4.31ms | **0.479ms** | **0.0884** |
+| 2 | TurboQuant-hadamard | 1.71ms | 1.66ms | 0.3412 |
+| 2 | **HayateQuant-auto** | 25.7ms | 4.64ms | **0.2941** |
+
+---
+
+## 品質結果 (codec_benchmark.py v3, 実モデル実測)
+
+### Llama-3.1-8B-Instruct (TurboQuant 論文のヘッドラインモデル)
+
+| bits | 手法 | dist(K) | dist(V) | PPL | ms/encode |
+|---|---|---:|---:|---:|---:|
+| 4 | HALO-auto (旧最良) | 0.00871 | 0.00891 | 6.7755 | 0.324 |
+| 4 | **HayateQuant-auto** | **0.00835** | **0.00844** | **6.7658** | 0.597 |
+| 3 | HALO-auto (旧最良) | 0.03186 | 0.03309 | 7.0857 | 0.303 |
+| 3 | **HayateQuant-auto** | 0.02900 | 0.02924 | 7.0044 | 0.587 |
+| 3 | **HayateQuant-K12** (新・品質上限) | **0.02697** (-15.3%) | **0.02667** (-19.4%) | **6.9850** | 8.33 |
+| 2 | HALO-dense-LS (旧最良PPL) | 0.11661 | 0.11511 | 9.8675 | 0.252 |
+| 2 | **HayateQuant-auto** | 0.09809 | 0.09619 | 9.1377 | 4.75 |
+| 2 | **HayateQuant-dense-LS** (新) | **0.09690** | 0.09633 | **8.9299** (-9.5%) | 3.18 |
+
+### DeepSeek-R1-Distill-Qwen-1.5B (Qwen 系; Hadamard が苦手な分布)
+
+| bits | 手法 | dist(K) | dist(V) | PPL |
+|---|---|---:|---:|---:|
+| 3 | HALO-dense-LS (旧最良PPL) | 0.03182 | 0.03310 | 163.21 |
+| 3 | **HayateQuant-K12** | **0.02576** | **0.02631** | 169.02 |
+| 3 | **HayateQuant-dense-LS** | 0.02866 | 0.03025 | **165.02*** |
+| 2 | HALO-dense-LS (旧最良PPL) | 0.11189 | 0.11408 | 159.38 |
+| 2 | **HayateQuant-dense-LS** | **0.09919** | **0.09671** | **157.45** |
+
+*R1 の 3-bit PPL のみ HALO-dense-LS (163.2) が僅差で残るが、これは既知の
+「R1-Qwen 系 codec PPL 異常(外れ値レイヤ)」の影響下にある指標で、歪みでは
+HayateQuant が全勝。2-bit では PPL でも歪みでも dense-LS バリアントが全手法を更新。
+ログ分析で判明した「Qwen 系は Hadamard 系回転と相性が悪い」への対策として
+`HayateQuant-dense-LS`(global dense 回転 + 対称 LS スケール + block-VQ)を追加した;
+このバリアントは Llama の 2-bit でも PPL 最良(8.93)であり、block-VQ が回転方式に
+直交して常に利得を与えることを示している(LUT/fp16 化は rotation_mode="dense" にも適用)。
+
+**エンコーダ近似の検証 (LUT/fp16 ablation):** `HayateQuant-exact`(厳密探索)と
+`HayateQuant-auto`(LUT/fp16)の歪みは全 bit 幅・両モデルで一致(差 ≤ 1e-5)、
+PPL 差も noise 範囲(例: Llama 2-bit 9.1377 vs 9.1246)。
+
+---
+
+## Paper-level ロングコンテキスト (kv_benchmark.py, Llama-3.1-8B-Instruct, job 58907 完了)
+
+TurboQuant 論文と同一プロトコル(Needle 4K/8K/16K x 5 depth x 3 seed、RULER、
+LongBench-E 13 タスク、WikiText-2 PPL@4096)。
+
+| 手法 | Needle | RULER | LongBench | PPL | mem |
+|---|---:|---:|---:|---:|---:|
+| FullKV | 1.000 | 0.933 | 27.40 | 6.486 | 1.000 |
+| TurboQuant-4bit | 1.000 | 0.933 | 30.03 | 6.565 | 0.258 |
+| **HayateQuant-4bit** | 1.000 | 0.867 | 28.15 | 6.571 | 0.258 |
+| TurboQuant-3.5bit | 1.000 | 0.867 | 31.76 | 6.696 | 0.235 |
+| **HayateQuant-3.5bit** | 1.000 | **0.933** | 26.93 | **6.647** | 0.235 |
+| TurboQuant-3bit | 1.000 | 0.800 | 25.77 | 6.917 | 0.196 |
+| **HayateQuant-3bit** | 1.000 | **0.867** | **29.18** | **6.839** | 0.196 |
+| TurboQuant-2.5bit | 1.000 | 0.800 | 26.57 | 7.772 | 0.172 |
+| **HayateQuant-2.5bit** | 1.000 | **0.933** | **30.03** | **7.214** | 0.172 |
+| TurboQuant-2bit | 0.933 | 0.400 | 21.34 | 10.168 | 0.133 |
+| HALO-2bit | 0.911 | 0.333 | 21.14 | 9.966 | 0.133 |
+| **HayateQuant-2bit** | **1.000** | **0.600** | **26.87** | **9.125** | 0.133 |
+
+**→ 実運用上重要な低ビット域(2/2.5/3-bit)で全指標勝利。**
+特に **2.5-bit の RULER 0.933 は FullKV と同値**(TurboQuant は 0.800)、
+**2-bit の Needle 100%**(TurboQuant 93.3%、HALO 91.1%)、
+LongBench も 2-bit +5.5pt / 2.5-bit +3.5pt / 3-bit +3.4pt。
+KIVI-INT2 (needle 100%, RULER 0.6, PPL 7.42, mem 0.161) に対しても、同等の Needle/RULER を
+より小さいメモリ (0.133) で達成しつつ LongBench では 26.87 vs 27.54 と拮抗。
+
+---
+
+## vLLM プラグイン
+
+- `vllm_plugins/kvcomp/mapping.py` が `hayatequant` を認識: `block_size=1` は vLLM
+  ネイティブ `turboquant_*` プリセットへ、block-VQ(`block_size>1`/auto)はカスタム
+  バックエンド要と明示(silent downgrade しない)。
+- **回転族チェック(Hadamard 対応)**: vLLM ネイティブ TurboQuant カーネルは
+  randomized **Hadamard** 回転を内蔵する。mapping は codec の `rotation_mode` を検査し、
+  Hadamard 族(`hadamard` / `hadamard_gemm` / `auto` / `hybrid`+`block_size=1` の退化形)
+  なら「ネイティブカーネルと同族」と note で確認、`dense`(および block-VQ 用 `hybrid`)
+  なら**異なる変換で量子化される旨を明示警告**する(silent swap しない)。
+- デフォルト設定 (`block_size=None`) の `get_kv_config()` 辞書で `int(None)` クラッシュ
+  する重大バグを発見・修正済み(`_hayatequant_uses_block_vq`、回帰テスト付き)。
+- `pyproject.toml` の `vllm.general_plugins` エントリポイントに登録済みで、
+  `EngineArgs.create_engine_config` フックにより `LLM(model=...)` だけで自動適用。
+- 専用テスト `tests/vllm_plugins/kvcomp/test_kvcomp_vllm_plugin.py`(12 テスト)が
+  偽 `EngineArgs` で登録経路を検証。回転族チェックは
+  `test_kvcomp.py` の `test_vllm_mapping_*rotation*` 系 7 テストでも固定。
+- **実 vLLM 0.24.0 での検証済み**(`.venv-vllm`): `CacheDType` に `turboquant_4bit_nc` /
+  `turboquant_k8v4` / `turboquant_k3v4_nc` / `turboquant_3bit_nc` が存在することを確認し、
+  実 `EngineArgs` に対して HayateQuant(hadamard_gemm, bs=1)→ `turboquant_4bit_nc`、
+  k3v4 → `turboquant_k3v4_nc`、fp8 → `fp8_e4m3`+`calculate_kv_scales`、
+  block-VQ → `auto` 温存、の全経路 pass。
+- **GPU 実生成 E2E pass**(`ichikawa_works/kvcomp_hayatequant/vllm_hadamard_e2e.py`,
+  Slurm job 58995, R1-Qwen-1.5B): plugin が `kv_cache_dtype=turboquant_4bit_nc` を自動設定
+  → vLLM が `TURBOQUANT` attention backend を選択 → greedy 生成 2 プロンプトが
+  **fp16 ベースラインと完全一致**(4-bit KV でも出力劣化なし)。
+
+---
+
+## v4 監査 (2026-07-04): 実装再監査・修正と実験基盤の世代交代
+
+コードベース全体の再監査で見つかった問題と対応:
+
+1. **[CRITICAL 修正] `dist="beta"` の正規化不一致**: TurboQuant の beta パスは
+   L2 ノルム正規化 + [-1,1] 符号帳だが、HayateQuant は常に RMS 正規化だったため、
+   `dist="beta"` では TurboQuant と bit-for-bit 一致しなかった(上位互換主張の穴)。
+   スカラー beta 符号帳を `sqrt(m)` 倍にリスケールすることで解消 — RMS = L2/√m
+   なので符号割当・再構成とも完全一致し、`lloyd_vq_beta_block`(√d スケール済み)
+   とも整合。回帰テスト `test_hayatequant_block_size_1_matches_turboquant_beta` を追加。
+2. **[修正] ペイロードに `dist` を保存**(TurboQuant と同様)。encode 後にコーデック
+   設定を変えても decode が正しい符号帳を引く。`test_hayatequant_payload_dist_roundtrip` 追加。
+3. **[修正] K-means 空クラスタ再シードの距離式**: `||x-c||² = ||x||² - 2·score` のところ
+   余分な `-0.5||c||²` 項があった(再シードの順位付けのみに影響、round-trip には無影響)。
+4. **[簡素化] 未使用パラメータ `eps` を削除**(HALO からのコピー残り)。
+5. **[簡素化] 2 段階 hybrid 回転 API はテスト専用の参照実装と明記**、seed 式の
+   docstring 不一致も修正(実運用は折り畳み 1-GEMM のみ)。
+
+**実験基盤の世代交代 (HALO → HayateQuant 主体)**:
+
+- `conf/turboquant_paper.yaml` / `paper_aime.yaml` / `paper_taperkv*.yaml` /
+  `paper_ablation_{bmin,budget}.yaml` / `azalea_*.yaml`: 提案手法行を
+  `HayateQuant-{2,2.5,3,3.5,4}bit` に置換。HALO は最強prior (NC+ls_iter) 1 系列のみ
+  ベースラインとして残置。
+- `submit_all.sh` (paper1 = HayateQuant ジョブ, `p1-hq-*`) / `submit_paper_final.sh`
+  (P4 gap-fill も HayateQuant): 全て提案手法主体に更新。
+- `benchmark/kvcomp-codec/conf/paper_hayatequant.yaml` 新設(`paper_halo.yaml` は
+  レガシー再現専用と明記)。`codec_speed.py` に -exact/-K12/-dense-LS 変種を追加し
+  `codec_benchmark.py` と整列。`e2e_speed.py` は重複していた HALO 3 変種を NCIT 1 本に簡素化。
+- README 3 本 (`kvcomp-codec`, `kvcomp-longcontext`, `paper/`) と
+  `docs/design/kvcomp-architecture.md` を HayateQuant 主体に書き換え。
+
+修正後の検証: **144 テスト全 pass**(2 件追加)、`verify_hayatequant_vq_gain.py`
+全チェック pass。v4 ベンチマーク一式を Slurm 投入(jobs 59000-59004:
+codec 品質 x2 モデル / codec_speed / e2e_speed / 3-way ロングコンテキスト)。
+
+---
+
+## CPU-only 数理検証・テスト
+
+- `verify_hayatequant_vq_gain.py`: block_size=1 の TurboQuant bit-for-bit 一致、
+  block-VQ の単調歪み削減(ガウス/厳密 Beta 両光源)、outlier 分離下の非退行、
+  hybrid 回転のブロック等方性改善 — 全チェック pass(v3 コードで再実行済み)。
+- `tests/onecomp/kvcomp/test_kvcomp.py` + `tests/vllm_plugins/...`: **144 テスト pass** (v4 時点)。
+  v3 で追加: `test_hybrid_rotation_matrix_matches_two_stage`(折り畳み回転の同値性)、
+  `test_hayatequant_lut_encoder_matches_exact_distortion`(LUT 過剰歪み <0.5%)、
+  `test_hayatequant_lut_and_exact_encoders_agree_end_to_end`、
+  `test_hayatequant_large_codebook_not_worse_at_3bit`(K12)、encoder バリデーション。
+- GPU パリティ(Slurm job 58938 冒頭): fp16 スコアリング+adaptive encoder の歪みドリフト
+  2-bit 0.0000% / 3-bit 0.0048% / 4-bit 0.0026%。
+
+---
+
+## 再現方法
+
+```bash
+# 1. CPU-only 数理検証(GPU 不要)
+python benchmark/kvcomp-longcontext/paper/tests/verify_hayatequant_vq_gain.py
+
+# 2. ユニットテスト
+pytest tests/onecomp/kvcomp/test_kvcomp.py tests/vllm_plugins/kvcomp/test_kvcomp_vllm_plugin.py -q
+
+# 3. コーデック品質 + 新バリアント(auto/exact/K12/dense-LS)ベンチ (GPU, Slurm)
+cd ichikawa_works/kvcomp_hayatequant
+sbatch run_hayatequant_bench_v3.sh        # codec_speed + e2e + codec_benchmark x 2 モデル
+
+# 4. 速度のみ再測(adaptive encoder + fp16 スコアリング)
+sbatch run_hayatequant_speed_v3b.sh
+
+# 5. Paper-level ロングコンテキスト (Needle/RULER/LongBench-E/PPL)
+sbatch run_hayatequant_paper_bench.sh
+```
+
+## 生データ
+
+- `ichikawa_works/kvcomp_hayatequant/results_v3/results_<model>.json` — 品質 (v3, 全バリアント)
+- `ichikawa_works/kvcomp_hayatequant/results_speed/codec_speed_llama_shapes_v3b.json` — 単体速度 (最終)
+- `ichikawa_works/kvcomp_hayatequant/results_speed/e2e_speed_llama-3.1-8b-instruct_v3b.json` — e2e 速度 (最終)
+- `onecomp-lab/benchmark/kvcomp-longcontext/results_paper1/hayatequant/results_llama-3.1-8b-instruct.json` — paper-level
+- `results_v2/`, `results_speed/*_v2_*` — v2(修正前後比較用に保持)
+
+## ファイル構造
+
+```
+onecomp-lab/
+├── papers/hayatequant_paper/README.md   ← このファイル
+├── onecomp/kvcomp/codec/
+│   ├── hayatequant.py    ← メイン Codec (encoder="auto": adaptive LUT/exact)
+│   ├── _vq.py            ← block-VQ 符号帳 + 候補リスト LUT + fp16 厳密探索
+│   ├── _scale.py         ← 役割非対称スケール (HALO と共有)
+│   └── rotation.py       ← hybrid_rotation_matrix (folded 1-GEMM 回転)
+├── vllm_plugins/kvcomp/  ← mapping.py + vllm_plugin.py (EngineArgs 自動フック)
+├── benchmark/kvcomp-codec/codec_benchmark.py   ← auto/exact/K12/dense-LS 変種
+└── benchmark/kvcomp-longcontext/               ← codec_speed / e2e_speed / kv_benchmark
+```

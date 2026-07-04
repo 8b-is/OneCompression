@@ -1,3 +1,7 @@
+# LEGACY: HALO paper preset, kept only to reproduce historical HALO results.
+# New runs should use conf/paper_hayatequant.yaml (HayateQuant is the primary
+# method; HALO is superseded and retained as a baseline).
+#
 # HALO paper: data-free rotated KV codec — speed-quality at iso-quality.
 #
 # Defines the headline experiment for the HALO paper:

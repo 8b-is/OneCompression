@@ -28,12 +28,13 @@ directly comparable (no off-target architectures):
 
 | Proposed method | Competitor | Models | Benchmarks |
 |---|---|---|---|
-| **HALO** (codec) | TurboQuant (arXiv:2504.19874) | Llama-3.1-8B-Instruct, Ministral-8B-Instruct-2410 | Needle-in-a-Haystack, RULER, LongBench-E, WikiText-2 PPL |
+| **HayateQuant** (codec; supersedes HALO) | TurboQuant (arXiv:2504.19874), HALO | Llama-3.1-8B-Instruct, Ministral-8B-Instruct-2410 | Needle-in-a-Haystack, RULER, LongBench-E, WikiText-2 PPL |
 | **TaperKV / TurboTaper** (recipe) | ThinKV (ICLR 2026), PM-KVQ | DeepSeek-R1-Distill-Llama-8B / Qwen-14B / Qwen-7B / 1.5B, QwQ-32B | GSM8K, MATH-500, AIME-2024/2025, **LiveCodeBench**, PPL |
 
 The retrieval grid (`conf/turboquant_paper.yaml`, `conf/turboquant_paper_ministral.yaml`)
-runs HALO against TurboQuant's full bit-grid on **both** TurboQuant models. The
-reasoning grid (`conf/paper_aime.yaml`) runs TaperKV/TurboTaper/HALO against
+runs HayateQuant against TurboQuant's full bit-grid on **both** TurboQuant models
+(with HALO retained as the strongest prior baseline). The
+reasoning grid (`conf/paper_aime.yaml`) runs TaperKV/TurboTaper/HayateQuant against
 ThinKV/PM-KVQ/KIVI on the R1-Distill family with the four ThinKV benchmarks. Gemma
 is intentionally excluded: no KV-cache-compression baseline (TurboQuant, ThinKV,
 PM-KVQ, KIVI, R-KV) reports Gemma KV-cache results, so it adds no comparable point.
@@ -55,7 +56,7 @@ srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py \
 ```
 
 **TaperKV paper preset** (`conf/paper_taperkv.yaml`, iso-memory ~3-bit;
-TaperKV vs ThinKV/PM-KVQ/StreamingLLM/KIVI/TurboQuant/HALO/Uniform-INT3):
+TaperKV vs ThinKV/PM-KVQ/StreamingLLM/KIVI/TurboQuant/HayateQuant/Uniform-INT3):
 ```bash
 srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py \
     --config-name paper_taperkv \
@@ -64,17 +65,19 @@ srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py \
 bash paper/submit_all.sh paper2
 ```
 
-**TurboQuant comparison preset** (`conf/turboquant_paper.yaml`, full bit grid 2/2.5/3/3.5/4 + HALO 2/3/4 + TaperKV-3bit on Llama-3.1-8B-Instruct):
+**TurboQuant comparison preset** (`conf/turboquant_paper.yaml`, full bit grid
+2/2.5/3/3.5/4 for HayateQuant + TurboQuant + HALO, plus TaperKV-3bit, on
+Llama-3.1-8B-Instruct):
 ```bash
 srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py \
     --config-name turboquant_paper \
     model_path=/.../models/llama-3.1-8b-instruct
-# or: bash paper/submit_all.sh paper1   (HALO codec jobs)
-#     bash paper/submit_halo_enhanced.sh  (enhanced HALO battery)
+# or: bash paper/submit_all.sh paper1   (HayateQuant codec jobs)
+#     bash paper/submit_paper_final.sh    (final HayateQuant battery)
 ```
 
 **Reasoning headline** (`conf/paper_aime.yaml`, ThinKV/PM-KVQ turf; GSM8K + MATH-500
-+ AIME-2024/2025 + LiveCodeBench, carrying TaperKV + TurboTaper + HALO):
++ AIME-2024/2025 + LiveCodeBench, carrying TaperKV + TurboTaper + HayateQuant):
 ```bash
 srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py \
     --config-name paper_aime \
@@ -85,8 +88,8 @@ srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py \
 HumanEval protocol); omit it to load `lcb_dataset` from HF. Generated code runs in
 a sandboxed subprocess (CPU/memory rlimits + timeout) — use an isolated node.
 
-**Retrieval second model** (`conf/turboquant_paper_ministral.yaml`, HALO vs
-TurboQuant on TurboQuant's Ministral model):
+**Retrieval second model** (`conf/turboquant_paper_ministral.yaml`, HayateQuant
+vs TurboQuant on TurboQuant's Ministral model):
 ```bash
 srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py \
     --config-name turboquant_paper_ministral
@@ -99,7 +102,7 @@ codecs/recipes:
 
 **1. Codec speed × quality Pareto** (`codec_speed.py`).  Times encode/decode
 (CUDA-synchronised, warmup + median) **and** measures KV-MSE / attention-output
-error on the *same* tensors, so the HALO levers are separable:
+error on the *same* tensors, so the HayateQuant/HALO levers are separable:
 
 ```bash
 # GPU: the headline speed-quality table (synthetic anisotropic KV)
@@ -109,11 +112,12 @@ python codec_speed.py --device cuda --heads 32 --seq 4096 --dim 128 \
 python codec_speed.py --device cuda --model /lustre/.../llama-3.1-8b-instruct
 ```
 
-Rows: `TurboQuant-hadamard` (shipped default) · `HALO-hadamard-noLS` (== TurboQuant
-quality control) · `HALO-hadamard_gemm-noLS` (GEMM rotation — **same math/quality,
-isolates speed**) · `HALO-hadamard_gemm-LS` (+ least-squares scale — **isolates
-quality, storage-neutral**) · `HALO-dense-LS` (dense rotation — **shows it
-regresses**).  This substantiates "HALO is faster *and* no worse than TurboQuant".
+Rows: `HayateQuant-auto` (**proposed**: block-VQ + folded hybrid rotation +
+grid-LUT encoder) · `HayateQuant-bs1` (superset guard) · `HayateQuant-exact` /
+`HayateQuant-K12` / `HayateQuant-dense-LS` (encoder/codebook/rotation
+ablations) · `TurboQuant-hadamard` (shipped default) · `HALO-*` (prior-best
+scale/rotation levers).  This substantiates "HayateQuant is more accurate than
+TurboQuant/HALO with an honestly measured latency trade-off".
 
 **2. End-task lever ablation** (`conf/paper_ablation.yaml`).  Does each codec lever
 / TaperKV design choice carry through to needle retrieval + PPL on a real model?

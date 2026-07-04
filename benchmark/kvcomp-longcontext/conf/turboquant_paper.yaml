@@ -1,4 +1,6 @@
-# Paper-faithful TurboQuant benchmark (arXiv:2504.19874, Zandieh et al., Google).
+# Paper-faithful TurboQuant benchmark grid (arXiv:2504.19874, Zandieh et al.),
+# with **HayateQuant** (this repo's proposed codec) as the primary method under
+# test and HALO kept as the strongest prior baseline.
 #
 # Setup faithful to the TurboQuant paper:
 #   * Model      : Llama-3.1-8B-Instruct (paper's 1st KV-cache model). The 2nd
@@ -42,63 +44,48 @@ methods:
   - TurboQuant-3bit
   - TurboQuant-2.5bit
   - TurboQuant-2bit
-  # HALO (default: NC keys + ls_iter values — the validated best operating point)
+  # HayateQuant (PROPOSED: block-VQ + folded hybrid rotation + NC/ls_iter scales)
+  - HayateQuant-4bit
+  - HayateQuant-3.5bit
+  - HayateQuant-3bit
+  - HayateQuant-2.5bit
+  - HayateQuant-2bit
+  # HALO (baseline: the superseded scalar predecessor, best validated settings)
   - HALO-4bit
   - HALO-3.5bit
   - HALO-3bit
   - HALO-2.5bit
   - HALO-2bit
-  # HALO ablations (NC-only / legacy-LS / dense)
-  - HALO-NC-4bit
-  - HALO-NC-3.5bit
-  - HALO-NC-3bit
-  - HALO-NC-2.5bit
-  - HALO-NC-2bit
-  - HALO-LS-4bit
-  - HALO-LS-3bit
-  - HALO-LS-2bit
-  - HALO-dense-LS-4bit
-  - HALO-dense-LS-3bit
-  - HALO-dense-LS-2bit
   - FP8
   - NVFP4
   - TaperKV            # K=8/V=4, key floor 4 / value floor 2 (~4.5-bit, retrieval-safe)
-  - TaperKV-3bit       # K=4/V=3, key floor 3 / value floor 2 (~3-bit iso-memory to HALO-3bit)
+  - TaperKV-3bit       # K=4/V=3, key floor 3 / value floor 2 (~3-bit iso-memory to HayateQuant-3bit)
   - TurboTaper
 
 uniform_bits: [4, 3, 2]
 kivi_bits: [2]
 
-# HALO at iso bit-width to TurboQuant (same rotated Lloyd-Max core, faster auto rotation).
+# HayateQuant (PROPOSED) at iso bit-width to TurboQuant/HALO: block-VQ (auto
+# block size), folded hybrid rotation, NC keys + ls_iter values.  Storage is
+# identical per bit-width (block-VQ only reallocates the same bit budget).
+hayatequant_variants:
+  - {label: "HayateQuant-4bit",   bits: 4}
+  - {label: "HayateQuant-3bit",   bits: 3}
+  - {label: "HayateQuant-2bit",   bits: 2}
+  - {label: "HayateQuant-3.5bit", bits: 3, n_outlier: 64, outlier_bits: 4}
+  - {label: "HayateQuant-2.5bit", bits: 2, n_outlier: 64, outlier_bits: 3}
+
+# HALO baseline at iso bit-width (superseded scalar predecessor; kept as the
+# strongest prior operating point: NC keys + ls_iter values).
 # Codebook note: TurboQuant uses `dist: beta` (the paper-shipped default for RoPE keys)
-# while HALO defaults to `dist: gaussian` + least-squares scale.  This IS the correct
-# paper-vs-paper comparison: each codec at its best settings.  The codec-speed table and
-# codec_benchmark.py distortion results confirm HALO is no worse than TurboQuant at each
-# bit-width despite using gaussian rather than beta (the rotation + LS scale compensates).
+# while HALO/HayateQuant default to `dist: gaussian`.  This IS the correct
+# paper-vs-paper comparison: each codec at its best settings.
 halo_variants:
-  # --- Default HALO (NC keys + ls_iter values, validated best across all models) ---
-  # These are the RECOMMENDED operating points as of June 2026.  key_scale_mode and
-  # value_scale_mode are written out explicitly so the labels remain unambiguous even
-  # if the codec defaults change in the future.
   - {label: "HALO-4bit",    bits: 4, key_scale_mode: nc, value_scale_mode: ls_iter}
   - {label: "HALO-3bit",    bits: 3, key_scale_mode: nc, value_scale_mode: ls_iter}
   - {label: "HALO-2bit",    bits: 2, key_scale_mode: nc, value_scale_mode: ls_iter}
   - {label: "HALO-3.5bit",  bits: 3, n_outlier: 64, outlier_bits: 4, key_scale_mode: nc, value_scale_mode: ls_iter}
   - {label: "HALO-2.5bit",  bits: 2, n_outlier: 64, outlier_bits: 3, key_scale_mode: nc, value_scale_mode: ls_iter}
-  # --- Ablation: NC keys only (no ls_iter), to isolate the ls_iter contribution ---
-  - {label: "HALO-NC-4bit",    bits: 4, key_scale_mode: nc, value_scale_mode: ls}
-  - {label: "HALO-NC-3bit",    bits: 3, key_scale_mode: nc, value_scale_mode: ls}
-  - {label: "HALO-NC-2bit",    bits: 2, key_scale_mode: nc, value_scale_mode: ls}
-  - {label: "HALO-NC-3.5bit",  bits: 3, n_outlier: 64, outlier_bits: 4, key_scale_mode: nc, value_scale_mode: ls}
-  - {label: "HALO-NC-2.5bit",  bits: 2, n_outlier: 64, outlier_bits: 3, key_scale_mode: nc, value_scale_mode: ls}
-  # --- Ablation: legacy symmetric LS (both roles LS), iso to original HALO-*bit ---
-  - {label: "HALO-LS-4bit", bits: 4, key_scale_mode: ls, value_scale_mode: ls}
-  - {label: "HALO-LS-3bit", bits: 3, key_scale_mode: ls, value_scale_mode: ls}
-  - {label: "HALO-LS-2bit", bits: 2, key_scale_mode: ls, value_scale_mode: ls}
-  # --- Ablation: dense rotation + LS (Pareto reference) ---
-  - {label: "HALO-dense-LS-4bit", bits: 4, rotation_mode: dense, key_scale_mode: ls, value_scale_mode: ls}
-  - {label: "HALO-dense-LS-3bit", bits: 3, rotation_mode: dense, key_scale_mode: ls, value_scale_mode: ls}
-  - {label: "HALO-dense-LS-2bit", bits: 2, rotation_mode: dense, key_scale_mode: ls, value_scale_mode: ls}
 
 # Additional standalone-codec baselines (now reachable via the generic path):
 # FP8 (the recommended 2026 native baseline) and NVFP4 (4-bit E2M1 float).
@@ -129,8 +116,8 @@ turbotaper:
 # TurboQuant; gaussian (RMS) is the high-d limit. head_dim=128 is power-of-two so
 # the fast Hadamard rotation applies for full-width variants.
 # True 2.5 / 3.5-bit on head_dim=128 = 64 outliers @ b+1 + 64 @ b (the prior
-# n_outlier=32 was an effective 2.25 / 3.25-bit -- see codec docstrings).  Both
-# TurboQuant and HALO use the same split so the comparison is exactly iso-memory.
+# n_outlier=32 was an effective 2.25 / 3.25-bit -- see codec docstrings).  All
+# three codecs use the same split so the comparison is exactly iso-memory.
 turboquant_variants:
   - {label: "TurboQuant-4bit",   bits: 4, dist: beta}
   - {label: "TurboQuant-3.5bit", bits: 3, n_outlier: 64, outlier_bits: 4, dist: beta}

@@ -1,4 +1,4 @@
-# Paper-level run preset for kvcomp-codec benchmark (HALO vs TurboQuant).
+# Paper-level run preset for kvcomp-codec benchmark (HayateQuant vs HALO vs TurboQuant).
 #
 # Reproduces the speed-quality comparison reported in the paper:
 #   - Real-KV distortion (relMSE) on captured activations from 3 layers
