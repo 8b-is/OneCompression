@@ -232,6 +232,37 @@ KIVI-INT2 (needle 100%, RULER 0.6, PPL 7.42, mem 0.161) に対しても、同等
 全チェック pass。v4 ベンチマーク一式を Slurm 投入(jobs 59000-59004:
 codec 品質 x2 モデル / codec_speed / e2e_speed / 3-way ロングコンテキスト)。
 
+### v4 実測結果 (jobs 59000-59003 完了; 59004 ロングコンテキストは実行待ち)
+
+**品質 (Llama-3.1-8B, `results_paper_llama_v4/`)** — HayateQuant-auto が全ビット幅で
+全ベースラインに勝利(歪み・PPL とも):
+
+| bits | 最良ベースライン | PPL | **HayateQuant-auto** | PPL |
+|---|---|---:|---|---:|
+| 4 | HALO-auto | 6.776 | dK 0.00835 (-4.1%) | **6.766** |
+| 3 | HALO-auto | 7.086 | dK 0.02900 (-9.0%) | **7.004** |
+| 2 | HALO-dense-LS | 9.868 | dK 0.09809 (-12.2% vs HALO-auto) | **9.072** (-8.1%) |
+
+- 2-bit は `HayateQuant-dense-LS` がさらに **PPL 8.90**(TurboQuant-hadamard 10.16 比 -12.4%)。
+- R1-Qwen-1.5B でも歪みは auto が全勝、PPL は dense-LS 系が最良(159.96 @2bit)—
+  Qwen 系では dense 回転が有効という v3 の結論を再確認。
+- `HayateQuant-bs1` は HALO-auto と**完全一致**(上位互換ガードのライブ確認)。
+- LUT (auto) は exact と歪み一致で encode 2〜4 倍高速 → LUT レバーは「効いている」。
+- `K12` は 3-bit で最良品質 (PPL 6.985) だが encode 8.3ms → デフォルトにせず
+  品質上限オプションとして維持(`max_codebook_bits=9` デフォルトの妥当性を確認)。
+
+**e2e 推論速度 (Llama-3.1-8B, prompt=4096, gen=128, 3-bit)**:
+
+| method | TTFT ms | decode tok/s | vs TurboQuant |
+|---|---:|---:|---:|
+| FullKV | 72.6 | 64.6 | — |
+| TurboQuant-3bit | 114.9 | 16.1 | 1.00x |
+| HALO-NCIT-3bit | 97.6 | 25.2 | 1.57x |
+| **HayateQuant-3bit** | 115.4 | **25.6** | **1.59x** |
+
+decode スループットで TurboQuant の 1.59 倍・HALO 超え、TTFT は TurboQuant と同等、
+ピークメモリ・圧縮率 (5.10x) は全手法同一。
+
 ---
 
 ## CPU-only 数理検証・テスト
