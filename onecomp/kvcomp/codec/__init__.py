@@ -25,6 +25,7 @@ from .turboquant import TurboQuantCodec
 from .halo import HALOCodec
 from .hayatequant import HayateQuantCodec
 from .lowbit_fp import NVFP4Codec, TernaryCodec
+from .packed_affine import PackedAffineCodec
 
 __all__ = [
     "AffineKVCodec",
@@ -39,4 +40,5 @@ __all__ = [
     "HayateQuantCodec",
     "NVFP4Codec",
     "TernaryCodec",
+    "PackedAffineCodec",
 ]

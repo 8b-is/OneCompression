@@ -60,6 +60,7 @@ from .cache import (
     PMKVQCache,
     StreamingLLMEvictCache,
     GradedQuantCache,
+    RoleKVCache,
 )
 from .recipe import (
     TaperKVPolicy,
@@ -72,6 +73,15 @@ from .recipe import (
     estimate_block_sensitivity,
     solve_block_allocation,
     calibrate_channel_reparam,
+    RolePrecisionPolicy,
+    RoleSpan,
+    annotate_spans_from_chat,
+)
+from .checkpoint import (
+    KVCheckpointCodec,
+    KVCheckpointConfig,
+    KVCheckpointInfo,
+    extract_kv_layers,
 )
 
 __all__ = [
@@ -115,4 +125,12 @@ __all__ = [
     "calibrate_channel_reparam",
     "StreamingLLMEvictCache",
     "GradedQuantCache",
+    "RoleKVCache",
+    "RolePrecisionPolicy",
+    "RoleSpan",
+    "annotate_spans_from_chat",
+    "KVCheckpointCodec",
+    "KVCheckpointConfig",
+    "KVCheckpointInfo",
+    "extract_kv_layers",
 ]

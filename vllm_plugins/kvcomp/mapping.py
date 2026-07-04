@@ -52,10 +52,10 @@ _NATIVE_FP8 = {
 # (and the TurboQuant-family HALO) by (key_bits, value_bits).  Source of truth:
 # ``vllm/model_executor/layers/quantization/turboquant/config.py`` (TQ_PRESETS).
 _TURBOQUANT_PRESETS = {
-    (8, 4): "turboquant_k8v4",      # FP8 keys + 4-bit values   (~2.6x)
-    (4, 4): "turboquant_4bit_nc",   # 4-bit MSE keys + 4-bit V  (~3.8x)
-    (3, 4): "turboquant_k3v4_nc",   # 3-bit MSE keys + 4-bit V  (~3.5x)
-    (3, 3): "turboquant_3bit_nc",   # 3-bit keys + 3-bit values (~4.9x)
+    (8, 4): "turboquant_k8v4",  # FP8 keys + 4-bit values   (~2.6x)
+    (4, 4): "turboquant_4bit_nc",  # 4-bit MSE keys + 4-bit V  (~3.8x)
+    (3, 4): "turboquant_k3v4_nc",  # 3-bit MSE keys + 4-bit V  (~3.5x)
+    (3, 3): "turboquant_3bit_nc",  # 3-bit keys + 3-bit values (~4.9x)
 }
 
 # Other native (non-FP8) KV cache dtypes vLLM accepts.
@@ -112,7 +112,8 @@ def _check_rotation_for_native(codec: dict, name: str, plan: "KVCompVLLMPlan"):
         plan.notes.append(
             f"Codec '{name}' rotation_mode='hybrid' with block_size=1 "
             "degenerates to a signed-Hadamard rotation (1x1 block rotations "
-            "are sign flips), matching vLLM's native Hadamard kernel.")
+            "are sign flips), matching vLLM's native Hadamard kernel."
+        )
         return
     if mode in _HADAMARD_COMPAT_ROTATIONS:
         if mode in ("auto", None):
@@ -121,12 +122,14 @@ def _check_rotation_for_native(codec: dict, name: str, plan: "KVCompVLLMPlan"):
                 "(signed-)Hadamard transform for power-of-two head dims, "
                 "matching vLLM's native Hadamard rotation kernel (non-power-"
                 "of-two head dims resolve to dense -- check the model's "
-                "head_dim if it is unusual).")
+                "head_dim if it is unusual)."
+            )
         else:
             plan.notes.append(
                 f"Codec '{name}' rotation_mode='{mode}' matches vLLM's native "
                 "Hadamard rotation kernel (hadamard_gemm is the same transform "
-                "folded into one GEMM).")
+                "folded into one GEMM)."
+            )
         return
     plan.warnings.append(
         f"Codec '{name}' rotation_mode='{mode}' does NOT match vLLM's native "
@@ -134,7 +137,8 @@ def _check_rotation_for_native(codec: dict, name: str, plan: "KVCompVLLMPlan"):
         "rotation; the native preset would quantize under a different "
         "transform (different codes, different accuracy -- e.g. the "
         "dense-rotation PPL advantage on Qwen-family models would be lost). "
-        "Use the HF cache path for faithful results with this rotation.")
+        "Use the HF cache path for faithful results with this rotation."
+    )
 
 
 def _hayatequant_uses_block_vq(codec: dict) -> bool:
@@ -211,6 +215,67 @@ class KVCompVLLMPlan:
         return kwargs
 
 
+def _plan_rolekv(
+    policy: dict,
+    plan: "KVCompVLLMPlan",
+    requested_kv_cache_dtype: str,
+) -> "KVCompVLLMPlan":
+    """Map a role-aware precision policy ("rolekv") onto vLLM engine kwargs.
+
+    vLLM applies one ``kv_cache_dtype`` uniformly to every token of every
+    sequence; per-role bit-widths are not expressible.  The mapping is
+    safe-side: the most precise role decides the dtype (8-bit -> native FP8
+    with online scales; >= 16 -> ``"auto"``), so no span is stored at lower
+    fidelity than the policy requested.  Role-aware compression below 8 bit
+    is only realised in the HF cache path (:class:`onecomp.kvcomp.cache.
+    role_cache.RoleKVCache` live, or ``.okv`` checkpoints offline).
+    """
+    bits_map = dict(policy.get("bits_per_role") or {})
+    bits_map["<default>"] = int(policy.get("default_bits", 4))
+    max_bits = max(int(b) for b in bits_map.values())
+
+    if max_bits >= 16:
+        plan.kv_cache_dtype = "auto"
+        plan.native_supported = True
+        plan.notes.append(
+            "Policy 'rolekv': most precise role is uncompressed (>= 16 bit); "
+            "kv_cache_dtype='auto' keeps the model dtype."
+        )
+    else:
+        dtype = _NATIVE_FP8["fp8"]
+        plan.kv_cache_dtype = dtype
+        plan.native_supported = True
+        plan.calculate_kv_scales = True
+        plan.notes.append(
+            f"Policy 'rolekv': most precise role bits={max_bits} -> native vLLM "
+            f"kv_cache_dtype='{dtype}' with online scale calculation (data-free, "
+            "mirrors the codec's tuning-free path)."
+        )
+        if requested_kv_cache_dtype not in ("auto", dtype):
+            plan.warnings.append(
+                f"Requested kv_cache_dtype='{requested_kv_cache_dtype}' conflicts "
+                f"with policy 'rolekv' -> '{dtype}'; using the policy's dtype."
+            )
+        if max_bits < 8:
+            plan.warnings.append(
+                f"Policy 'rolekv': most precise role bits={max_bits} is below vLLM's "
+                "lowest native KV cache dtype (fp8 = 8 bit); fp8 is a safe "
+                "higher-precision stand-in, so fidelity is preserved but the "
+                "expected memory saving below 8 bit is not realised inside vLLM."
+            )
+    below = sorted(role for role, bits in bits_map.items() if int(bits) < max_bits)
+    if below and plan.kv_cache_dtype != "auto":
+        plan.warnings.append(
+            "vLLM applies one kv_cache_dtype to every token; the per-role "
+            f"bit-widths of roles {below} are collapsed to "
+            f"'{plan.kv_cache_dtype}'. Role-aware compression below the deciding "
+            "bit-width is only realised in the HF cache path (RoleKVCache / "
+            ".okv checkpoints)."
+        )
+    plan.skip_layers = [int(x) for x in (policy.get("skip_layers") or [])]
+    return plan
+
+
 def plan_from_kv_config(
     kv_config: Optional[dict],
     requested_kv_cache_dtype: str = "auto",
@@ -249,7 +314,16 @@ def plan_from_kv_config(
     # Per-token adaptive recipes (ThinKV graded eviction, TaperKV graded
     # quantization) are not a single kv_cache_dtype and need the custom backend.
     policy_name = policy.get("name") if policy else None
-    if policy_name not in (None, "static"):
+    if policy_name == "rolekv" and not plan.needs_custom_backend:
+        # Role-aware precision (RolePrecisionPolicy) collapses safe-side: the
+        # most precise role decides the dtype, so no span is served below the
+        # fidelity the policy requested.  Unlike age/thought-graded policies
+        # this is a pure fidelity *upgrade* for the low-bit roles (their spans
+        # were only ever quantized harder, never softer), so a compressed
+        # native dtype is still honest -- the caveat is the unrealised extra
+        # compression, which is warned about explicitly.
+        return _plan_rolekv(policy, plan, requested_kv_cache_dtype)
+    if policy_name not in (None, "static", "rolekv"):
         plan.needs_custom_backend = True
         plan.notes.append(
             f"Policy '{policy_name}' applies per-token adaptive precision; it needs "
@@ -308,7 +382,10 @@ def plan_from_kv_config(
         # accuracy delta.  It is opt-in (default stays honest: no silent
         # accuracy downgrade) and always loudly warned about.
         fallback = os.environ.get("KVCOMP_VLLM_SCALAR_FALLBACK", "").strip() in (
-            "1", "true", "yes")
+            "1",
+            "true",
+            "yes",
+        )
         preset = None
         if fallback:
             preset, kb, vb = _turboquant_preset(codec)
@@ -317,14 +394,16 @@ def plan_from_kv_config(
                 preset,
                 f"Codec 'hayatequant' (block-VQ) served via scalar fallback "
                 f"kv_cache_dtype='{preset}' (KVCOMP_VLLM_SCALAR_FALLBACK=1): "
-                "equivalent to HayateQuant at block_size=1.")
+                "equivalent to HayateQuant at block_size=1.",
+            )
             _check_rotation_for_native(codec, name, plan)
             plan.skip_layers = [int(x) for x in (codec.get("skip_layers") or [])]
             plan.warnings.append(
                 "KVCOMP_VLLM_SCALAR_FALLBACK=1: HayateQuant's block-VQ accuracy "
                 f"gain is NOT reproduced by the scalar preset '{preset}'; expect "
                 "the TurboQuant-level (block_size=1) accuracy. Use the HF cache "
-                "path for faithful block-VQ results.")
+                "path for faithful block-VQ results."
+            )
         else:
             plan.needs_custom_backend = True
             plan.native_supported = False
@@ -370,18 +449,21 @@ def plan_from_kv_config(
                 plan.warnings.append(
                     f"Codec '{name}' n_outlier={codec.get('n_outlier')} (2.5/3.5-bit "
                     "outlier split) has no preset equivalent and is dropped by the "
-                    "native mapping; use the HF cache path to keep it.")
+                    "native mapping; use the HF cache path to keep it."
+                )
             if codec.get("use_qjl"):
                 plan.warnings.append(
                     f"Codec '{name}' use_qjl=True is ignored: upstream vLLM "
                     "intentionally omits the QJL residual (it amplifies variance "
-                    "through softmax and harms attention quality).")
+                    "through softmax and harms attention quality)."
+                )
             if name in ("halo", "hayatequant"):
                 plan.warnings.append(
                     f"{'HALO' if name == 'halo' else 'HayateQuant'}'s Hadamard-GEMM "
                     "/ role-asymmetric (NC key, LS value) scale refinements run "
                     "only in the HF cache path; the vLLM preset uses "
-                    "norm-correction on keys only.")
+                    "norm-correction on keys only."
+                )
         else:
             plan.needs_custom_backend = True
             plan.kv_cache_dtype = "auto"

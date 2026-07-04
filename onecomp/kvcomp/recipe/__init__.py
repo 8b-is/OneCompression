@@ -17,6 +17,13 @@ from .thinkv import (
 from .taperkv import TaperKVPolicy
 from .turbotaper import TurboTaperPolicy
 from .pmkvq import PMKVQPolicy
+from .rolekv import (
+    RolePrecisionPolicy,
+    RoleSpan,
+    annotate_spans_from_chat,
+    role_token_bits,
+    validate_spans,
+)
 from .pmkvq_calib import (
     calibrate_pmkvq,
     estimate_block_sensitivity,
@@ -37,6 +44,11 @@ __all__ = [
     "TaperKVPolicy",
     "TurboTaperPolicy",
     "PMKVQPolicy",
+    "RolePrecisionPolicy",
+    "RoleSpan",
+    "annotate_spans_from_chat",
+    "role_token_bits",
+    "validate_spans",
     "calibrate_pmkvq",
     "estimate_block_sensitivity",
     "solve_block_allocation",

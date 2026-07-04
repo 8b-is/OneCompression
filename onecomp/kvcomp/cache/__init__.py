@@ -11,6 +11,7 @@ from .taper_cache import TaperKVCache, taper_bits
 from .turbotaper_cache import TurboTaperCache
 from .pmkvq_cache import PMKVQCache
 from .streaming_evict import StreamingLLMEvictCache
+from .role_cache import RoleKVCache
 
 __all__ = [
     "CompressedDynamicCache",
@@ -25,4 +26,5 @@ __all__ = [
     "TurboTaperCache",
     "PMKVQCache",
     "StreamingLLMEvictCache",
+    "RoleKVCache",
 ]
