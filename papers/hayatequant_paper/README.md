@@ -754,3 +754,26 @@ onecomp-lab/
 
 - 生データ: `ichikawa_works/kvcomp_hayatequant/results_speed/{codec,e2e}_speed_v10_*.json`,
   `*_v11_triton_prefill.json` (不採用判定), `*_v9_triton*.json` (Triton 単独 / +graph A/B)
+
+## v12: 融合サービングパスの served-text 検証 (job 59560)
+
+テンソルレベルのパリティテストと論文数値の間の最後のギャップ (「実際に
+言語が正しく生成されるか」) を閉じる検証。`gen_quality_check.py`
+(Slurm: `run_gen_quality_v12.sh`) が Llama-3.1-8B を
+`CompressedDynamicCache` 経由で駆動し、同一セッションで 3 点を確認する:
+
+1. **サービングキャッシュ経由の teacher-forced PPL**: eager / Triton /
+   Triton+graph の 3 モードで比較。**Triton は全ビット幅で eager と完全一致**
+   (2/3/4-bit: 1.2093 / 1.1460 / 1.1379)。graph モードは 2-bit で 1.32% 乖離
+   するが FullKV (1.1374) に近づく方向であり回帰ではない (コンパイル経路の
+   fp16 丸めがタイブレークを反転させるため; ゲートは「eager より 0.5% 以上
+   悪化」のみを FAIL とする)。
+2. **greedy 生成の一致とテキスト品質**: 4 プロンプト × 128 トークン。fp16
+   タイフリップにより greedy は途中分岐し得る (一致率 0.17–0.55、ビット幅が
+   上がるほど一致) が、分岐後の両系列とも流暢な英語を維持
+   (トランスクリプトは JSON に保存)。PPL が一致しているため品質は同等。
+3. **同一セッションの高速化**: decode 34–42 ms/tok (eager) → 20–21 ms/tok
+   (Triton / +graph)、**1.6–2.0 倍**。v10 の e2e 数値と整合。
+
+判定: **GEN_QUALITY_OK** (exit 0)。生データ:
+`ichikawa_works/kvcomp_hayatequant/results_speed/gen_quality_check_v12.json`
