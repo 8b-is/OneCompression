@@ -3,9 +3,9 @@
 Main experiment for the data-free rotated KV codecs, the analogue of the
 weight-side `benchmark/<model>-<recipe>/` runs.
 
-**HayateQuant** (`onecomp/kvcomp/codec/hayatequant.py`) is the proposed
+**HayateQuant** (`onecomp/kvcomp/codec/hayate/codec.py`) is the proposed
 method: block-VQ (data-free K-means codebook, shipped high-budget Lloyd
-artifacts in `onecomp/kvcomp/codec/codebooks/`) + folded rate-aware rotation
+artifacts in `onecomp/kvcomp/codec/hayate/codebooks/`) + folded rate-aware rotation
 (single GEMM; auto resolves to Haar-dense at bits<=2 and hybrid at bits>=3,
 per the measured v7 rotation-x-scale attribution) + role-asymmetric scales
 (NC keys / ls_iter values), with a

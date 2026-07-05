@@ -17,7 +17,7 @@ import time
 
 import torch
 
-from onecomp.kvcomp.codec._vq import (
+from onecomp.kvcomp.codec.hayate.vq import (
     lloyd_vq_gaussian_block,
     quantize_to_vq_codebook,
     build_vq_lut,

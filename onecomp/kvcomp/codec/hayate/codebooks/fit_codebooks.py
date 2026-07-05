@@ -26,7 +26,7 @@ import os
 
 import torch
 
-from .._vq import _kmeans_best_of, _gaussian_block_samples
+from ..vq import _kmeans_best_of, _gaussian_block_samples
 
 # Every (block_size, K) the default configs resolve to:
 #   1-bit: b=8 K=256 | 2-bit: b=4 K=256, b=2 K=16 | 3-bit: b=2 K=64,
@@ -45,7 +45,7 @@ def fit_all(out_dir: str | None = None, device: str | None = None) -> None:
     out_dir = out_dir or os.path.dirname(os.path.abspath(__file__))
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     os.makedirs(out_dir, exist_ok=True)
-    from .._vq import quantize_to_vq_codebook, lookup_codewords
+    from ..vq import quantize_to_vq_codebook, lookup_codewords
 
     for b, k in _TARGETS:
         n = min(_N_SAMPLES, max(200_000, 400_000_000 // k))

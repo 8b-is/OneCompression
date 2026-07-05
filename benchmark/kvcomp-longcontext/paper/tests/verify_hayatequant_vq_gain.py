@@ -50,7 +50,7 @@ _REPO = str(Path(__file__).resolve().parents[4])
 if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 
-from onecomp.kvcomp.codec.hayatequant import HayateQuantCodec  # noqa: E402
+from onecomp.kvcomp.codec.hayate.codec import HayateQuantCodec  # noqa: E402
 from onecomp.kvcomp.codec.turboquant import TurboQuantCodec  # noqa: E402
 from onecomp.kvcomp.codec.rotation import (  # noqa: E402
     random_sign,

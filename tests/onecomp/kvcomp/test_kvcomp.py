@@ -30,7 +30,7 @@ from onecomp.kvcomp.codec.rotation import (
 )
 from onecomp.kvcomp.codec.turboquant import TurboQuantCodec
 from onecomp.kvcomp.codec.halo import HALOCodec
-from onecomp.kvcomp.codec.hayatequant import HayateQuantCodec
+from onecomp.kvcomp.codec.hayate import HayateQuantCodec
 from onecomp.kvcomp.codec.affine import AffineKVCodec, Int4Codec, Int3Codec, KIVICodec
 from onecomp.kvcomp.codec.fp8 import FP8Codec
 from onecomp.kvcomp.codec.lowbit_fp import NVFP4Codec, TernaryCodec
@@ -520,7 +520,7 @@ def test_hayatequant_lut_encoder_matches_exact_distortion():
     # codeword missing from the list. Verify the resulting excess distortion
     # is negligible (<0.5%) at every default (block_size, K) spec, on the
     # exact source law the codebook was fit to.
-    from onecomp.kvcomp.codec._vq import (
+    from onecomp.kvcomp.codec.hayate.vq import (
         lloyd_vq_gaussian_block, lut_spec_for, build_vq_lut,
         quantize_via_lut, quantize_to_vq_codebook,
     )
@@ -585,7 +585,7 @@ def test_hayatequant_codebook_artifacts_loaded_when_present():
     # ignored for non-default fit params (those callers asked for a specific
     # online fit).
     import os
-    from onecomp.kvcomp.codec import _vq
+    from onecomp.kvcomp.codec.hayate import vq as _vq
     art_dir = os.path.join(os.path.dirname(_vq.__file__), "codebooks")
     if not os.path.isfile(os.path.join(art_dir, "gauss_b4_k256.pt")):
         pytest.skip("codebook artifacts not present")
@@ -601,7 +601,7 @@ def test_hayatequant_codebook_artifacts_loaded_when_present():
 
 
 def _tiny_calibration(codec, x, steps=8):
-    from onecomp.kvcomp.codec.hayatequant_calib import calibrate_hayatequant
+    from onecomp.kvcomp.codec.hayate.calibration import calibrate_hayatequant
     flat = x.reshape(-1, x.shape[-1])
     return calibrate_hayatequant(codec, flat, flat, steps=steps, refit_every=4,
                                  batch_vectors=256, device="cpu")
@@ -1093,7 +1093,7 @@ def test_vllm_mapping_hayatequant_block_vq_detection_matches_resolve_block_size(
     et al.), so here we only assert the block-VQ branch was/was not taken.
     """
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
-    from onecomp.kvcomp.codec._vq import resolve_block_size
+    from onecomp.kvcomp.codec.hayate.vq import resolve_block_size
 
     codec = HayateQuantCodec(bits=bits)
     real_block_size = resolve_block_size(bits, None, codec.max_codebook_bits, m=128)
@@ -1447,7 +1447,7 @@ def test_vllm_mapping_hayatequant_real_codec_hadamard_gemm_bs1(tmp_path):
     """End-to-end: a real HayateQuantCodec(block_size=1, rotation_mode=
     'hadamard_gemm') get_kv_config() payload maps to the native preset with
     the Hadamard-compatibility note."""
-    from onecomp.kvcomp.codec.hayatequant import HayateQuantCodec
+    from onecomp.kvcomp.codec.hayate import HayateQuantCodec
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
     codec = HayateQuantCodec(bits=3, value_bits=4, block_size=1,

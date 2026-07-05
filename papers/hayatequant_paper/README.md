@@ -29,7 +29,7 @@ space-filling gain 回収、Folded Hybrid Rotation、役割非対称スケール
 
 **新規性 (4つのレバー、いずれもデータ不要・ストレージ中立):**
 
-1. **Block Vector Quantization** (`onecomp/kvcomp/codec/_vq.py`) — TurboQuant 論文自身が
+1. **Block Vector Quantization** (`onecomp/kvcomp/codec/hayate/vq.py`) — TurboQuant 論文自身が
    証明する「スカラー Lloyd-Max は距離-歪み最適値の高々 `sqrt(3π/2) ≈ 2.7×` 以内」という
    スラックの正体は、古典的高レート量子化理論 (Gersho & Gray, 1992) が言う
    **space-filling gain / shape gain**(次元 >1 の同時量子化でしか得られない)である。
@@ -452,7 +452,7 @@ RULER, LongBench-E n=10, WikiText-2 PPL 16 windows)で比較(v5/v6 コード):
 
 実装 (計 3 ファイル + 成果物):
 
-1. **`codebooks/` パッケージ** (`onecomp/kvcomp/codec/codebooks/`): `fit_codebooks.py` が
+1. **`codebooks/` パッケージ** (`onecomp/kvcomp/codec/hayate/codebooks/`): `fit_codebooks.py` が
    デフォルト構成の全 (block_size, K) 点を高予算で fit し `gauss_b{b}_k{K}.pt`
    (合計 ~90KB) として保存。`lloyd_vq_gaussian_block` はデフォルト fit パラメータの
    とき成果物を優先し、無ければ従来のオンライン fit に自動フォールバック
@@ -506,7 +506,7 @@ R1-Qwen-1.5B)に広げ、PPL だけでなく Needle / RULER でも採否を判�
 
 ### 候補 1: SpinQuant 風キャリブレーション → **optional として採用** (デフォルトは不変)
 
-`onecomp/kvcomp/codec/hayatequant_calib.py`(新規)+ `HayateQuantCodec(calibration=...)`:
+`onecomp/kvcomp/codec/hayate/calibration.py`(新規)+ `HayateQuantCodec(calibration=...)`:
 
 - **学習回転**: 役割別(K/V 別)の直交回転 `W = W0 @ cayley(A)` を、実 KV サンプルの
   ブロック量子化歪みを目的関数に Adam+Cayley 縮約(SpinQuant と同じ多様体最適化)で学習。
@@ -546,7 +546,7 @@ R1-Qwen-1.5B)に広げ、PPL だけでなく Needle / RULER でも採否を判�
 
 ```python
 from onecomp.kvcomp.codec import HayateQuantCodec
-from onecomp.kvcomp.codec.hayatequant_calib import capture_kv_samples
+from onecomp.kvcomp.codec.hayate.calibration import capture_kv_samples
 
 codec = HayateQuantCodec(bits=2)
 kc, vc = capture_kv_samples(model, tok, texts)      # 実KVを収集 (train split)
@@ -695,3 +695,24 @@ onecomp-lab/
 ├── benchmark/kvcomp-codec/codec_benchmark.py   ← auto/exact/K12/dense-LS 変種
 └── benchmark/kvcomp-longcontext/               ← codec_speed / e2e_speed / kv_benchmark
 ```
+
+---
+
+## v9 機能分離リファクタリング + 実験コードのレポジトリ内移設 (2026-07-05)
+
+開発容易性のための構造整理(数値・API は全て不変、265 テスト pass):
+
+1. **`onecomp/kvcomp/codec/hayate/` パッケージ化**: `hayatequant.py` / `_vq.py` /
+   `hayatequant_calib.py` / `codebooks/` を 1 パッケージに集約し、責務ごとに
+   `codec.py` / `vq.py` / `calibration.py` / `codebooks/` へ改名。共有プリミティブ
+   (`rotation.py`, `_scale.py`) は TurboQuant/HALO も使うため `codec/` 直下に残置。
+2. **後方互換シム**: 旧パス (`codec.hayatequant`, `codec._vq`, `codec.hayatequant_calib`)
+   は re-export シムとして残存 — 既存スクリプト・古い結果 JSON の再現コードは
+   そのまま動く。新規コードは `onecomp.kvcomp.codec.hayate.*` を使う。
+3. **論文実験コードのレポジトリ内移設**: `ichikawa_works/kvcomp_hayatequant/` の
+   測定スクリプト (bench_policy_v7 / bench_rvq_gain / bench_calib_v8 /
+   bench_kvasym_v8 / bench_combo_v8 / vllm_hadamard_e2e) を
+   `papers/hayatequant_paper/experiments/` に移設し、ハードコードパスを
+   repo 相対に置換。汎用 Slurm ラッパー `run_experiment.sh` と、論文の表 ↔
+   スクリプト対応表 (`experiments/README.md`) を追加。**論文の全数値がこの
+   リポジトリ単体で再現可能**になった。

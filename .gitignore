@@ -41,4 +41,4 @@ benchmark/*/results/slurm_*.log
 benchmark/*/results/slurm_*.out
 
 # Data-free block-VQ codebook artifacts are first-class source (tiny, versioned)
-!onecomp/kvcomp/codec/codebooks/*.pt
+!onecomp/kvcomp/codec/hayate/codebooks/*.pt

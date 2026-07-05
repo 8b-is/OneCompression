@@ -115,7 +115,7 @@
 > vLLM all require a custom AttentionBackend and are scheduled for v0.2–0.3 (see § HF integration
 > / § vLLM integration).
 >
-> **HayateQuant** (`codec/hayatequant.py`, registered as `"hayatequant"`) — **closes the gap this
+> **HayateQuant** (`codec/hayate/codec.py`, registered as `"hayatequant"`) — **closes the gap this
 > document flags above as "Lever 5 / future work"** and replaces `halo` as the recommended codec.
 > HALO's own honest finding above is that *rotation choice and preconditioning* are a
 > speed lever, not a quality lever — the one HALO addition that *did* survive multi-architecture
@@ -123,7 +123,7 @@
 > logit via `cos(theta)` instead of `cos^2(theta)` — and LS/LS-iter for values, the correct
 > objective for a linearly-consumed tensor). HayateQuant inherits that lever verbatim
 > (`codec/_scale.py`, shared by both codecs) and adds the genuinely new, previously-unexplored one:
-> - **Data-free block vector quantization** (`codec/_vq.py`): TurboQuant's own paper proves its
+> - **Data-free block vector quantization** (`codec/hayate/vq.py`): TurboQuant's own paper proves its
 >   *scalar* Lloyd-Max codebook is within a constant factor (`<= sqrt(3*pi/2) ~= 2.7x`) of the
 >   distortion-rate optimum; classical high-rate quantization theory (Gersho & Gray 1992) identifies
 >   the residual as exactly the **space-filling / shape gain** any *joint* (vector) quantizer of

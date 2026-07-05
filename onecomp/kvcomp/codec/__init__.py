@@ -23,7 +23,7 @@ from .affine import AffineKVCodec, Int8Codec, Int4Codec, Int3Codec, Int2Codec, K
 from .fp8 import FP8Codec
 from .turboquant import TurboQuantCodec
 from .halo import HALOCodec
-from .hayatequant import HayateQuantCodec
+from .hayate import HayateQuantCodec
 from .lowbit_fp import NVFP4Codec, TernaryCodec
 from .packed_affine import PackedAffineCodec
 

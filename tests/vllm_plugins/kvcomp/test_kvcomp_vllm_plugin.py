@@ -20,7 +20,7 @@ import os
 
 import pytest
 
-from onecomp.kvcomp.codec.hayatequant import HayateQuantCodec
+from onecomp.kvcomp.codec.hayate import HayateQuantCodec
 from onecomp.kvcomp.codec.turboquant import TurboQuantCodec
 from onecomp.kvcomp.codec.halo import HALOCodec
 from vllm_plugins.kvcomp.vllm_plugin import (
