@@ -716,3 +716,41 @@ onecomp-lab/
    repo 相対に置換。汎用 Slurm ラッパー `run_experiment.sh` と、論文の表 ↔
    スクリプト対応表 (`experiments/README.md`) を追加。**論文の全数値がこの
    リポジトリ単体で再現可能**になった。
+
+---
+
+## v10 融合サービングパス: Triton ステップカーネル + CUDA グラフ (2026-07-06)
+
+**目的**: FWHT カーネルを与えた TurboQuant に対しても speed-quality で完全優位に立つ。
+
+1. **`KVCodec.fake_quant_roundtrip`** (encode+decode 融合): サービングキャッシュ
+   (`CompressedDynamicCache`) はペイロードを見ないため、K/V をスタックして
+   回転 GEMM・RMS・最近傍探索を 1 回ずつにし、encode 時の codeword gather を
+   復元にそのまま再利用。符号帳定数 (スコア用 fp16 符号帳・二乗ノルム・スカラー
+   境界) はデバイス上にキャッシュ。
+2. **`ONECOMP_TRITON_CODEC=1`** (`codec/hayate/triton_step.py`): デコードステップ
+   領域を 1 本の融合 Triton カーネルに集約 — RMS 正規化 → 厳密最近傍割当 →
+   役割非対称スケール適合 (ls_iter の再量子化込み) → 再構成。回転 2 GEMM を
+   含め 1 ステップ 4 デバイス演算。eager 468µs → **74µs**。
+3. **`ONECOMP_COMPILE_CODEC=1`**: torch.compile (reduce-overhead) の CUDA グラフ
+   がプレフィル LUT パスを 4.3ms → 1.0ms に短縮。Triton と合成可能で、この
+   組み合わせが**出荷サービングモード** (`run_rt_speed_v10_final.sh` session B)。
+4. **`ONECOMP_TRITON_PREFILL=1` は測定の上不採用** (v11, job 59494): カーネル内
+   厳密探索は LUT に歪みで負けないが、プレフィルサイズでは 2–7 倍遅い。
+
+**v10 測定 (job 59493, B200 1 ノード, 同一セッション A/B)**:
+
+| 3-bit | TTFT (ms) | decode (tok/s) |
+|---|---|---|
+| FullKV | 73.0 | 75.3 |
+| TurboQuant (butterfly) | 112.0 | 20.3 |
+| TurboQuant (+FWHT kernel) | 89.9 | 34.3 |
+| HayateQuant (fused serving) | **87.1** | **48.7** |
+
+デコードステップの往復: TQ+FWHT 231µs vs HQ **74µs**。TTFT・decode・品質の
+全軸で優位 = speed-quality tradeoff の完全支配。パリティは
+`test_hayatequant_triton_step_matches_eager_roundtrip` (fp32 参照実装との
+厳密一致 + eager 経路との品質一致) で担保。
+
+- 生データ: `ichikawa_works/kvcomp_hayatequant/results_speed/{codec,e2e}_speed_v10_*.json`,
+  `*_v11_triton_prefill.json` (不採用判定), `*_v9_triton*.json` (Triton 単独 / +graph A/B)
