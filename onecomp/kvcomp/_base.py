@@ -171,6 +171,26 @@ class KVCodec:
         """
         return self.decode(self.encode(key, value, ctx=ctx), ctx=ctx)
 
+    def fake_quant_roundtrip(self, key, value, ctx=None):
+        """Encode-then-decode in one call: ``(key_hat, value_hat, stored_bits)``.
+
+        The fake-quant serving path (:class:`CompressedDynamicCache`) never
+        inspects the payload -- it only needs the dequantized tensors and the
+        bit accounting.  This default simply chains :meth:`encode` and
+        :meth:`decode`; codecs on the per-token hot path may override it with
+        a fused implementation that skips payload construction and the second
+        codebook gather entirely (see ``HayateQuantCodec``), which matters
+        because the per-step codec cost is dominated by kernel-launch
+        overhead, not compute.
+
+        Returns:
+            ``(key_hat, value_hat, stored_bits)`` where ``stored_bits`` may be
+            ``None`` when the codec does not record bit accounting.
+        """
+        compressed = self.encode(key, value, ctx=ctx)
+        k, v = self.decode(compressed, ctx=ctx)
+        return k, v, compressed.numel_bits()
+
     def get_kv_config(self) -> dict:
         """Return a JSON-serialisable config dict (for ``config.json`` save)."""
         return {

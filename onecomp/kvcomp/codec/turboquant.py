@@ -203,7 +203,8 @@ class TurboQuantCodec(KVCodec):
     def _stored_bits(self, x, bits):
         b, h, s, d = x.shape
         vecs = b * h * s
-        if self.n_outlier <= 0 or self.n_outlier >= d:
+        split = 0 < self.n_outlier < d
+        if not split:
             payload_bits = x.numel() * bits
             scale_bits = vecs * 16
         else:
@@ -211,8 +212,10 @@ class TurboQuantCodec(KVCodec):
             payload_bits = vecs * (no * self._outlier_bits() + (d - no) * bits)
             scale_bits = vecs * 2 * 16  # two per-vector norms
         # QJL stores a 1-bit sign per element AND a per-vector fp16 residual RMS
-        # (``qjl_rms``); count both for honest whole-cache accounting (memo A-7).
-        qjl_bits = (x.numel() * 1 + vecs * 16) if self.use_qjl else 0
+        # (``qjl_rms``) for every encoded subset vector -- two subsets when the
+        # outlier split is active; count all of it for honest whole-cache
+        # accounting (memo A-7).
+        qjl_bits = (x.numel() * 1 + vecs * (2 if split else 1) * 16) if self.use_qjl else 0
         return payload_bits + scale_bits + qjl_bits
 
     def encode(self, key, value, ctx=None) -> CompressedKV:

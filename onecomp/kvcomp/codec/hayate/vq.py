@@ -343,6 +343,33 @@ def quantize_to_vq_codebook(z: torch.Tensor, cb: torch.Tensor) -> torch.Tensor:
     return codes.reshape(z.shape[:-1])
 
 
+def quantize_exact_pre(z: torch.Tensor, cb: torch.Tensor, csq: torch.Tensor) -> torch.Tensor:
+    """Exact nearest-codeword assignment with precomputed codeword norms.
+
+    Compile-/CUDA-graph-friendly variant of :func:`quantize_to_vq_codebook`
+    for ``block_size > 1``: the caller supplies the codebook already on the
+    right device and in the scoring dtype, together with its precomputed
+    squared norms ``csq = cb.pow(2).sum(1)``, so the body is a pure chain of
+    tensor ops -- no cache lookups, no per-call dtype casts, and no
+    data-dependent host synchronisation.  Used by the fused round-trip path
+    (``HayateQuantCodec.fake_quant_roundtrip``), whose per-token cost is
+    launch-bound, and safe to wrap in ``torch.compile``.
+    """
+    k, b = cb.shape
+    flat = z.reshape(-1, b)
+    n = flat.shape[0]
+    chunk = max(1, min(n, _MAX_SCORE_ELEMENTS // max(k, 1)))
+    if chunk >= n:
+        scores = flat @ cb.t() - 0.5 * csq.unsqueeze(0)
+        return scores.argmax(dim=1).reshape(z.shape[:-1])
+    codes = torch.empty(n, dtype=torch.long, device=z.device)
+    for start in range(0, n, chunk):
+        end = min(start + chunk, n)
+        scores = flat[start:end] @ cb.t() - 0.5 * csq.unsqueeze(0)
+        codes[start:end] = scores.argmax(dim=1)
+    return codes.reshape(z.shape[:-1])
+
+
 # Below this many gathered rows the extra index-arithmetic kernels of the
 # flattened-take path cost more than they save (the pathological advanced-
 # indexing kernel only dominates at large N); measured crossover is well

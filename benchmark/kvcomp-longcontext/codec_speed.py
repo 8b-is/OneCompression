@@ -190,16 +190,24 @@ def _bench_regime(codec, keys, vals, device, repeats):
         for c in payloads:
             codec.decode(c)
 
+    def rt():
+        # The serving-path round trip (what CompressedDynamicCache.update
+        # actually calls): fused encode+decode where the codec provides it,
+        # plain encode->decode otherwise.
+        for k, v in zip(keys, vals):
+            codec.fake_quant_roundtrip(k, v)
+
     n_layers = len(keys)
     elem_per_layer = (keys[0].numel() + vals[0].numel())
     tok_per_layer = keys[0].shape[0] * keys[0].shape[2]  # batch * seq positions
     enc_ms = _time(enc, device, repeats) * 1e3 / n_layers
     dec_ms = _time(dec, device, repeats) * 1e3 / n_layers
+    rt_ms = _time(rt, device, repeats) * 1e3 / n_layers
     # throughput: elements (Melem/s) and KV-token positions (Mtok/s) per second
     enc_melem_s = elem_per_layer / max(enc_ms, 1e-9) / 1e3
     dec_melem_s = elem_per_layer / max(dec_ms, 1e-9) / 1e3
     enc_mtok_s = tok_per_layer / max(enc_ms, 1e-9) / 1e3
-    return dict(enc_ms=enc_ms, dec_ms=dec_ms,
+    return dict(enc_ms=enc_ms, dec_ms=dec_ms, rt_ms=rt_ms,
                 enc_melem_s=enc_melem_s, dec_melem_s=dec_melem_s,
                 enc_mtok_s=enc_mtok_s)
 
@@ -239,7 +247,7 @@ def main():
         print(f"  [prefill S={keys[0].shape[2]}]            "
               f"[decode S=1]")
         print(f"{'codec':26} {'enc ms':>8} {'dec ms':>8} {'enc x':>6} "
-              f"{'enc Mel/s':>10} {'d1 enc us':>10} {'d1 dec us':>10} {'tok/s/L':>9} "
+              f"{'enc Mel/s':>10} {'d1 enc us':>10} {'d1 dec us':>10} {'d1 rt us':>9} {'tok/s/L':>9} "
               f"{'KV-MSE':>9} {'mse x':>7} {'attn-err':>9} {'bits/el':>8}")
         base = {}
         rows = {}
@@ -254,23 +262,27 @@ def main():
                 aerr_q.append(_attn_err(k, v, kq, vq, q))
                 sb.append(c.meta["stored_bits"] / (k.numel() + v.numel()))
             mm = sum(ms_q) / len(ms_q); aa = sum(aerr_q) / len(aerr_q); bb = sum(sb) / len(sb)
-            # decode step latency in microseconds (per layer); tok/s per layer is
-            # 1 token / (enc+dec) time -- the codec overhead a generated token pays.
+            # decode step latency in microseconds (per layer); tok/s per layer
+            # is 1 token / roundtrip time -- the codec overhead a generated
+            # token actually pays on the serving path (the fused round trip
+            # where the codec provides one, encode->decode otherwise).
             d1_enc_us = de["enc_ms"] * 1e3
             d1_dec_us = de["dec_ms"] * 1e3
-            tok_s_layer = 1.0 / max((de["enc_ms"] + de["dec_ms"]) / 1e3, 1e-9)
+            d1_rt_us = de["rt_ms"] * 1e3
+            tok_s_layer = 1.0 / max(de["rt_ms"] / 1e3, 1e-9)
             rows[label] = dict(
-                prefill=dict(enc_ms=pf["enc_ms"], dec_ms=pf["dec_ms"],
+                prefill=dict(enc_ms=pf["enc_ms"], dec_ms=pf["dec_ms"], rt_ms=pf["rt_ms"],
                              enc_melem_s=pf["enc_melem_s"], dec_melem_s=pf["dec_melem_s"],
                              enc_mtok_s=pf["enc_mtok_s"]),
-                decode=dict(enc_us=d1_enc_us, dec_us=d1_dec_us,
+                decode=dict(enc_us=d1_enc_us, dec_us=d1_dec_us, rt_us=d1_rt_us,
                             tok_s_per_layer=tok_s_layer),
                 kv_mse=mm, attn_err=aa, bits_per_el=bb)
             if not base:
                 base = dict(enc=pf["enc_ms"], mse=mm, aerr=aa)
             print(f"{label:26} {pf['enc_ms']:8.3f} {pf['dec_ms']:8.3f} "
                   f"{base['enc']/max(pf['enc_ms'],1e-9):5.2f}x "
-                  f"{pf['enc_melem_s']:10.2f} {d1_enc_us:10.2f} {d1_dec_us:10.2f} {tok_s_layer:9.0f} "
+                  f"{pf['enc_melem_s']:10.2f} {d1_enc_us:10.2f} {d1_dec_us:10.2f} "
+                  f"{d1_rt_us:9.2f} {tok_s_layer:9.0f} "
                   f"{mm:9.5f} {mm/max(base['mse'],1e-12):6.3f}x {aa:9.5f} {bb:8.3f}")
         out["results"][bits] = rows
 

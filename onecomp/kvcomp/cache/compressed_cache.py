@@ -72,9 +72,11 @@ class CompressedDynamicCache(DynamicCache):
             if sink_in_block < q_len:
                 k_quant = key_states[:, :, sink_in_block:]
                 v_quant = value_states[:, :, sink_in_block:]
-                compressed = self.codec.encode(k_quant, v_quant)
-                key_q, value_q = self.codec.decode(compressed)
-                stored = compressed.numel_bits()
+                # Fused encode+decode: the fake-quant cache never inspects the
+                # payload, so codecs may skip building it entirely (HayateQuant
+                # fuses the whole round-trip into one launch-lean pipeline; the
+                # base-class default is the plain encode->decode chain).
+                key_q, value_q, stored = self.codec.fake_quant_roundtrip(k_quant, v_quant)
                 fp16q = (k_quant.numel() + v_quant.numel()) * 16
                 self.stored_bits += stored if stored else fp16q
                 self.fp16_bits += fp16q

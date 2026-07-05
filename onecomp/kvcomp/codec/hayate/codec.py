@@ -118,6 +118,7 @@ Copyright 2025-2026 Fujitsu Ltd.
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -141,6 +142,7 @@ from .vq import (
     lloyd_vq_gaussian_block,
     lloyd_vq_beta_block,
     quantize_and_lookup,
+    quantize_exact_pre,
     lookup_codewords,
     lut_spec_for,
     build_vq_lut,
@@ -210,6 +212,145 @@ def _block_lut_on(
     """
     cb = _block_codebook_on(bits, block_size, dist, m, device_str)
     return build_vq_lut(cb, bins, top_t)
+
+
+@lru_cache(maxsize=64)
+def _codebook_aux_on(bits: int, block_size: int, dist: str, m: int, device_str: str):
+    """Precomputed per-codebook constants for the fused round-trip path.
+
+    Returns ``(cb32, cb_score, csq, bounds)``:
+
+    * ``cb32``: the fp32 device codebook used for reconstruction gathers
+      (identical dtype/precision to the standard encode/decode path).
+    * ``cb_score``/``csq``: the scoring codebook (fp16 on CUDA, mirroring the
+      tensor-core GEMM inside :func:`.vq.quantize_to_vq_codebook`) and its
+      squared norms ``cb_score.pow(2).sum(1)``.
+    * ``bounds``: the sorted scalar decision boundaries (``block_size == 1``
+      only, else ``None``) -- Lloyd-Max centroids are sorted, so a plain
+      ``searchsorted`` reproduces the scalar path exactly.
+
+    The per-token encode is launch-bound (GPU-busy time is a fraction of
+    wall-clock time), so hoisting these small per-call kernels (dtype casts,
+    the ``csq`` reduction, boundary construction, host->device codebook
+    moves) out of the hot loop is a measurable win on its own and a
+    precondition for capturing the remainder in a single CUDA graph.
+    """
+    cb32 = _block_codebook_on(bits, block_size, dist, m, device_str)
+    if block_size == 1:
+        c1 = cb32.squeeze(-1)
+        bounds = (c1[1:] + c1[:-1]) / 2.0
+        return cb32, cb32, None, bounds.contiguous()
+    if torch.device(device_str).type == "cuda":
+        cb_score = cb32.half()
+    else:
+        cb_score = cb32
+    csq = cb_score.pow(2).sum(dim=1)
+    return cb32, cb_score, csq, None
+
+
+def _roundtrip_tensors(x, w, cb32, cb_score, csq, bounds, lut, bins, block_size, modes):
+    """Fused encode+decode over ``R`` stacked role tensors (pure tensor ops).
+
+    Args:
+        x: ``(R, batch, heads, seq, m)`` fp32 input -- key and value stacked
+            along dim 0 when their bit-widths (hence codebook and rotation)
+            agree, else a single role at a time.
+        w: ``(m, m)`` fp32 orthogonal rotation (the folded hybrid / signed-
+            Hadamard / dense GEMM matrix).
+        cb32 / cb_score / csq / bounds: From :func:`_codebook_aux_on`.
+        lut / bins: Candidate-list LUT (or ``None``) from :func:`_block_lut_on`.
+        block_size: Resolved VQ block size.
+        modes: Per-role scale modes, e.g. ``("nc", "ls_iter")`` -- a static
+            Python tuple, so ``torch.compile`` specialises on it.
+
+    The body reproduces ``_quant_rotor`` followed by ``_decode_rotor``
+    *without* materialising a payload: one batched rotation GEMM for all
+    roles, one RMS, the nearest-codeword assignment, the role-asymmetric
+    scale fit, and one batched inverse-rotation GEMM -- and the reconstruction
+    reuses the codeword gather already performed at encode time instead of
+    repeating it at decode time.  Every branch below depends only on config
+    and shapes (never on tensor *values*), so there is no host-device
+    synchronisation and the whole function is capturable by
+    ``torch.compile(mode="reduce-overhead")`` into a single CUDA graph --
+    which is what eliminates the launch-bound overhead that dominates the
+    per-token cost at decode time.
+    """
+    m = x.shape[-1]
+    n_blocks = m // block_size
+    xr = x @ w
+    rms = xr.pow(2).mean(dim=-1, keepdim=True).sqrt().clamp_min(1e-8)
+
+    def _assign(vec):
+        """Nearest-codeword reconstruction of ``vec`` (``(..., m)`` -> fp32)."""
+        vb = vec.reshape(*vec.shape[:-1], n_blocks, block_size)
+        if block_size == 1:
+            codes = torch.searchsorted(bounds, vb.squeeze(-1).contiguous())
+        elif lut is not None:
+            codes = quantize_via_lut(vb, lut, bins, cb32)
+        else:
+            zb = vb
+            if zb.is_cuda and zb.dtype == torch.float32 and cb_score.dtype == torch.float16:
+                zb = zb.half()
+            codes = quantize_exact_pre(zb, cb_score, csq)
+        return lookup_codewords(cb32, codes).reshape(vec.shape)
+
+    outs = []
+    for i, mode in enumerate(modes):
+        xi, ri = xr[i], rms[i]
+        chat = _assign(xi / ri)
+        if mode == "rms":
+            scale = ri
+        elif mode == "nc":
+            cn = chat.norm(dim=-1, keepdim=True).clamp_min(1e-8)
+            scale = xi.norm(dim=-1, keepdim=True) / cn
+        else:
+            num = (xi * chat).sum(dim=-1, keepdim=True)
+            den = (chat * chat).sum(dim=-1, keepdim=True).clamp_min(1e-8)
+            if mode == "ip":
+                num_safe = num.sign() * num.abs().clamp_min(1e-8)
+                scale = (xi * xi).sum(dim=-1, keepdim=True) / num_safe
+            else:
+                scale = num / den
+                if mode == "ls_iter":
+                    chat = _assign(xi / scale.clamp_min(1e-8))
+                    num2 = (xi * chat).sum(dim=-1, keepdim=True)
+                    den2 = (chat * chat).sum(dim=-1, keepdim=True).clamp_min(1e-8)
+                    scale = num2 / den2
+        outs.append(chat * scale)
+    return torch.stack(outs, dim=0) @ w.t()
+
+
+_RT_COMPILED = None
+
+
+def _rt_dispatch():
+    """Return ``(roundtrip_fn, compiled)`` honouring ``ONECOMP_COMPILE_CODEC``.
+
+    ``ONECOMP_COMPILE_CODEC=1`` wraps :func:`_roundtrip_tensors` in
+    ``torch.compile(mode="reduce-overhead", dynamic=False)``: with static
+    shapes (a serving decode step is always ``(R, b, h, 1, d)``) the whole
+    fused round-trip replays as ONE CUDA graph, collapsing the several dozen
+    small kernel launches into a single launch.  Off by default: compilation
+    adds tens of seconds of warmup per (shape, config) and CUDA-graph memory
+    pools, which is the right trade for serving-style benchmarks but not for
+    unit tests or one-shot evaluation.
+    """
+    if os.getenv("ONECOMP_COMPILE_CODEC", "0") != "1":
+        return _roundtrip_tensors, False
+    global _RT_COMPILED  # pylint: disable=global-statement
+    if _RT_COMPILED is None:
+        import torch._dynamo  # noqa: F401  pylint: disable=import-outside-toplevel
+        # One specialisation per (config, shape) pair; the benchmark matrix
+        # sweeps several codec variants x bit-widths x regimes, which easily
+        # exceeds dynamo's default recompile budget (after which it silently
+        # falls back to eager -- exactly what this flag exists to avoid).
+        torch._dynamo.config.cache_size_limit = max(
+            64, torch._dynamo.config.cache_size_limit)
+        torch._dynamo.config.accumulated_cache_size_limit = max(
+            256, torch._dynamo.config.accumulated_cache_size_limit)
+        _RT_COMPILED = torch.compile(
+            _roundtrip_tensors, mode="reduce-overhead", dynamic=False)
+    return _RT_COMPILED, True
 
 
 @register_kv_codec("hayatequant")
@@ -684,6 +825,100 @@ class HayateQuantCodec(KVCodec):
     def decode(self, compressed: CompressedKV, ctx=None):
         dtype = compressed.meta.get("dtype", torch.float16)
         return self._decode_tensor(compressed.key_q, dtype), self._decode_tensor(compressed.value_q, dtype)
+
+    # --- fused fake-quant round-trip (the serving hot path) -----------------
+    def _rt_supported(self, m: int) -> bool:
+        """Whether the fused round-trip covers this configuration.
+
+        The fused path handles every *default* configuration (no outlier
+        split, no QJL residual, no calibration artifact, GEMM-expressible
+        rotation); anything else transparently falls back to the payload
+        path, so ``fake_quant_roundtrip`` is always semantically valid.
+        """
+        if self.n_outlier > 0 or self.use_qjl or self._calib() is not None:
+            return False
+        for bits in {self.bits, self._value_bits()}:
+            bs = resolve_block_size(bits, self.block_size, self.max_codebook_bits, m)
+            if self._resolved_mode(m, bs, bits) == "hadamard":
+                # The sequential WHT butterfly is not a cached (m, m) GEMM;
+                # it only resolves at very large head dims -- fall back.
+                return False
+        return True
+
+    def _rt_rotation(self, m: int, block_size: int, bits: int, device) -> torch.Tensor:
+        """The (m, m) fp32 rotation matrix ``_rotate`` would apply (cached)."""
+        mode = self._resolved_mode(m, block_size, bits)
+        dev = str(device)
+        if mode == "hybrid" and is_power_of_two(m):
+            return hybrid_rotation_matrix(m, block_size, self.seed, dev, torch.float32)
+        if mode == "hadamard_gemm" and is_power_of_two(m):
+            return signed_hadamard_matrix(m, self.seed, dev, torch.float32)
+        return _dense_rotation_on(m, self.seed, dev, torch.float32)
+
+    def _rt_call(self, fn, x: torch.Tensor, bits: int, modes: tuple) -> torch.Tensor:
+        """Run the fused round-trip core on stacked roles ``x`` (R, b, h, s, m)."""
+        m = x.shape[-1]
+        block_size = resolve_block_size(bits, self.block_size, self.max_codebook_bits, m)
+        w = self._rt_rotation(m, block_size, bits, x.device)
+        cb32, cb_score, csq, bounds = _codebook_aux_on(
+            bits, block_size, self.dist, m, str(x.device))
+        # Per-role block count (x[0], not the stacked x) so the LUT-vs-exact
+        # crossover decision is identical to the standalone encode path.
+        n_total_blocks = max(1, x[0].numel() // block_size)
+        spec = self._use_lut(block_size, bits, n_total_blocks, x.is_cuda)
+        # With ONECOMP_TRITON_CODEC=1 the whole normalize/assign/scale/
+        # reconstruct pipeline collapses into ONE fused Triton kernel between
+        # the two rotation GEMMs (see .triton_step).  It always serves the
+        # exact-search (decode-step) regime; ONECOMP_TRITON_PREFILL=1
+        # additionally routes the prefill (LUT) regime through it -- the
+        # kernel's exact per-row search is compute-light enough that it can
+        # beat the memory-bound LUT gather (measured per-GPU, see
+        # papers/hayatequant_paper/experiments/run_rt_speed_v11_prefill.sh).
+        if x.is_cuda and os.getenv("ONECOMP_TRITON_CODEC", "0") == "1":
+            from .triton_step import triton_step_supported, roundtrip_step_triton
+            if triton_step_supported(m, block_size, cb32.shape[0], modes) and (
+                    spec is None or os.getenv("ONECOMP_TRITON_PREFILL", "0") == "1"):
+                return roundtrip_step_triton(x, w, cb32, block_size, modes)
+        if spec is None:
+            lut, bins = None, 0
+        else:
+            lut = _block_lut_on(bits, block_size, self.dist, m, spec[0], spec[1], str(x.device))
+            bins = spec[0]
+        return fn(x, w, cb32, cb_score, csq, bounds, lut, bins, block_size, modes)
+
+    def fake_quant_roundtrip(self, key, value, ctx=None):
+        """Fused encode+decode: ``(key_hat, value_hat, stored_bits)``.
+
+        Numerically equivalent to ``decode(encode(key, value))`` (same
+        rotation, codebook, assignment and scale-fit operations in the same
+        dtypes -- see ``test_hayatequant_roundtrip_matches_encode_decode``)
+        but skips payload construction and the decode-time codeword gather,
+        batches key and value through one rotation/quantization pipeline when
+        their bit-widths agree, and reuses cached per-codebook constants.
+        With ``ONECOMP_COMPILE_CODEC=1`` the whole pipeline additionally
+        replays as a single CUDA graph.  Configurations outside the fused
+        path's coverage (outliers, QJL, calibration, butterfly rotation)
+        fall back to the base-class encode/decode chain.
+        """
+        m = key.shape[-1]
+        if not self._rt_supported(m):
+            return super().fake_quant_roundtrip(key, value, ctx=ctx)
+        kb, vb = self.bits, self._value_bits()
+        stored = int(self._stored_bits(key, kb) + self._stored_bits(value, vb))
+        k_mode, v_mode = self._scale_mode_for("k"), self._scale_mode_for("v")
+        fn, compiled = _rt_dispatch()
+        dtype = key.dtype
+        if kb == vb:
+            y = self._rt_call(fn, torch.stack((key, value)).float(), kb, (k_mode, v_mode))
+            khat, vhat = y[0], y[1]
+        else:
+            khat = self._rt_call(fn, key.float().unsqueeze(0), kb, (k_mode,))[0]
+            vhat = self._rt_call(fn, value.float().unsqueeze(0), vb, (v_mode,))[0]
+        if compiled:
+            # CUDA-graph outputs live in the graph's memory pool and are
+            # overwritten by the next replay; copy them out unconditionally.
+            return khat.to(dtype, copy=True), vhat.to(dtype, copy=True), stored
+        return khat.to(dtype), vhat.to(dtype), stored
 
     def get_kv_config(self) -> dict:
         cfg = super().get_kv_config()

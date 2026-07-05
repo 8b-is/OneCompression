@@ -11,9 +11,23 @@ Copyright 2025-2026 Fujitsu Ltd.
 from __future__ import annotations
 
 import math
+import os
 from functools import lru_cache
 
 import torch
+
+try:  # Dao-AILab CUDA kernel (github.com/Dao-AILab/fast-hadamard-transform)
+    from fast_hadamard_transform import hadamard_transform as _fht_cuda
+except ImportError:  # pragma: no cover - exercised on hosts without the wheel
+    _fht_cuda = None
+
+# Escape hatch for parity tests / debugging: set ONECOMP_DISABLE_FHT=1 to force
+# the pure-PyTorch butterfly even when the CUDA kernel is importable.
+_FHT_DISABLED = os.getenv("ONECOMP_DISABLE_FHT", "0") == "1"
+
+# The kernel supports power-of-two dims up to 2**15 and fp16/bf16/fp32 inputs.
+_FHT_MAX_DIM = 32768
+_FHT_DTYPES = (torch.float16, torch.bfloat16, torch.float32)
 
 
 def is_power_of_two(n: int) -> bool:
@@ -21,16 +35,9 @@ def is_power_of_two(n: int) -> bool:
     return n > 0 and (n & (n - 1)) == 0
 
 
-def walsh_hadamard_transform(x: torch.Tensor) -> torch.Tensor:
-    """Orthonormal Walsh-Hadamard transform along the last dimension.
-
-    Normalised by ``1/sqrt(d)`` so the transform is its own inverse:
-    ``walsh_hadamard_transform(walsh_hadamard_transform(x)) == x``.
-    Requires the last dimension to be a power of two.
-    """
+def _wht_butterfly(x: torch.Tensor) -> torch.Tensor:
+    """Pure-PyTorch orthonormal WHT butterfly (fallback / CPU path)."""
     d = x.shape[-1]
-    if not is_power_of_two(d):
-        raise ValueError(f"WHT requires power-of-two last dim, got {d}")
     orig_shape = x.shape
     y = x.reshape(-1, d).clone().float()
     h = 1
@@ -43,6 +50,33 @@ def walsh_hadamard_transform(x: torch.Tensor) -> torch.Tensor:
         h *= 2
     y = y / math.sqrt(d)
     return y.reshape(orig_shape).to(x.dtype)
+
+
+def walsh_hadamard_transform(x: torch.Tensor) -> torch.Tensor:
+    """Orthonormal Walsh-Hadamard transform along the last dimension.
+
+    Normalised by ``1/sqrt(d)`` so the transform is its own inverse:
+    ``walsh_hadamard_transform(walsh_hadamard_transform(x)) == x``.
+    Requires the last dimension to be a power of two.
+
+    On CUDA tensors this dispatches to the Dao-AILab ``fast_hadamard_transform``
+    kernel when the wheel is installed (a single fused FWHT kernel instead of
+    ``log2(d)`` memory-bound butterfly stages); otherwise it falls back to the
+    pure-PyTorch butterfly.  Both paths compute the same orthonormal transform
+    (parity is enforced by ``test_fast_hadamard_parity``).
+    """
+    d = x.shape[-1]
+    if not is_power_of_two(d):
+        raise ValueError(f"WHT requires power-of-two last dim, got {d}")
+    if (
+        _fht_cuda is not None
+        and not _FHT_DISABLED
+        and x.is_cuda
+        and d <= _FHT_MAX_DIM
+        and x.dtype in _FHT_DTYPES
+    ):
+        return _fht_cuda(x.contiguous(), scale=1.0 / math.sqrt(d))
+    return _wht_butterfly(x)
 
 
 @lru_cache(maxsize=32)

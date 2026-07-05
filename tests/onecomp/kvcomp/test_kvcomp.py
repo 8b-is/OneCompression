@@ -753,6 +753,188 @@ def test_turboquant_qjl_counts_residual_rms():
     assert s1 - s0 == x.numel() * 2 * 1 + vecs * 16  # sign bits + per-vector fp16 rms
 
 
+def test_turboquant_qjl_outlier_accounting_counts_two_rms():
+    # With the outlier split active, QJL stores one residual-RMS per subset
+    # vector (2 per full vector), plus 1 sign bit per coordinate -- mirrors
+    # the HayateQuant accounting (test above) for the shared convention.
+    x, _ = _kv(h=4, s=64)
+    b, h, s, d = x.shape
+    kw = dict(bits=4, n_outlier=16, rotation_mode="hadamard")
+    s0 = TurboQuantCodec(use_qjl=False, **kw).encode(x, x).meta["stored_bits"]
+    s1 = TurboQuantCodec(use_qjl=True, **kw).encode(x, x).meta["stored_bits"]
+    vecs = b * h * s * 2  # key + value
+    assert s1 - s0 == x.numel() * 2 * 1 + vecs * 2 * 16
+
+
+# --- fused fake-quant round trip (the serving hot path) --------------------
+@pytest.mark.parametrize("kw", [
+    dict(bits=2), dict(bits=3), dict(bits=4),
+    dict(bits=3, block_size=1),            # scalar (TurboQuant-equivalent) path
+    dict(bits=4, value_bits=2),            # K/V bit asymmetry (separate cores)
+    dict(bits=3, dist="beta"),             # exact finite-d law
+    dict(bits=3, ls_scale=False),          # rms scale on both roles
+    dict(bits=3, key_scale_mode="ip", value_scale_mode="ls"),
+    dict(bits=2, block_size=2, encoder="lut"),  # forced LUT assignment path
+    dict(bits=3, rotation_mode="dense"),
+    dict(bits=3, rotation_mode="hadamard_gemm"),
+])
+def test_hayatequant_roundtrip_matches_encode_decode(kw):
+    # The fused round trip must reproduce decode(encode(x)) -- same rotation,
+    # codebook, assignment and scale fit -- while skipping the payload.  Any
+    # divergence would silently change every serving benchmark and eval.
+    torch.manual_seed(0)
+    k, v = torch.randn(1, 4, 64, 128), torch.randn(1, 4, 64, 128)
+    c = HayateQuantCodec(**kw)
+    enc = c.encode(k, v)
+    k1, v1 = c.decode(enc)
+    k2, v2, stored = c.fake_quant_roundtrip(k, v)
+    assert stored == enc.meta["stored_bits"]
+    assert k2.dtype == k.dtype and v2.dtype == v.dtype
+    assert torch.allclose(k1, k2, atol=1e-5), kw
+    assert torch.allclose(v1, v2, atol=1e-5), kw
+
+
+def test_hayatequant_roundtrip_decode_step_shape():
+    # The serving decode step (S=1) is the launch-bound hot path the fused
+    # round trip exists for; make sure the stacked-KV core handles it.
+    torch.manual_seed(1)
+    k, v = torch.randn(1, 8, 1, 128), torch.randn(1, 8, 1, 128)
+    c = HayateQuantCodec(bits=3)
+    k1, v1 = c.decode(c.encode(k, v))
+    k2, v2, _ = c.fake_quant_roundtrip(k, v)
+    assert torch.allclose(k1, k2, atol=1e-5) and torch.allclose(v1, v2, atol=1e-5)
+
+
+@pytest.mark.parametrize("kw", [
+    dict(bits=3, n_outlier=16),   # outlier split -> base-class fallback
+    dict(bits=3, use_qjl=True),   # QJL residual -> base-class fallback
+])
+def test_hayatequant_roundtrip_fallback_matches(kw):
+    torch.manual_seed(2)
+    k, v = torch.randn(1, 4, 64, 128), torch.randn(1, 4, 64, 128)
+    c = HayateQuantCodec(**kw)
+    enc = c.encode(k, v)
+    k1, v1 = c.decode(enc)
+    k2, v2, stored = c.fake_quant_roundtrip(k, v)
+    assert stored == enc.meta["stored_bits"]
+    assert torch.equal(k1, k2) and torch.equal(v1, v2)
+
+
+def _triton_reference_roundtrip(x, w, cb32, block_size, modes):
+    """fp32 torch mirror of the fused Triton step kernel's exact semantics."""
+    r, d = x.shape[0], x.shape[-1]
+    nb = d // block_size
+    xr = x.reshape(-1, d) @ w
+
+    def assign(z):
+        zb = z.reshape(-1, nb, block_size)
+        scores = zb @ cb32.t() - 0.5 * cb32.pow(2).sum(1)
+        return cb32[scores.argmax(-1)].reshape(z.shape)
+
+    rows = xr.shape[0]
+    split = rows // r if r == 2 else rows
+    out = torch.empty_like(xr)
+    for lo, hi, mode in ((0, split, modes[0]), (split, rows, modes[-1])):
+        if lo >= hi:
+            continue
+        xi = xr[lo:hi]
+        rms = xi.pow(2).mean(-1, keepdim=True).sqrt().clamp_min(1e-8)
+        chat = assign(xi / rms)
+        if mode == "rms":
+            s = rms
+        elif mode == "nc":
+            s = xi.norm(dim=-1, keepdim=True) / chat.norm(dim=-1, keepdim=True).clamp_min(1e-8)
+        else:
+            num = (xi * chat).sum(-1, keepdim=True)
+            den = (chat * chat).sum(-1, keepdim=True).clamp_min(1e-8)
+            if mode == "ip":
+                num_safe = torch.where(num >= 0, num.clamp_min(1e-8), num.clamp_max(-1e-8))
+                s = (xi * xi).sum(-1, keepdim=True) / num_safe
+            else:
+                s = num / den
+                if mode == "ls_iter":
+                    chat = assign(xi / s.clamp_min(1e-8))
+                    num2 = (xi * chat).sum(-1, keepdim=True)
+                    den2 = (chat * chat).sum(-1, keepdim=True).clamp_min(1e-8)
+                    s = num2 / den2
+        out[lo:hi] = chat * s
+    return (out @ w.t()).reshape(x.shape)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+@pytest.mark.parametrize("kw", [
+    dict(bits=2), dict(bits=3), dict(bits=4),
+    dict(bits=4, value_bits=2), dict(bits=3, block_size=1),
+    dict(bits=3, ls_scale=False),
+])
+def test_hayatequant_triton_step_matches_eager_roundtrip(kw, monkeypatch):
+    # Two-level parity for the fused Triton decode-step kernel:
+    #  1. exact agreement with a fp32 torch mirror of the kernel semantics
+    #     (same scoring dtype, so only measure-zero argmax ties can differ);
+    #  2. reconstruction quality within a small band of the eager fused round
+    #     trip, whose exact search scores in fp16 on CUDA and therefore
+    #     resolves near-ties differently (a flipped block changes that row's
+    #     fitted scale, so elementwise comparisons are meaningless).
+    from onecomp.kvcomp.codec.hayate.triton_step import HAS_TRITON, roundtrip_step_triton
+    from onecomp.kvcomp.codec.hayate.codec import _codebook_aux_on, resolve_block_size
+    if not HAS_TRITON:
+        pytest.skip("triton not installed")
+    torch.manual_seed(0)
+    c = HayateQuantCodec(**kw)
+    for s in (1, 8):  # decode-step and small-block shapes (exact-search regime)
+        k = torch.randn(1, 8, s, 128, device="cuda", dtype=torch.float16)
+        v = torch.randn(1, 8, s, 128, device="cuda", dtype=torch.float16)
+        monkeypatch.delenv("ONECOMP_TRITON_CODEC", raising=False)
+        k1, v1, s1 = c.fake_quant_roundtrip(k, v)
+        monkeypatch.setenv("ONECOMP_TRITON_CODEC", "1")
+        k2, v2, s2 = c.fake_quant_roundtrip(k, v)
+        assert s1 == s2
+
+        # (1) exact parity with the fp32 reference, per role
+        kb, vb = c.bits, c._value_bits()
+        for x, bits, modes, got in (
+            (k.float().unsqueeze(0), kb, (c._scale_mode_for("k"),), k2),
+            (v.float().unsqueeze(0), vb, (c._scale_mode_for("v"),), v2),
+        ):
+            m = x.shape[-1]
+            bs = resolve_block_size(bits, c.block_size, c.max_codebook_bits, m)
+            w = c._rt_rotation(m, bs, bits, x.device)
+            cb32 = _codebook_aux_on(bits, bs, c.dist, m, str(x.device))[0]
+            ref = _triton_reference_roundtrip(x, w, cb32, bs, modes)[0]
+            assert torch.allclose(got.float(), ref, rtol=1e-3, atol=2e-3), (kw, s, modes)
+
+        # (2) quality parity with the eager fused path
+        for a, b, x in ((k1, k2, k), (v1, v2, v)):
+            m1 = float((a - x).float().pow(2).mean())
+            m2 = float((b - x).float().pow(2).mean())
+            assert abs(m1 - m2) / max(m1, 1e-12) < 5e-2, (kw, s, m1, m2)
+
+
+def test_base_codec_roundtrip_default_matches_encode_decode():
+    # Codecs without a fused override (e.g. TurboQuant) must behave exactly
+    # as before through the cache's new fake_quant_roundtrip entry point.
+    x, y = _kv(h=4, s=64)
+    c = TurboQuantCodec(bits=4, rotation_mode="hadamard")
+    enc = c.encode(x, y)
+    k1, v1 = c.decode(enc)
+    k2, v2, stored = c.fake_quant_roundtrip(x, y)
+    assert stored == enc.meta["stored_bits"]
+    assert torch.equal(k1, k2) and torch.equal(v1, v2)
+
+
+def test_compressed_cache_matches_manual_roundtrip():
+    # The cache's update() must store exactly the codec's round-trip output
+    # (per-block, sink excluded) -- guards the encode/decode -> roundtrip swap.
+    torch.manual_seed(3)
+    codec = HayateQuantCodec(bits=3)
+    cache = CompressedDynamicCache(codec=codec, sink_tokens=0)
+    k, v = torch.randn(1, 4, 32, 128), torch.randn(1, 4, 32, 128)
+    ck, cv = cache.update(k, v, 0)
+    k2, v2, stored = codec.fake_quant_roundtrip(k, v)
+    assert torch.allclose(ck, k2, atol=1e-5) and torch.allclose(cv, v2, atol=1e-5)
+    assert cache.stored_bits == stored
+
+
 @pytest.mark.parametrize(
     "codec",
     [KIVICodec(bits=2), FP8Codec(), NVFP4Codec(), TernaryCodec(), Int3Codec(), Int4Codec(),
