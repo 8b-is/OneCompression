@@ -68,6 +68,21 @@ srun --gres=gpu:1 .venv/bin/python codec_benchmark.py --config-name paper_hayate
     model_path=/.../models/DeepSeek-R1-Distill-Qwen-7B
 ```
 
+**Cross-model launcher / summarizer** (`hayatequant_cross_model.py`):
+```bash
+# submit the default paper grid (Llama2/3.1, Qwen3-4B/8B, Ministral,
+# R1-Llama-8B, R1-Qwen-7B/1.5B)
+.venv/bin/python benchmark/kvcomp-codec/hayatequant_cross_model.py --submit
+
+# add extra coverage or run inside an interactive GPU allocation
+.venv/bin/python benchmark/kvcomp-codec/hayatequant_cross_model.py \
+    --models qwen3-14b r1-qwen-14b --submit
+
+# summarize finished results_*.json files as a compact Markdown table
+.venv/bin/python benchmark/kvcomp-codec/hayatequant_cross_model.py \
+    --summarize --output-root /lustre/.../kvcomp_hayatequant/results_cross_model_v1
+```
+
 (`conf/paper_halo.yaml` is kept only to reproduce the historical HALO runs.)
 
 Config: `conf/benchmark_codec.yaml`. Metrics per bit-width {2,3,4}: distortion

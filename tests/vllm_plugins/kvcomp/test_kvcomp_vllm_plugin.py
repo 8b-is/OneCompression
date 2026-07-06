@@ -74,18 +74,20 @@ def test_apply_to_engine_args_hayatequant_block_size_1_sets_native_dtype(tmp_pat
 
 
 @pytest.mark.parametrize("bits", [2, 3, 4])
-def test_apply_to_engine_args_hayatequant_default_auto_does_not_crash(tmp_path, bits):
+def test_apply_to_engine_args_hayatequant_default_auto_serves_when_possible(tmp_path, bits):
     """The exact regression this test guards: a HayateQuant model saved with
     its *default* ``block_size=None`` ("auto", the recommended/shipped
-    setting) must not crash ``apply_to_engine_args`` -- it should instead
-    warn that block-VQ needs the HF cache path and leave ``kv_cache_dtype``
-    at ``"auto"`` (never silently mis-apply a scalar-only preset).
+    setting) must not crash ``apply_to_engine_args``.  vLLM has no native
+    block-VQ dtype, so supported bit-widths are served through the scalar
+    TurboQuant fallback; unsupported 2-bit remains on the faithful custom/HF
+    path.
     """
     codec = HayateQuantCodec(bits=bits)  # block_size left at its None default
     model_path = _write_model_config(tmp_path, {"codec": codec.get_kv_config()})
     engine_args = _FakeEngineArgs(model=model_path)
     apply_to_engine_args(engine_args)  # must not raise
-    assert engine_args.kv_cache_dtype == "auto"
+    expected = {2: "auto", 3: "turboquant_3bit_nc", 4: "turboquant_4bit_nc"}[bits]
+    assert engine_args.kv_cache_dtype == expected
 
 
 def test_apply_to_engine_args_turboquant_unaffected_by_hayatequant_change(tmp_path):
@@ -121,7 +123,19 @@ def test_plan_for_model_roundtrips_hayatequant_config(tmp_path):
     model_path = _write_model_config(tmp_path, {"codec": codec.get_kv_config()})
     plan = plan_for_model(model_path)
     assert plan.codec_name == "hayatequant"
+    assert plan.native_supported and not plan.needs_custom_backend
+    assert plan.kv_cache_dtype == "turboquant_3bit_nc"
+    assert any("block-VQ accuracy" in w for w in plan.warnings)
+
+
+def test_plan_for_model_hayatequant_strict_mode_requires_custom_backend(tmp_path, monkeypatch):
+    codec = HayateQuantCodec(bits=3, block_size=4)
+    model_path = _write_model_config(tmp_path, {"codec": codec.get_kv_config()})
+    monkeypatch.setenv("KVCOMP_VLLM_HAYATEQUANT_MODE", "strict")
+    plan = plan_for_model(model_path)
+    assert plan.codec_name == "hayatequant"
     assert plan.needs_custom_backend and not plan.native_supported
+    assert plan.kv_cache_dtype == "auto"
 
 
 @pytest.mark.parametrize("mode", ["hadamard", "hadamard_gemm"])

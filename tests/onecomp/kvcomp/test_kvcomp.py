@@ -1205,24 +1205,23 @@ def test_vllm_mapping_hayatequant_block_size_1_native():
     assert any("HayateQuant" in w for w in p.warnings)
 
 
-def test_vllm_mapping_hayatequant_block_vq_needs_custom_backend():
-    # block_size>1 (block-VQ) has no native vLLM preset.
+def test_vllm_mapping_hayatequant_block_vq_no_preset_needs_custom_backend():
+    # block_size>1 (block-VQ) at 2-bit has no native scalar vLLM preset either.
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
     p = plan_from_kv_config({"codec": {"name": "hayatequant", "bits": 2, "block_size": 4}})
     assert p.needs_custom_backend and not p.native_supported and p.kv_cache_dtype == "auto"
-    # The note must advertise the opt-in scalar fallback escape hatch.
-    assert any("KVCOMP_VLLM_SCALAR_FALLBACK" in n for n in p.notes)
+    assert any("no native scalar TurboQuant preset" in n for n in p.notes)
 
 
-def test_vllm_mapping_hayatequant_block_vq_scalar_fallback_env(monkeypatch):
-    """``KVCOMP_VLLM_SCALAR_FALLBACK=1`` serves block-VQ HayateQuant with the
-    nearest scalar ``turboquant_*`` preset (= HayateQuant at ``block_size=1``,
-    well-defined by the superset guarantee) instead of an uncompressed cache,
-    with a loud accuracy warning -- never silently."""
+def test_vllm_mapping_hayatequant_block_vq_scalar_fallback_default(monkeypatch):
+    """Block-VQ HayateQuant is serveable in vLLM today via the nearest scalar
+    ``turboquant_*`` preset (= HayateQuant at ``block_size=1``, well-defined by
+    the superset guarantee), with a loud accuracy warning."""
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
-    monkeypatch.setenv("KVCOMP_VLLM_SCALAR_FALLBACK", "1")
+    monkeypatch.delenv("KVCOMP_VLLM_HAYATEQUANT_MODE", raising=False)
+    monkeypatch.delenv("KVCOMP_VLLM_SCALAR_FALLBACK", raising=False)
     codec = {"name": "hayatequant", "bits": 3, "block_size": 4}
     p = plan_from_kv_config({"codec": codec})
     assert p.native_supported and p.kv_cache_dtype == "turboquant_3bit_nc"
@@ -1232,6 +1231,17 @@ def test_vllm_mapping_hayatequant_block_vq_scalar_fallback_env(monkeypatch):
     # Bit-widths with no scalar preset still fall through to custom-backend.
     p2 = plan_from_kv_config({"codec": {"name": "hayatequant", "bits": 2, "block_size": 4}})
     assert p2.needs_custom_backend and p2.kv_cache_dtype == "auto"
+
+
+def test_vllm_mapping_hayatequant_block_vq_strict_mode(monkeypatch):
+    from vllm_plugins.kvcomp.mapping import plan_from_kv_config
+
+    monkeypatch.setenv("KVCOMP_VLLM_HAYATEQUANT_MODE", "strict")
+    codec = {"name": "hayatequant", "bits": 3, "block_size": 4}
+    p = plan_from_kv_config({"codec": codec})
+    assert p.needs_custom_backend and not p.native_supported
+    assert p.kv_cache_dtype == "auto"
+    assert any("strict/custom mode" in n for n in p.notes)
 
 
 @pytest.mark.parametrize("bits", [2, 3, 4, 8])
@@ -1282,8 +1292,13 @@ def test_vllm_mapping_hayatequant_block_vq_detection_matches_resolve_block_size(
     assert (real_block_size > 1) == expect_block_vq
     p = plan_from_kv_config({"codec": codec.get_kv_config()})
     if expect_block_vq:
-        assert p.needs_custom_backend and not p.native_supported
-        assert any("block-VQ" in n for n in p.notes)
+        if bits in (3, 4):
+            assert p.native_supported and not p.needs_custom_backend
+            assert p.kv_cache_dtype in ("turboquant_3bit_nc", "turboquant_4bit_nc")
+            assert any("block-VQ accuracy" in w for w in p.warnings)
+        else:
+            assert p.needs_custom_backend and not p.native_supported
+            assert any("block-VQ" in n for n in p.notes)
     else:
         assert not any("block-VQ" in n for n in p.notes)
 
