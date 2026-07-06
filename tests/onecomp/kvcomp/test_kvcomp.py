@@ -1214,10 +1214,9 @@ def test_vllm_mapping_hayatequant_block_vq_no_preset_needs_custom_backend():
     assert any("no native scalar TurboQuant preset" in n for n in p.notes)
 
 
-def test_vllm_mapping_hayatequant_block_vq_scalar_fallback_default(monkeypatch):
-    """Block-VQ HayateQuant is serveable in vLLM today via the nearest scalar
-    ``turboquant_*`` preset (= HayateQuant at ``block_size=1``, well-defined by
-    the superset guarantee), with a loud accuracy warning."""
+def test_vllm_mapping_hayatequant_block_vq_native_default(monkeypatch):
+    """Block-VQ HayateQuant defaults to the native vLLM backend override when
+    a byte-compatible TurboQuant preset exists."""
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
     monkeypatch.delenv("KVCOMP_VLLM_HAYATEQUANT_MODE", raising=False)
@@ -1226,7 +1225,16 @@ def test_vllm_mapping_hayatequant_block_vq_scalar_fallback_default(monkeypatch):
     p = plan_from_kv_config({"codec": codec})
     assert p.native_supported and p.kv_cache_dtype == "turboquant_3bit_nc"
     assert not p.needs_custom_backend
-    assert any("block-VQ accuracy" in w for w in p.warnings)
+    assert p.hayate_native
+    assert p.hayate_config["bits"] == 3
+    assert any("native HayateQuant" in n for n in p.notes)
+
+    monkeypatch.setenv("KVCOMP_VLLM_HAYATEQUANT_MODE", "scalar_fallback")
+    p_fb = plan_from_kv_config({"codec": codec})
+    assert p_fb.native_supported and p_fb.kv_cache_dtype == "turboquant_3bit_nc"
+    assert not p_fb.needs_custom_backend
+    assert not p_fb.hayate_native
+    assert any("block-VQ accuracy" in w for w in p_fb.warnings)
 
     # Bit-widths with no scalar preset still fall through to custom-backend.
     p2 = plan_from_kv_config({"codec": {"name": "hayatequant", "bits": 2, "block_size": 4}})
@@ -1295,7 +1303,8 @@ def test_vllm_mapping_hayatequant_block_vq_detection_matches_resolve_block_size(
         if bits in (3, 4):
             assert p.native_supported and not p.needs_custom_backend
             assert p.kv_cache_dtype in ("turboquant_3bit_nc", "turboquant_4bit_nc")
-            assert any("block-VQ accuracy" in w for w in p.warnings)
+            assert p.hayate_native
+            assert any("native HayateQuant" in n for n in p.notes)
         else:
             assert p.needs_custom_backend and not p.native_supported
             assert any("block-VQ" in n for n in p.notes)
