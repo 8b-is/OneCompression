@@ -83,6 +83,22 @@ srun --gres=gpu:1 .venv/bin/python codec_benchmark.py --config-name paper_hayate
     --summarize --output-root /lustre/.../kvcomp_hayatequant/results_cross_model_v1
 ```
 
+**Zero-shot downstream grid** (`hayatequant_zeroshot.py`):
+```bash
+# same eight models as the main PPL table; ARC-Easy, ARC-Challenge, PIQA,
+# HellaSwag, and WinoGrande; reports mean acc/acc_norm for TQ and HQ variants
+.venv/bin/python benchmark/kvcomp-codec/hayatequant_zeroshot.py --submit \
+    --output-root /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/kvcomp_hayatequant/zeroshot_v1
+
+# quick smoke test only; do not use --limit for final paper numbers
+.venv/bin/python benchmark/kvcomp-codec/hayatequant_zeroshot.py --run-local \
+    --models qwen3-0.6b --tasks piqa --limit 4
+
+# summarize completed zeroshot_*.json files
+.venv/bin/python benchmark/kvcomp-codec/hayatequant_zeroshot.py --summarize \
+    --output-root /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/kvcomp_hayatequant/zeroshot_v1
+```
+
 (`conf/paper_halo.yaml` is kept only to reproduce the historical HALO runs.)
 
 Config: `conf/benchmark_codec.yaml`. Metrics per bit-width {2,3,4}: distortion

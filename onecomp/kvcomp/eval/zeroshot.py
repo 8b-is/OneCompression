@@ -7,9 +7,11 @@ the arg-max.  Each example is scored with a fresh cache from ``cache_factory``
 so KV compression affects the prediction exactly as at inference time.
 
 Supported tasks (all loaded via ``datasets``):
-  * ``arc_easy``   -- AI2 ARC-Easy (validation).
-  * ``piqa``       -- physical commonsense QA (validation).
-  * ``hellaswag``  -- grounded commonsense (validation, acc_norm headline).
+  * ``arc_easy``      -- AI2 ARC-Easy (validation).
+  * ``arc_challenge`` -- AI2 ARC-Challenge (validation).
+  * ``piqa``          -- physical commonsense QA (validation).
+  * ``hellaswag``     -- grounded commonsense (validation, acc_norm headline).
+  * ``winogrande``    -- pronoun/coreference commonsense (validation).
 
 Copyright 2025-2026 Fujitsu Ltd.
 """
@@ -56,6 +58,10 @@ def _arc_easy(ds_split):
         yield ctx, conts, gold
 
 
+def _arc_challenge(ds_split):
+    yield from _arc_easy(ds_split)
+
+
 def _piqa(ds_split):
     for ex in ds_split:
         ctx = f"Question: {ex['goal']}\nAnswer:"
@@ -74,10 +80,24 @@ def _hellaswag(ds_split):
         yield ctx, conts, gold
 
 
+def _winogrande(ds_split):
+    for ex in ds_split:
+        prefix, suffix = ex["sentence"].split("_", 1)
+        ctx = prefix
+        conts = [f"{ex['option1']}{suffix}", f"{ex['option2']}{suffix}"]
+        try:
+            gold = int(ex["answer"]) - 1
+        except (ValueError, TypeError):
+            continue
+        yield ctx, conts, gold
+
+
 _TASKS = {
     "arc_easy": (" allenai/ai2_arc".strip(), "ARC-Easy", "validation", _arc_easy),
-    "piqa": ("piqa", None, "validation", _piqa),
-    "hellaswag": ("hellaswag", None, "validation", _hellaswag),
+    "arc_challenge": ("allenai/ai2_arc", "ARC-Challenge", "validation", _arc_challenge),
+    "piqa": ("baber/piqa", None, "validation", _piqa),
+    "hellaswag": ("Rowan/hellaswag", None, "validation", _hellaswag),
+    "winogrande": ("allenai/winogrande", "winogrande_xl", "validation", _winogrande),
 }
 
 
@@ -113,9 +133,12 @@ def zeroshot_accuracy(
     task: str = "arc_easy",
     cache_factory: Optional[Callable[[], object]] = None,
     limit: Optional[int] = None,
+    sample_seed: Optional[int] = None,
 ) -> ZeroShotResult:
     """Zero-shot ``acc`` / ``acc_norm`` for a multiple-choice task."""
     ds, fn = _load_task(task)
+    if limit is not None and sample_seed is not None:
+        ds = ds.shuffle(seed=int(sample_seed))
     n_correct = n_correct_norm = n = 0
     ratios: List[float] = []
     for ctx, conts, gold in fn(ds):
