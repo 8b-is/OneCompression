@@ -99,6 +99,13 @@ srun --gres=gpu:1 .venv/bin/python codec_benchmark.py --config-name paper_hayate
     --output-root /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/kvcomp_hayatequant/zeroshot_v1
 ```
 
+**Native vLLM kernel smoke** (`hayatequant_vllm_native_smoke.py`):
+```bash
+# compiles and runs the byte-compatible TurboQuant-layout HayateQuant key
+# block-VQ store/decode kernels for 3-bit and 4-bit presets; no model load
+.venv-vllm/bin/python benchmark/kvcomp-codec/hayatequant_vllm_native_smoke.py
+```
+
 (`conf/paper_halo.yaml` is kept only to reproduce the historical HALO runs.)
 
 Config: `conf/benchmark_codec.yaml`. Metrics per bit-width {2,3,4}: distortion

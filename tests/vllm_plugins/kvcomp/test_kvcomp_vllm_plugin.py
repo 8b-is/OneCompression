@@ -77,10 +77,10 @@ def test_apply_to_engine_args_hayatequant_block_size_1_sets_native_dtype(tmp_pat
 def test_apply_to_engine_args_hayatequant_default_auto_serves_when_possible(tmp_path, bits):
     """The exact regression this test guards: a HayateQuant model saved with
     its *default* ``block_size=None`` ("auto", the recommended/shipped
-    setting) must not crash ``apply_to_engine_args``.  vLLM has no native
-    block-VQ dtype, so supported bit-widths are served through the scalar
-    TurboQuant fallback; unsupported 2-bit remains on the faithful custom/HF
-    path.
+    setting) must not crash ``apply_to_engine_args``.  Supported 3/4-bit
+    presets keep the byte-compatible TurboQuant dtype but activate OneComp's
+    native HayateQuant key block-VQ backend; unsupported 2-bit remains on the
+    faithful custom/HF path.
     """
     codec = HayateQuantCodec(bits=bits)  # block_size left at its None default
     model_path = _write_model_config(tmp_path, {"codec": codec.get_kv_config()})
@@ -124,8 +124,23 @@ def test_plan_for_model_roundtrips_hayatequant_config(tmp_path):
     plan = plan_for_model(model_path)
     assert plan.codec_name == "hayatequant"
     assert plan.native_supported and not plan.needs_custom_backend
+    assert plan.hayate_native
     assert plan.kv_cache_dtype == "turboquant_3bit_nc"
-    assert any("block-VQ accuracy" in w for w in plan.warnings)
+    assert plan.hayate_config["bits"] == 3
+    assert plan.hayate_config["value_bits"] == 3
+    assert not any("NOT reproduced" in w for w in plan.warnings)
+
+
+def test_plan_for_model_hayatequant_scalar_fallback_is_explicit(tmp_path, monkeypatch):
+    codec = HayateQuantCodec(bits=3)
+    model_path = _write_model_config(tmp_path, {"codec": codec.get_kv_config()})
+    monkeypatch.setenv("KVCOMP_VLLM_HAYATEQUANT_MODE", "scalar_fallback")
+    plan = plan_for_model(model_path)
+    assert plan.codec_name == "hayatequant"
+    assert plan.native_supported and not plan.needs_custom_backend
+    assert not plan.hayate_native
+    assert plan.kv_cache_dtype == "turboquant_3bit_nc"
+    assert any("NOT reproduced" in w for w in plan.warnings)
 
 
 def test_plan_for_model_hayatequant_strict_mode_requires_custom_backend(tmp_path, monkeypatch):

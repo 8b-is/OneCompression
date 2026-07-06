@@ -121,6 +121,8 @@ def apply_to_engine_args(engine_args, model_path: Optional[str] = None):
                 "(needs a newer vLLM); leaving 'auto'. Upgrade vLLM or use the HF "
                 "cache path.", plan.kv_cache_dtype)
             return engine_args
+        if plan.hayate_native:
+            _install_hayate_native_backend(plan, logger)
         engine_args.kv_cache_dtype = plan.kv_cache_dtype
         if plan.calculate_kv_scales and hasattr(engine_args, "calculate_kv_scales"):
             engine_args.calculate_kv_scales = True
@@ -140,6 +142,46 @@ def apply_to_engine_args(engine_args, model_path: Optional[str] = None):
 
 
 _PATCHED = False
+_HAYATE_NATIVE_INSTALLED = False
+
+
+def _install_hayate_native_backend(plan: KVCompVLLMPlan, logger) -> bool:
+    """Register OneComp's HayateQuant backend override for vLLM TurboQuant."""
+    global _HAYATE_NATIVE_INSTALLED
+    if not plan.hayate_native:
+        return False
+
+    os.environ["KVCOMP_VLLM_HAYATE_NATIVE_CONFIG"] = json.dumps(
+        plan.hayate_config, sort_keys=True
+    )
+    if _HAYATE_NATIVE_INSTALLED:
+        return True
+    try:
+        from vllm.v1.attention.backends.registry import (  # pylint: disable=import-outside-toplevel
+            AttentionBackendEnum,
+            register_backend,
+        )
+
+        register_backend(
+            AttentionBackendEnum.TURBOQUANT,
+            "vllm_plugins.kvcomp.hayate_native.HayateQuantNativeBackend",
+        )
+        _HAYATE_NATIVE_INSTALLED = True
+        logger.info(
+            "[kvcomp] registered native HayateQuant backend override for "
+            "vLLM TURBOQUANT attention (config=%s).",
+            os.environ["KVCOMP_VLLM_HAYATE_NATIVE_CONFIG"],
+        )
+        return True
+    except Exception as exc:  # pragma: no cover - vLLM absent/version dependent
+        logger.warning(
+            "[kvcomp] could not register native HayateQuant vLLM backend (%s); "
+            "kv_cache_dtype will still map to the byte-compatible TurboQuant "
+            "preset, but block-VQ will not be active unless the backend is "
+            "registered before engine creation.",
+            exc,
+        )
+        return False
 
 
 def _install_engine_args_hook(logger) -> bool:
@@ -198,9 +240,10 @@ def register_vllm_plugin():
     try:
         _install_engine_args_hook(logger)
         logger.info(
-            "Registered OneComp KV compression plugin '%s' (FP8 auto-applied to "
-            "kv_cache_dtype; low-bit/eviction require the HF cache path or the "
-            "experimental attention backend).",
+            "Registered OneComp KV compression plugin '%s' (FP8 and supported "
+            "HayateQuant native block-VQ auto-applied to kv_cache_dtype; "
+            "remaining low-bit/eviction recipes require the HF cache path or "
+            "the experimental attention backend).",
             _PLUGIN_NAME,
         )
     except Exception as exc:  # pragma: no cover - vLLM internals changed
