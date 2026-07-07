@@ -165,7 +165,12 @@ def _best_hayate(payload: dict, bits: str) -> tuple[str | None, dict | None]:
 
 
 def _fmt(x: float | None, scale: float = 100.0) -> str:
-    return "--" if x is None else f"{scale * x:.1f}"
+    if x is None:
+        return "--"
+    value = scale * x
+    if abs(value) < 0.05:
+        value = 0.0
+    return f"{value:.1f}"
 
 
 def _merge_task_payloads(paths: list[Path]) -> list[dict]:
