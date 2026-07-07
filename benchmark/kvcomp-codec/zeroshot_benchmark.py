@@ -23,6 +23,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from statistics import mean
 from typing import Iterable
@@ -69,6 +70,32 @@ def _build_cache_factory(model, codec, sink_tokens: int, skip_layers: set[int]):
     )
 
 
+def _output_json(args: argparse.Namespace) -> Path:
+    model_tag = os.path.basename(str(args.model_path).rstrip("/"))
+    return args.output_root / f"zeroshot_{model_tag}.json"
+
+
+def _acquire_output_lock(out_json: Path) -> Path | None:
+    lock_dir = out_json.with_suffix(out_json.suffix + ".lock")
+    while True:
+        if out_json.exists() and out_json.stat().st_size > 0:
+            print(f"[skip] existing result: {out_json}", flush=True)
+            return None
+        try:
+            lock_dir.mkdir()
+        except FileExistsError:
+            print(f"[wait] another process is writing {out_json}", flush=True)
+            time.sleep(30)
+            continue
+        if out_json.exists() and out_json.stat().st_size > 0:
+            try:
+                lock_dir.rmdir()
+            finally:
+                print(f"[skip] existing result: {out_json}", flush=True)
+            return None
+        return lock_dir
+
+
 @torch.no_grad()
 def _detect_skips(model, tok, args: argparse.Namespace) -> set[int]:
     if not args.skip_outliers:
@@ -84,70 +111,84 @@ def _detect_skips(model, tok, args: argparse.Namespace) -> set[int]:
 
 
 def _run(args: argparse.Namespace) -> Path:
-    dtype = getattr(torch, args.dtype)
-    tok = AutoTokenizer.from_pretrained(args.model_path)
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model_path,
-        dtype=dtype,
-        device_map=args.device,
-    ).eval()
-    skip_layers = _detect_skips(model, tok, args)
-    if skip_layers:
-        print(f"outlier layers (kept FP16): {sorted(skip_layers)}", flush=True)
-
-    results: dict[str, dict] = {}
-    if args.include_fullkv:
-        results["full"] = {
-            "FullKV": _eval_method(model, tok, args, cache_factory=None)
-        }
-
-    for bits in args.bits:
-        codecs = _codecs(bits, ablation=False)
-        bit_key = str(bits)
-        results[bit_key] = {}
-        for method in _method_list(args, bits):
-            if method == "FullKV":
-                if args.include_fullkv and "FullKV" in results.get("full", {}):
-                    results[bit_key][method] = results["full"]["FullKV"]
-                else:
-                    results[bit_key][method] = _eval_method(
-                        model, tok, args, cache_factory=None
-                    )
-                continue
-            if method not in codecs:
-                print(f"[skip] {bits}bit {method}: not defined", flush=True)
-                continue
-            cache_factory = _build_cache_factory(
-                model, codecs[method], args.sink_tokens, skip_layers
-            )
-            results[bit_key][method] = _eval_method(
-                model, tok, args, cache_factory=cache_factory
-            )
-            print(f"[{bits}bit] {method}: {results[bit_key][method]}", flush=True)
-
     args.output_root.mkdir(parents=True, exist_ok=True)
-    model_tag = os.path.basename(str(args.model_path).rstrip("/"))
-    out_json = args.output_root / f"zeroshot_{model_tag}.json"
-    payload = {
-        "model": model_tag,
-        "tasks": list(args.tasks),
-        "limit": args.limit,
-        "sample_seed": args.sample_seed,
-        "config": {
-            "model_path": str(args.model_path),
-            "dtype": args.dtype,
-            "device": args.device,
-            "bits": args.bits,
-            "sink_tokens": args.sink_tokens,
-            "skip_outliers": args.skip_outliers,
-            "outlier_ratio": args.outlier_ratio,
-        },
-        "results": results,
-    }
-    out_json.write_text(json.dumps(payload, indent=2) + "\n")
-    print(f"\nWrote {out_json}")
-    print(_markdown(payload))
-    return out_json
+    out_json = _output_json(args)
+    lock_dir = _acquire_output_lock(out_json)
+    if lock_dir is None:
+        return out_json
+
+    dtype = getattr(torch, args.dtype)
+    try:
+        tok = AutoTokenizer.from_pretrained(args.model_path)
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_path,
+            dtype=dtype,
+            device_map=args.device,
+        ).eval()
+        skip_layers = _detect_skips(model, tok, args)
+        if skip_layers:
+            print(f"outlier layers (kept FP16): {sorted(skip_layers)}", flush=True)
+
+        results: dict[str, dict] = {}
+        if args.include_fullkv:
+            results["full"] = {
+                "FullKV": _eval_method(model, tok, args, cache_factory=None)
+            }
+
+        for bits in args.bits:
+            codecs = _codecs(bits, ablation=False)
+            bit_key = str(bits)
+            results[bit_key] = {}
+            for method in _method_list(args, bits):
+                if method == "FullKV":
+                    if args.include_fullkv and "FullKV" in results.get("full", {}):
+                        results[bit_key][method] = results["full"]["FullKV"]
+                    else:
+                        results[bit_key][method] = _eval_method(
+                            model, tok, args, cache_factory=None
+                        )
+                    continue
+                if method not in codecs:
+                    print(f"[skip] {bits}bit {method}: not defined", flush=True)
+                    continue
+                cache_factory = _build_cache_factory(
+                    model, codecs[method], args.sink_tokens, skip_layers
+                )
+                results[bit_key][method] = _eval_method(
+                    model, tok, args, cache_factory=cache_factory
+                )
+                print(
+                    f"[{bits}bit] {method}: {results[bit_key][method]}",
+                    flush=True,
+                )
+
+        payload = {
+            "model": os.path.basename(str(args.model_path).rstrip("/")),
+            "tasks": list(args.tasks),
+            "limit": args.limit,
+            "sample_seed": args.sample_seed,
+            "config": {
+                "model_path": str(args.model_path),
+                "dtype": args.dtype,
+                "device": args.device,
+                "bits": args.bits,
+                "sink_tokens": args.sink_tokens,
+                "skip_outliers": args.skip_outliers,
+                "outlier_ratio": args.outlier_ratio,
+            },
+            "results": results,
+        }
+        tmp_json = out_json.with_suffix(out_json.suffix + f".tmp.{os.getpid()}")
+        tmp_json.write_text(json.dumps(payload, indent=2) + "\n")
+        tmp_json.replace(out_json)
+        print(f"\nWrote {out_json}")
+        print(_markdown(payload))
+        return out_json
+    finally:
+        try:
+            lock_dir.rmdir()
+        except OSError:
+            pass
 
 
 def _eval_method(model, tok, args: argparse.Namespace, cache_factory):
