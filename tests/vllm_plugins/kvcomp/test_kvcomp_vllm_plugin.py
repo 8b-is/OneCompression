@@ -24,6 +24,8 @@ from onecomp.kvcomp.codec.hayate import HayateQuantCodec
 from onecomp.kvcomp.codec.turboquant import TurboQuantCodec
 from onecomp.kvcomp.codec.halo import HALOCodec
 from vllm_plugins.kvcomp.vllm_plugin import (
+    _HAYATE_NATIVE_CONFIG_ENV,
+    _register_hayate_native_backend,
     apply_to_engine_args,
     plan_for_model,
     read_kv_compression_config,
@@ -141,6 +143,34 @@ def test_plan_for_model_hayatequant_scalar_fallback_is_explicit(tmp_path, monkey
     assert not plan.hayate_native
     assert plan.kv_cache_dtype == "turboquant_3bit_nc"
     assert any("NOT reproduced" in w for w in plan.warnings)
+
+
+def test_hayate_native_backend_registers_from_env_for_spawn(monkeypatch):
+    registry = pytest.importorskip("vllm.v1.attention.backends.registry")
+    from vllm_plugins.kvcomp import vllm_plugin
+
+    registry.AttentionBackendEnum.TURBOQUANT.clear_override()
+    monkeypatch.setattr(vllm_plugin, "_HAYATE_NATIVE_INSTALLED", False)
+    monkeypatch.setenv(
+        _HAYATE_NATIVE_CONFIG_ENV,
+        json.dumps({
+            "bits": 3,
+            "value_bits": 3,
+            "dist": "gaussian",
+            "block_size": None,
+            "max_codebook_bits": 9,
+            "rotation_mode": "auto",
+            "seed": 0,
+        }, sort_keys=True),
+    )
+
+    assert _register_hayate_native_backend(vllm_plugin._get_logger())
+    assert registry.AttentionBackendEnum.TURBOQUANT.is_overridden()
+    assert (
+        registry.AttentionBackendEnum.TURBOQUANT.get_path()
+        == "vllm_plugins.kvcomp.hayate_native.HayateQuantNativeBackend"
+    )
+    registry.AttentionBackendEnum.TURBOQUANT.clear_override()
 
 
 def test_plan_for_model_hayatequant_strict_mode_requires_custom_backend(tmp_path, monkeypatch):

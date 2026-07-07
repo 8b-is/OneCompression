@@ -526,7 +526,13 @@ def triton_hayatequant_store(
 
     k_flat = key.float().reshape(NH, D)
     norms = k_flat.norm(dim=1, keepdim=True)
-    y = (k_flat / (norms + 1e-8)) @ rotation
+    # HayateQuant codebooks are fit for unit-RMS rotated vectors.  The decode
+    # kernel applies NC scaling by normalizing the gathered code vector and
+    # multiplying by the original L2 norm, matching the HF cache path's key
+    # scale mode.  Unit-L2 normalization here would shrink the assignment input
+    # by sqrt(D) and collapses the code usage.
+    rms = k_flat.pow(2).mean(dim=1, keepdim=True).sqrt()
+    y = (k_flat @ rotation) / (rms + 1e-8)
     v_flat = value.float().reshape(NH, D)
 
     _hq_store_key_block_vq[(NH, n_groups)](

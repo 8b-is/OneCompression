@@ -34,6 +34,7 @@ from vllm_plugins.kvcomp.mapping import (
 )
 
 _PLUGIN_NAME = "onecomp_kvcomp"
+_HAYATE_NATIVE_CONFIG_ENV = "KVCOMP_VLLM_HAYATE_NATIVE_CONFIG"
 
 
 def _get_logger():
@@ -145,15 +146,11 @@ _PATCHED = False
 _HAYATE_NATIVE_INSTALLED = False
 
 
-def _install_hayate_native_backend(plan: KVCompVLLMPlan, logger) -> bool:
+def _register_hayate_native_backend(logger) -> bool:
     """Register OneComp's HayateQuant backend override for vLLM TurboQuant."""
     global _HAYATE_NATIVE_INSTALLED
-    if not plan.hayate_native:
+    if not os.environ.get(_HAYATE_NATIVE_CONFIG_ENV):
         return False
-
-    os.environ["KVCOMP_VLLM_HAYATE_NATIVE_CONFIG"] = json.dumps(
-        plan.hayate_config, sort_keys=True
-    )
     if _HAYATE_NATIVE_INSTALLED:
         return True
     try:
@@ -170,7 +167,7 @@ def _install_hayate_native_backend(plan: KVCompVLLMPlan, logger) -> bool:
         logger.info(
             "[kvcomp] registered native HayateQuant backend override for "
             "vLLM TURBOQUANT attention (config=%s).",
-            os.environ["KVCOMP_VLLM_HAYATE_NATIVE_CONFIG"],
+            os.environ[_HAYATE_NATIVE_CONFIG_ENV],
         )
         return True
     except Exception as exc:  # pragma: no cover - vLLM absent/version dependent
@@ -182,6 +179,16 @@ def _install_hayate_native_backend(plan: KVCompVLLMPlan, logger) -> bool:
             exc,
         )
         return False
+
+
+def _install_hayate_native_backend(plan: KVCompVLLMPlan, logger) -> bool:
+    """Install OneComp's native HayateQuant backend from a resolved plan."""
+    if not plan.hayate_native:
+        return False
+    os.environ[_HAYATE_NATIVE_CONFIG_ENV] = json.dumps(
+        plan.hayate_config, sort_keys=True
+    )
+    return _register_hayate_native_backend(logger)
 
 
 def _install_engine_args_hook(logger) -> bool:
@@ -238,6 +245,12 @@ def register_vllm_plugin():
     """
     logger = _get_logger()
     try:
+        # EngineCore is often spawned in a fresh Python process.  An in-process
+        # register_backend() call made by a launcher does not cross that spawn
+        # boundary, but environment variables do.  If a launcher set the Hayate
+        # native config before engine creation, re-install the override here so
+        # child workers use Hayate block-VQ instead of default TurboQuant.
+        _register_hayate_native_backend(logger)
         _install_engine_args_hook(logger)
         logger.info(
             "Registered OneComp KV compression plugin '%s' (FP8 and supported "

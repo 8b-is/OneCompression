@@ -168,19 +168,78 @@ def _fmt(x: float | None, scale: float = 100.0) -> str:
     return "--" if x is None else f"{scale * x:.1f}"
 
 
+def _merge_task_payloads(paths: list[Path]) -> list[dict]:
+    grouped: dict[str, list[tuple[Path, dict]]] = {}
+    for path in paths:
+        payload = json.loads(path.read_text())
+        grouped.setdefault(payload.get("model", path.stem), []).append((path, payload))
+
+    merged_payloads: list[dict] = []
+    for model, items in sorted(grouped.items()):
+        if len(items) == 1:
+            merged_payloads.append(items[0][1])
+            continue
+
+        first = items[0][1]
+        merged = {
+            "model": model,
+            "tasks": [],
+            "limit": first.get("limit"),
+            "sample_seed": first.get("sample_seed"),
+            "config": first.get("config", {}),
+            "results": {},
+            "sources": [str(path) for path, _ in items],
+        }
+        task_order: list[str] = []
+        for _, payload in items:
+            for task in payload.get("tasks", []):
+                if task not in task_order:
+                    task_order.append(task)
+            for bits, methods in (payload.get("results") or {}).items():
+                out_methods = merged["results"].setdefault(bits, {})
+                for method, data in methods.items():
+                    out_data = out_methods.setdefault(method, {"tasks": {}})
+                    out_data["tasks"].update(data.get("tasks", {}))
+
+        merged["tasks"] = task_order
+        for methods in merged["results"].values():
+            for data in methods.values():
+                tasks = data.get("tasks", {})
+                acc = [v["acc"] for v in tasks.values()]
+                acc_norm = [v["acc_norm"] for v in tasks.values()]
+                data["avg_acc"] = round(mean(acc), 4) if acc else 0.0
+                data["avg_acc_norm"] = round(mean(acc_norm), 4) if acc_norm else 0.0
+                data["n_total"] = sum(v["n"] for v in tasks.values())
+        merged_payloads.append(merged)
+    return merged_payloads
+
+
 def _summarize(args: argparse.Namespace) -> None:
-    paths = sorted(args.output_root.glob("zeroshot_*.json"))
+    paths = sorted(args.output_root.rglob("zeroshot_*.json"))
+    if not paths:
+        raise SystemExit(f"No zero-shot result JSON files found under {args.output_root}")
+    payloads = _merge_task_payloads(paths)
+    expected_tasks = set(args.tasks)
+    if args.require_complete:
+        incomplete = []
+        for payload in payloads:
+            got = set(payload.get("tasks") or [])
+            if got != expected_tasks:
+                missing = ", ".join(sorted(expected_tasks - got))
+                incomplete.append(f"{payload.get('model')}: missing {missing}")
+        if incomplete:
+            raise SystemExit("Incomplete zero-shot results:\n" + "\n".join(incomplete))
     rows = [
-        "| Model | 2b TQ acc_norm | 2b HQ acc_norm | delta | 3b TQ acc_norm | 3b HQ acc_norm | delta |",
-        "|---|---:|---:|---:|---:|---:|---:|",
+        "| Model | Tasks | 2b TQ acc_norm | 2b HQ acc_norm | delta | 3b TQ acc_norm | 3b HQ acc_norm | delta |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     tq2_vals: list[float] = []
     hq2_vals: list[float] = []
     tq3_vals: list[float] = []
     hq3_vals: list[float] = []
-    for path in paths:
-        payload = json.loads(path.read_text())
-        model = payload.get("model", path.stem)
+    for payload in payloads:
+        model = payload.get("model", "unknown")
+        task_count = len(payload.get("tasks") or [])
         tq2 = _method(payload, "2", "TurboQuant-hadamard")
         hq2_name, hq2 = _best_hayate(payload, "2")
         tq3 = _method(payload, "3", "TurboQuant-hadamard")
@@ -194,14 +253,14 @@ def _summarize(args: argparse.Namespace) -> None:
         if tq3_a is not None and hq3_a is not None:
             tq3_vals.append(tq3_a); hq3_vals.append(hq3_a)
         rows.append(
-            f"| {model} | {_fmt(tq2_a)} | {_fmt(hq2_a)}"
+            f"| {model} | {task_count} | {_fmt(tq2_a)} | {_fmt(hq2_a)}"
             f" ({(hq2_name or '').replace('HayateQuant-', 'HQ-')}) | {_fmt(None if tq2_a is None or hq2_a is None else hq2_a - tq2_a, 100.0)} |"
             f" {_fmt(tq3_a)} | {_fmt(hq3_a)}"
             f" ({(hq3_name or '').replace('HayateQuant-', 'HQ-')}) | {_fmt(None if tq3_a is None or hq3_a is None else hq3_a - tq3_a, 100.0)} |"
         )
     if tq2_vals and tq3_vals:
         rows.append(
-            f"| **Average** | **{_fmt(mean(tq2_vals))}** | **{_fmt(mean(hq2_vals))}** | "
+            f"| **Average** | **{len(args.tasks)}** | **{_fmt(mean(tq2_vals))}** | **{_fmt(mean(hq2_vals))}** | "
             f"**{_fmt(mean(hq2_vals) - mean(tq2_vals), 100.0)}** | "
             f"**{_fmt(mean(tq3_vals))}** | **{_fmt(mean(hq3_vals))}** | "
             f"**{_fmt(mean(hq3_vals) - mean(tq3_vals), 100.0)}** |"
@@ -235,6 +294,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--run-local", action="store_true")
     ap.add_argument("--summarize", action="store_true")
     ap.add_argument("--summary-out", type=Path)
+    ap.add_argument("--require-complete", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--partition", default="batch-1gpu")
     ap.add_argument("--gpus", type=int, default=1)
