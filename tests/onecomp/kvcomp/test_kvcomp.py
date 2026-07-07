@@ -28,7 +28,7 @@ from onecomp.kvcomp.codec.rotation import (
     lloyd_max_beta,
     quantize_to_codebook,
 )
-from onecomp.kvcomp.codec.turboquant import TurboQuantCodec
+from onecomp.kvcomp.codec.turboquant import TurboQuantCodec, _codebook, _qjl_projection_on
 from onecomp.kvcomp.codec.halo import HALOCodec
 from onecomp.kvcomp.codec.hayate import HayateQuantCodec
 from onecomp.kvcomp.codec.affine import AffineKVCodec, Int4Codec, Int3Codec, KIVICodec
@@ -744,13 +744,13 @@ def test_fallback_affine_accounting_counts_scale_zero():
         assert enc.meta["stored_bits"] == kf.numel() * 4 * 2 + (vecs * 2) * 2 * 16
 
 
-def test_turboquant_qjl_counts_residual_rms():
+def test_turboquant_qjl_counts_residual_norm():
     x, _ = _kv(h=4, s=64)
     b, h, s, d = x.shape
     s0 = TurboQuantCodec(bits=4, rotation_mode="hadamard", use_qjl=False).encode(x, x).meta["stored_bits"]
     s1 = TurboQuantCodec(bits=4, rotation_mode="hadamard", use_qjl=True).encode(x, x).meta["stored_bits"]
-    vecs = b * h * s * 2
-    assert s1 - s0 == x.numel() * 2 * 1 + vecs * 16  # sign bits + per-vector fp16 rms
+    vecs = b * h * s
+    assert s1 - s0 == x.numel() * 1 + vecs * 16  # key signs + key residual norms
 
 
 def test_turboquant_qjl_outlier_accounting_counts_two_rms():
@@ -762,8 +762,35 @@ def test_turboquant_qjl_outlier_accounting_counts_two_rms():
     kw = dict(bits=4, n_outlier=16, rotation_mode="hadamard")
     s0 = TurboQuantCodec(use_qjl=False, **kw).encode(x, x).meta["stored_bits"]
     s1 = TurboQuantCodec(use_qjl=True, **kw).encode(x, x).meta["stored_bits"]
-    vecs = b * h * s * 2  # key + value
-    assert s1 - s0 == x.numel() * 2 * 1 + vecs * 2 * 16
+    vecs = b * h * s
+    assert s1 - s0 == x.numel() * 1 + vecs * 2 * 16
+
+
+def test_turboquant_qjl_uses_gaussian_projection_formula():
+    # TurboQuant-prod QJL is not a coordinate sign residual.  It stores
+    # sign(S r) and reconstructs sqrt(pi/2)/d * ||r||_2 * S^T sign(S r), which
+    # is the vector whose inner product with a query is the QJL estimator.
+    torch.manual_seed(0)
+    x = torch.randn(1, 2, 8, 32)
+    c = TurboQuantCodec(bits=2, rotation_mode="dense", use_qjl=True, seed=13)
+    enc = c.encode(x, x)
+    p = enc.key_q["main"]
+    cb = _codebook(p["bits"], p["dist"], p["m"]).to(x.device)
+
+    xr, _ = c._rotate(x, p["m"], 13)
+    mse_recon = cb[p["codes"]] * p["scale"]
+    resid = xr - mse_recon
+    proj = _qjl_projection_on(p["m"], p["qjl_seed"], str(x.device))
+    sign = torch.where(p["qjl_sign"], 1.0, -1.0).float()
+
+    assert torch.equal(p["qjl_sign"], (resid.reshape(-1, p["m"]) @ proj.t() >= 0).reshape_as(resid))
+    assert torch.allclose(p["qjl_norm"], resid.norm(dim=-1, keepdim=True), atol=1e-6)
+
+    expected_rot = mse_recon + (
+        sign.reshape(-1, p["m"]) @ proj
+    ).reshape_as(resid) * (torch.sqrt(torch.tensor(torch.pi / 2.0)) / p["m"]) * p["qjl_norm"]
+    got_rot, _ = c._rotate(c.decode(enc)[0], p["m"], 13)
+    assert torch.allclose(got_rot, expected_rot, atol=1e-5)
 
 
 # --- fused fake-quant round trip (the serving hot path) --------------------

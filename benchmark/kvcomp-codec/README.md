@@ -17,9 +17,18 @@ live `HayateQuant-bs1` row in every run).
 | Codec | Quantizer | Rotation | Scale | Role |
 |---|---|---|---|---|
 | TurboQuant (hadamard) | scalar Lloyd-Max | WHT butterfly | RMS | paper baseline |
+| TurboQuant-QJL | scalar Lloyd-Max + 1-bit QJL residual | WHT butterfly + Gaussian sketch | RMS + residual norm | TurboQuant-prod appendix baseline |
 | TurboQuant (dense) | scalar Lloyd-Max | dense GEMM | RMS | rotation ablation |
 | HALO (auto) | scalar Lloyd-Max | cheapest GEMM | NC / ls_iter | prior best (superseded) |
 | **HayateQuant (auto)** | **block-VQ** | **folded hybrid (1 GEMM)** | NC / ls_iter | **proposed** |
+
+`TurboQuant-QJL` follows the TurboQuant-prod construction for keys: for a target
+payload of `b` bits per coordinate it uses a `b-1` bit scalar MSE key code plus
+a 1-bit Gaussian QJL sketch of the key residual, while values use the regular
+`b` bit scalar MSE code.  The residual norm is counted in
+`stored_bits_per_coord`, so this row should be read as an appendix diagnostic
+for the inner-product estimator rather than as an equal-stored-bits replacement
+for the main TurboQuant-MSE baseline.
 
 Ablation rows included in every run: `HayateQuant-bs1` (superset guard),
 `HayateQuant-exact` (LUT off), `HayateQuant-K12` (large-codebook quality

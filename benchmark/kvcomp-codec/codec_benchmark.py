@@ -5,6 +5,10 @@ weight-side `benchmark/<model>-<recipe>/` runs.
 
 * **TurboQuant (hadamard/dense)** -- the paper baseline: scalar Lloyd-Max on a
   Hadamard- or dense-rotated vector.
+* **TurboQuant-QJL**              -- TurboQuant-prod baseline: scalar
+  Lloyd-Max at one fewer bit plus a 1-bit Gaussian QJL residual sketch.  This
+  preserves the target payload bits but stores an extra residual norm, which is
+  reported explicitly.
 * **HALO (auto/RMS/dense-LS)**   -- this repo's prior work: same scalar
   codebook as TurboQuant, adds Hadamard-GEMM (overhead lever) and
   role-asymmetric LS/NC scale (quality lever). Kept here as the baseline
@@ -98,6 +102,15 @@ def _ms_per_encode(codec, x, iters=50, warmup=10):
     return ms, melem
 
 
+@torch.no_grad()
+def _stored_bits_per_coord(codec, x):
+    enc = codec.encode(x, x)
+    stored = enc.meta.get("stored_bits")
+    if stored is None:
+        return None
+    return float(stored) / float(2 * x.numel())
+
+
 def _codecs(bits, ablation=False):
     # Pareto / lever ablation for the HayateQuant paper (HayateQuant-auto is
     # the proposed method; TurboQuant and HALO rows are baselines):
@@ -118,6 +131,10 @@ def _codecs(bits, ablation=False):
     codecs = {
         "TurboQuant-hadamard": TurboQuantCodec(bits=bits, rotation_mode="hadamard"),
         "TurboQuant-dense": TurboQuantCodec(bits=bits, rotation_mode="dense"),
+        **({"TurboQuant-QJL": TurboQuantCodec(bits=bits - 1, value_bits=bits,
+                                              rotation_mode="hadamard", use_qjl=True,
+                                              qjl_roles="key")}
+           if bits > 1 else {}),
         "HALO-RMS": HALOCodec(bits=bits, rotation_mode="auto", ls_scale=False),
         "HALO-auto": HALOCodec(bits=bits, rotation_mode="auto"),
         # Explicit symmetric LS (key_scale_mode="ls") so the label stays correct
@@ -227,6 +244,9 @@ def main(cfg: DictConfig):
             entry = {}
             entry["distortion_key"] = round(_relmse(codec, ks, role="k"), 5)
             entry["distortion_value"] = round(_relmse(codec, vs, role="v"), 5)
+            bpc = _stored_bits_per_coord(codec, ks)
+            if bpc is not None:
+                entry["stored_bits_per_coord"] = round(bpc, 4)
             ms, melem = _ms_per_encode(codec, timing_x, cfg.timing_iters)
             entry["ms_per_encode"] = round(ms, 4)
             entry["throughput_Melem_s"] = round(melem, 1)
@@ -254,11 +274,12 @@ def _markdown(model_tag, D, results):
     lines = [f"\n### {model_tag} (head_dim={D})", ""]
     for bits, methods in results.items():
         lines += [f"\n**{bits}-bit**", "",
-                  "| Codec | dist(K) | dist(V) | ms/encode | Melem/s | PPL |",
-                  "|---|---:|---:|---:|---:|---:|"]
+                  "| Codec | dist(K) | dist(V) | stored b/coord | ms/encode | Melem/s | PPL |",
+                  "|---|---:|---:|---:|---:|---:|---:|"]
         for name, e in methods.items():
             lines.append(f"| {name} | {e.get('distortion_key','')} | {e.get('distortion_value','')} "
-                         f"| {e.get('ms_per_encode','')} | {e.get('throughput_Melem_s','')} | {e.get('ppl','')} |")
+                         f"| {e.get('stored_bits_per_coord','')} | {e.get('ms_per_encode','')} "
+                         f"| {e.get('throughput_Melem_s','')} | {e.get('ppl','')} |")
     return "\n".join(lines)
 
 

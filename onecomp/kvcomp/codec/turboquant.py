@@ -25,9 +25,12 @@ Faithful options
   This is exact for the fake-quant research layer but is a layout a real kernel
   cannot express statically -- the paper must state this per-block granularity
   (memo A-8).
-* ``use_qjl``: a 1-bit residual (QJL-style) that refines the reconstruction
-  toward the unbiased inner-product estimator (off by default; community
-  evaluations agree it can harm softmax attention).
+* ``use_qjl``: TurboQuant-prod's 1-bit QJL residual sketch for keys by default.
+  The scalar MSE reconstruction is augmented with
+  ``sqrt(pi/2)/m * ||r||_2 * S^T sign(S r)``, which makes inner products with
+  the reconstructed residual unbiased over the Gaussian sketch.  To compare at
+  an equal payload budget, instantiate it with ``bits=target_bits-1``; the
+  residual norm is still counted explicitly in ``stored_bits``.
 
 Copyright 2025-2026 Fujitsu Ltd.
 """
@@ -73,6 +76,17 @@ def _ortho_on(dim: int, seed: int, device_str: str) -> torch.Tensor:
     return _ortho(dim, seed).to(torch.device(device_str))
 
 
+@lru_cache(maxsize=32)
+def _qjl_projection(dim: int, seed: int) -> torch.Tensor:
+    gen = torch.Generator(device="cpu").manual_seed(int(seed))
+    return torch.randn(int(dim), int(dim), generator=gen, dtype=torch.float32)
+
+
+@lru_cache(maxsize=64)
+def _qjl_projection_on(dim: int, seed: int, device_str: str) -> torch.Tensor:
+    return _qjl_projection(int(dim), int(seed)).to(torch.device(device_str))
+
+
 @register_kv_codec("turboquant")
 @dataclass
 class TurboQuantCodec(KVCodec):
@@ -85,7 +99,9 @@ class TurboQuantCodec(KVCodec):
             (L2-normalised, exact Beta codebook).
         n_outlier: Number of highest-energy channels quantized at ``outlier_bits``.
         outlier_bits: Bit-width for the outlier channels.
-        use_qjl: Enable the 1-bit QJL-style residual refinement.
+        use_qjl: Enable TurboQuant-prod's 1-bit Gaussian QJL residual sketch.
+        qjl_roles: Which roles receive QJL when ``use_qjl`` is true:
+            ``"key"`` (TurboQuant-prod default), ``"value"``, or ``"both"``.
         rotation_mode: ``"hadamard"`` (fast WHT, power-of-two dims) or ``"dense"``
             (QR random orthogonal, any dim).
         seed: Seed for the deterministic rotations.
@@ -98,6 +114,7 @@ class TurboQuantCodec(KVCodec):
     n_outlier: int = 0
     outlier_bits: int = None
     use_qjl: bool = False
+    qjl_roles: str = "key"
     rotation_mode: str = "hadamard"
     seed: int = 0
     key_axis: str = "token"
@@ -107,6 +124,8 @@ class TurboQuantCodec(KVCodec):
             raise ValueError("rotation_mode must be 'hadamard' or 'dense'")
         if self.dist not in ("gaussian", "beta"):
             raise ValueError("dist must be 'gaussian' or 'beta'")
+        if self.qjl_roles not in ("key", "value", "both"):
+            raise ValueError("qjl_roles must be 'key', 'value', or 'both'")
         if not (isinstance(self.bits, int) and 1 <= self.bits <= 8):
             raise ValueError(f"bits must be int in 1..8, got {self.bits!r}")
         if not (isinstance(self.n_outlier, int) and self.n_outlier >= 0):
@@ -117,6 +136,12 @@ class TurboQuantCodec(KVCodec):
 
     def _outlier_bits(self) -> int:
         return self.outlier_bits if self.outlier_bits is not None else self.bits + 1
+
+    def _qjl_seed(self, seed: int) -> int:
+        return int(seed) + 104729
+
+    def _qjl_enabled(self, role: str) -> bool:
+        return bool(self.use_qjl and self.qjl_roles in (role, "both"))
 
     # --- single-subset rotate + Lloyd-Max ---------------------------------
     def _rotate(self, x, m, seed):
@@ -134,7 +159,7 @@ class TurboQuantCodec(KVCodec):
         q = _ortho_on(m, seed, str(xr.device))
         return xr @ q.t()
 
-    def _quant_subset(self, x, bits, seed):
+    def _quant_subset(self, x, bits, seed, use_qjl=False):
         """Rotate ``(..., m)``, normalise per-vector, quantize to the codebook."""
         m = x.shape[-1]
         xr, rot = self._rotate(x, m, seed)
@@ -147,28 +172,38 @@ class TurboQuantCodec(KVCodec):
         codes = quantize_to_codebook(z, cb)
         payload = {"codes": codes, "scale": scale, "bits": bits, "m": m,
                    "rot": rot, "dist": self.dist}
-        if self.use_qjl:
+        if use_qjl:
             recon = cb.to(x.device)[codes] * scale
             resid = xr - recon
-            payload["qjl_sign"] = (resid >= 0)
-            payload["qjl_rms"] = resid.abs().mean(dim=-1, keepdim=True)
+            qjl_seed = self._qjl_seed(seed)
+            proj = _qjl_projection_on(m, qjl_seed, str(x.device))
+            z = resid.float().reshape(-1, m) @ proj.t()
+            payload["qjl_sign"] = (z >= 0).reshape_as(resid)
+            payload["qjl_norm"] = resid.float().norm(dim=-1, keepdim=True)
+            payload["qjl_seed"] = qjl_seed
         return payload
 
     def _dequant_subset(self, p, device, dtype):
         cb = _codebook(p["bits"], p["dist"], p["m"]).to(device)
         xr = cb[p["codes"]] * p["scale"]
         if "qjl_sign" in p:
-            sign = torch.where(p["qjl_sign"], 1.0, -1.0).to(xr.dtype)
-            xr = xr + sign * p["qjl_rms"]  # 1-bit residual refinement
+            sign = torch.where(p["qjl_sign"], 1.0, -1.0).to(torch.float32)
+            if "qjl_norm" in p:
+                proj = _qjl_projection_on(p["m"], p["qjl_seed"], str(device))
+                qjl = (sign.reshape(-1, p["m"]) @ proj).reshape_as(xr)
+                qjl = qjl * (math.sqrt(math.pi / 2.0) / float(p["m"]))
+                xr = xr.float() + qjl * p["qjl_norm"].float()
+            else:  # legacy payloads written by the pre-QJL-sketch prototype
+                xr = xr + sign.to(xr.dtype) * p["qjl_rms"]
         return self._unrotate(xr, p["m"], p["rot"])
 
     # --- full-tensor encode (handles outlier split) ----------------------
-    def _encode_tensor(self, x, bits):
+    def _encode_tensor(self, x, bits, use_qjl=False):
         head_dim = x.shape[-1]
         if self.rotation_mode == "hadamard" and not is_power_of_two(head_dim) and self.n_outlier == 0:
             return None  # graceful affine fallback handled by caller
         if self.n_outlier <= 0 or self.n_outlier >= head_dim:
-            return {"mode": "single", "main": self._quant_subset(x, bits, self.seed),
+            return {"mode": "single", "main": self._quant_subset(x, bits, self.seed, use_qjl),
                     "head_dim": head_dim}
         # Outlier mixed-precision: top-n_outlier channels by energy over tokens.
         energy = x.float().abs().amax(dim=-2)  # (..., head_dim) per (b,h)
@@ -181,8 +216,8 @@ class TurboQuantCodec(KVCodec):
         x_in = x[..., ~mask]
         return {
             "mode": "outlier", "head_dim": head_dim, "mask": mask,
-            "out": self._quant_subset(x_out, self._outlier_bits(), self.seed + 1),
-            "in": self._quant_subset(x_in, bits, self.seed + 2),
+            "out": self._quant_subset(x_out, self._outlier_bits(), self.seed + 1, use_qjl),
+            "in": self._quant_subset(x_in, bits, self.seed + 2, use_qjl),
         }
 
     def _decode_tensor(self, payload, dtype):
@@ -200,7 +235,7 @@ class TurboQuantCodec(KVCodec):
         x[..., ~mask] = x_in
         return x.to(dtype)
 
-    def _stored_bits(self, x, bits):
+    def _stored_bits(self, x, bits, use_qjl=False):
         b, h, s, d = x.shape
         vecs = b * h * s
         split = 0 < self.n_outlier < d
@@ -215,12 +250,14 @@ class TurboQuantCodec(KVCodec):
         # (``qjl_rms``) for every encoded subset vector -- two subsets when the
         # outlier split is active; count all of it for honest whole-cache
         # accounting (memo A-7).
-        qjl_bits = (x.numel() * 1 + vecs * (2 if split else 1) * 16) if self.use_qjl else 0
+        qjl_bits = (x.numel() * 1 + vecs * (2 if split else 1) * 16) if use_qjl else 0
         return payload_bits + scale_bits + qjl_bits
 
     def encode(self, key, value, ctx=None) -> CompressedKV:
-        kp = self._encode_tensor(key, self.bits)
-        vp = self._encode_tensor(value, self._value_bits())
+        key_qjl = self._qjl_enabled("key")
+        value_qjl = self._qjl_enabled("value")
+        kp = self._encode_tensor(key, self.bits, key_qjl)
+        vp = self._encode_tensor(value, self._value_bits(), value_qjl)
         if kp is None or vp is None:
             kq = fake_quantize_affine(key, self.bits, axis="token")
             vq = fake_quantize_affine(value, self._value_bits(), axis="token")
@@ -234,7 +271,8 @@ class TurboQuantCodec(KVCodec):
             return CompressedKV(key_q=kq, value_q=vq,
                                 meta={"dtype": key.dtype, "fallback": True,
                                       "stored_bits": int(stored), "passthrough": True})
-        stored = self._stored_bits(key, self.bits) + self._stored_bits(value, self._value_bits())
+        stored = (self._stored_bits(key, self.bits, key_qjl)
+                  + self._stored_bits(value, self._value_bits(), value_qjl))
         return CompressedKV(key_q=kp, value_q=vp,
                             meta={"dtype": key.dtype, "stored_bits": int(stored)})
 
@@ -248,5 +286,6 @@ class TurboQuantCodec(KVCodec):
         cfg = super().get_kv_config()
         cfg.update({"dist": self.dist, "n_outlier": self.n_outlier,
                     "outlier_bits": self.outlier_bits, "use_qjl": self.use_qjl,
+                    "qjl_roles": self.qjl_roles,
                     "rotation_mode": self.rotation_mode, "value_bits": self.value_bits})
         return cfg

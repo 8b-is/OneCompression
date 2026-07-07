@@ -239,24 +239,29 @@ def _fmt(value: float | None, ndigits: int = 2) -> str:
 
 def _summarize(args: argparse.Namespace) -> None:
     rows: list[str] = []
-    rows.append("| Model | 2b TQ PPL | 2b HQ best | delta | 3b TQ PPL | 3b HQ best | delta | 3b dist(K) gain |")
-    rows.append("|---|---:|---:|---:|---:|---:|---:|---:|")
+    rows.append("| Model | 2b TQ | 2b TQ-QJL | 2b HQ best | 3b TQ | 3b TQ-QJL | 3b HQ best | 4b TQ | 4b TQ-QJL | 4b HQ best | 3b dist(K) gain |")
+    rows.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     for path in _iter_result_files(args.output_root):
         data = json.loads(path.read_text())
         model = data.get("model") or path.stem.replace("results_", "")
         tq2 = _ppl(data, "2", "TurboQuant-hadamard")
+        qjl2 = _ppl(data, "2", "TurboQuant-QJL")
         hq2_name, hq2 = _best_hayate(data, "2")
         tq3 = _ppl(data, "3", "TurboQuant-hadamard")
+        qjl3 = _ppl(data, "3", "TurboQuant-QJL")
         hq3_name, hq3 = _best_hayate(data, "3")
+        tq4 = _ppl(data, "4", "TurboQuant-hadamard")
+        qjl4 = _ppl(data, "4", "TurboQuant-QJL")
+        hq4_name, hq4 = _best_hayate(data, "4")
         tq3_d = _dist_k(data, "3", "TurboQuant-hadamard")
         hq3_d = _dist_k(data, "3", "HayateQuant-auto")
-        d2 = None if tq2 is None or hq2 is None else 100.0 * (hq2 - tq2) / tq2
-        d3 = None if tq3 is None or hq3 is None else 100.0 * (hq3 - tq3) / tq3
         gain = None if tq3_d in (None, 0) or hq3_d is None else 100.0 * (1.0 - hq3_d / tq3_d)
         rows.append(
-            f"| {model} | {_fmt(tq2)} | {_fmt(hq2)} ({hq2_name.replace('HayateQuant-', 'HQ-')}) "
-            f"| {_fmt(d2, 1)}% | {_fmt(tq3)} | {_fmt(hq3)} "
-            f"({hq3_name.replace('HayateQuant-', 'HQ-')}) | {_fmt(d3, 1)}% | {_fmt(gain, 1)}% |"
+            f"| {model} | {_fmt(tq2)} | {_fmt(qjl2)} | {_fmt(hq2)} "
+            f"({hq2_name.replace('HayateQuant-', 'HQ-')}) | {_fmt(tq3)} | {_fmt(qjl3)} "
+            f"| {_fmt(hq3)} ({hq3_name.replace('HayateQuant-', 'HQ-')}) | {_fmt(tq4)} "
+            f"| {_fmt(qjl4)} | {_fmt(hq4)} ({hq4_name.replace('HayateQuant-', 'HQ-')}) "
+            f"| {_fmt(gain, 1)}% |"
         )
     text = "\n".join(rows)
     print(text)
