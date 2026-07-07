@@ -22,6 +22,7 @@ from pathlib import Path
 
 import torch
 
+from onecomp.kvcomp.codec.hayate import HayateQuantCodec
 from onecomp.kvcomp.codec.turboquant import TurboQuantCodec
 
 
@@ -50,6 +51,7 @@ def run(args: argparse.Namespace) -> dict:
                 use_qjl=True,
                 qjl_roles="key",
             ),
+            "HayateQuant": HayateQuantCodec(bits=total_bits, block_size=None, rotation_mode="auto"),
         }
         for name, codec in methods.items():
             enc = codec.encode(key, value)
