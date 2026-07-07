@@ -18,6 +18,7 @@ HayateQuant's main block-VQ gain on attention logits.
 from __future__ import annotations
 
 import math
+import os
 from typing import Any
 
 import torch
@@ -32,6 +33,7 @@ def _hq_store_key_block_vq(
     # Post-rotation inputs
     Y_ptr,  # [NH, D] float32, rotated normalized keys
     Norms_ptr,  # [NH] float32, original key L2 norms
+    Scale_scratch_ptr,  # [NH] float32, optional accumulated code-vector norm
     Value_ptr,  # [NH, D] float32, raw values
     Codebook_ptr,  # [K, B] float32
     # Cache and indexing
@@ -58,6 +60,7 @@ def _hq_store_key_block_vq(
     NUM_CODEWORDS: tl.constexpr,
     NUM_KEY_BLOCKS: tl.constexpr,
     GROUP_CODES: tl.constexpr,
+    PRECOMPUTE_KEY_SCALE: tl.constexpr = 0,
     BLOCK_GRP: tl.constexpr = 16,
 ):
     """Quantize key blocks to Hayate code indices and store values uniformly."""
@@ -97,13 +100,16 @@ def _hq_store_key_block_vq(
 
     best_score = tl.full([GROUP_CODES], -float("inf"), dtype=tl.float32)
     best_idx = tl.zeros([GROUP_CODES], dtype=tl.int32)
+    best_norm = tl.zeros([GROUP_CODES], dtype=tl.float32)
     for cid in range(NUM_CODEWORDS):
         c0 = tl.load(Codebook_ptr + cid * HAYATE_BLOCK_SIZE).to(tl.float32)
         c1 = tl.load(Codebook_ptr + cid * HAYATE_BLOCK_SIZE + 1).to(tl.float32)
-        score = y0 * c0 + y1 * c1 - 0.5 * (c0 * c0 + c1 * c1)
+        cw_norm = c0 * c0 + c1 * c1
+        score = y0 * c0 + y1 * c1 - 0.5 * cw_norm
         take = score > best_score
         best_score = tl.where(take, score, best_score)
         best_idx = tl.where(take, cid, best_idx)
+        best_norm = tl.where(take, cw_norm, best_norm)
 
     if HAYATE_CODE_BITS == 8:
         tl.store(
@@ -124,6 +130,10 @@ def _hq_store_key_block_vq(
             KV_cache_ptr + slot_base + byte_base + 2,
             ((packed >> 16) & 0xFF).to(tl.uint8),
         )
+
+    if PRECOMPUTE_KEY_SCALE:
+        group_norm_sq = tl.sum(tl.where(group_mask, best_norm, 0.0), axis=0)
+        tl.atomic_add(Scale_scratch_ptr + vec_pid, group_norm_sq, sem="relaxed")
 
     # Norm + values are per vector, so one group owns them.
     if group_pid == 0:
@@ -152,6 +162,47 @@ def _hq_store_key_block_vq(
             BLOCK_VAL=BLOCK_VAL,
             BLOCK_GRP=BLOCK_GRP,
         )
+
+
+@triton.jit
+def _hq_write_key_scales(
+    Norms_ptr,
+    Scale_scratch_ptr,
+    KV_cache_ptr,
+    Slot_mapping_ptr,
+    stride_cache_block: tl.constexpr,
+    stride_cache_pos: tl.constexpr,
+    stride_cache_head: tl.constexpr,
+    H: tl.constexpr,
+    BLOCK_SIZE: tl.constexpr,
+    MSE_BYTES: tl.constexpr,
+):
+    vec_pid = tl.program_id(0)
+    token_idx = vec_pid // H
+    head_idx = vec_pid % H
+
+    slot = tl.load(Slot_mapping_ptr + token_idx)
+    if slot < 0:
+        return
+
+    blk = (slot // BLOCK_SIZE).to(tl.int64)
+    off = (slot % BLOCK_SIZE).to(tl.int64)
+    slot_base = (
+        blk * stride_cache_block
+        + off * stride_cache_pos
+        + tl.cast(head_idx, tl.int64) * stride_cache_head
+    )
+
+    norm = tl.load(Norms_ptr + vec_pid).to(tl.float32)
+    chat_norm_sq = tl.load(Scale_scratch_ptr + vec_pid).to(tl.float32)
+    key_scale = norm * (1.0 / tl.sqrt(chat_norm_sq + 1e-16))
+    scale_f16 = key_scale.to(tl.float16)
+    scale_u16 = scale_f16.to(tl.uint16, bitcast=True)
+    tl.store(KV_cache_ptr + slot_base + MSE_BYTES, (scale_u16 & 0xFF).to(tl.uint8))
+    tl.store(
+        KV_cache_ptr + slot_base + MSE_BYTES + 1,
+        ((scale_u16 >> 8) & 0xFF).to(tl.uint8),
+    )
 
 
 @triton.jit
@@ -186,6 +237,7 @@ def _hq_decode_stage1(
     HAYATE_BLOCK_SIZE: tl.constexpr,
     HAYATE_CODE_BITS: tl.constexpr,
     NORM_CORRECTION: tl.constexpr = 1,
+    PRECOMPUTE_KEY_SCALE: tl.constexpr = 0,
 ):
     bid = tl.program_id(0)
     hid = tl.program_id(1)
@@ -208,14 +260,24 @@ def _hq_decode_stage1(
         tl.float32
     )
 
-    block_idx = d_offs // HAYATE_BLOCK_SIZE
-    elem_idx = d_offs - block_idx * HAYATE_BLOCK_SIZE
+    key_block_offs = tl.arange(0, BLOCK_D // HAYATE_BLOCK_SIZE)
+    key_block_mask = key_block_offs < (HEAD_DIM // HAYATE_BLOCK_SIZE)
+    q0 = tl.load(
+        Q_rot_ptr + q_base + key_block_offs * HAYATE_BLOCK_SIZE,
+        mask=key_block_mask,
+        other=0.0,
+    ).to(tl.float32)
+    q1 = tl.load(
+        Q_rot_ptr + q_base + key_block_offs * HAYATE_BLOCK_SIZE + 1,
+        mask=key_block_mask,
+        other=0.0,
+    ).to(tl.float32)
     if HAYATE_CODE_BITS == 8:
-        code_byte_idx = block_idx
+        key_code_byte_idx = key_block_offs
     else:
-        code_group_idx = block_idx // 4
-        code_shift = (block_idx - code_group_idx * 4) * 6
-        code_byte_idx = code_group_idx * 3
+        key_code_group_idx = key_block_offs // 4
+        key_code_shift = (key_block_offs - key_code_group_idx * 4) * 6
+        key_code_byte_idx = key_code_group_idx * 3
 
     if VQB == 3:
         val_bit_off = d_offs * 3
@@ -245,56 +307,61 @@ def _hq_decode_stage1(
         )
 
         if HAYATE_CODE_BITS == 8:
-            code_raw = tl.load(
-                KV_cache_ptr + slot_bases[:, None] + code_byte_idx[None, :],
-                mask=kv_mask[:, None] & d_mask[None, :],
+            key_code_raw = tl.load(
+                KV_cache_ptr + slot_bases[:, None] + key_code_byte_idx[None, :],
+                mask=kv_mask[:, None] & key_block_mask[None, :],
                 other=0,
             ).to(tl.int32)
-            code_idx = code_raw & 0xFF
+            key_code_idx = key_code_raw & 0xFF
         else:
             raw0 = tl.load(
-                KV_cache_ptr + slot_bases[:, None] + code_byte_idx[None, :],
-                mask=kv_mask[:, None] & d_mask[None, :],
+                KV_cache_ptr + slot_bases[:, None] + key_code_byte_idx[None, :],
+                mask=kv_mask[:, None] & key_block_mask[None, :],
                 other=0,
             ).to(tl.int32)
             raw1 = tl.load(
-                KV_cache_ptr + slot_bases[:, None] + code_byte_idx[None, :] + 1,
-                mask=kv_mask[:, None] & d_mask[None, :],
+                KV_cache_ptr + slot_bases[:, None] + key_code_byte_idx[None, :] + 1,
+                mask=kv_mask[:, None] & key_block_mask[None, :],
                 other=0,
             ).to(tl.int32)
             raw2 = tl.load(
-                KV_cache_ptr + slot_bases[:, None] + code_byte_idx[None, :] + 2,
-                mask=kv_mask[:, None] & d_mask[None, :],
+                KV_cache_ptr + slot_bases[:, None] + key_code_byte_idx[None, :] + 2,
+                mask=kv_mask[:, None] & key_block_mask[None, :],
                 other=0,
             ).to(tl.int32)
             raw24 = raw0 | (raw1 << 8) | (raw2 << 16)
-            code_idx = (raw24 >> code_shift[None, :]) & 0x3F
+            key_code_idx = (raw24 >> key_code_shift[None, :]) & 0x3F
 
-        c_vals = tl.load(
-            Codebook_ptr + code_idx * HAYATE_BLOCK_SIZE + elem_idx[None, :],
-            mask=kv_mask[:, None] & d_mask[None, :],
+        c0 = tl.load(
+            Codebook_ptr + key_code_idx * HAYATE_BLOCK_SIZE,
+            mask=kv_mask[:, None] & key_block_mask[None, :],
+            other=0.0,
+        )
+        c1 = tl.load(
+            Codebook_ptr + key_code_idx * HAYATE_BLOCK_SIZE + 1,
+            mask=kv_mask[:, None] & key_block_mask[None, :],
             other=0.0,
         )
 
-        if NORM_CORRECTION:
-            c_norm_sq = tl.sum(
-                tl.where(d_mask[None, :], c_vals * c_vals, 0.0),
-                axis=1,
-            )
-            c_vals = c_vals * (1.0 / tl.sqrt(c_norm_sq + 1e-16))[:, None]
-
+        block_norm_sq = c0 * c0 + c1 * c1
         term1 = tl.sum(
-            tl.where(d_mask[None, :], q_rot[None, :] * c_vals, 0.0),
+            tl.where(key_block_mask[None, :], q0[None, :] * c0 + q1[None, :] * c1, 0.0),
             axis=1,
         )
+        if NORM_CORRECTION and not PRECOMPUTE_KEY_SCALE:
+            c_norm_sq = tl.sum(
+                tl.where(key_block_mask[None, :], block_norm_sq, 0.0),
+                axis=1,
+            )
+            term1 = term1 * (1.0 / tl.sqrt(c_norm_sq + 1e-16))
 
         norm_bases = slot_bases + MSE_BYTES
         n_lo = tl.load(KV_cache_ptr + norm_bases, mask=kv_mask, other=0).to(tl.uint16)
         n_hi = tl.load(KV_cache_ptr + norm_bases + 1, mask=kv_mask, other=0).to(
             tl.uint16
         )
-        vec_norms = (n_lo | (n_hi << 8)).to(tl.float16, bitcast=True).to(tl.float32)
-        scores = vec_norms * term1 * ATTN_SCALE
+        key_scales = (n_lo | (n_hi << 8)).to(tl.float16, bitcast=True).to(tl.float32)
+        scores = key_scales * term1 * ATTN_SCALE
         scores = tl.where(kv_mask, scores, -float("inf"))
 
         n_e_max = tl.maximum(tl.max(scores, 0), m_prev)
@@ -404,6 +471,7 @@ def _hq_full_dequant_kv(
     HAYATE_BLOCK_SIZE: tl.constexpr,
     HAYATE_CODE_BITS: tl.constexpr,
     NORM_CORRECTION: tl.constexpr = 1,
+    PRECOMPUTE_KEY_SCALE: tl.constexpr = 0,
 ):
     pos = tl.program_id(0)
     bh = tl.program_id(1)
@@ -452,15 +520,15 @@ def _hq_full_dequant_kv(
         mask=d_mask,
         other=0.0,
     )
-    if NORM_CORRECTION:
+    if NORM_CORRECTION and not PRECOMPUTE_KEY_SCALE:
         c_norm_sq = tl.sum(tl.where(d_mask, k_mse * k_mse, 0.0), axis=0)
         k_mse = k_mse * (1.0 / tl.sqrt(c_norm_sq + 1e-16))
 
     n_lo = tl.load(KV_cache_ptr + slot_base + MSE_BYTES).to(tl.uint16)
     n_hi = tl.load(KV_cache_ptr + slot_base + MSE_BYTES + 1).to(tl.uint16)
-    vec_norm = (n_lo | (n_hi << 8)).to(tl.float16, bitcast=True).to(tl.float32)
+    key_scale = (n_lo | (n_hi << 8)).to(tl.float16, bitcast=True).to(tl.float32)
     ko_base = bid * stride_ko_b + hid * stride_ko_h + pos * stride_ko_s
-    tl.store(K_out_ptr + ko_base + d_offs, (vec_norm * k_mse).to(tl.float16), mask=d_mask)
+    tl.store(K_out_ptr + ko_base + d_offs, (key_scale * k_mse).to(tl.float16), mask=d_mask)
 
     val_base = slot_base + KPS
     if VQB == 4:
@@ -534,10 +602,18 @@ def triton_hayatequant_store(
     rms = k_flat.pow(2).mean(dim=1, keepdim=True).sqrt()
     y = (k_flat @ rotation) / (rms + 1e-8)
     v_flat = value.float().reshape(NH, D)
+    norms_flat = norms.squeeze(1).contiguous()
+    precompute_key_scale = _precompute_key_scale(key_bits)
+    scale_scratch = (
+        torch.zeros(NH, device=key.device, dtype=torch.float32)
+        if precompute_key_scale
+        else norms_flat
+    )
 
     _hq_store_key_block_vq[(NH, n_groups)](
         y.contiguous(),
-        norms.squeeze(1).contiguous(),
+        norms_flat,
+        scale_scratch,
         v_flat.contiguous(),
         codebook.contiguous(),
         kv_cache.view(-1),
@@ -559,10 +635,26 @@ def triton_hayatequant_store(
         NUM_CODEWORDS=codebook.shape[0],
         NUM_KEY_BLOCKS=n_key_blocks,
         GROUP_CODES=group_codes,
+        PRECOMPUTE_KEY_SCALE=1 if precompute_key_scale else 0,
         BLOCK_GRP=block_grp,
         num_warps=4,
         num_stages=1,
     )
+    if precompute_key_scale:
+        _hq_write_key_scales[(NH,)](
+            norms_flat,
+            scale_scratch,
+            kv_cache.view(-1),
+            slot_mapping,
+            stride_cache_block=kv_cache.stride(0),
+            stride_cache_pos=kv_cache.stride(1),
+            stride_cache_head=kv_cache.stride(2),
+            H=H,
+            BLOCK_SIZE=block_size,
+            MSE_BYTES=mse_bytes,
+            num_warps=1,
+            num_stages=1,
+        )
 
 
 _layout_cache: dict[tuple[int, int, int, int, int], dict[str, int]] = {}
@@ -586,6 +678,38 @@ def _get_layout(
         }
         _layout_cache[cache_key] = cfg
     return cfg
+
+
+def _precompute_key_scale(key_bits: int) -> bool:
+    mode = os.environ.get("KVCOMP_VLLM_HAYATE_PRECOMPUTE_SCALE", "auto")
+    mode = mode.strip().lower().replace("-", "_")
+    if mode in {"1", "true", "yes", "on", "always"}:
+        return True
+    if mode in {"0", "false", "no", "off", "never"}:
+        return False
+    return key_bits == 3
+
+
+def _decode_block_kv(key_bits: int) -> int:
+    mode = os.environ.get("KVCOMP_VLLM_HAYATE_BLOCK_KV", "auto")
+    mode = mode.strip().lower().replace("-", "_")
+    if mode == "auto":
+        return 4
+    block_kv = int(mode)
+    if block_kv not in {1, 2, 4, 8, 16}:
+        raise ValueError("KVCOMP_VLLM_HAYATE_BLOCK_KV must be one of 1,2,4,8,16")
+    return block_kv
+
+
+def _decode_num_warps(key_bits: int) -> int:
+    mode = os.environ.get("KVCOMP_VLLM_HAYATE_NUM_WARPS", "auto")
+    mode = mode.strip().lower().replace("-", "_")
+    if mode == "auto":
+        return 1
+    num_warps = int(mode)
+    if num_warps not in {1, 2, 4, 8}:
+        raise ValueError("KVCOMP_VLLM_HAYATE_NUM_WARPS must be one of 1,2,4,8")
+    return num_warps
 
 
 def triton_hayatequant_decode_attention(
@@ -615,6 +739,9 @@ def triton_hayatequant_decode_attention(
     block_size = kv_cache.shape[1]
     kv_group_size = Hq // Hk
     cfg = _get_layout(D, key_bits, value_quant_bits, key_packed_size, hayate_block_size)
+    precompute_key_scale = _precompute_key_scale(key_bits)
+    block_kv = _decode_block_kv(key_bits)
+    num_warps = _decode_num_warps(key_bits)
 
     q_rot = (query.float() @ rotation).contiguous()
     num_splits = max_num_kv_splits
@@ -652,11 +779,12 @@ def triton_hayatequant_decode_attention(
         VAL_DATA_BYTES=cfg["val_data_bytes"],
         ATTN_SCALE=scale,
         BLOCK_D=cfg["block_d"],
-        BLOCK_KV=4,
+        BLOCK_KV=block_kv,
         HAYATE_BLOCK_SIZE=hayate_block_size,
         HAYATE_CODE_BITS=cfg["code_bits"],
         NORM_CORRECTION=1 if norm_correction else 0,
-        num_warps=1,
+        PRECOMPUTE_KEY_SCALE=1 if precompute_key_scale else 0,
+        num_warps=num_warps,
         num_stages=1,
     )
 
@@ -711,6 +839,7 @@ def triton_hayatequant_full_dequant_kv(
     B, Hk, alloc_len, D = k_out.shape
     block_size = kv_cache.shape[1]
     cfg = _get_layout(D, key_bits, value_quant_bits, key_packed_size, hayate_block_size)
+    precompute_key_scale = _precompute_key_scale(key_bits)
     _hq_full_dequant_kv[(alloc_len, B * Hk)](
         kv_cache,
         block_table,
@@ -738,5 +867,6 @@ def triton_hayatequant_full_dequant_kv(
         HAYATE_BLOCK_SIZE=hayate_block_size,
         HAYATE_CODE_BITS=cfg["code_bits"],
         NORM_CORRECTION=1 if norm_correction else 0,
+        PRECOMPUTE_KEY_SCALE=1 if precompute_key_scale else 0,
         num_warps=4,
     )
