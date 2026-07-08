@@ -136,7 +136,7 @@ def _run(args: argparse.Namespace) -> Path:
             }
 
         for bits in args.bits:
-            codecs = _codecs(bits, ablation=False)
+            codecs = _codecs(bits, ablation=args.ablation)
             bit_key = str(bits)
             results[bit_key] = {}
             for method in _method_list(args, bits):
@@ -175,6 +175,7 @@ def _run(args: argparse.Namespace) -> Path:
                 "sink_tokens": args.sink_tokens,
                 "skip_outliers": args.skip_outliers,
                 "outlier_ratio": args.outlier_ratio,
+                "ablation": args.ablation,
             },
             "results": results,
         }
@@ -255,6 +256,8 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--sink-tokens", type=int, default=4)
     ap.add_argument("--skip-outliers", action=argparse.BooleanOptionalAction, default=True)
     ap.add_argument("--outlier-ratio", type=float, default=50.0)
+    ap.add_argument("--ablation", action="store_true",
+                    help="Expose HayateQuant FibQuant/BlockQuant ablation rows.")
     args = ap.parse_args()
     args.bits = _parse_bits(args.bits)
     return args

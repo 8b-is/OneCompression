@@ -87,10 +87,17 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
             return super()._ensure_on_device(layer, device)
 
         dist = str(cfg.get("dist") or "gaussian")
+        codebook_init = str(cfg.get("codebook_init") or "auto")
         requested_block = cfg.get("block_size")
         requested_block = int(requested_block) if requested_block is not None else None
         max_codebook_bits = int(cfg.get("max_codebook_bits") or 9)
         rotation_mode = str(cfg.get("rotation_mode") or "auto")
+        key_scale_mode = str(cfg.get("key_scale_mode") or "nc").lower()
+        if key_scale_mode == "ub":
+            key_scale_mode = "ip"
+        if key_scale_mode not in {"nc", "ip"}:
+            layer._hq_native_enabled = False
+            return super()._ensure_on_device(layer, device)
         seed = int(cfg.get("seed") or 0)
         D = self.head_size
 
@@ -122,7 +129,7 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
         else:
             rotation = _dense_rotation_on(D, seed, device_str, torch.float32)
 
-        codebook = _block_codebook(key_bits, block_size, dist, D).to(
+        codebook = _block_codebook(key_bits, block_size, dist, D, codebook_init).to(
             device=torch.device(device), dtype=torch.float32
         )
         layer._tq_PiT = rotation.contiguous()
@@ -132,6 +139,7 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
         layer._tq_centroids = codebook.contiguous()
         layer._hq_block_size = block_size
         layer._hq_key_bits = key_bits
+        layer._hq_key_scale_mode = key_scale_mode
         layer._hq_native_enabled = True
         layer._tq_cached = True
 
@@ -168,6 +176,7 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
             layer._hq_key_bits,
             key_packed_size=self.tq_config.key_packed_size,
             value_quant_bits=self.tq_config.effective_value_quant_bits,
+            key_scale_mode=layer._hq_key_scale_mode,
         )
 
     def _decode_attention(
@@ -209,6 +218,7 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
             value_quant_bits=self.tq_config.effective_value_quant_bits,
             hayate_block_size=layer._hq_block_size,
             norm_correction=self.tq_config.norm_correction,
+            key_scale_mode=layer._hq_key_scale_mode,
             mid_o_buf=mid_o_buf,
             output_buf=output_buf,
             lse_buf=lse_buf,
@@ -398,6 +408,7 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
             value_quant_bits=self.tq_config.effective_value_quant_bits,
             hayate_block_size=layer._hq_block_size,
             norm_correction=self.tq_config.norm_correction,
+            key_scale_mode=layer._hq_key_scale_mode,
         )
 
         k_flat = k_cached[0, :, :cached_len, :].reshape(-1, D)

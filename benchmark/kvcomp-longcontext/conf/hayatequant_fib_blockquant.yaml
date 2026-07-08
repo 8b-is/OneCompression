@@ -2,6 +2,9 @@
 #
 # Purpose:
 #   * HayateQuant-base: current recommended codec.
+#   * HayateQuant-Frontier: rate-general K(r+1)V(r-1) allocation plus
+#     key-only UB/IP scaling; this is the recommended FibQuant/BlockQuant
+#     import after the small-model PPL and zero-shot sweeps.
 #   * HayateQuant-FibInit: imports FibQuant's radial-angular codebook
 #     initialisation while keeping HayateQuant's Lloyd block-VQ objective.
 #   * HayateQuant-BQScale: exposes BlockQuant's BSM/UB scalar corrections
@@ -24,6 +27,7 @@ methods:
   - FullKV
   - TurboQuant-3bit
   - HayateQuant-3bit
+  - HayateQuant-Frontier-3bit
   - HayateQuant-FibInit-3bit
   - HayateQuant-BQScale-3bit
   - HayateQuant-BQRecipe-K3V2
@@ -33,6 +37,7 @@ turboquant_variants:
 
 hayatequant_variants:
   - {label: "HayateQuant-3bit", bits: 3}
+  - {label: "HayateQuant-Frontier-3bit", bits: 4, value_bits: 2, key_scale_mode: ub}
   - {label: "HayateQuant-FibInit-3bit", bits: 3, codebook_init: fibquant}
   - {label: "HayateQuant-BQScale-3bit", bits: 3, key_scale_mode: ub, value_scale_mode: bsm}
   - {label: "HayateQuant-BQRecipe-K3V2", bits: 3, value_bits: 2,

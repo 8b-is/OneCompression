@@ -112,6 +112,8 @@ def _bench_cmd(args: argparse.Namespace, model_path: Path) -> list[str]:
     ]
     if args.include_fullkv:
         cmd.append("--include-fullkv")
+    if args.ablation:
+        cmd.append("--ablation")
     if args.limit is not None:
         cmd += ["--limit", str(args.limit)]
     if not args.skip_outliers:
@@ -295,6 +297,8 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--sink-tokens", type=int, default=4)
     ap.add_argument("--skip-outliers", action=argparse.BooleanOptionalAction, default=True)
     ap.add_argument("--outlier-ratio", type=float, default=50.0)
+    ap.add_argument("--ablation", action="store_true",
+                    help="Expose HayateQuant FibQuant/BlockQuant ablation rows.")
     ap.add_argument("--submit", action="store_true")
     ap.add_argument("--run-local", action="store_true")
     ap.add_argument("--summarize", action="store_true")

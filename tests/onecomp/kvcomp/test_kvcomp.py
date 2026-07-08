@@ -1322,6 +1322,7 @@ def test_vllm_mapping_hayatequant_block_vq_native_default(monkeypatch):
     assert not p.needs_custom_backend
     assert p.hayate_native
     assert p.hayate_config["bits"] == 3
+    assert p.hayate_config["key_scale_mode"] == "nc"
     assert any("native HayateQuant" in n for n in p.notes)
 
     monkeypatch.setenv("KVCOMP_VLLM_HAYATEQUANT_MODE", "scalar_fallback")
@@ -1334,6 +1335,25 @@ def test_vllm_mapping_hayatequant_block_vq_native_default(monkeypatch):
     # Bit-widths with no scalar preset still fall through to custom-backend.
     p2 = plan_from_kv_config({"codec": {"name": "hayatequant", "bits": 2, "block_size": 4}})
     assert p2.needs_custom_backend and p2.kv_cache_dtype == "auto"
+
+
+def test_vllm_mapping_hayatequant_block_vq_native_key_ub():
+    """BlockQuant's UB/IP key scale is byte-compatible with the native
+    HayateQuant scale slot, so it can stay on the fast path."""
+    from vllm_plugins.kvcomp.mapping import plan_from_kv_config
+
+    codec = {
+        "name": "hayatequant",
+        "bits": 3,
+        "block_size": 4,
+        "key_scale_mode": "ub",
+        "codebook_init": "fibquant",
+    }
+    p = plan_from_kv_config({"codec": codec})
+    assert p.native_supported and p.kv_cache_dtype == "turboquant_3bit_nc"
+    assert p.hayate_native
+    assert p.hayate_config["key_scale_mode"] == "ip"
+    assert p.hayate_config["codebook_init"] == "fibquant"
 
 
 def test_vllm_mapping_hayatequant_block_vq_strict_mode(monkeypatch):

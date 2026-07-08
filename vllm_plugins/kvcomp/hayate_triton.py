@@ -61,6 +61,7 @@ def _hq_store_key_block_vq(
     NUM_KEY_BLOCKS: tl.constexpr,
     GROUP_CODES: tl.constexpr,
     PRECOMPUTE_KEY_SCALE: tl.constexpr = 0,
+    KEY_SCALE_MODE: tl.constexpr = 0,  # 0: NC, 1: IP/UB
     BLOCK_GRP: tl.constexpr = 16,
 ):
     """Quantize key blocks to Hayate code indices and store values uniformly."""
@@ -132,8 +133,15 @@ def _hq_store_key_block_vq(
         )
 
     if PRECOMPUTE_KEY_SCALE:
-        group_norm_sq = tl.sum(tl.where(group_mask, best_norm, 0.0), axis=0)
-        tl.atomic_add(Scale_scratch_ptr + vec_pid, group_norm_sq, sem="relaxed")
+        if KEY_SCALE_MODE == 1:
+            # ``best_score`` is <y, c> - 0.5 ||c||^2. Recover <y, c> so the
+            # writeback kernel can store the BlockQuant UB/IP scale.
+            group_stat = tl.sum(
+                tl.where(group_mask, best_score + 0.5 * best_norm, 0.0), axis=0
+            )
+        else:
+            group_stat = tl.sum(tl.where(group_mask, best_norm, 0.0), axis=0)
+        tl.atomic_add(Scale_scratch_ptr + vec_pid, group_stat, sem="relaxed")
 
     # Norm + values are per vector, so one group owns them.
     if group_pid == 0:
@@ -175,7 +183,10 @@ def _hq_write_key_scales(
     stride_cache_head: tl.constexpr,
     H: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
+    D: tl.constexpr,
+    SQRT_D: tl.constexpr,
     MSE_BYTES: tl.constexpr,
+    KEY_SCALE_MODE: tl.constexpr = 0,  # 0: NC, 1: IP/UB
 ):
     vec_pid = tl.program_id(0)
     token_idx = vec_pid // H
@@ -194,8 +205,15 @@ def _hq_write_key_scales(
     )
 
     norm = tl.load(Norms_ptr + vec_pid).to(tl.float32)
-    chat_norm_sq = tl.load(Scale_scratch_ptr + vec_pid).to(tl.float32)
-    key_scale = norm * (1.0 / tl.sqrt(chat_norm_sq + 1e-16))
+    stat = tl.load(Scale_scratch_ptr + vec_pid).to(tl.float32)
+    if KEY_SCALE_MODE == 1:
+        # HayateQuant assigns y = x_rot / rms to the block codebook.  For
+        # UB/IP, s = ||x||^2 / <x, c> = sqrt(D) * ||x|| / <y, c>.
+        abs_stat = tl.maximum(tl.abs(stat), 1e-8)
+        denom = tl.where(stat < 0.0, -abs_stat, abs_stat)
+        key_scale = norm * SQRT_D / denom
+    else:
+        key_scale = norm * (1.0 / tl.sqrt(stat + 1e-16))
     scale_f16 = key_scale.to(tl.float16)
     scale_u16 = scale_f16.to(tl.uint16, bitcast=True)
     tl.store(KV_cache_ptr + slot_base + MSE_BYTES, (scale_u16 & 0xFF).to(tl.uint8))
@@ -572,6 +590,7 @@ def triton_hayatequant_store(
     key_bits: int,
     key_packed_size: int,
     value_quant_bits: int,
+    key_scale_mode: str = "nc",
 ) -> None:
     """Store K/V into a TurboQuant-layout cache using Hayate key block-VQ."""
     if hayate_block_size != 2:
@@ -591,6 +610,7 @@ def triton_hayatequant_store(
     code_bits = key_bits * hayate_block_size
     group_codes = 1 if code_bits == 8 else 4
     n_groups = math.ceil(n_key_blocks / group_codes)
+    key_scale_id = _key_scale_mode_id(key_scale_mode)
 
     k_flat = key.float().reshape(NH, D)
     norms = k_flat.norm(dim=1, keepdim=True)
@@ -603,7 +623,7 @@ def triton_hayatequant_store(
     y = (k_flat @ rotation) / (rms + 1e-8)
     v_flat = value.float().reshape(NH, D)
     norms_flat = norms.squeeze(1).contiguous()
-    precompute_key_scale = _precompute_key_scale(key_bits)
+    precompute_key_scale = _precompute_key_scale(key_bits, key_scale_mode)
     scale_scratch = (
         torch.zeros(NH, device=key.device, dtype=torch.float32)
         if precompute_key_scale
@@ -636,6 +656,7 @@ def triton_hayatequant_store(
         NUM_KEY_BLOCKS=n_key_blocks,
         GROUP_CODES=group_codes,
         PRECOMPUTE_KEY_SCALE=1 if precompute_key_scale else 0,
+        KEY_SCALE_MODE=key_scale_id,
         BLOCK_GRP=block_grp,
         num_warps=4,
         num_stages=1,
@@ -651,7 +672,10 @@ def triton_hayatequant_store(
             stride_cache_head=kv_cache.stride(2),
             H=H,
             BLOCK_SIZE=block_size,
+            D=D,
+            SQRT_D=math.sqrt(D),
             MSE_BYTES=mse_bytes,
+            KEY_SCALE_MODE=key_scale_id,
             num_warps=1,
             num_stages=1,
         )
@@ -680,7 +704,22 @@ def _get_layout(
     return cfg
 
 
-def _precompute_key_scale(key_bits: int) -> bool:
+def _canonical_key_scale_mode(mode: str | None) -> str:
+    mode = (mode or "nc").strip().lower().replace("-", "_")
+    if mode == "ub":
+        mode = "ip"
+    if mode not in {"nc", "ip"}:
+        raise ValueError("native vLLM HayateQuant currently supports key_scale_mode='nc' or 'ub'")
+    return mode
+
+
+def _key_scale_mode_id(mode: str | None) -> int:
+    return 1 if _canonical_key_scale_mode(mode) == "ip" else 0
+
+
+def _precompute_key_scale(key_bits: int, key_scale_mode: str | None = "nc") -> bool:
+    if _canonical_key_scale_mode(key_scale_mode) == "ip":
+        return True
     mode = os.environ.get("KVCOMP_VLLM_HAYATE_PRECOMPUTE_SCALE", "auto")
     mode = mode.strip().lower().replace("-", "_")
     if mode in {"1", "true", "yes", "on", "always"}:
@@ -725,6 +764,7 @@ def triton_hayatequant_decode_attention(
     value_quant_bits: int,
     hayate_block_size: int,
     norm_correction: bool = True,
+    key_scale_mode: str = "nc",
     mid_o_buf: torch.Tensor | None = None,
     output_buf: torch.Tensor | None = None,
     lse_buf: torch.Tensor | None = None,
@@ -739,7 +779,7 @@ def triton_hayatequant_decode_attention(
     block_size = kv_cache.shape[1]
     kv_group_size = Hq // Hk
     cfg = _get_layout(D, key_bits, value_quant_bits, key_packed_size, hayate_block_size)
-    precompute_key_scale = _precompute_key_scale(key_bits)
+    precompute_key_scale = _precompute_key_scale(key_bits, key_scale_mode)
     block_kv = _decode_block_kv(key_bits)
     num_warps = _decode_num_warps(key_bits)
 
@@ -834,12 +874,13 @@ def triton_hayatequant_full_dequant_kv(
     value_quant_bits: int,
     hayate_block_size: int,
     norm_correction: bool = True,
+    key_scale_mode: str = "nc",
 ) -> None:
     """Bulk dequantize cached K/V for large continuation prefill."""
     B, Hk, alloc_len, D = k_out.shape
     block_size = kv_cache.shape[1]
     cfg = _get_layout(D, key_bits, value_quant_bits, key_packed_size, hayate_block_size)
-    precompute_key_scale = _precompute_key_scale(key_bits)
+    precompute_key_scale = _precompute_key_scale(key_bits, key_scale_mode)
     _hq_full_dequant_kv[(alloc_len, B * Hk)](
         kv_cache,
         block_table,

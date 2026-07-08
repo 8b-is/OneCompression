@@ -42,7 +42,7 @@ def _dtype_for(bits: int) -> str:
     raise ValueError("native vLLM generation eval supports bits in {3, 4}")
 
 
-def _configure_hayate(bits: int) -> None:
+def _configure_hayate(bits: int, key_scale_mode: str, codebook_init: str) -> None:
     from vllm.v1.attention.backends.registry import (  # pylint: disable=import-outside-toplevel
         AttentionBackendEnum,
         register_backend,
@@ -54,7 +54,9 @@ def _configure_hayate(bits: int) -> None:
         "dist": "gaussian",
         "block_size": None,
         "max_codebook_bits": 9,
+        "codebook_init": codebook_init,
         "rotation_mode": "auto",
+        "key_scale_mode": key_scale_mode,
         "seed": 0,
     }
     os.environ[_HAYATE_NATIVE_CONFIG_ENV] = json.dumps(cfg, sort_keys=True)
@@ -85,7 +87,7 @@ def _build_llm(args: argparse.Namespace):
         kv_cache_dtype = _dtype_for(args.bits)
     elif args.variant == "hayate":
         kv_cache_dtype = _dtype_for(args.bits)
-        _configure_hayate(args.bits)
+        _configure_hayate(args.bits, args.key_scale_mode, args.codebook_init)
     elif args.variant != "auto":
         raise ValueError(f"unknown variant: {args.variant}")
 
@@ -184,6 +186,8 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--output", type=Path, required=True)
     ap.add_argument("--variant", choices=["auto", "turboquant", "hayate"], required=True)
     ap.add_argument("--bits", type=int, default=3)
+    ap.add_argument("--key-scale-mode", choices=["nc", "ub", "ip"], default="nc")
+    ap.add_argument("--codebook-init", choices=["auto", "fibquant"], default="auto")
     ap.add_argument("--dtype", default="bfloat16")
     ap.add_argument("--max-model-len", type=int, default=2048)
     ap.add_argument("--gpu-memory-utilization", type=float, default=0.82)

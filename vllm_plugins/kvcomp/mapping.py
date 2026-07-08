@@ -237,6 +237,18 @@ def _hayatequant_vllm_mode(codec: dict) -> str:
     return mode
 
 
+def _hayatequant_native_key_scale_mode(codec: dict) -> str | None:
+    raw = codec.get("key_scale_mode")
+    if raw is None:
+        return "nc"
+    mode = str(raw).strip().lower().replace("-", "_")
+    if mode == "ub":
+        return "ip"
+    if mode in {"nc", "ip"}:
+        return mode
+    return None
+
+
 @dataclass
 class KVCompVLLMPlan:
     """Resolved vLLM KV-cache configuration derived from an OneComp config.
@@ -450,6 +462,9 @@ def plan_from_kv_config(
             unsupported_native.append("use_qjl")
         if int(codec.get("max_codebook_bits") or 9) > 9:
             unsupported_native.append("max_codebook_bits>9")
+        key_scale_mode = _hayatequant_native_key_scale_mode(codec)
+        if key_scale_mode is None:
+            unsupported_native.append(f"key_scale_mode={codec.get('key_scale_mode')!r}")
 
         if (
             mode in _HAYATEQUANT_NATIVE_MODES
@@ -471,7 +486,9 @@ def plan_from_kv_config(
                 "dist": codec.get("dist") or "gaussian",
                 "block_size": codec.get("block_size"),
                 "max_codebook_bits": int(codec.get("max_codebook_bits") or 9),
+                "codebook_init": codec.get("codebook_init") or "auto",
                 "rotation_mode": codec.get("rotation_mode") or "auto",
+                "key_scale_mode": key_scale_mode,
                 "seed": int(codec.get("seed") or 0),
             }
             plan.skip_layers = [int(x) for x in (codec.get("skip_layers") or [])]

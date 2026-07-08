@@ -111,6 +111,13 @@ def _stored_bits_per_coord(codec, x):
     return float(stored) / float(2 * x.numel())
 
 
+def _kv_asym(bits: int) -> tuple[int, int] | None:
+    """Return the K(r+1)V(r-1) matched-average allocation for rate ``bits``."""
+    if 2 <= bits <= 7:
+        return bits + 1, bits - 1
+    return None
+
+
 def _codecs(bits, ablation=False):
     # Pareto / lever ablation for the HayateQuant paper (HayateQuant-auto is
     # the proposed method; TurboQuant and HALO rows are baselines):
@@ -169,11 +176,44 @@ def _codecs(bits, ablation=False):
                                                  rotation_mode="dense",
                                                  key_scale_mode="ls", value_scale_mode="ls"),
         # K/V-asymmetric bit allocation at the SAME average bits/coord as the
-        # uniform row (keys are the sensitive role: v8 measured K4V2 beating
-        # uniform 3-bit PPL by -0.09/-0.15 on Llama/Qwen3-8B). Only emitted
-        # for bits=3 (the 3.0-avg operating point).
-        **({"HayateQuant-K4V2": HayateQuantCodec(bits=4, value_bits=2)}
-           if bits == 3 else {}),
+        # uniform row: K(r+1)V(r-1).  This generalizes the validated K4V2
+        # operating point across target rates {2,3,4}.
+        **(({"HayateQuant-selected":
+             (HayateQuantCodec(bits=bits, block_size=None, rotation_mode="auto",
+                                codebook_init="fibquant")
+              if bits == 4 else
+              HayateQuantCodec(bits=_kv_asym(bits)[0], value_bits=_kv_asym(bits)[1],
+                                key_scale_mode="ub"))})
+           if _kv_asym(bits) is not None else {}),
+        **(({"HayateQuant-frontier":
+             HayateQuantCodec(bits=_kv_asym(bits)[0], value_bits=_kv_asym(bits)[1],
+                              key_scale_mode="ub")})
+           if _kv_asym(bits) is not None else {}),
+        **(({f"HayateQuant-K{_kv_asym(bits)[0]}V{_kv_asym(bits)[1]}":
+             HayateQuantCodec(bits=_kv_asym(bits)[0], value_bits=_kv_asym(bits)[1])})
+           if _kv_asym(bits) is not None else {}),
+        **(({f"HayateQuant-FibK{_kv_asym(bits)[0]}V{_kv_asym(bits)[1]}":
+             HayateQuantCodec(bits=_kv_asym(bits)[0], value_bits=_kv_asym(bits)[1],
+                              codebook_init="fibquant")})
+           if _kv_asym(bits) is not None else {}),
+        # Isolate the two BlockQuant scale choices at the K/V-asymmetric point.
+        **(({f"HayateQuant-K{_kv_asym(bits)[0]}V{_kv_asym(bits)[1]}-keyUB":
+             HayateQuantCodec(bits=_kv_asym(bits)[0], value_bits=_kv_asym(bits)[1],
+                              key_scale_mode="ub")})
+           if _kv_asym(bits) is not None else {}),
+        **(({f"HayateQuant-K{_kv_asym(bits)[0]}V{_kv_asym(bits)[1]}-valueBSM":
+             HayateQuantCodec(bits=_kv_asym(bits)[0], value_bits=_kv_asym(bits)[1],
+                              value_scale_mode="bsm")})
+           if _kv_asym(bits) is not None else {}),
+        **(({f"HayateQuant-K{_kv_asym(bits)[0]}V{_kv_asym(bits)[1]}-BQscale":
+             HayateQuantCodec(bits=_kv_asym(bits)[0], value_bits=_kv_asym(bits)[1],
+                              key_scale_mode="ub", value_scale_mode="bsm")})
+           if _kv_asym(bits) is not None else {}),
+        **(({f"HayateQuant-FibK{_kv_asym(bits)[0]}V{_kv_asym(bits)[1]}-BQscale":
+             HayateQuantCodec(bits=_kv_asym(bits)[0], value_bits=_kv_asym(bits)[1],
+                              codebook_init="fibquant",
+                              key_scale_mode="ub", value_scale_mode="bsm")})
+           if _kv_asym(bits) is not None else {}),
     }
     if not ablation:
         return codecs
@@ -213,7 +253,25 @@ def _codecs(bits, ablation=False):
                                                 rotation_mode="auto",
                                                 key_scale_mode="ub",
                                                 value_scale_mode="bsm"),
-        # (f) block-size monotonicity on real KV: explicit b=2 between the
+        # (f) BlockQuant-style KV recipe: protect key outlier channels and
+        # quantise values more aggressively.  This keeps the average payload
+        # below the uniform 3-bit row while testing BlockQuant's core
+        # key/value asymmetry in the HayateQuant runtime.
+        **({"HayateQuant-BQRecipe-K3V2": HayateQuantCodec(
+            bits=3, value_bits=2, block_size=None, rotation_mode="auto",
+            key_scale_mode="ub", value_scale_mode="bsm",
+            key_n_outlier=32, key_outlier_bits=4, value_n_outlier=0,
+        )} if bits == 3 else {}),
+        # (g) Combined import candidate: FibQuant codebook initialisation plus
+        # the BlockQuant KV recipe.  This is the main "does the union help?"
+        # row for real-model PPL/zero-shot sweeps.
+        **({"HayateQuant-FibBQ-K3V2": HayateQuantCodec(
+            bits=3, value_bits=2, block_size=None, rotation_mode="auto",
+            codebook_init="fibquant",
+            key_scale_mode="ub", value_scale_mode="bsm",
+            key_n_outlier=32, key_outlier_bits=4, value_n_outlier=0,
+        )} if bits == 3 else {}),
+        # (h) block-size monotonicity on real KV: explicit b=2 between the
         # scalar bs1 row and the auto row (auto resolves b=4 at 2-bit,
         # b=2 at 3/4-bit under the default max_codebook_bits=9).
         "HayateQuant-bs2": HayateQuantCodec(bits=bits, block_size=2,
@@ -253,7 +311,11 @@ def main(cfg: DictConfig):
     results = {}
     for bits in list(cfg.bits):
         results[bits] = {}
-        for name, codec in _codecs(bits, ablation=bool(getattr(cfg, "ablation", False))).items():
+        codecs = _codecs(bits, ablation=bool(getattr(cfg, "ablation", False)))
+        selected = list(getattr(cfg, "methods", []) or [])
+        if selected:
+            codecs = {name: codec for name, codec in codecs.items() if name in selected}
+        for name, codec in codecs.items():
             entry = {}
             entry["distortion_key"] = round(_relmse(codec, ks, role="k"), 5)
             entry["distortion_value"] = round(_relmse(codec, vs, role="v"), 5)

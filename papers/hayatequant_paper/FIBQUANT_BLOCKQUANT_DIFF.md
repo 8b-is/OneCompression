@@ -71,6 +71,20 @@ Example BlockQuant-style profile:
  key_scale_mode: ub, value_scale_mode: bsm}
 ```
 
+The current strongest low-rate operating point is `HayateQuant-frontier`:
+for an average target rate `r`, store keys at `r+1` bits and values at
+`r-1` bits, and use UB/IP scaling only on keys.  This is not copied from
+BlockQuant: BlockQuant supplies a useful key-scale estimator, while
+HayateQuant supplies the rate-general K/V allocation, folded hybrid rotation,
+block-VQ payload, LUT encoder, and the empirical rule that keeps BSM on values
+out of the default because it hurt PPL/zero-shot in the Qwen smoke sweeps.
+
+For the paper's zero-shot acc_norm target, the benchmark factory also exposes
+`HayateQuant-selected`: it is `HayateQuant-frontier` at 2/3 bits and the
+FibQuant-initialized HayateQuant row at 4 bits, matching the small-model
+confirmation where FibQuant init slightly won 4-bit acc_norm while frontier
+kept the best PPL.
+
 ## Is optional calibration a delta?
 
 Yes.  Optional calibration with a never-worse selection rule is a HayateQuant
@@ -85,8 +99,16 @@ guarantee over all prompts, all layers, or downstream softmax behavior.
 
 Codec-level ablations:
 
+* `HayateQuant-frontier`
+* `HayateQuant-selected`
 * `HayateQuant-fibinit`
 * `HayateQuant-BQscale`
+
+`HayateQuant-frontier` resolves to:
+
+* 2-bit target: K3V1 + key UB/IP.
+* 3-bit target: K4V2 + key UB/IP.
+* 4-bit target: K5V3 + key UB/IP.
 
 Long-context config:
 

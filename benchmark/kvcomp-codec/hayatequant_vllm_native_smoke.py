@@ -39,7 +39,10 @@ def _dtype_for(bits: int) -> str:
     raise ValueError("native smoke supports bits in {3, 4}")
 
 
-def run_case(bits: int, *, head_dim: int, kv_heads: int, q_heads: int, tokens: int) -> dict:
+def run_case(
+    bits: int, *, head_dim: int, kv_heads: int, q_heads: int, tokens: int,
+    key_scale_mode: str, codebook_init: str,
+) -> dict:
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required for the native vLLM HayateQuant smoke test")
     device = torch.device("cuda")
@@ -64,7 +67,7 @@ def run_case(bits: int, *, head_dim: int, kv_heads: int, q_heads: int, tokens: i
 
     block_size = 2
     rotation = hybrid_rotation_matrix(head_dim, block_size, 0, str(device), torch.float32)
-    codebook = _block_codebook(bits, block_size, "gaussian", head_dim).to(
+    codebook = _block_codebook(bits, block_size, "gaussian", head_dim, codebook_init).to(
         device=device, dtype=torch.float32
     )
 
@@ -79,6 +82,7 @@ def run_case(bits: int, *, head_dim: int, kv_heads: int, q_heads: int, tokens: i
         bits,
         key_packed_size=tq.key_packed_size,
         value_quant_bits=tq.effective_value_quant_bits,
+        key_scale_mode=key_scale_mode,
     )
     block_table = torch.arange(num_blocks, device=device, dtype=torch.int32).view(1, -1)
     seq_lens = torch.tensor([tokens], device=device, dtype=torch.int32)
@@ -95,6 +99,7 @@ def run_case(bits: int, *, head_dim: int, kv_heads: int, q_heads: int, tokens: i
         value_quant_bits=tq.effective_value_quant_bits,
         hayate_block_size=block_size,
         norm_correction=tq.norm_correction,
+        key_scale_mode=key_scale_mode,
         max_num_kv_splits=1,
     )
     torch.cuda.synchronize()
@@ -104,6 +109,8 @@ def run_case(bits: int, *, head_dim: int, kv_heads: int, q_heads: int, tokens: i
         raise AssertionError("decode output contains non-finite values")
     return {
         "bits": bits,
+        "key_scale_mode": key_scale_mode,
+        "codebook_init": codebook_init,
         "dtype": dtype_name,
         "slot_size_aligned": tq.slot_size_aligned,
         "output_abs_mean": float(out.float().abs().mean().item()),
@@ -118,6 +125,8 @@ def main() -> None:
     parser.add_argument("--kv-heads", type=int, default=2)
     parser.add_argument("--q-heads", type=int, default=4)
     parser.add_argument("--tokens", type=int, default=32)
+    parser.add_argument("--key-scale-mode", choices=["nc", "ub", "ip"], default="nc")
+    parser.add_argument("--codebook-init", choices=["auto", "fibquant"], default="auto")
     args = parser.parse_args()
     rows = [
         run_case(
@@ -126,6 +135,8 @@ def main() -> None:
             kv_heads=args.kv_heads,
             q_heads=args.q_heads,
             tokens=args.tokens,
+            key_scale_mode=args.key_scale_mode,
+            codebook_init=args.codebook_init,
         )
         for b in args.bits
     ]
