@@ -608,7 +608,12 @@ def triton_hayatequant_store(
     block_grp = triton.next_power_of_2(D // 8) if D >= 8 else 1
     n_key_blocks = D // hayate_block_size
     code_bits = key_bits * hayate_block_size
-    group_codes = 1 if code_bits == 8 else 4
+    # For 4-bit Hayate keys (8-bit code index per 2D block), the cache format
+    # stores one byte per block, but the assignment kernel can still score
+    # several adjacent 2D blocks in one Triton program.  Grouping four blocks
+    # cuts program count and repeated codebook loads by 4x without changing the
+    # byte layout; keep an env override for quick kernel-shape sweeps.
+    group_codes = _store_group_codes(code_bits)
     n_groups = math.ceil(n_key_blocks / group_codes)
     key_scale_id = _key_scale_mode_id(key_scale_mode)
 
@@ -738,6 +743,19 @@ def _decode_block_kv(key_bits: int) -> int:
     if block_kv not in {1, 2, 4, 8, 16}:
         raise ValueError("KVCOMP_VLLM_HAYATE_BLOCK_KV must be one of 1,2,4,8,16")
     return block_kv
+
+
+def _store_group_codes(code_bits: int) -> int:
+    mode = os.environ.get("KVCOMP_VLLM_HAYATE_STORE_GROUP_CODES", "auto")
+    mode = mode.strip().lower().replace("-", "_")
+    if mode == "auto":
+        return 4
+    group_codes = int(mode)
+    if group_codes not in {1, 2, 4, 8, 16}:
+        raise ValueError("KVCOMP_VLLM_HAYATE_STORE_GROUP_CODES must be one of 1,2,4,8,16")
+    if code_bits != 8 and group_codes != 4:
+        raise ValueError("6-bit Hayate key packing requires STORE_GROUP_CODES=4")
+    return group_codes
 
 
 def _decode_num_warps(key_bits: int) -> int:

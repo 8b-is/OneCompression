@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import time
 
 import torch
 
@@ -41,7 +42,7 @@ def _dtype_for(bits: int) -> str:
 
 def run_case(
     bits: int, *, head_dim: int, kv_heads: int, q_heads: int, tokens: int,
-    key_scale_mode: str, codebook_init: str,
+    key_scale_mode: str, codebook_init: str, bench_iters: int,
 ) -> dict:
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required for the native vLLM HayateQuant smoke test")
@@ -107,7 +108,7 @@ def run_case(
         raise AssertionError(f"unexpected output shape: {tuple(out.shape)}")
     if not torch.isfinite(out).all():
         raise AssertionError("decode output contains non-finite values")
-    return {
+    row = {
         "bits": bits,
         "key_scale_mode": key_scale_mode,
         "codebook_init": codebook_init,
@@ -116,6 +117,83 @@ def run_case(
         "output_abs_mean": float(out.float().abs().mean().item()),
         "output_abs_max": float(out.float().abs().max().item()),
     }
+    if bench_iters > 0:
+        for _ in range(5):
+            triton_hayatequant_store(
+                key,
+                value,
+                kv_cache,
+                slot_mapping,
+                rotation,
+                codebook,
+                block_size,
+                bits,
+                key_packed_size=tq.key_packed_size,
+                value_quant_bits=tq.effective_value_quant_bits,
+                key_scale_mode=key_scale_mode,
+            )
+            triton_hayatequant_decode_attention(
+                query=query,
+                kv_cache=kv_cache,
+                block_table=block_table,
+                seq_lens=seq_lens,
+                rotation=rotation,
+                codebook=codebook,
+                scale=head_dim**-0.5,
+                key_bits=bits,
+                key_packed_size=tq.key_packed_size,
+                value_quant_bits=tq.effective_value_quant_bits,
+                hayate_block_size=block_size,
+                norm_correction=tq.norm_correction,
+                key_scale_mode=key_scale_mode,
+                max_num_kv_splits=1,
+            )
+        torch.cuda.synchronize()
+        t0 = time.perf_counter()
+        for _ in range(bench_iters):
+            triton_hayatequant_store(
+                key,
+                value,
+                kv_cache,
+                slot_mapping,
+                rotation,
+                codebook,
+                block_size,
+                bits,
+                key_packed_size=tq.key_packed_size,
+                value_quant_bits=tq.effective_value_quant_bits,
+                key_scale_mode=key_scale_mode,
+            )
+        torch.cuda.synchronize()
+        store_ms = (time.perf_counter() - t0) * 1.0e3 / bench_iters
+
+        t0 = time.perf_counter()
+        for _ in range(bench_iters):
+            triton_hayatequant_decode_attention(
+                query=query,
+                kv_cache=kv_cache,
+                block_table=block_table,
+                seq_lens=seq_lens,
+                rotation=rotation,
+                codebook=codebook,
+                scale=head_dim**-0.5,
+                key_bits=bits,
+                key_packed_size=tq.key_packed_size,
+                value_quant_bits=tq.effective_value_quant_bits,
+                hayate_block_size=block_size,
+                norm_correction=tq.norm_correction,
+                key_scale_mode=key_scale_mode,
+                max_num_kv_splits=1,
+            )
+        torch.cuda.synchronize()
+        decode_ms = (time.perf_counter() - t0) * 1.0e3 / bench_iters
+        row.update({
+            "bench_iters": bench_iters,
+            "store_ms": round(store_ms, 4),
+            "decode_ms": round(decode_ms, 4),
+            "store_Mtok_s": round(tokens / max(store_ms, 1.0e-9) / 1.0e3, 3),
+        })
+    return row
 
 
 def main() -> None:
@@ -127,6 +205,7 @@ def main() -> None:
     parser.add_argument("--tokens", type=int, default=32)
     parser.add_argument("--key-scale-mode", choices=["nc", "ub", "ip"], default="nc")
     parser.add_argument("--codebook-init", choices=["auto", "fibquant"], default="auto")
+    parser.add_argument("--bench-iters", type=int, default=50)
     args = parser.parse_args()
     rows = [
         run_case(
@@ -137,6 +216,7 @@ def main() -> None:
             tokens=args.tokens,
             key_scale_mode=args.key_scale_mode,
             codebook_init=args.codebook_init,
+            bench_iters=args.bench_iters,
         )
         for b in args.bits
     ]

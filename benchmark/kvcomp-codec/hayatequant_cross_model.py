@@ -223,7 +223,15 @@ def _dist_k(data: dict, bits: str, method: str) -> float | None:
 
 
 def _best_hayate(data: dict, bits: str) -> tuple[str, float | None]:
-    candidates = ["HayateQuant-auto", "HayateQuant-K12", "HayateQuant-K4V2", "HayateQuant-dense-LS"]
+    candidates = [
+        "HayateQuant-selected",
+        "HayateQuant-frontier",
+        "HayateQuant-auto",
+        "HayateQuant-K12",
+        f"HayateQuant-K{int(bits) + 1}V{int(bits) - 1}",
+        f"HayateQuant-K{int(bits) + 1}V{int(bits) - 1}-keyUB",
+        "HayateQuant-dense-LS",
+    ]
     best_name = "HayateQuant-auto"
     best_val = _ppl(data, bits, best_name)
     for name in candidates[1:]:
@@ -239,28 +247,31 @@ def _fmt(value: float | None, ndigits: int = 2) -> str:
 
 def _summarize(args: argparse.Namespace) -> None:
     rows: list[str] = []
-    rows.append("| Model | 2b TQ | 2b TQ-QJL | 2b HQ best | 3b TQ | 3b TQ-QJL | 3b HQ best | 4b TQ | 4b TQ-QJL | 4b HQ best | 3b dist(K) gain |")
-    rows.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+    rows.append("| Model | 2b TQ | 2b Fib | 2b Block | 2b HQ best | 3b TQ | 3b Fib | 3b Block | 3b HQ best | 4b TQ | 4b Fib | 4b Block | 4b HQ best | 3b dist(K) gain |")
+    rows.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     for path in _iter_result_files(args.output_root):
         data = json.loads(path.read_text())
         model = data.get("model") or path.stem.replace("results_", "")
         tq2 = _ppl(data, "2", "TurboQuant-hadamard")
-        qjl2 = _ppl(data, "2", "TurboQuant-QJL")
+        fib2 = _ppl(data, "2", "FibQuant")
+        bq2 = _ppl(data, "2", "BlockQuant")
         hq2_name, hq2 = _best_hayate(data, "2")
         tq3 = _ppl(data, "3", "TurboQuant-hadamard")
-        qjl3 = _ppl(data, "3", "TurboQuant-QJL")
+        fib3 = _ppl(data, "3", "FibQuant")
+        bq3 = _ppl(data, "3", "BlockQuant")
         hq3_name, hq3 = _best_hayate(data, "3")
         tq4 = _ppl(data, "4", "TurboQuant-hadamard")
-        qjl4 = _ppl(data, "4", "TurboQuant-QJL")
+        fib4 = _ppl(data, "4", "FibQuant")
+        bq4 = _ppl(data, "4", "BlockQuant")
         hq4_name, hq4 = _best_hayate(data, "4")
         tq3_d = _dist_k(data, "3", "TurboQuant-hadamard")
         hq3_d = _dist_k(data, "3", "HayateQuant-auto")
         gain = None if tq3_d in (None, 0) or hq3_d is None else 100.0 * (1.0 - hq3_d / tq3_d)
         rows.append(
-            f"| {model} | {_fmt(tq2)} | {_fmt(qjl2)} | {_fmt(hq2)} "
-            f"({hq2_name.replace('HayateQuant-', 'HQ-')}) | {_fmt(tq3)} | {_fmt(qjl3)} "
-            f"| {_fmt(hq3)} ({hq3_name.replace('HayateQuant-', 'HQ-')}) | {_fmt(tq4)} "
-            f"| {_fmt(qjl4)} | {_fmt(hq4)} ({hq4_name.replace('HayateQuant-', 'HQ-')}) "
+            f"| {model} | {_fmt(tq2)} | {_fmt(fib2)} | {_fmt(bq2)} | {_fmt(hq2)} "
+            f"({hq2_name.replace('HayateQuant-', 'HQ-')}) | {_fmt(tq3)} | {_fmt(fib3)} "
+            f"| {_fmt(bq3)} | {_fmt(hq3)} ({hq3_name.replace('HayateQuant-', 'HQ-')}) | {_fmt(tq4)} "
+            f"| {_fmt(fib4)} | {_fmt(bq4)} | {_fmt(hq4)} ({hq4_name.replace('HayateQuant-', 'HQ-')}) "
             f"| {_fmt(gain, 1)}% |"
         )
     text = "\n".join(rows)

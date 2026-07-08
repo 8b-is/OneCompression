@@ -237,40 +237,82 @@ def _summarize(args: argparse.Namespace) -> None:
         if incomplete:
             raise SystemExit("Incomplete zero-shot results:\n" + "\n".join(incomplete))
     rows = [
-        "| Model | Tasks | 2b TQ acc_norm | 2b HQ acc_norm | delta | 3b TQ acc_norm | 3b HQ acc_norm | delta |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|",
+        "| Model | Tasks | 2b TQ | 2b Fib | 2b Block | 2b HQ best | delta | 3b TQ | 3b Fib | 3b Block | 3b HQ best | delta | 4b TQ | 4b Fib | 4b Block | 4b HQ best | delta |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     tq2_vals: list[float] = []
+    fib2_vals: list[float] = []
+    bq2_vals: list[float] = []
     hq2_vals: list[float] = []
     tq3_vals: list[float] = []
+    fib3_vals: list[float] = []
+    bq3_vals: list[float] = []
     hq3_vals: list[float] = []
+    tq4_vals: list[float] = []
+    fib4_vals: list[float] = []
+    bq4_vals: list[float] = []
+    hq4_vals: list[float] = []
     for payload in payloads:
         model = payload.get("model", "unknown")
         task_count = len(payload.get("tasks") or [])
         tq2 = _method(payload, "2", "TurboQuant-hadamard")
+        fib2 = _method(payload, "2", "FibQuant")
+        bq2 = _method(payload, "2", "BlockQuant")
         hq2_name, hq2 = _best_hayate(payload, "2")
         tq3 = _method(payload, "3", "TurboQuant-hadamard")
+        fib3 = _method(payload, "3", "FibQuant")
+        bq3 = _method(payload, "3", "BlockQuant")
         hq3_name, hq3 = _best_hayate(payload, "3")
+        tq4 = _method(payload, "4", "TurboQuant-hadamard")
+        fib4 = _method(payload, "4", "FibQuant")
+        bq4 = _method(payload, "4", "BlockQuant")
+        hq4_name, hq4 = _best_hayate(payload, "4")
         tq2_a = None if tq2 is None else tq2.get("avg_acc_norm")
+        fib2_a = None if fib2 is None else fib2.get("avg_acc_norm")
+        bq2_a = None if bq2 is None else bq2.get("avg_acc_norm")
         hq2_a = None if hq2 is None else hq2.get("avg_acc_norm")
         tq3_a = None if tq3 is None else tq3.get("avg_acc_norm")
+        fib3_a = None if fib3 is None else fib3.get("avg_acc_norm")
+        bq3_a = None if bq3 is None else bq3.get("avg_acc_norm")
         hq3_a = None if hq3 is None else hq3.get("avg_acc_norm")
+        tq4_a = None if tq4 is None else tq4.get("avg_acc_norm")
+        fib4_a = None if fib4 is None else fib4.get("avg_acc_norm")
+        bq4_a = None if bq4 is None else bq4.get("avg_acc_norm")
+        hq4_a = None if hq4 is None else hq4.get("avg_acc_norm")
         if tq2_a is not None and hq2_a is not None:
             tq2_vals.append(tq2_a); hq2_vals.append(hq2_a)
+            if fib2_a is not None:
+                fib2_vals.append(fib2_a)
+            if bq2_a is not None:
+                bq2_vals.append(bq2_a)
         if tq3_a is not None and hq3_a is not None:
             tq3_vals.append(tq3_a); hq3_vals.append(hq3_a)
+            if fib3_a is not None:
+                fib3_vals.append(fib3_a)
+            if bq3_a is not None:
+                bq3_vals.append(bq3_a)
+        if tq4_a is not None and hq4_a is not None:
+            tq4_vals.append(tq4_a); hq4_vals.append(hq4_a)
+            if fib4_a is not None:
+                fib4_vals.append(fib4_a)
+            if bq4_a is not None:
+                bq4_vals.append(bq4_a)
         rows.append(
-            f"| {model} | {task_count} | {_fmt(tq2_a)} | {_fmt(hq2_a)}"
+            f"| {model} | {task_count} | {_fmt(tq2_a)} | {_fmt(fib2_a)} | {_fmt(bq2_a)} | {_fmt(hq2_a)}"
             f" ({(hq2_name or '').replace('HayateQuant-', 'HQ-')}) | {_fmt(None if tq2_a is None or hq2_a is None else hq2_a - tq2_a, 100.0)} |"
-            f" {_fmt(tq3_a)} | {_fmt(hq3_a)}"
+            f" {_fmt(tq3_a)} | {_fmt(fib3_a)} | {_fmt(bq3_a)} | {_fmt(hq3_a)}"
             f" ({(hq3_name or '').replace('HayateQuant-', 'HQ-')}) | {_fmt(None if tq3_a is None or hq3_a is None else hq3_a - tq3_a, 100.0)} |"
+            f" {_fmt(tq4_a)} | {_fmt(fib4_a)} | {_fmt(bq4_a)} | {_fmt(hq4_a)}"
+            f" ({(hq4_name or '').replace('HayateQuant-', 'HQ-')}) | {_fmt(None if tq4_a is None or hq4_a is None else hq4_a - tq4_a, 100.0)} |"
         )
-    if tq2_vals and tq3_vals:
+    if tq2_vals and tq3_vals and tq4_vals:
         rows.append(
-            f"| **Average** | **{len(args.tasks)}** | **{_fmt(mean(tq2_vals))}** | **{_fmt(mean(hq2_vals))}** | "
+            f"| **Average** | **{len(args.tasks)}** | **{_fmt(mean(tq2_vals))}** | **{_fmt(mean(fib2_vals) if fib2_vals else None)}** | **{_fmt(mean(bq2_vals) if bq2_vals else None)}** | **{_fmt(mean(hq2_vals))}** | "
             f"**{_fmt(mean(hq2_vals) - mean(tq2_vals), 100.0)}** | "
-            f"**{_fmt(mean(tq3_vals))}** | **{_fmt(mean(hq3_vals))}** | "
-            f"**{_fmt(mean(hq3_vals) - mean(tq3_vals), 100.0)}** |"
+            f"**{_fmt(mean(tq3_vals))}** | **{_fmt(mean(fib3_vals) if fib3_vals else None)}** | **{_fmt(mean(bq3_vals) if bq3_vals else None)}** | **{_fmt(mean(hq3_vals))}** | "
+            f"**{_fmt(mean(hq3_vals) - mean(tq3_vals), 100.0)}** | "
+            f"**{_fmt(mean(tq4_vals))}** | **{_fmt(mean(fib4_vals) if fib4_vals else None)}** | **{_fmt(mean(bq4_vals) if bq4_vals else None)}** | **{_fmt(mean(hq4_vals))}** | "
+            f"**{_fmt(mean(hq4_vals) - mean(tq4_vals), 100.0)}** |"
         )
     text = "\n".join(rows)
     print(text)
@@ -288,9 +330,16 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--python", type=Path, default=REPO_ROOT / ".venv" / "bin" / "python")
     ap.add_argument("--device", default="cuda:0")
     ap.add_argument("--dtype", default="bfloat16")
-    ap.add_argument("--bits", nargs="+", default=["2", "3"])
+    ap.add_argument("--bits", nargs="+", default=["2", "3", "4"])
     ap.add_argument("--tasks", nargs="+", default=["arc_easy", "arc_challenge", "piqa", "hellaswag", "winogrande"])
-    ap.add_argument("--methods", nargs="+", default=["TurboQuant-hadamard", "HayateQuant-auto", "HayateQuant-K12", "HayateQuant-dense-LS"])
+    ap.add_argument("--methods", nargs="+", default=[
+        "TurboQuant-hadamard",
+        "FibQuant",
+        "BlockQuant",
+        "HayateQuant-selected",
+        "HayateQuant-frontier",
+        "HayateQuant-auto",
+    ])
     ap.add_argument("--include-fullkv", action="store_true")
     ap.add_argument("--limit", type=int)
     ap.add_argument("--sample-seed", type=int, default=2027)

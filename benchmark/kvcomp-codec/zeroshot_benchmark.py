@@ -44,9 +44,11 @@ DEFAULT_TASKS = ("arc_easy", "arc_challenge", "piqa", "hellaswag", "winogrande")
 DEFAULT_METHODS = (
     "FullKV",
     "TurboQuant-hadamard",
+    "FibQuant",
+    "BlockQuant",
+    "HayateQuant-selected",
+    "HayateQuant-frontier",
     "HayateQuant-auto",
-    "HayateQuant-K12",
-    "HayateQuant-dense-LS",
 )
 
 

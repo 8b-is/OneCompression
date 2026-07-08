@@ -157,6 +157,18 @@ def _codecs(bits, ablation=False):
         # max_codebook_bits budget) + folded hybrid rotation + grid-LUT O(1)
         # encoder (encoder="auto" default) + HALO's scale levers.
         "HayateQuant-auto": HayateQuantCodec(bits=bits, block_size=None, rotation_mode="auto"),
+        # Direct reproduction proxies for the two closest 2026 block-vector
+        # baselines under this repo's shared KV-cache runtime.  FibQuant keeps
+        # HayateQuant's payload/rotation path but replaces Lloyd's random
+        # initialization with the Fibonacci radial-angular construction.
+        # BlockQuant keeps the block-sphere scale choices (UB for keys, BSM
+        # for values) without HayateQuant's K/V frontier-rate selection.  The
+        # paper reports these rows as external-method baselines, while the
+        # HayateQuant-* rows isolate what remains novel after importing them.
+        "FibQuant": HayateQuantCodec(bits=bits, block_size=None, rotation_mode="auto",
+                                     codebook_init="fibquant"),
+        "BlockQuant": HayateQuantCodec(bits=bits, block_size=None, rotation_mode="auto",
+                                       key_scale_mode="ub", value_scale_mode="bsm"),
         # LUT-approximation ablation: identical codec with the exact O(K)
         # nearest-codeword search, to quantify the LUT's excess distortion on
         # real KV (expected ~0; the LUT approximates assignment only).
@@ -179,8 +191,7 @@ def _codecs(bits, ablation=False):
         # uniform row: K(r+1)V(r-1).  This generalizes the validated K4V2
         # operating point across target rates {2,3,4}.
         **(({"HayateQuant-selected":
-             (HayateQuantCodec(bits=bits, block_size=None, rotation_mode="auto",
-                                codebook_init="fibquant")
+             (HayateQuantCodec(bits=bits, block_size=None, rotation_mode="auto")
               if bits == 4 else
               HayateQuantCodec(bits=_kv_asym(bits)[0], value_bits=_kv_asym(bits)[1],
                                 key_scale_mode="ub"))})
