@@ -4,7 +4,7 @@
 # This script is intentionally a thin orchestrator over the checked-in benchmark
 # entry points. It keeps all paper numbers reproducible from the kvcomp branch:
 # PPL/distortion, zero-shot ACC, long-context retrieval, reasoning-heavy decode,
-# codec speed, and the native vLLM kernel smoke.
+# codec speed, end-to-end decode speed, and the native vLLM kernel smoke.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -101,6 +101,16 @@ submit_speed_native() {
     "cd $LC; $common_env; $PY -u codec_speed.py --device cuda --heads 32 --seq 4096 --dim 128 --bits 2 3 4 --repeats 50 --out $RUN_ROOT/speed/codec_speed_synth.json"
   submit_wrap "hqspeed-llama" 06:00:00 180G 12 \
     "cd $LC; $common_env; $PY -u codec_speed.py --device cuda --model $MODELS/llama-3.1-8b-instruct --bits 2 3 4 --repeats 30 --out $RUN_ROOT/speed/codec_speed_llama.json"
+  submit_e2e_speed
+  submit_native_vllm
+}
+
+submit_e2e_speed() {
+  submit_wrap "hqe2e-llama" 08:00:00 180G 12 \
+    "cd $LC; $common_env; $PY -u e2e_speed.py --device cuda --model $MODELS/llama-3.1-8b-instruct --prompt-len 4096 --gen-len 128 --bits 2 3 4 --repeats 3 --dtype float16 --out $RUN_ROOT/speed/e2e_speed_llama.json"
+}
+
+submit_native_vllm() {
   if [ -x "$PYVLLM" ]; then
     submit_wrap "hqnative-vllm" 04:00:00 160G 16 \
       "cd $REPO; $common_env; $PYVLLM -u benchmark/kvcomp-codec/hayatequant_vllm_native_smoke.py --bits 3 4 --bench-iters 100 --output $RUN_ROOT/native/smoke.json"
@@ -118,7 +128,7 @@ summarize() {
 
 usage() {
   cat <<'EOF'
-Usage: submit_hayatequant_paper.sh [all|ppl|zeroshot|long|speed|summarize]
+Usage: submit_hayatequant_paper.sh [all|ppl|zeroshot|long|speed|e2e-speed|native|summarize]
 
 Environment:
   OUT=/lustre/.../kvcomp_hayatequant
@@ -142,7 +152,9 @@ case "$cmd" in
   ppl) submit_ppl ;;
   zeroshot) submit_zeroshot ;;
   long|reason) submit_long_reason ;;
-  speed|native) submit_speed_native ;;
+  speed) submit_speed_native ;;
+  e2e-speed) submit_e2e_speed ;;
+  native) submit_native_vllm ;;
   summarize) summarize ;;
   -h|--help|help) usage ;;
   *) usage; exit 2 ;;
