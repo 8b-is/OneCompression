@@ -4,7 +4,7 @@ Main experiment for the data-free rotated KV codecs, the analogue of the
 weight-side `benchmark/<model>-<recipe>/` runs.
 
 **HayateQuant** (`onecomp/kvcomp/codec/hayate/codec.py`) is the proposed
-method: block-VQ (data-free K-means codebook, shipped high-budget Lloyd
+method: block-VQ (data-free K-means codebook, high-budget Lloyd
 artifacts in `onecomp/kvcomp/codec/hayate/codebooks/`) + folded rate-aware rotation
 (single GEMM; auto resolves to Haar-dense at bits<=2 and hybrid at bits>=3,
 per the measured v7 rotation-x-scale attribution) + role-asymmetric scales
@@ -52,9 +52,9 @@ high-budget Lloyd codebook artifacts (distortion down at every point, 2-bit
 PPL -0.12) and the rate-aware auto rotation (2-bit PPL -0.21 on Llama).
 Final 2-bit Llama PPL: 8.825 vs TurboQuant-hadamard 10.161 / -dense 9.942.
 
-**v8 round** (paper README v8): adds the optional SpinQuant-style calibration
+**v8 round** (paper README v8): adds optional SpinQuant-style calibration
 (`HayateQuantCodec(calibration=...)`, learned per-role Cayley rotation +
-real-data codebook refit; opt-in, PPL never worse and -0.18 on Qwen3-8B
+real-data codebook refit; opt-in, holdout-distortion guarded and -0.18 on Qwen3-8B
 2-bit) and the K/V-asymmetric `HayateQuant-K4V2` row at the 3.0-avg-bit
 point (keys are the sensitive role: -0.09/-0.15 PPL vs uniform 3-bit on
 Llama/Qwen3-8B, RULER +0.067 on Llama, same storage).
@@ -112,7 +112,22 @@ srun --gres=gpu:1 .venv/bin/python codec_benchmark.py --config-name paper_hayate
 ```bash
 # compiles and runs the byte-compatible TurboQuant-layout HayateQuant key
 # block-VQ store/decode kernels for 3-bit and 4-bit presets; no model load
-.venv-vllm/bin/python benchmark/kvcomp-codec/hayatequant_vllm_native_smoke.py
+.venv-vllm/bin/python benchmark/kvcomp-codec/hayatequant_vllm_native_smoke.py \
+    --output /lustre/.../kvcomp_hayatequant/native_vllm/smoke.json
+```
+
+**Full HayateQuant paper battery** (`submit_hayatequant_paper.sh`):
+```bash
+# PPL/distortion, zero-shot ACC, long-context retrieval, reasoning decode,
+# codec speed, and native vLLM smoke. The method set includes TurboQuant,
+# FibQuant, BlockQuant, HayateQuant, and the Fib/Block import candidates.
+bash benchmark/kvcomp-codec/submit_hayatequant_paper.sh all
+
+# individual slices
+bash benchmark/kvcomp-codec/submit_hayatequant_paper.sh ppl
+bash benchmark/kvcomp-codec/submit_hayatequant_paper.sh zeroshot
+bash benchmark/kvcomp-codec/submit_hayatequant_paper.sh long
+bash benchmark/kvcomp-codec/submit_hayatequant_paper.sh speed
 ```
 
 (`conf/paper_halo.yaml` is kept only to reproduce the historical HALO runs.)

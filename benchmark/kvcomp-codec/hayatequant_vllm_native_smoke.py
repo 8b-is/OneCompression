@@ -20,6 +20,7 @@ import argparse
 import json
 import math
 import time
+from pathlib import Path
 
 import torch
 
@@ -206,6 +207,11 @@ def main() -> None:
     parser.add_argument("--key-scale-mode", choices=["nc", "ub", "ip"], default="nc")
     parser.add_argument("--codebook-init", choices=["auto", "fibquant"], default="auto")
     parser.add_argument("--bench-iters", type=int, default=50)
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="Optional JSON path for the smoke and timing result.",
+    )
     args = parser.parse_args()
     rows = [
         run_case(
@@ -220,7 +226,12 @@ def main() -> None:
         )
         for b in args.bits
     ]
-    print(json.dumps({"ok": True, "cases": rows}, indent=2, sort_keys=True))
+    payload = {"ok": True, "cases": rows}
+    text = json.dumps(payload, indent=2, sort_keys=True)
+    print(text)
+    if args.output is not None:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(text + "\n")
 
 
 if __name__ == "__main__":
