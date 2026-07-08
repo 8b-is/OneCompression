@@ -10,6 +10,7 @@ from .hayate.vq import (  # noqa: F401
     resolve_block_size,
     lloyd_vq_gaussian_block,
     lloyd_vq_beta_block,
+    fibquant_initial_codebook,
     quantize_to_vq_codebook,
     quantize_and_lookup,
     lookup_codewords,

@@ -200,7 +200,20 @@ def _codecs(bits, ablation=False):
         # practice, where the two laws are already close).
         "HayateQuant-beta": HayateQuantCodec(bits=bits, block_size=None,
                                              rotation_mode="auto", dist="beta"),
-        # (d) block-size monotonicity on real KV: explicit b=2 between the
+        # (d) FibQuant import: same HayateQuant objective and payload format,
+        # but Lloyd is warm-started from FibQuant's radial-angular codebook
+        # (Beta-quantile radii + Fibonacci/Roberts directions).
+        "HayateQuant-fibinit": HayateQuantCodec(bits=bits, block_size=None,
+                                                rotation_mode="auto",
+                                                codebook_init="fibquant"),
+        # (e) BlockQuant scale terminology: BQ-BSM is HayateQuant LS; BQ-UB is
+        # HayateQuant IP. This row makes the unbiased-inner-product key path
+        # explicit without changing storage or the block-VQ codebook.
+        "HayateQuant-BQscale": HayateQuantCodec(bits=bits, block_size=None,
+                                                rotation_mode="auto",
+                                                key_scale_mode="ub",
+                                                value_scale_mode="bsm"),
+        # (f) block-size monotonicity on real KV: explicit b=2 between the
         # scalar bs1 row and the auto row (auto resolves b=4 at 2-bit,
         # b=2 at 3/4-bit under the default max_codebook_bits=9).
         "HayateQuant-bs2": HayateQuantCodec(bits=bits, block_size=2,

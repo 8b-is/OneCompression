@@ -426,6 +426,33 @@ def test_hayatequant_payload_dist_roundtrip():
     assert torch.allclose(k1, k2)
 
 
+def test_hayatequant_payload_codebook_init_roundtrip():
+    # ``codebook_init`` can change the block codebook. Store it in the payload
+    # so decode is self-describing even if the codec object is reconfigured.
+    x, _ = _kv(h=2, s=16, d=32)
+    enc = HayateQuantCodec(bits=2, block_size=2, codebook_init="fibquant",
+                           encoder="exact")
+    comp = enc.encode(x, x)
+    dec = HayateQuantCodec(bits=2, block_size=2, codebook_init="forgy",
+                           encoder="exact")
+    k1, _ = enc.decode(comp)
+    k2, _ = dec.decode(comp)
+    assert torch.allclose(k1, k2)
+
+
+def test_hayatequant_fibquant_init_shape_and_finite():
+    # FibQuant's radial-angular design is used as a deterministic warm start
+    # for HayateQuant's Lloyd block-VQ fit.
+    from onecomp.kvcomp.codec.hayate.vq import fibquant_initial_codebook
+
+    cb2 = fibquant_initial_codebook(bits=2, block_size=2, ambient_dim=128)
+    cb4 = fibquant_initial_codebook(bits=1, block_size=4, ambient_dim=128)
+    assert cb2.shape == (16, 2)
+    assert cb4.shape == (16, 4)
+    assert torch.isfinite(cb2).all() and torch.isfinite(cb4).all()
+    assert bool((cb2.norm(dim=1) > 0).all())
+
+
 def test_hayatequant_block_size_1_matches_halo_scale_modes():
     # block_size=1 with HALO's role-asymmetric scale modes -> bit-identical to
     # HALOCodec (HayateQuant absorbs _scale.fit_scale, the shared module both
@@ -472,6 +499,25 @@ def test_hayatequant_invalid_block_size_raises():
         HayateQuantCodec(bits=2, block_size=0)
 
 
+def test_hayatequant_invalid_codebook_init_raises():
+    with pytest.raises(Exception):
+        HayateQuantCodec(bits=2, codebook_init="random_magic")
+
+
+def test_blockquant_scale_aliases_match_existing_modes():
+    from onecomp.kvcomp.codec._scale import fit_scale
+
+    xr = torch.randn(8, 16)
+    chat = xr + 0.05 * torch.randn_like(xr)
+    rms = xr.pow(2).mean(-1, keepdim=True).sqrt()
+    s_ls, _ = fit_scale(xr, chat, "ls", rms)
+    s_bsm, _ = fit_scale(xr, chat, "bsm", rms)
+    s_ip, _ = fit_scale(xr, chat, "ip", rms)
+    s_ub, _ = fit_scale(xr, chat, "ub", rms)
+    assert torch.allclose(s_bsm, s_ls)
+    assert torch.allclose(s_ub, s_ip)
+
+
 def test_hayatequant_block_size_falls_back_when_codebook_too_big():
     # An unreachable max_codebook_bits budget (even block_size=1 doesn't fit)
     # must fall back to block_size=1, never raise at encode time -- HayateQuant
@@ -490,6 +536,22 @@ def test_hayatequant_outlier_mixed_precision_matches_halo_accounting():
                           rotation_mode="hadamard")
     ha = HALOCodec(bits=2, n_outlier=64, outlier_bits=3, rotation_mode="hadamard")
     assert hq.encode(x, x).meta["stored_bits"] == ha.encode(x, x).meta["stored_bits"]
+
+
+def test_hayatequant_role_specific_outlier_accounting_blockquant_recipe():
+    # BlockQuant's KV-cache recipe protects key outlier channels while keeping
+    # values at a lower uniform bit-width.
+    x, _ = _kv(h=2, s=16, d=128)
+    c = HayateQuantCodec(bits=3, value_bits=2,
+                         key_n_outlier=32, key_outlier_bits=4,
+                         value_n_outlier=0)
+    enc = c.encode(x, x)
+    vecs = x.shape[0] * x.shape[1] * x.shape[2]
+    key_bits = vecs * (32 * 4 + 96 * 3) + vecs * 2 * 16
+    value_bits = x.numel() * 2 + vecs * 16
+    assert enc.meta["stored_bits"] == key_bits + value_bits
+    assert enc.key_q["mode"] == "outlier"
+    assert enc.value_q["mode"] == "single"
 
 
 def test_hybrid_rotation_matrix_matches_two_stage():
@@ -661,6 +723,8 @@ def test_hayatequant_calibration_config_and_outlier_guard():
     assert c.get_kv_config()["calibration"] == cal.digest
     with pytest.raises(ValueError, match="n_outlier"):
         HayateQuantCodec(bits=2, calibration=cal, n_outlier=4)
+    with pytest.raises(ValueError, match="n_outlier"):
+        HayateQuantCodec(bits=2, calibration=cal, key_n_outlier=4)
     with pytest.raises(ValueError, match="calibration must be"):
         HayateQuantCodec(bits=2, calibration=123)
 
@@ -670,6 +734,10 @@ def test_hayatequant_invalid_value_or_outlier_bits_raise():
         HayateQuantCodec(bits=4, value_bits=99)
     with pytest.raises(Exception):
         HayateQuantCodec(bits=4, outlier_bits=0)
+    with pytest.raises(Exception):
+        HayateQuantCodec(bits=4, key_outlier_bits=0)
+    with pytest.raises(Exception):
+        HayateQuantCodec(bits=4, value_n_outlier=-1)
     assert HayateQuantCodec(bits=4, value_bits=2, outlier_bits=5).value_bits == 2
 
 
@@ -1627,6 +1695,15 @@ def test_vllm_mapping_turboquant_outlier_and_qjl_warn():
         "n_outlier": 32, "use_qjl": True}})
     assert any("n_outlier" in w for w in p.warnings)
     assert any("use_qjl" in w or "QJL" in w for w in p.warnings)
+
+
+def test_vllm_mapping_hayatequant_role_specific_outlier_warns():
+    from vllm_plugins.kvcomp.mapping import plan_from_kv_config
+
+    p = plan_from_kv_config({"codec": {
+        "name": "hayatequant", "bits": 4, "block_size": 1,
+        "key_n_outlier": 32, "value_n_outlier": 0}})
+    assert any("role-specific outlier" in w for w in p.warnings)
 
 
 # --- vLLM mapping: rotation-family check against the native Hadamard kernel ---

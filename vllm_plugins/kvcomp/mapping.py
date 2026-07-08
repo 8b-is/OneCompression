@@ -568,6 +568,14 @@ def plan_from_kv_config(
                     "outlier split) has no preset equivalent and is dropped by the "
                     "native mapping; use the HF cache path to keep it."
                 )
+            if int(codec.get("key_n_outlier") or 0) > 0 or int(codec.get("value_n_outlier") or 0) > 0:
+                plan.warnings.append(
+                    f"Codec '{name}' role-specific outlier split "
+                    f"(key_n_outlier={codec.get('key_n_outlier')}, "
+                    f"value_n_outlier={codec.get('value_n_outlier')}) has no preset "
+                    "equivalent and is dropped by the native mapping; use the HF "
+                    "cache path to keep the BlockQuant-style recipe."
+                )
             if codec.get("use_qjl"):
                 plan.warnings.append(
                     f"Codec '{name}' use_qjl=True is ignored: upstream vLLM "

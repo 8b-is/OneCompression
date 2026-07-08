@@ -67,6 +67,7 @@ _CODEBOOK_DIR = os.path.join(os.path.dirname(__file__), "codebooks")
 
 # Candidate block sizes considered by :func:`resolve_block_size`, largest first.
 _BLOCK_CANDIDATES = (8, 4, 2, 1)
+_CODEBOOK_INITS = ("auto", "forgy", "fibquant")
 
 
 def resolve_block_size(
@@ -107,7 +108,155 @@ def resolve_block_size(
     return 1
 
 
-def _kmeans(samples: torch.Tensor, k: int, iters: int, seed: int):
+def _normal_icdf(p: torch.Tensor) -> torch.Tensor:
+    """Inverse standard-normal CDF without adding a SciPy dependency."""
+    p = p.clamp(1.0e-12, 1.0 - 1.0e-12)
+    return math.sqrt(2.0) * torch.erfinv(2.0 * p - 1.0)
+
+
+def _regularized_beta(a: float, b: float, x: float) -> float:
+    """Regularized incomplete beta I_x(a,b), Numerical Recipes continued fraction."""
+    if x <= 0.0:
+        return 0.0
+    if x >= 1.0:
+        return 1.0
+
+    def _betacf(aa: float, bb: float, xx: float) -> float:
+        qab = aa + bb
+        qap = aa + 1.0
+        qam = aa - 1.0
+        c = 1.0
+        d = 1.0 - qab * xx / qap
+        if abs(d) < 1.0e-300:
+            d = 1.0e-300
+        d = 1.0 / d
+        h = d
+        for m in range(1, 101):
+            m2 = 2 * m
+            aa_step = m * (bb - m) * xx / ((qam + m2) * (aa + m2))
+            d = 1.0 + aa_step * d
+            if abs(d) < 1.0e-300:
+                d = 1.0e-300
+            c = 1.0 + aa_step / c
+            if abs(c) < 1.0e-300:
+                c = 1.0e-300
+            d = 1.0 / d
+            h *= d * c
+            aa_step = -(aa + m) * (qab + m) * xx / ((aa + m2) * (qap + m2))
+            d = 1.0 + aa_step * d
+            if abs(d) < 1.0e-300:
+                d = 1.0e-300
+            c = 1.0 + aa_step / c
+            if abs(c) < 1.0e-300:
+                c = 1.0e-300
+            d = 1.0 / d
+            delta = d * c
+            h *= delta
+            if abs(delta - 1.0) < 3.0e-14:
+                break
+        return h
+
+    bt = math.exp(
+        math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b)
+        + a * math.log(x) + b * math.log1p(-x)
+    )
+    if x < (a + 1.0) / (a + b + 2.0):
+        return bt * _betacf(a, b, x) / a
+    return 1.0 - bt * _betacf(b, a, 1.0 - x) / b
+
+
+def _beta_ppf(q: float, a: float, b: float) -> float:
+    """Inverse regularized beta by monotone bisection."""
+    q = min(max(float(q), 0.0), 1.0)
+    if q <= 0.0:
+        return 0.0
+    if q >= 1.0:
+        return 1.0
+    lo, hi = 0.0, 1.0
+    for _ in range(64):
+        mid = (lo + hi) * 0.5
+        if _regularized_beta(a, b, mid) < q:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) * 0.5
+
+
+def _roberts_phi(dim: int) -> float:
+    lo, hi = 1.0, 2.0
+    for _ in range(96):
+        mid = (lo + hi) * 0.5
+        if mid ** (dim + 1) - mid - 1.0 > 0.0:
+            hi = mid
+        else:
+            lo = mid
+    return (lo + hi) * 0.5
+
+
+def _fibquant_directions(block_size: int, k: int) -> torch.Tensor:
+    """Quasi-uniform FibQuant directions on S^(block_size-1)."""
+    if block_size < 2:
+        raise ValueError("FibQuant directions require block_size >= 2")
+    idx = torch.arange(k, dtype=torch.float64)
+    golden = 1.618033988749895
+    theta_g = 1.0 - 1.0 / golden
+    if block_size == 2:
+        theta = 2.0 * math.pi * idx * theta_g
+        return torch.stack((theta.cos(), theta.sin()), dim=1).to(torch.float32)
+    if block_size == 3:
+        z = 1.0 - (2.0 * (idx + 1.0) - 1.0) / float(k)
+        theta = 2.0 * math.pi * idx * theta_g
+        r = (1.0 - z.square()).clamp_min(0.0).sqrt()
+        return torch.stack((r * theta.cos(), r * theta.sin(), z), dim=1).to(torch.float32)
+    phi = _roberts_phi(block_size)
+    cols = []
+    for j in range(1, block_size + 1):
+        frac = ((idx + 0.5) * (phi ** (-j))).remainder(1.0).clamp(1.0e-12, 1.0 - 1.0e-12)
+        cols.append(_normal_icdf(frac))
+    dirs = torch.stack(cols, dim=1)
+    return (dirs / dirs.norm(dim=1, keepdim=True).clamp_min(1.0e-12)).to(torch.float32)
+
+
+def _fibquant_radii(block_size: int, ambient_dim: int, k: int) -> torch.Tensor:
+    """FibQuant Bennett-Gersho radial companding, RMS-scaled for HayateQuant."""
+    d = max(int(ambient_dim), block_size)
+    qs = [(i + 0.5) / float(k) for i in range(k)]
+    if block_size == d:
+        unit = torch.ones(k, dtype=torch.float64)
+    elif block_size == 2 and d > 2:
+        unit = torch.tensor(
+            [math.sqrt(max(0.0, 1.0 - (1.0 - q) ** (4.0 / d))) for q in qs],
+            dtype=torch.float64,
+        )
+    else:
+        alpha = block_size / 2.0
+        beta = block_size / (block_size + 2.0) * ((d - block_size - 2.0) / 2.0) + 1.0
+        beta = max(beta, 1.0e-6)
+        unit = torch.tensor([math.sqrt(_beta_ppf(q, alpha, beta)) for q in qs], dtype=torch.float64)
+    return (unit * math.sqrt(float(d))).to(torch.float32)
+
+
+def fibquant_initial_codebook(bits: int, block_size: int, ambient_dim: int) -> torch.Tensor:
+    """Deterministic FibQuant radial-angular initial codebook.
+
+    It is used as a Lloyd warm-start, not as a raw replacement for the learned
+    HayateQuant codebook.
+    """
+    if block_size < 2:
+        raise ValueError("FibQuant initial codebook requires block_size >= 2")
+    k = 1 << (bits * block_size)
+    dirs = _fibquant_directions(block_size, k)
+    radii = _fibquant_radii(block_size, ambient_dim, k)
+    return (radii.unsqueeze(1) * dirs).contiguous()
+
+
+def _validate_codebook_init(init: str) -> str:
+    if init not in _CODEBOOK_INITS:
+        raise ValueError(f"codebook_init must be one of {_CODEBOOK_INITS}, got {init!r}")
+    return init
+
+
+def _kmeans(samples: torch.Tensor, k: int, iters: int, seed: int, init: "torch.Tensor | None" = None):
     """Batched Lloyd's algorithm (K-means) for ``k`` centroids in R^m.
 
     Memory-efficient (``index_add_``-based centroid update, no ``O(N*K)``
@@ -123,9 +272,14 @@ def _kmeans(samples: torch.Tensor, k: int, iters: int, seed: int):
     """
     n, m = samples.shape
     device = samples.device
-    gen = torch.Generator(device="cpu").manual_seed(seed)
-    perm = torch.randperm(n, generator=gen)[:k]
-    centroids = samples[perm].clone()
+    if init is None:
+        gen = torch.Generator(device="cpu").manual_seed(seed)
+        perm = torch.randperm(n, generator=gen)[:k]
+        centroids = samples[perm].clone()
+    else:
+        centroids = init.to(device=device, dtype=samples.dtype).clone()
+        if tuple(centroids.shape) != (k, m):
+            raise ValueError(f"init shape must be {(k, m)}, got {tuple(centroids.shape)}")
     sq = samples.pow(2).sum(dim=1, keepdim=True)  # (n, 1), reused every iter
     for _ in range(iters):
         csq = centroids.pow(2).sum(dim=1)  # (k,)
@@ -156,7 +310,10 @@ def _kmeans(samples: torch.Tensor, k: int, iters: int, seed: int):
     return centroids, sse
 
 
-def _kmeans_best_of(samples: torch.Tensor, k: int, iters: int, seed: int, restarts: int) -> torch.Tensor:
+def _kmeans_best_of(
+    samples: torch.Tensor, k: int, iters: int, seed: int, restarts: int,
+    init: "torch.Tensor | None" = None,
+) -> torch.Tensor:
     """Run :func:`_kmeans` from ``restarts`` seeded inits, keep the lowest-SSE fit.
 
     Lloyd's algorithm only guarantees a local optimum; a handful of restarts
@@ -166,7 +323,10 @@ def _kmeans_best_of(samples: torch.Tensor, k: int, iters: int, seed: int, restar
     """
     best_centroids, best_sse = None, float("inf")
     for r in range(max(1, restarts)):
-        centroids, sse = _kmeans(samples, k, iters, seed + r * 7919)
+        centroids, sse = _kmeans(
+            samples, k, iters, seed + r * 7919,
+            init=init if r == 0 else None,
+        )
         if sse < best_sse:
             best_centroids, best_sse = centroids, sse
     return best_centroids
@@ -219,7 +379,8 @@ def _gaussian_codebook_artifact(block_size: int, k: int) -> "torch.Tensor | None
 @lru_cache(maxsize=32)
 def lloyd_vq_gaussian_block(
     bits: int, block_size: int, iters: int = 25, n_samples: int = 100_000,
-    seed: int = 0, restarts: int = 4,
+    seed: int = 0, restarts: int = 4, *, init: str = "auto",
+    ambient_dim: "int | None" = None,
 ) -> torch.Tensor:
     """Data-free block-VQ codebook for i.i.d. ``N(0, 1)`` coordinates.
 
@@ -236,21 +397,25 @@ def lloyd_vq_gaussian_block(
     zero runtime cost, and bit-exact reproducibility across machines.
     Callers passing non-default fit hyperparameters keep the online fit.
     """
+    init = _validate_codebook_init(init)
     k = 1 << (bits * block_size)
     default_fit = (iters, n_samples, seed, restarts) == (25, 100_000, 0, 4)
-    if default_fit and block_size > 1:
+    if default_fit and block_size > 1 and init != "fibquant":
         art = _gaussian_codebook_artifact(block_size, k)
         if art is not None:
             return art
     n_samples = min(n_samples, max(20_000, 2_000_000_000 // max(k, 1)))
     samples = _gaussian_block_samples(block_size, n_samples, seed)
-    return _kmeans_best_of(samples, k, iters, seed, restarts)
+    warm = None
+    if block_size > 1 and init in ("auto", "fibquant"):
+        warm = fibquant_initial_codebook(bits, block_size, ambient_dim or max(128, block_size + 3))
+    return _kmeans_best_of(samples, k, iters, seed, restarts, init=warm)
 
 
 @lru_cache(maxsize=32)
 def lloyd_vq_beta_block(
     bits: int, block_size: int, d: int, iters: int = 25, n_samples: int = 100_000,
-    seed: int = 0, restarts: int = 4,
+    seed: int = 0, restarts: int = 4, *, init: str = "auto",
 ) -> torch.Tensor:
     """Data-free block-VQ codebook for the exact finite-``d`` Beta/Dirichlet law.
 
@@ -259,10 +424,13 @@ def lloyd_vq_beta_block(
     ``block_size``-dim marginal of a random point on ``S^{d-1}`` (rescaled by
     ``sqrt(d)``). ``block_size=1`` recovers :func:`rotation.lloyd_max_beta`.
     """
+    init = _validate_codebook_init(init)
     k = 1 << (bits * block_size)
     n_samples = min(n_samples, max(20_000, 2_000_000_000 // max(k, 1)))
     samples = _beta_block_samples(block_size, d, n_samples, seed)
-    return _kmeans_best_of(samples, k, iters, seed, restarts)
+    warm = fibquant_initial_codebook(bits, block_size, d) \
+        if block_size > 1 and init in ("auto", "fibquant") else None
+    return _kmeans_best_of(samples, k, iters, seed, restarts, init=warm)
 
 
 # Above this many (rows * codewords) products, chunk the nearest-codeword

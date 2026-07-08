@@ -31,6 +31,10 @@ at 3-4 bit) while the systematic logit shrink halves (``cos^2`` -> ``cos``).
 Every mode stores exactly one scalar (fp16) per encoded vector, so the choice
 of mode is **storage-neutral** and independent of ``block_size``.
 
+BlockQuant terminology maps directly onto the existing modes: ``"bsm"`` is
+the best-scalar MSE scale (HayateQuant ``"ls"``), and ``"ub"`` is the
+inner-product-unbiased ratio estimator (HayateQuant ``"ip"``).
+
 Copyright 2025-2026 Fujitsu Ltd.
 """
 
@@ -40,7 +44,7 @@ from typing import Callable, Optional, Tuple
 
 import torch
 
-SCALE_MODES = ("rms", "nc", "ls", "ip", "ls_iter")
+SCALE_MODES = ("rms", "nc", "ls", "ip", "ls_iter", "bsm", "ub")
 
 
 def resolve_scale_mode(explicit: Optional[str], ls_scale: bool, role: str) -> str:
@@ -93,6 +97,10 @@ def fit_scale(
         last dim; ``new_codes`` is ``None`` unless ``mode="ls_iter"`` updated
         the codes.
     """
+    if mode == "bsm":
+        mode = "ls"
+    elif mode == "ub":
+        mode = "ip"
     if mode == "rms":
         return rms, None
     if mode == "nc":

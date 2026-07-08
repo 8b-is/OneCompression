@@ -230,7 +230,7 @@ def calibrate_hayatequant(
         HayateQuantCalibration with per-role rotations/codebooks and fit
         diagnostics in ``meta`` (held-out distortion before/after per role).
     """
-    if codec.n_outlier:
+    if codec._n_outlier_for("k") or codec._n_outlier_for("v"):
         raise ValueError("calibration currently requires n_outlier=0")
     if not (learn_rotation or learn_codebook):
         raise ValueError("nothing to learn: enable learn_rotation and/or learn_codebook")
@@ -254,7 +254,7 @@ def calibrate_hayatequant(
         x_hold, x_train = x[:n_hold], x[n_hold:]
 
         w0 = _initial_rotation(codec, d, block_size, bits, device)
-        cb = _block_codebook(bits, block_size, codec.dist, d).to(device)
+        cb = _block_codebook(bits, block_size, codec.dist, d, codec.codebook_init).to(device)
         base = _distortion(x_hold, w0, cb, block_size)
         best = {"w": w0.clone(), "cb": cb.clone(), "dist": base}
 

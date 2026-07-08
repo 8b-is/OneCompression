@@ -148,7 +148,7 @@ from .vq import (
     build_vq_lut,
     quantize_via_lut,
 )
-from .._scale import resolve_scale_mode, fit_scale
+from .._scale import SCALE_MODES, resolve_scale_mode, fit_scale
 
 
 @lru_cache(maxsize=16)
@@ -166,8 +166,10 @@ def _scalar_codebook(bits: int, dist: str, m: int) -> torch.Tensor:
     return lloyd_max_gaussian(bits)
 
 
-@lru_cache(maxsize=32)
-def _block_codebook(bits: int, block_size: int, dist: str, m: int) -> torch.Tensor:
+@lru_cache(maxsize=64)
+def _block_codebook(
+    bits: int, block_size: int, dist: str, m: int, codebook_init: str = "auto",
+) -> torch.Tensor:
     """``(2**(bits*block_size), block_size)`` data-free block-VQ codebook.
 
     ``block_size=1`` returns the ordinary scalar Lloyd-Max codebook reshaped
@@ -178,8 +180,8 @@ def _block_codebook(bits: int, block_size: int, dist: str, m: int) -> torch.Tens
     if block_size == 1:
         return _scalar_codebook(bits, dist, m).unsqueeze(-1)
     if dist == "beta":
-        return lloyd_vq_beta_block(bits, block_size, m)
-    return lloyd_vq_gaussian_block(bits, block_size)
+        return lloyd_vq_beta_block(bits, block_size, m, init=codebook_init)
+    return lloyd_vq_gaussian_block(bits, block_size, init=codebook_init, ambient_dim=m)
 
 
 @lru_cache(maxsize=16)
@@ -194,14 +196,16 @@ def _dense_rotation_on(dim: int, seed: int, device_str: str, dtype) -> torch.Ten
 
 
 @lru_cache(maxsize=64)
-def _block_codebook_on(bits: int, block_size: int, dist: str, m: int, device_str: str) -> torch.Tensor:
+def _block_codebook_on(
+    bits: int, block_size: int, dist: str, m: int, codebook_init: str, device_str: str,
+) -> torch.Tensor:
     """Device-resident block codebook, cached so the host->device copy happens once."""
-    return _block_codebook(bits, block_size, dist, m).to(torch.device(device_str))
+    return _block_codebook(bits, block_size, dist, m, codebook_init).to(torch.device(device_str))
 
 
 @lru_cache(maxsize=64)
 def _block_lut_on(
-    bits: int, block_size: int, dist: str, m: int, bins: int, top_t: int,
+    bits: int, block_size: int, dist: str, m: int, codebook_init: str, bins: int, top_t: int,
     device_str: str,
 ) -> torch.Tensor:
     """Device-resident candidate-list LUT for the block codebook.
@@ -210,12 +214,14 @@ def _block_lut_on(
     (codebook, resolution, device); every subsequent encode is an O(T) exact
     argmin over the cell's candidate list (see :func:`._vq.build_vq_lut`).
     """
-    cb = _block_codebook_on(bits, block_size, dist, m, device_str)
+    cb = _block_codebook_on(bits, block_size, dist, m, codebook_init, device_str)
     return build_vq_lut(cb, bins, top_t)
 
 
 @lru_cache(maxsize=64)
-def _codebook_aux_on(bits: int, block_size: int, dist: str, m: int, device_str: str):
+def _codebook_aux_on(
+    bits: int, block_size: int, dist: str, m: int, codebook_init: str, device_str: str,
+):
     """Precomputed per-codebook constants for the fused round-trip path.
 
     Returns ``(cb32, cb_score, csq, bounds)``:
@@ -235,7 +241,7 @@ def _codebook_aux_on(bits: int, block_size: int, dist: str, m: int, device_str: 
     moves) out of the hot loop is a measurable win on its own and a
     precondition for capturing the remainder in a single CUDA graph.
     """
-    cb32 = _block_codebook_on(bits, block_size, dist, m, device_str)
+    cb32 = _block_codebook_on(bits, block_size, dist, m, codebook_init, device_str)
     if block_size == 1:
         c1 = cb32.squeeze(-1)
         bounds = (c1[1:] + c1[:-1]) / 2.0
@@ -296,6 +302,10 @@ def _roundtrip_tensors(x, w, cb32, cb_score, csq, bounds, lut, bins, block_size,
 
     outs = []
     for i, mode in enumerate(modes):
+        if mode == "bsm":
+            mode = "ls"
+        elif mode == "ub":
+            mode = "ip"
         xi, ri = xr[i], rms[i]
         chat = _assign(xi / ri)
         if mode == "rms":
@@ -380,6 +390,12 @@ class HayateQuantCodec(KVCodec):
             still using ``block_size>1`` (block-VQ) at 2/3/4-bit -- raise it
             (e.g. 12+) to trade encode latency for a larger, more accurate
             block codebook at higher bit-widths.
+        codebook_init: Lloyd warm-start for block codebooks. ``"auto"``
+            preserves shipped high-budget Gaussian artifacts when available
+            and otherwise uses the FibQuant radial-angular initialization
+            before Lloyd refinement; ``"forgy"`` is the historical random
+            sample K-means initialization; ``"fibquant"`` forces the
+            FibQuant warm-start even when a Gaussian artifact exists.
         rotation_mode: ``"auto"`` (default; rate-aware: picks ``"dense"``
             when ``block_size>1`` and the subset's rate is coarse
             (``bits<=2``, where the fixed +-1 Hadamard structure measurably
@@ -413,13 +429,18 @@ class HayateQuantCodec(KVCodec):
             smart per-role defaults below; ``False``: per-vector RMS on both
             roles, the TurboQuant-faithful baseline).
         key_scale_mode / value_scale_mode: Explicit override of the per-role
-            scale (``"rms"``/``"nc"``/``"ls"``/``"ip"``/``"ls_iter"``, see
-            ``._scale``); ``None`` defers to the ``ls_scale`` smart default
+            scale (``"rms"``/``"nc"``/``"ls"``/``"ip"``/``"ls_iter"`` plus
+            BlockQuant aliases ``"bsm"`` = ``"ls"`` and ``"ub"`` = ``"ip"``);
+            ``None`` defers to the ``ls_scale`` smart default
             (``"nc"`` for keys, ``"ls_iter"`` for values).
         n_outlier / outlier_bits: Outlier mixed-precision (ported from
             TurboQuant/HALO): split the ``n_outlier`` highest-energy channels
             off and quantize them at ``outlier_bits`` (default ``bits+1``)
             for true fractional-bit operating points (e.g. 2.5/3.5-bit).
+            ``key_n_outlier``/``value_n_outlier`` and
+            ``key_outlier_bits``/``value_outlier_bits`` optionally override
+            that split per role, enabling BlockQuant-style key-only outlier
+            protection with lower-bit values.
         use_qjl: Optional 1-bit QJL-style residual refinement (off by default).
         seed: Seed for the deterministic rotations.
         calibration: Optional SpinQuant-style per-model artifact
@@ -440,6 +461,7 @@ class HayateQuantCodec(KVCodec):
     dist: str = "gaussian"
     block_size: int = None
     max_codebook_bits: int = 9
+    codebook_init: str = "auto"
     rotation_mode: str = "auto"
     encoder: str = "auto"
     hadamard_gemm_max_dim: int = 4096
@@ -448,13 +470,17 @@ class HayateQuantCodec(KVCodec):
     value_scale_mode: str = None
     n_outlier: int = 0
     outlier_bits: int = None
+    key_n_outlier: int = None
+    value_n_outlier: int = None
+    key_outlier_bits: int = None
+    value_outlier_bits: int = None
     use_qjl: bool = False
     seed: int = 0
     calibration: object = None
     key_axis: str = "token"
     value_axis: str = "token"
 
-    _SCALE_MODES = ("rms", "ls", "nc", "ip", "ls_iter")
+    _SCALE_MODES = SCALE_MODES
     _BLOCK_SIZES = (None, 1, 2, 4, 8)
 
     def _calib(self):
@@ -475,9 +501,18 @@ class HayateQuantCodec(KVCodec):
             raise ValueError(f"encoder must be 'auto', 'lut' or 'exact', got {self.encoder!r}")
         if self.dist not in ("gaussian", "beta"):
             raise ValueError("dist must be 'gaussian' or 'beta'")
+        if self.codebook_init not in ("auto", "forgy", "fibquant"):
+            raise ValueError(
+                "codebook_init must be 'auto', 'forgy' or 'fibquant', "
+                f"got {self.codebook_init!r}")
         if not (isinstance(self.bits, int) and 1 <= self.bits <= 8):
             raise ValueError(f"bits must be int in 1..8, got {self.bits!r}")
-        for label, b in (("value_bits", self.value_bits), ("outlier_bits", self.outlier_bits)):
+        for label, b in (
+            ("value_bits", self.value_bits),
+            ("outlier_bits", self.outlier_bits),
+            ("key_outlier_bits", self.key_outlier_bits),
+            ("value_outlier_bits", self.value_outlier_bits),
+        ):
             if b is not None and not (isinstance(b, int) and 1 <= b <= 8):
                 raise ValueError(f"{label} must be None or int in 1..8, got {b!r}")
         if self.block_size not in self._BLOCK_SIZES:
@@ -487,13 +522,17 @@ class HayateQuantCodec(KVCodec):
                 raise ValueError(f"scale_mode must be one of {self._SCALE_MODES} or None, got {mode!r}")
         if not (isinstance(self.n_outlier, int) and self.n_outlier >= 0):
             raise ValueError(f"n_outlier must be a non-negative int, got {self.n_outlier!r}")
+        for label, n in (("key_n_outlier", self.key_n_outlier),
+                         ("value_n_outlier", self.value_n_outlier)):
+            if n is not None and not (isinstance(n, int) and n >= 0):
+                raise ValueError(f"{label} must be None or a non-negative int, got {n!r}")
         if self.calibration is not None:
             from .calibration import HayateQuantCalibration
             if not isinstance(self.calibration, (str, HayateQuantCalibration)):
                 raise ValueError(
                     "calibration must be None, a path, or a HayateQuantCalibration, "
                     f"got {type(self.calibration).__name__}")
-            if self.n_outlier:
+            if self._n_outlier_for("k") or self._n_outlier_for("v"):
                 raise ValueError("calibration is not supported with n_outlier>0 "
                                  "(subset dims differ from the calibrated head_dim)")
         # OneComp convention: the flag (not the folder) marks calibrated codecs.
@@ -504,6 +543,18 @@ class HayateQuantCodec(KVCodec):
 
     def _outlier_bits(self) -> int:
         return self.outlier_bits if self.outlier_bits is not None else self.bits + 1
+
+    def _n_outlier_for(self, role: str) -> int:
+        explicit = self.key_n_outlier if role == "k" else self.value_n_outlier
+        return self.n_outlier if explicit is None else explicit
+
+    def _outlier_bits_for(self, role: str, bits: int) -> int:
+        explicit = self.key_outlier_bits if role == "k" else self.value_outlier_bits
+        if explicit is not None:
+            return explicit
+        if self.outlier_bits is not None:
+            return self.outlier_bits
+        return bits + 1
 
     def _scale_mode_for(self, role: str) -> str:
         explicit = self.key_scale_mode if role == "k" else self.value_scale_mode
@@ -672,7 +723,7 @@ class HayateQuantCodec(KVCodec):
         cb_cal = (cal.codebook_on(role, bits, block_size, xsub.device)
                   if cal is not None and m == cal.head_dim else None)
         cb = cb_cal if cb_cal is not None \
-            else _block_codebook_on(bits, block_size, self.dist, m, device_str)
+            else _block_codebook_on(bits, block_size, self.dist, m, self.codebook_init, device_str)
         n_blocks = m // block_size
         n_total_blocks = max(1, xr.numel() // block_size)
         lut_spec = self._use_lut(block_size, bits, n_total_blocks, xr.is_cuda)
@@ -681,7 +732,7 @@ class HayateQuantCodec(KVCodec):
         elif cb_cal is not None:
             lut = cal.lut_on(role, bits, block_size, lut_spec[0], lut_spec[1], xsub.device)
         else:
-            lut = _block_lut_on(bits, block_size, self.dist, m,
+            lut = _block_lut_on(bits, block_size, self.dist, m, self.codebook_init,
                                 lut_spec[0], lut_spec[1], device_str)
 
         def _lookup(vec_full):
@@ -705,7 +756,8 @@ class HayateQuantCodec(KVCodec):
         # codebook even if the codec instance is reconfigured between
         # encode and decode.
         payload = {"codes": codes, "scale": scale, "bits": bits, "m": m,
-                   "block_size": block_size, "rot": rot, "dist": self.dist}
+                   "block_size": block_size, "rot": rot, "dist": self.dist,
+                   "codebook_init": self.codebook_init}
         if cb_cal is not None:
             # Decode must gather from the SAME learned codebook; record the
             # role + artifact digest (same convention as the "c" rot tag).
@@ -729,7 +781,9 @@ class HayateQuantCodec(KVCodec):
                     f"{'no' if cal is None else 'a different'} calibration loaded")
             cb = cal.codebook_on(role, p["bits"], p["block_size"], device)
         else:
-            cb = _block_codebook_on(p["bits"], p["block_size"], dist, p["m"], str(device))
+            codebook_init = p.get("codebook_init", self.codebook_init)
+            cb = _block_codebook_on(
+                p["bits"], p["block_size"], dist, p["m"], codebook_init, str(device))
         chat = lookup_codewords(cb, p["codes"]).reshape(*p["codes"].shape[:-1], p["m"])
         xr = chat * p["scale"]
         if "qjl_sign" in p:
@@ -740,18 +794,19 @@ class HayateQuantCodec(KVCodec):
     # --- full-tensor encode / decode (handles the outlier split) -----------
     def _encode_tensor(self, x: torch.Tensor, bits: int, role: str) -> dict:
         head_dim = x.shape[-1]
-        if self.n_outlier <= 0 or self.n_outlier >= head_dim:
+        n_outlier = self._n_outlier_for(role)
+        if n_outlier <= 0 or n_outlier >= head_dim:
             return {"mode": "single", "main": self._quant_rotor(x, bits, role), "head_dim": head_dim}
         # Outlier mixed-precision: top-n_outlier channels by energy over tokens.
         energy = x.float().abs().amax(dim=-2)
         energy = energy.reshape(-1, head_dim).mean(dim=0)
-        out_idx = torch.argsort(energy, descending=True)[: self.n_outlier]
+        out_idx = torch.argsort(energy, descending=True)[: n_outlier]
         out_idx, _ = torch.sort(out_idx)
         mask = torch.zeros(head_dim, dtype=torch.bool, device=x.device)
         mask[out_idx] = True
         return {
             "mode": "outlier", "head_dim": head_dim, "mask": mask,
-            "out": self._quant_rotor(x[..., mask], self._outlier_bits(), role),
+            "out": self._quant_rotor(x[..., mask], self._outlier_bits_for(role, bits), role),
             "in": self._quant_rotor(x[..., ~mask], bits, role),
         }
 
@@ -769,7 +824,7 @@ class HayateQuantCodec(KVCodec):
         x[..., ~mask] = x_in
         return x.to(dtype)
 
-    def _stored_bits(self, x: torch.Tensor, bits: int) -> int:
+    def _stored_bits(self, x: torch.Tensor, bits: int, role: str) -> int:
         """Bit accounting -- identical to TurboQuant/HALO at the same ``bits``.
 
         ``block_size`` only changes how the ``bits``-per-coordinate budget is
@@ -780,13 +835,14 @@ class HayateQuantCodec(KVCodec):
         """
         b, h, s, d = x.shape
         vecs = b * h * s
-        split = 0 < self.n_outlier < d  # outlier split => two subsets per vector
+        n_outlier = self._n_outlier_for(role)
+        split = 0 < n_outlier < d  # outlier split => two subsets per vector
         if not split:
             payload_bits = x.numel() * bits
             scale_bits = vecs * 16
         else:
-            no = self.n_outlier
-            payload_bits = vecs * (no * self._outlier_bits() + (d - no) * bits)
+            no = n_outlier
+            payload_bits = vecs * (no * self._outlier_bits_for(role, bits) + (d - no) * bits)
             scale_bits = vecs * 2 * 16
         # QJL residual: 1 sign bit per coordinate + one fp16 residual-RMS per
         # encoded subset vector (two subsets when the outlier split is active).
@@ -819,7 +875,7 @@ class HayateQuantCodec(KVCodec):
     def encode(self, key, value, ctx=None) -> CompressedKV:
         kp = self._encode_tensor(key, self.bits, "k")
         vp = self._encode_tensor(value, self._value_bits(), "v")
-        stored = self._stored_bits(key, self.bits) + self._stored_bits(value, self._value_bits())
+        stored = self._stored_bits(key, self.bits, "k") + self._stored_bits(value, self._value_bits(), "v")
         return CompressedKV(key_q=kp, value_q=vp, meta={"dtype": key.dtype, "stored_bits": int(stored)})
 
     def decode(self, compressed: CompressedKV, ctx=None):
@@ -835,7 +891,7 @@ class HayateQuantCodec(KVCodec):
         rotation); anything else transparently falls back to the payload
         path, so ``fake_quant_roundtrip`` is always semantically valid.
         """
-        if self.n_outlier > 0 or self.use_qjl or self._calib() is not None:
+        if self._n_outlier_for("k") > 0 or self._n_outlier_for("v") > 0 or self.use_qjl or self._calib() is not None:
             return False
         for bits in {self.bits, self._value_bits()}:
             bs = resolve_block_size(bits, self.block_size, self.max_codebook_bits, m)
@@ -861,7 +917,7 @@ class HayateQuantCodec(KVCodec):
         block_size = resolve_block_size(bits, self.block_size, self.max_codebook_bits, m)
         w = self._rt_rotation(m, block_size, bits, x.device)
         cb32, cb_score, csq, bounds = _codebook_aux_on(
-            bits, block_size, self.dist, m, str(x.device))
+            bits, block_size, self.dist, m, self.codebook_init, str(x.device))
         # Per-role block count (x[0], not the stacked x) so the LUT-vs-exact
         # crossover decision is identical to the standalone encode path.
         n_total_blocks = max(1, x[0].numel() // block_size)
@@ -882,7 +938,8 @@ class HayateQuantCodec(KVCodec):
         if spec is None:
             lut, bins = None, 0
         else:
-            lut = _block_lut_on(bits, block_size, self.dist, m, spec[0], spec[1], str(x.device))
+            lut = _block_lut_on(
+                bits, block_size, self.dist, m, self.codebook_init, spec[0], spec[1], str(x.device))
             bins = spec[0]
         return fn(x, w, cb32, cb_score, csq, bounds, lut, bins, block_size, modes)
 
@@ -904,7 +961,7 @@ class HayateQuantCodec(KVCodec):
         if not self._rt_supported(m):
             return super().fake_quant_roundtrip(key, value, ctx=ctx)
         kb, vb = self.bits, self._value_bits()
-        stored = int(self._stored_bits(key, kb) + self._stored_bits(value, vb))
+        stored = int(self._stored_bits(key, kb, "k") + self._stored_bits(value, vb, "v"))
         k_mode, v_mode = self._scale_mode_for("k"), self._scale_mode_for("v")
         fn, compiled = _rt_dispatch()
         dtype = key.dtype
@@ -925,11 +982,17 @@ class HayateQuantCodec(KVCodec):
         cfg.update({
             "dist": self.dist, "value_bits": self.value_bits,
             "block_size": self.block_size, "max_codebook_bits": self.max_codebook_bits,
+            "codebook_init": self.codebook_init,
             "rotation_mode": self.rotation_mode, "encoder": self.encoder,
             "hadamard_gemm_max_dim": self.hadamard_gemm_max_dim,
             "ls_scale": self.ls_scale, "key_scale_mode": self.key_scale_mode,
             "value_scale_mode": self.value_scale_mode, "n_outlier": self.n_outlier,
-            "outlier_bits": self.outlier_bits, "use_qjl": self.use_qjl,
+            "outlier_bits": self.outlier_bits,
+            "key_n_outlier": self.key_n_outlier,
+            "value_n_outlier": self.value_n_outlier,
+            "key_outlier_bits": self.key_outlier_bits,
+            "value_outlier_bits": self.value_outlier_bits,
+            "use_qjl": self.use_qjl,
         })
         cal = self._calib()
         if cal is not None:

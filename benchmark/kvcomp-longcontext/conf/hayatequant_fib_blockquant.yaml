@@ -1,0 +1,68 @@
+# HayateQuant x FibQuant x BlockQuant reproduction grid.
+#
+# Purpose:
+#   * HayateQuant-base: current recommended codec.
+#   * HayateQuant-FibInit: imports FibQuant's radial-angular codebook
+#     initialisation while keeping HayateQuant's Lloyd block-VQ objective.
+#   * HayateQuant-BQScale: exposes BlockQuant's BSM/UB scalar corrections
+#     through the HayateQuant scale aliases (bsm=ls, ub=ip).
+#   * HayateQuant-BQRecipe: approximates the BlockQuant KV-cache recipe with
+#     key-only outlier protection and lower-bit values.
+
+defaults:
+  - benchmark_longcontext
+  - _self_
+
+model_path: /lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct
+attn_implementation: sdpa
+output_dir: ${hydra:runtime.cwd}/results_paper1/hayatequant_fib_blockquant
+
+thinkv:
+  auto_configure: false
+
+methods:
+  - FullKV
+  - TurboQuant-3bit
+  - HayateQuant-3bit
+  - HayateQuant-FibInit-3bit
+  - HayateQuant-BQScale-3bit
+  - HayateQuant-BQRecipe-K3V2
+
+turboquant_variants:
+  - {label: "TurboQuant-3bit", bits: 3, dist: beta}
+
+hayatequant_variants:
+  - {label: "HayateQuant-3bit", bits: 3}
+  - {label: "HayateQuant-FibInit-3bit", bits: 3, codebook_init: fibquant}
+  - {label: "HayateQuant-BQScale-3bit", bits: 3, key_scale_mode: ub, value_scale_mode: bsm}
+  - {label: "HayateQuant-BQRecipe-K3V2", bits: 3, value_bits: 2,
+     key_n_outlier: 32, key_outlier_bits: 4, value_n_outlier: 0,
+     key_scale_mode: ub, value_scale_mode: bsm}
+
+uniform_bits: []
+kivi_bits: []
+halo_variants: []
+codec_variants: []
+
+run_needle: true
+context_lens: [4096, 8192, 16384]
+depths: [0.1, 0.25, 0.5, 0.75, 0.9]
+seeds: 3
+max_new_needle: 32
+
+run_ruler: true
+ruler_keys: 4
+ruler_seeds: 5
+
+run_longbench: true
+longbench_tasks: []
+longbench_max_length: 7500
+longbench_limit: 10
+
+run_gsm8k: false
+run_math: false
+
+run_ppl: true
+ppl_max_length: 4096
+ppl_stride: 2048
+ppl_windows: 16
