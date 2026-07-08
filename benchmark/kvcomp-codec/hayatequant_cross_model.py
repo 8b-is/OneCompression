@@ -88,6 +88,8 @@ DEFAULT_MODELS: tuple[ModelSpec, ...] = (
 
 # Extra useful coverage for follow-up grids; pass with ``--models qwen3-4b`` etc.
 EXTRA_MODELS: tuple[ModelSpec, ...] = (
+    ModelSpec("qwen3-0.6b", "Qwen3-0.6B", "Qwen/Qwen3-0.6B", "Qwen3-0.6B"),
+    ModelSpec("qwen3-1.7b", "Qwen3-1.7B", "Qwen/Qwen3-1.7B", "Qwen3-1.7B"),
     ModelSpec("qwen3-14b", "Qwen3-14B", "Qwen/Qwen3-14B", "Qwen3-14B"),
     ModelSpec(
         "r1-qwen-14b",
@@ -247,7 +249,7 @@ def _fmt(value: float | None, ndigits: int = 2) -> str:
 
 def _summarize(args: argparse.Namespace) -> None:
     rows: list[str] = []
-    rows.append("| Model | 2b TQ | 2b Fib | 2b Block | 2b HQ best | 3b TQ | 3b Fib | 3b Block | 3b HQ best | 4b TQ | 4b Fib | 4b Block | 4b HQ best | 3b dist(K) gain |")
+    rows.append("| Model | 2b TQ | 2b Fib | 2b Block | 2b HayateQuant | 3b TQ | 3b Fib | 3b Block | 3b HayateQuant | 4b TQ | 4b Fib | 4b Block | 4b HayateQuant | 3b dist(K) gain |")
     rows.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     for path in _iter_result_files(args.output_root):
         data = json.loads(path.read_text())
@@ -269,9 +271,9 @@ def _summarize(args: argparse.Namespace) -> None:
         gain = None if tq3_d in (None, 0) or hq3_d is None else 100.0 * (1.0 - hq3_d / tq3_d)
         rows.append(
             f"| {model} | {_fmt(tq2)} | {_fmt(fib2)} | {_fmt(bq2)} | {_fmt(hq2)} "
-            f"({hq2_name.replace('HayateQuant-', 'HQ-')}) | {_fmt(tq3)} | {_fmt(fib3)} "
-            f"| {_fmt(bq3)} | {_fmt(hq3)} ({hq3_name.replace('HayateQuant-', 'HQ-')}) | {_fmt(tq4)} "
-            f"| {_fmt(fib4)} | {_fmt(bq4)} | {_fmt(hq4)} ({hq4_name.replace('HayateQuant-', 'HQ-')}) "
+            f"| {_fmt(tq3)} | {_fmt(fib3)} "
+            f"| {_fmt(bq3)} | {_fmt(hq3)} | {_fmt(tq4)} "
+            f"| {_fmt(fib4)} | {_fmt(bq4)} | {_fmt(hq4)} "
             f"| {_fmt(gain, 1)}% |"
         )
     text = "\n".join(rows)

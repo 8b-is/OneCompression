@@ -237,7 +237,7 @@ def _summarize(args: argparse.Namespace) -> None:
         if incomplete:
             raise SystemExit("Incomplete zero-shot results:\n" + "\n".join(incomplete))
     rows = [
-        "| Model | Tasks | 2b TQ | 2b Fib | 2b Block | 2b HQ best | delta | 3b TQ | 3b Fib | 3b Block | 3b HQ best | delta | 4b TQ | 4b Fib | 4b Block | 4b HQ best | delta |",
+        "| Model | Tasks | 2b TQ | 2b Fib | 2b Block | 2b HayateQuant | delta | 3b TQ | 3b Fib | 3b Block | 3b HayateQuant | delta | 4b TQ | 4b Fib | 4b Block | 4b HayateQuant | delta |",
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     tq2_vals: list[float] = []
@@ -299,11 +299,11 @@ def _summarize(args: argparse.Namespace) -> None:
                 bq4_vals.append(bq4_a)
         rows.append(
             f"| {model} | {task_count} | {_fmt(tq2_a)} | {_fmt(fib2_a)} | {_fmt(bq2_a)} | {_fmt(hq2_a)}"
-            f" ({(hq2_name or '').replace('HayateQuant-', 'HQ-')}) | {_fmt(None if tq2_a is None or hq2_a is None else hq2_a - tq2_a, 100.0)} |"
+            f" | {_fmt(None if tq2_a is None or hq2_a is None else hq2_a - tq2_a, 100.0)} |"
             f" {_fmt(tq3_a)} | {_fmt(fib3_a)} | {_fmt(bq3_a)} | {_fmt(hq3_a)}"
-            f" ({(hq3_name or '').replace('HayateQuant-', 'HQ-')}) | {_fmt(None if tq3_a is None or hq3_a is None else hq3_a - tq3_a, 100.0)} |"
+            f" | {_fmt(None if tq3_a is None or hq3_a is None else hq3_a - tq3_a, 100.0)} |"
             f" {_fmt(tq4_a)} | {_fmt(fib4_a)} | {_fmt(bq4_a)} | {_fmt(hq4_a)}"
-            f" ({(hq4_name or '').replace('HayateQuant-', 'HQ-')}) | {_fmt(None if tq4_a is None or hq4_a is None else hq4_a - tq4_a, 100.0)} |"
+            f" | {_fmt(None if tq4_a is None or hq4_a is None else hq4_a - tq4_a, 100.0)} |"
         )
     if tq2_vals and tq3_vals and tq4_vals:
         rows.append(

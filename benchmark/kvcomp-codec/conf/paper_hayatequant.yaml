@@ -31,6 +31,10 @@ device: cuda:0
 # Headline grid: 4-bit (mild), 3-bit (sweet spot), 2-bit (aggressive).
 bits: [4, 3, 2]
 
+# Optional method filter. Empty means run the full codec registry; paper
+# reruns override this list to benchmark only TQ/FibQuant/BlockQuant/Hayate.
+methods: []
+
 # Real-KV capture: 2048 tokens covers the typical inference regime.
 capture_tokens: 2048
 
