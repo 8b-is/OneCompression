@@ -121,9 +121,11 @@ srun --gres=gpu:1 .venv/bin/python codec_benchmark.py --config-name paper_hayate
 # PPL/distortion, zero-shot ACC, long-context retrieval, reasoning decode,
 # codec speed, and native vLLM smoke. The method set includes TurboQuant,
 # FibQuant, BlockQuant, HayateQuant, and the Fib/Block import candidates.
-bash benchmark/kvcomp-codec/submit_hayatequant_paper.sh all
+RUN_ROOT=/lustre/.../kvcomp_hayatequant/paper_final_YYYYMMDD \
+PARTITIONS=debug,batch-1gpu \
+  bash benchmark/kvcomp-codec/submit_hayatequant_paper.sh all
 
-# individual slices
+# individual slices use the same non-duplicated partition-list submission
 bash benchmark/kvcomp-codec/submit_hayatequant_paper.sh ppl
 bash benchmark/kvcomp-codec/submit_hayatequant_paper.sh zeroshot
 bash benchmark/kvcomp-codec/submit_hayatequant_paper.sh long
