@@ -108,7 +108,7 @@ submit_speed_native() {
 
 submit_e2e_speed() {
   submit_wrap "hqe2e-llama" 08:00:00 180G 12 \
-    "cd $LC; $speed_env; $PY -u e2e_speed.py --device cuda --model $MODELS/llama-3.1-8b-instruct --prompt-len 4096 --gen-len 128 --bits 2 3 4 --repeats 3 --dtype float16 --out $RUN_ROOT/speed/e2e_speed_llama.json"
+    "cd $LC; $speed_env; $PY -u e2e_speed.py --device cuda --model $MODELS/llama-3.1-8b-instruct --prompt-len 4096 --gen-len 128 --bits 4 3 2 --repeats 5 --dtype float16 --out $RUN_ROOT/speed/e2e_speed_llama.json"
 }
 
 submit_native_vllm() {
