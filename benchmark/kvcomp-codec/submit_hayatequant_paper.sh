@@ -48,6 +48,7 @@ submit_wrap() {
 }
 
 common_env='export TOKENIZERS_PARALLELISM=false; export HF_DATASETS_OFFLINE=${HF_DATASETS_OFFLINE:-1}; export PYTHONUNBUFFERED=1'
+speed_env="$common_env; export ONECOMP_TRITON_CODEC=1; export ONECOMP_TRITON_PREFILL=1; export ONECOMP_COMPILE_CODEC=0"
 
 submit_ppl() {
   if [ "$DRYRUN" = "1" ]; then
@@ -98,16 +99,16 @@ submit_long_reason() {
 
 submit_speed_native() {
   submit_wrap "hqspeed-synth" 04:00:00 120G 12 \
-    "cd $LC; $common_env; $PY -u codec_speed.py --device cuda --heads 32 --seq 4096 --dim 128 --bits 2 3 4 --repeats 50 --out $RUN_ROOT/speed/codec_speed_synth.json"
+    "cd $LC; $speed_env; $PY -u codec_speed.py --device cuda --heads 32 --seq 4096 --dim 128 --bits 2 3 4 --repeats 50 --out $RUN_ROOT/speed/codec_speed_synth.json"
   submit_wrap "hqspeed-llama" 06:00:00 180G 12 \
-    "cd $LC; $common_env; $PY -u codec_speed.py --device cuda --model $MODELS/llama-3.1-8b-instruct --bits 2 3 4 --repeats 30 --out $RUN_ROOT/speed/codec_speed_llama.json"
+    "cd $LC; $speed_env; $PY -u codec_speed.py --device cuda --model $MODELS/llama-3.1-8b-instruct --bits 2 3 4 --repeats 30 --out $RUN_ROOT/speed/codec_speed_llama.json"
   submit_e2e_speed
   submit_native_vllm
 }
 
 submit_e2e_speed() {
   submit_wrap "hqe2e-llama" 08:00:00 180G 12 \
-    "cd $LC; $common_env; $PY -u e2e_speed.py --device cuda --model $MODELS/llama-3.1-8b-instruct --prompt-len 4096 --gen-len 128 --bits 2 3 4 --repeats 3 --dtype float16 --out $RUN_ROOT/speed/e2e_speed_llama.json"
+    "cd $LC; $speed_env; $PY -u e2e_speed.py --device cuda --model $MODELS/llama-3.1-8b-instruct --prompt-len 4096 --gen-len 128 --bits 2 3 4 --repeats 3 --dtype float16 --out $RUN_ROOT/speed/e2e_speed_llama.json"
 }
 
 submit_native_vllm() {
