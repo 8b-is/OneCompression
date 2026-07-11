@@ -120,39 +120,26 @@ def _hq_store_key_block_vq(
         )
     else:
         local = tl.arange(0, GROUP_CODES)
-        low_mask = local < 4
-        low_shifts = local * HAYATE_CODE_BITS
-        packed = tl.sum(
-            tl.where(low_mask, (best_idx & 0x3F) << low_shifts, 0), axis=0
-        )
         byte_base = group_pid * ((GROUP_CODES * HAYATE_CODE_BITS) // 8)
-        tl.store(KV_cache_ptr + slot_base + byte_base, (packed & 0xFF).to(tl.uint8))
-        tl.store(
-            KV_cache_ptr + slot_base + byte_base + 1,
-            ((packed >> 8) & 0xFF).to(tl.uint8),
-        )
-        tl.store(
-            KV_cache_ptr + slot_base + byte_base + 2,
-            ((packed >> 16) & 0xFF).to(tl.uint8),
-        )
-        if GROUP_CODES == 8:
-            high_mask = local >= 4
-            high_shifts = (local - 4) * HAYATE_CODE_BITS
-            packed_hi = tl.sum(
-                tl.where(high_mask, (best_idx & 0x3F) << high_shifts, 0),
-                axis=0,
+        for chunk in range(GROUP_CODES // 4):
+            chunk_start = chunk * 4
+            chunk_mask = (local >= chunk_start) & (local < chunk_start + 4)
+            shifts = (local - chunk_start) * HAYATE_CODE_BITS
+            packed = tl.sum(
+                tl.where(chunk_mask, (best_idx & 0x3F) << shifts, 0), axis=0
+            )
+            chunk_base = byte_base + chunk * 3
+            tl.store(
+                KV_cache_ptr + slot_base + chunk_base,
+                (packed & 0xFF).to(tl.uint8),
             )
             tl.store(
-                KV_cache_ptr + slot_base + byte_base + 3,
-                (packed_hi & 0xFF).to(tl.uint8),
+                KV_cache_ptr + slot_base + chunk_base + 1,
+                ((packed >> 8) & 0xFF).to(tl.uint8),
             )
             tl.store(
-                KV_cache_ptr + slot_base + byte_base + 4,
-                ((packed_hi >> 8) & 0xFF).to(tl.uint8),
-            )
-            tl.store(
-                KV_cache_ptr + slot_base + byte_base + 5,
-                ((packed_hi >> 16) & 0xFF).to(tl.uint8),
+                KV_cache_ptr + slot_base + chunk_base + 2,
+                ((packed >> 16) & 0xFF).to(tl.uint8),
             )
 
     if PRECOMPUTE_KEY_SCALE:
@@ -384,12 +371,12 @@ def _hq_decode_stage1(
             other=0.0,
         )
 
-        block_norm_sq = c0 * c0 + c1 * c1
         term1 = tl.sum(
             tl.where(key_block_mask[None, :], q0[None, :] * c0 + q1[None, :] * c1, 0.0),
             axis=1,
         )
         if NORM_CORRECTION and not PRECOMPUTE_KEY_SCALE:
+            block_norm_sq = c0 * c0 + c1 * c1
             c_norm_sq = tl.sum(
                 tl.where(key_block_mask[None, :], block_norm_sq, 0.0),
                 axis=1,
@@ -631,12 +618,9 @@ def triton_hayatequant_store(
     block_grp = triton.next_power_of_2(D // 8) if D >= 8 else 1
     n_key_blocks = D // hayate_block_size
     code_bits = key_bits * hayate_block_size
-    # For 4-bit Hayate keys (8-bit code index per 2D block), the cache format
-    # stores one byte per block, but the assignment kernel can still score
-    # several adjacent 2D blocks in one Triton program.  Grouping four blocks
-    # cuts program count and repeated codebook loads by 4x without changing the
-    # byte layout; keep an env override for quick kernel-shape sweeps.
-    group_codes = _store_group_codes(code_bits)
+    # The cache layout is unchanged, but each store program can score many
+    # adjacent 2D blocks to reduce repeated codebook loads and launch work.
+    group_codes = _store_group_codes(code_bits, n_key_blocks)
     n_groups = math.ceil(n_key_blocks / group_codes)
     key_scale_id = _key_scale_mode_id(key_scale_mode)
 
@@ -768,16 +752,37 @@ def _decode_block_kv(key_bits: int) -> int:
     return block_kv
 
 
-def _store_group_codes(code_bits: int) -> int:
+def _store_group_codes(code_bits: int, n_key_blocks: int) -> int:
     mode = os.environ.get("KVCOMP_VLLM_HAYATE_STORE_GROUP_CODES", "auto")
     mode = mode.strip().lower().replace("-", "_")
     if mode == "auto":
-        return 16 if code_bits == 8 else 8
+        if code_bits == 8:
+            return 64 if n_key_blocks <= 64 else 128
+        if n_key_blocks >= 128:
+            return 128
+        if n_key_blocks >= 64:
+            return 64
+        if n_key_blocks >= 32:
+            return 32
+        if n_key_blocks >= 16:
+            return 16
+        return 8 if n_key_blocks >= 8 else 4
     group_codes = int(mode)
-    if group_codes not in {1, 2, 4, 8, 16}:
-        raise ValueError("KVCOMP_VLLM_HAYATE_STORE_GROUP_CODES must be one of 1,2,4,8,16")
-    if code_bits != 8 and group_codes not in {4, 8}:
-        raise ValueError("6-bit Hayate key packing requires STORE_GROUP_CODES=4 or 8")
+    if group_codes not in {1, 2, 4, 8, 16, 32, 64, 128}:
+        raise ValueError(
+            "KVCOMP_VLLM_HAYATE_STORE_GROUP_CODES must be one of "
+            "1,2,4,8,16,32,64,128"
+        )
+    if code_bits != 8 and group_codes not in {4, 8, 16, 32, 64, 128}:
+        raise ValueError(
+            "6-bit Hayate key packing requires STORE_GROUP_CODES=4, 8, "
+            "16, 32, 64, or 128"
+        )
+    if code_bits != 8 and group_codes > n_key_blocks:
+        raise ValueError(
+            "6-bit Hayate key packing requires STORE_GROUP_CODES <= "
+            "the number of key VQ blocks"
+        )
     return group_codes
 
 
