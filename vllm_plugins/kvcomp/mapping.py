@@ -41,23 +41,13 @@ import os
 from dataclasses import dataclass, field
 from typing import Optional
 
+from vllm_plugins.kvcomp.native_turboquant import resolve_turboquant_codec
+
 # OneComp codec name -> vLLM native ``kv_cache_dtype`` value.
 _NATIVE_FP8 = {
     "fp8": "fp8_e4m3",
     "fp8_e4m3": "fp8_e4m3",
     "fp8_e5m2": "fp8_e5m2",
-}
-
-# vLLM (recent main) ships a native TurboQuant KV cache (Hadamard rotation +
-# Lloyd-Max keys + uniform values, with boundary-layer protection and a
-# dedicated attention impl).  Its named presets map onto OneComp's TurboQuant
-# (and the TurboQuant-family HALO) by (key_bits, value_bits).  Source of truth:
-# ``vllm/model_executor/layers/quantization/turboquant/config.py`` (TQ_PRESETS).
-_TURBOQUANT_PRESETS = {
-    (8, 4): "turboquant_k8v4",  # FP8 keys + 4-bit values   (~2.6x)
-    (4, 4): "turboquant_4bit_nc",  # 4-bit MSE keys + 4-bit V  (~3.8x)
-    (3, 4): "turboquant_k3v4_nc",  # 3-bit MSE keys + 4-bit V  (~3.5x)
-    (3, 3): "turboquant_3bit_nc",  # 3-bit keys + 3-bit values (~4.9x)
 }
 
 # Other native (non-FP8) KV cache dtypes vLLM accepts.
@@ -76,14 +66,6 @@ _NEEDS_CUSTOM_BACKEND = {
     "kivi",
     "ternary",
 }
-
-
-def _turboquant_preset(codec: dict):
-    """Return (preset_name or None, key_bits, value_bits) for a TQ-family codec."""
-    bits = int(codec.get("bits", 4))
-    vbits = codec.get("value_bits")
-    vbits = int(vbits) if vbits is not None else bits
-    return _TURBOQUANT_PRESETS.get((bits, vbits)), bits, vbits
 
 
 # Rotation modes whose transform family matches vLLM's native TurboQuant
@@ -452,7 +434,15 @@ def plan_from_kv_config(
         plan.skip_layers = [int(x) for x in (codec.get("skip_layers") or [])]
     elif name == "hayatequant" and _hayatequant_uses_block_vq(codec):
         mode = _hayatequant_vllm_mode(codec)
-        preset, kb, vb = _turboquant_preset(codec)
+        tq_preset = resolve_turboquant_codec(codec)
+        preset = tq_preset.kv_cache_dtype if tq_preset is not None else None
+        kb = tq_preset.key_bits if tq_preset is not None else int(codec.get("bits", 4))
+        raw_vb = codec.get("value_bits")
+        vb = (
+            tq_preset.value_bits
+            if tq_preset is not None
+            else int(raw_vb) if raw_vb is not None else kb
+        )
         unsupported_native = []
         if codec.get("calibration"):
             unsupported_native.append("calibration")
@@ -552,8 +542,16 @@ def plan_from_kv_config(
                     "to get its accuracy gain over the scalar turboquant_* presets."
                 )
     elif name in ("turboquant", "halo", "hayatequant"):
-        preset, kb, vb = _turboquant_preset(codec)
-        if preset is not None:
+        tq_preset = resolve_turboquant_codec(codec)
+        kb = tq_preset.key_bits if tq_preset is not None else int(codec.get("bits", 4))
+        raw_vb = codec.get("value_bits")
+        vb = (
+            tq_preset.value_bits
+            if tq_preset is not None
+            else int(raw_vb) if raw_vb is not None else kb
+        )
+        if tq_preset is not None:
+            preset = tq_preset.kv_cache_dtype
             _set_native(
                 preset,
                 f"Codec '{name}' (k{kb}v{vb}) -> native vLLM kv_cache_dtype="

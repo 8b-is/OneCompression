@@ -10,6 +10,36 @@ The plugins are automatically registered via Python entry points when `onecomp` 
 | DBF | `dbf` | 1-bit Double Binary Factorization. Uses GemLite kernels by default; set `ONECOMP_DBF_NAIVE_LINEAR=1` to use the naive fallback. |
 | Mixed-GPTQ | `mixed_gptq` | Per-layer mixed-bitwidth GPTQ. Automatically dispatches to Marlin or Exllama kernels based on bit-width and symmetry. |
 
+## KV Cache Compression
+
+OneComp's KV-compression plugin maps supported saved `kv_compression_config`
+blocks onto vLLM native KV-cache dtypes.  Plain TurboQuant can also be selected
+directly when you do not have a saved OneComp KV config.
+
+```python
+from vllm import LLM
+from vllm_plugins.kvcomp import turboquant_engine_kwargs
+
+llm = LLM(
+    model="./Llama-3.1-8B-Instruct",
+    dtype="float16",
+    max_model_len=2048,
+    **turboquant_engine_kwargs(bits=4, value_bits=4),
+)
+```
+
+Supported native TurboQuant presets are:
+
+| Key bits | Value bits | vLLM `kv_cache_dtype` |
+|----------|------------|-----------------------|
+| 8 | 4 | `turboquant_k8v4` |
+| 4 | 4 | `turboquant_4bit_nc` |
+| 3 | 4 | `turboquant_k3v4_nc` |
+| 3 | 3 | `turboquant_3bit_nc` |
+
+HayateQuant's supported native path uses the same byte-compatible TurboQuant
+cache dtypes and registers OneComp's HayateQuant block-VQ backend override.
+
 !!! warning "Rotation-preprocessed models are not supported"
     Models quantized after rotation preprocessing (`prepare_rotated_model`) cannot be served with vLLM. vLLM kernels do not apply the online Hadamard transform on `down_proj` inputs that rotation-preprocessed models require for correct inference.
 

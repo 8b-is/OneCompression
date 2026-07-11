@@ -31,6 +31,10 @@ from vllm_plugins.kvcomp.vllm_plugin import (
     read_kv_compression_config,
 )
 from vllm_plugins.kvcomp.hayate_triton import _store_group_codes
+from vllm_plugins.kvcomp.native_turboquant import (
+    resolve_turboquant_preset,
+    turboquant_engine_kwargs,
+)
 
 
 class _FakeEngineArgs:
@@ -101,6 +105,27 @@ def test_apply_to_engine_args_turboquant_unaffected_by_hayatequant_change(tmp_pa
     engine_args = _FakeEngineArgs(model=model_path)
     apply_to_engine_args(engine_args)
     assert engine_args.kv_cache_dtype == "turboquant_k8v4"
+
+
+@pytest.mark.parametrize(
+    ("bits", "value_bits", "dtype"),
+    [
+        (8, 4, "turboquant_k8v4"),
+        (4, 4, "turboquant_4bit_nc"),
+        (3, 4, "turboquant_k3v4_nc"),
+        (3, 3, "turboquant_3bit_nc"),
+    ],
+)
+def test_turboquant_engine_kwargs_exposes_all_vllm_presets(bits, value_bits, dtype):
+    preset = resolve_turboquant_preset(bits, value_bits)
+    assert preset is not None
+    assert preset.kv_cache_dtype == dtype
+    assert turboquant_engine_kwargs(bits, value_bits) == {"kv_cache_dtype": dtype}
+
+
+def test_turboquant_engine_kwargs_rejects_unsupported_preset():
+    with pytest.raises(ValueError, match="Unsupported vLLM TurboQuant preset"):
+        turboquant_engine_kwargs(2, 2)
 
 
 def test_apply_to_engine_args_halo_still_maps_with_warning(tmp_path):
