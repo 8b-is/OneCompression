@@ -738,7 +738,7 @@ def _decode_block_kv(key_bits: int) -> int:
     mode = os.environ.get("KVCOMP_VLLM_HAYATE_BLOCK_KV", "auto")
     mode = mode.strip().lower().replace("-", "_")
     if mode == "auto":
-        return 4
+        return 16
     block_kv = int(mode)
     if block_kv not in {1, 2, 4, 8, 16}:
         raise ValueError("KVCOMP_VLLM_HAYATE_BLOCK_KV must be one of 1,2,4,8,16")
@@ -749,7 +749,7 @@ def _store_group_codes(code_bits: int) -> int:
     mode = os.environ.get("KVCOMP_VLLM_HAYATE_STORE_GROUP_CODES", "auto")
     mode = mode.strip().lower().replace("-", "_")
     if mode == "auto":
-        return 4
+        return 16 if code_bits == 8 else 4
     group_codes = int(mode)
     if group_codes not in {1, 2, 4, 8, 16}:
         raise ValueError("KVCOMP_VLLM_HAYATE_STORE_GROUP_CODES must be one of 1,2,4,8,16")
@@ -762,7 +762,7 @@ def _decode_num_warps(key_bits: int) -> int:
     mode = os.environ.get("KVCOMP_VLLM_HAYATE_NUM_WARPS", "auto")
     mode = mode.strip().lower().replace("-", "_")
     if mode == "auto":
-        return 1
+        return 4
     num_warps = int(mode)
     if num_warps not in {1, 2, 4, 8}:
         raise ValueError("KVCOMP_VLLM_HAYATE_NUM_WARPS must be one of 1,2,4,8")
