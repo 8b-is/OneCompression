@@ -119,9 +119,13 @@ def _hq_store_key_block_vq(
             mask=group_mask,
         )
     else:
-        shifts = tl.arange(0, GROUP_CODES) * HAYATE_CODE_BITS
-        packed = tl.sum((best_idx & 0x3F) << shifts, axis=0)
-        byte_base = group_pid * 3
+        local = tl.arange(0, GROUP_CODES)
+        low_mask = local < 4
+        low_shifts = local * HAYATE_CODE_BITS
+        packed = tl.sum(
+            tl.where(low_mask, (best_idx & 0x3F) << low_shifts, 0), axis=0
+        )
+        byte_base = group_pid * ((GROUP_CODES * HAYATE_CODE_BITS) // 8)
         tl.store(KV_cache_ptr + slot_base + byte_base, (packed & 0xFF).to(tl.uint8))
         tl.store(
             KV_cache_ptr + slot_base + byte_base + 1,
@@ -131,6 +135,25 @@ def _hq_store_key_block_vq(
             KV_cache_ptr + slot_base + byte_base + 2,
             ((packed >> 16) & 0xFF).to(tl.uint8),
         )
+        if GROUP_CODES == 8:
+            high_mask = local >= 4
+            high_shifts = (local - 4) * HAYATE_CODE_BITS
+            packed_hi = tl.sum(
+                tl.where(high_mask, (best_idx & 0x3F) << high_shifts, 0),
+                axis=0,
+            )
+            tl.store(
+                KV_cache_ptr + slot_base + byte_base + 3,
+                (packed_hi & 0xFF).to(tl.uint8),
+            )
+            tl.store(
+                KV_cache_ptr + slot_base + byte_base + 4,
+                ((packed_hi >> 8) & 0xFF).to(tl.uint8),
+            )
+            tl.store(
+                KV_cache_ptr + slot_base + byte_base + 5,
+                ((packed_hi >> 16) & 0xFF).to(tl.uint8),
+            )
 
     if PRECOMPUTE_KEY_SCALE:
         if KEY_SCALE_MODE == 1:
@@ -749,12 +772,12 @@ def _store_group_codes(code_bits: int) -> int:
     mode = os.environ.get("KVCOMP_VLLM_HAYATE_STORE_GROUP_CODES", "auto")
     mode = mode.strip().lower().replace("-", "_")
     if mode == "auto":
-        return 16 if code_bits == 8 else 4
+        return 16 if code_bits == 8 else 8
     group_codes = int(mode)
     if group_codes not in {1, 2, 4, 8, 16}:
         raise ValueError("KVCOMP_VLLM_HAYATE_STORE_GROUP_CODES must be one of 1,2,4,8,16")
-    if code_bits != 8 and group_codes != 4:
-        raise ValueError("6-bit Hayate key packing requires STORE_GROUP_CODES=4")
+    if code_bits != 8 and group_codes not in {4, 8}:
+        raise ValueError("6-bit Hayate key packing requires STORE_GROUP_CODES=4 or 8")
     return group_codes
 
 
