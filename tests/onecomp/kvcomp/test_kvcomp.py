@@ -34,6 +34,9 @@ from onecomp.kvcomp.codec.hayate import HayateQuantCodec
 from onecomp.kvcomp.codec.hayate.recipes import (
     HQ_FRONTIER_KEY_SCALE_MODE,
     build_hayate_frontier,
+    build_hayate_fractional2,
+    hayate_fractional2_kwargs,
+    hayate_fractional2_variant,
     hayate_frontier_bits,
     hayate_frontier_kwargs,
     hayate_frontier_variant,
@@ -525,6 +528,29 @@ def test_hayatequant_frontier_recipe_is_canonical():
     }
 
 
+def test_hayatequant_fractional2_recipe_is_opt_in():
+    kwargs = hayate_fractional2_kwargs()
+    assert kwargs == {
+        "bits": 2,
+        "value_bits": 2,
+        "block_size": 4,
+        "max_codebook_bits": 10,
+        "key_code_bits_per_block": 10,
+        "value_code_bits_per_block": 6,
+        "key_scale_mode": "ub",
+    }
+    codec = build_hayate_fractional2()
+    assert codec.bits == 2
+    assert codec.value_bits == 2
+    assert codec.block_size == 4
+    assert codec.key_code_bits_per_block == 10
+    assert codec.value_code_bits_per_block == 6
+
+    variant = hayate_fractional2_variant(label="HQ-frac")
+    assert variant["label"] == "HQ-frac"
+    assert variant["key_code_bits_per_block"] == 10
+
+
 def test_hayatequant_invalid_block_size_raises():
     with pytest.raises(Exception):
         HayateQuantCodec(bits=2, block_size=3)  # not in {None,1,2,4,8}
@@ -609,6 +635,32 @@ def test_hayatequant_role_specific_outlier_accounting_blockquant_recipe():
     assert enc.meta["stored_bits"] == key_bits + value_bits
     assert enc.key_q["mode"] == "outlier"
     assert enc.value_q["mode"] == "single"
+
+
+def test_hayatequant_explicit_code_bits_per_block_fractional_rate_roundtrip():
+    # Fixed-length block codes make fractional bits/dim explicit:
+    # key: 5 bits / 4 dims = 1.25 bpc, value: 3 / 4 = 0.75 bpc,
+    # average payload rate = 1.0 bpc before the shared fp16 scale overhead.
+    x, _ = _kv(h=2, s=16, d=128)
+    c = HayateQuantCodec(
+        bits=1,
+        value_bits=1,
+        block_size=4,
+        key_code_bits_per_block=5,
+        value_code_bits_per_block=3,
+        encoder="exact",
+    )
+    enc = c.encode(x, x)
+    kd, vd = c.decode(enc)
+    assert kd.shape == x.shape
+    assert vd.shape == x.shape
+    vecs = x.shape[0] * x.shape[1] * x.shape[2]
+    blocks = x.shape[-1] // 4
+    expected = vecs * blocks * (5 + 3) + vecs * 2 * 16
+    assert enc.meta["stored_bits"] == expected
+    assert enc.key_q["main"]["code_bits"] == 5
+    assert enc.value_q["main"]["code_bits"] == 3
+    assert c.fake_quant_roundtrip(x, x)[2] == expected
 
 
 def test_hybrid_rotation_matrix_matches_two_stage():
@@ -1526,6 +1578,16 @@ def test_vllm_mapping_hayatequant_block_vq_no_preset_needs_custom_backend():
     p = plan_from_kv_config({"codec": {"name": "hayatequant", "bits": 2, "block_size": 4}})
     assert p.needs_custom_backend and not p.native_supported and p.kv_cache_dtype == "auto"
     assert any("no native scalar TurboQuant preset" in n for n in p.notes)
+
+
+def test_vllm_mapping_hayatequant_fractional_rate_needs_custom_backend():
+    from vllm_plugins.kvcomp.mapping import plan_from_kv_config
+
+    p = plan_from_kv_config({"codec": build_hayate_fractional2().get_kv_config()})
+    notes = "\n".join(p.notes)
+    assert p.needs_custom_backend and not p.native_supported
+    assert "key_code_bits_per_block" in notes
+    assert "value_code_bits_per_block" in notes
 
 
 def test_vllm_mapping_hayatequant_block_vq_native_default(monkeypatch):

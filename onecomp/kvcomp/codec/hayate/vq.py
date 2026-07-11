@@ -250,6 +250,22 @@ def fibquant_initial_codebook(bits: int, block_size: int, ambient_dim: int) -> t
     return (radii.unsqueeze(1) * dirs).contiguous()
 
 
+def fibquant_initial_codebook_k(k: int, block_size: int, ambient_dim: int) -> torch.Tensor:
+    """FibQuant radial-angular warm-start with an explicit codebook size.
+
+    Fractional-rate block VQ stores a fixed number of bits per block rather
+    than an integer number of bits per coordinate, so ``K`` is no longer always
+    ``2 ** (bits * block_size)``.  The geometric FibQuant initializer only
+    needs the number of centroids and the block dimension, making it a natural
+    warm-start for those rates too.
+    """
+    if block_size < 2:
+        raise ValueError("FibQuant initial codebook requires block_size >= 2")
+    dirs = _fibquant_directions(block_size, int(k))
+    radii = _fibquant_radii(block_size, ambient_dim, int(k))
+    return (radii.unsqueeze(1) * dirs).contiguous()
+
+
 def _validate_codebook_init(init: str) -> str:
     if init not in _CODEBOOK_INITS:
         raise ValueError(f"codebook_init must be one of {_CODEBOOK_INITS}, got {init!r}")
@@ -413,6 +429,37 @@ def lloyd_vq_gaussian_block(
 
 
 @lru_cache(maxsize=32)
+def lloyd_vq_gaussian_codebook(
+    code_bits: int, block_size: int, iters: int = 25, n_samples: int = 100_000,
+    seed: int = 0, restarts: int = 4, *, init: str = "auto",
+    ambient_dim: "int | None" = None,
+) -> torch.Tensor:
+    """Data-free Gaussian block-VQ codebook with explicit block code bits.
+
+    Unlike :func:`lloyd_vq_gaussian_block`, this function decouples the number
+    of stored bits per block from ``bits_per_coordinate * block_size``.  The
+    achieved rate is therefore ``code_bits / block_size`` bits per coordinate,
+    which gives fixed-length, random-access fractional rates such as 1.25,
+    1.5, 1.75, 2.5, and 3.5 bits/dim without entropy coding.
+    """
+    init = _validate_codebook_init(init)
+    if code_bits < 1:
+        raise ValueError(f"code_bits must be positive, got {code_bits}")
+    k = 1 << int(code_bits)
+    default_fit = (iters, n_samples, seed, restarts) == (25, 100_000, 0, 4)
+    if default_fit and block_size > 1 and init != "fibquant":
+        art = _gaussian_codebook_artifact(block_size, k)
+        if art is not None:
+            return art
+    n_samples = min(n_samples, max(20_000, 2_000_000_000 // max(k, 1)))
+    samples = _gaussian_block_samples(block_size, n_samples, seed)
+    warm = None
+    if block_size > 1 and init in ("auto", "fibquant"):
+        warm = fibquant_initial_codebook_k(k, block_size, ambient_dim or max(128, block_size + 3))
+    return _kmeans_best_of(samples, k, iters, seed, restarts, init=warm)
+
+
+@lru_cache(maxsize=32)
 def lloyd_vq_beta_block(
     bits: int, block_size: int, d: int, iters: int = 25, n_samples: int = 100_000,
     seed: int = 0, restarts: int = 4, *, init: str = "auto",
@@ -429,6 +476,24 @@ def lloyd_vq_beta_block(
     n_samples = min(n_samples, max(20_000, 2_000_000_000 // max(k, 1)))
     samples = _beta_block_samples(block_size, d, n_samples, seed)
     warm = fibquant_initial_codebook(bits, block_size, d) \
+        if block_size > 1 and init in ("auto", "fibquant") else None
+    return _kmeans_best_of(samples, k, iters, seed, restarts, init=warm)
+
+
+@lru_cache(maxsize=32)
+def lloyd_vq_beta_codebook(
+    code_bits: int, block_size: int, d: int, iters: int = 25,
+    n_samples: int = 100_000, seed: int = 0, restarts: int = 4,
+    *, init: str = "auto",
+) -> torch.Tensor:
+    """Finite-d Beta/Dirichlet block-VQ codebook with explicit block bits."""
+    init = _validate_codebook_init(init)
+    if code_bits < 1:
+        raise ValueError(f"code_bits must be positive, got {code_bits}")
+    k = 1 << int(code_bits)
+    n_samples = min(n_samples, max(20_000, 2_000_000_000 // max(k, 1)))
+    samples = _beta_block_samples(block_size, d, n_samples, seed)
+    warm = fibquant_initial_codebook_k(k, block_size, d) \
         if block_size > 1 and init in ("auto", "fibquant") else None
     return _kmeans_best_of(samples, k, iters, seed, restarts, init=warm)
 

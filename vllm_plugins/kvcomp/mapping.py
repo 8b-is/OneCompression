@@ -452,6 +452,10 @@ def plan_from_kv_config(
             unsupported_native.append("use_qjl")
         if int(codec.get("max_codebook_bits") or 9) > 9:
             unsupported_native.append("max_codebook_bits>9")
+        if codec.get("key_code_bits_per_block") is not None:
+            unsupported_native.append("key_code_bits_per_block")
+        if codec.get("value_code_bits_per_block") is not None:
+            unsupported_native.append("value_code_bits_per_block")
         key_scale_mode = _hayatequant_native_key_scale_mode(codec)
         if key_scale_mode is None:
             unsupported_native.append(f"key_scale_mode={codec.get('key_scale_mode')!r}")
