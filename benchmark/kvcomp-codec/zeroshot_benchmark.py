@@ -63,11 +63,18 @@ def _method_list(args: argparse.Namespace, bits: int) -> list[str]:
     return methods
 
 
-def _build_cache_factory(model, codec, sink_tokens: int, skip_layers: set[int]):
+def _build_cache_factory(
+    model,
+    codec,
+    sink_tokens: int,
+    recent_tokens: int,
+    skip_layers: set[int],
+):
     return lambda: CompressedDynamicCache(
         codec=codec,
         config=model.config,
         sink_tokens=sink_tokens,
+        recent_tokens=recent_tokens,
         skip_layers=skip_layers if skip_layers else None,
     )
 
@@ -154,7 +161,8 @@ def _run(args: argparse.Namespace) -> Path:
                     print(f"[skip] {bits}bit {method}: not defined", flush=True)
                     continue
                 cache_factory = _build_cache_factory(
-                    model, codecs[method], args.sink_tokens, skip_layers
+                    model, codecs[method], args.sink_tokens,
+                    args.recent_tokens, skip_layers
                 )
                 results[bit_key][method] = _eval_method(
                     model, tok, args, cache_factory=cache_factory
@@ -175,6 +183,7 @@ def _run(args: argparse.Namespace) -> Path:
                 "device": args.device,
                 "bits": args.bits,
                 "sink_tokens": args.sink_tokens,
+                "recent_tokens": args.recent_tokens,
                 "skip_outliers": args.skip_outliers,
                 "outlier_ratio": args.outlier_ratio,
                 "ablation": args.ablation,
@@ -256,6 +265,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--limit", type=int)
     ap.add_argument("--sample-seed", type=int, default=2027)
     ap.add_argument("--sink-tokens", type=int, default=4)
+    ap.add_argument("--recent-tokens", type=int, default=0)
     ap.add_argument("--skip-outliers", action=argparse.BooleanOptionalAction, default=True)
     ap.add_argument("--outlier-ratio", type=float, default=50.0)
     ap.add_argument("--ablation", action="store_true",

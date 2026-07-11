@@ -1,10 +1,9 @@
 # HayateQuant x FibQuant x BlockQuant reproduction grid.
 #
 # Purpose:
-#   * HayateQuant-base: current recommended codec.
-#   * HayateQuant-Frontier: rate-general K(r+1)V(r-1) allocation plus
-#     key-only UB/IP scaling; this is the recommended FibQuant/BlockQuant
-#     import after the small-model PPL and zero-shot sweeps.
+#   * HayateQuant-base: symmetric data-free parent codec.
+#   * HayateQuant-Frontier: implementation tag for the paper HQ row:
+#     rate-general K(r+1)V(r-1) allocation plus key-only UB/IP scaling.
 #   * HayateQuant-FibInit: imports FibQuant's radial-angular codebook
 #     initialisation while keeping HayateQuant's Lloyd block-VQ objective.
 #   * HayateQuant-BQScale: exposes BlockQuant's BSM/UB scalar corrections

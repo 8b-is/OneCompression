@@ -62,6 +62,7 @@ import torch
 from onecomp.kvcomp.codec.turboquant import TurboQuantCodec
 from onecomp.kvcomp.codec.halo import HALOCodec
 from onecomp.kvcomp.codec.hayatequant import HayateQuantCodec
+from onecomp.kvcomp.codec.hayate.recipes import build_hayate_frontier, hayate_frontier_bits
 
 
 def _codecs(bits: int) -> dict:
@@ -75,7 +76,7 @@ def _codecs(bits: int) -> dict:
     isolates the block-VQ machinery's fixed overhead) and ``block_size=None``
     ("auto", the shipped default -- the actual proposed operating point).
     """
-    return {
+    codecs = {
         "TurboQuant-hadamard": TurboQuantCodec(bits=bits, rotation_mode="hadamard", dist="beta"),
         "HALO-hadamard-noLS": HALOCodec(bits=bits, rotation_mode="hadamard", ls_scale=False),
         "HALO-hadamard_gemm-noLS": HALOCodec(bits=bits, rotation_mode="hadamard_gemm", ls_scale=False),
@@ -105,6 +106,10 @@ def _codecs(bits: int) -> dict:
                                                  rotation_mode="dense",
                                                  key_scale_mode="ls", value_scale_mode="ls"),
     }
+    if bits >= 2:
+        kbits, vbits = hayate_frontier_bits(bits)
+        codecs[f"HQ-Frontier-K{kbits}V{vbits}"] = build_hayate_frontier(bits)
+    return codecs
 
 
 def _make_kv(args, device):

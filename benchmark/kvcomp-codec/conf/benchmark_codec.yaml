@@ -9,6 +9,8 @@ output_dir: ${hydra:runtime.cwd}/results
 
 bits: [4, 3, 2]
 sink_tokens: 4
+recent_tokens: 0
+extra_skip_layers: []
 
 capture_tokens: 2048        # real-KV capture length for distortion
 

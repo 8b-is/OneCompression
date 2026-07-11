@@ -11,7 +11,7 @@ and makes the main-paper multi-model table reproducible:
 
 Examples
 --------
-Submit the default eight-model paper grid:
+Submit the default seven-model paper grid:
 
     python benchmark/kvcomp-codec/hayatequant_cross_model.py --submit
 
@@ -65,7 +65,6 @@ DEFAULT_MODELS: tuple[ModelSpec, ...] = (
     ModelSpec("llama31-8b", "llama-3.1-8b-instruct", None, "Llama-3.1-8B"),
     ModelSpec("qwen3-4b", "Qwen3-4B", "Qwen/Qwen3-4B", "Qwen3-4B"),
     ModelSpec("qwen3-8b", "Qwen3-8B", "Qwen/Qwen3-8B", "Qwen3-8B"),
-    ModelSpec("ministral-8b", "Ministral-8B-Instruct-2410", None, "Ministral-8B"),
     ModelSpec(
         "r1-llama-8b",
         "DeepSeek-R1-Distill-Llama-8B",
@@ -88,6 +87,7 @@ DEFAULT_MODELS: tuple[ModelSpec, ...] = (
 
 # Extra useful coverage for follow-up grids; pass with ``--models qwen3-4b`` etc.
 EXTRA_MODELS: tuple[ModelSpec, ...] = (
+    ModelSpec("ministral-8b", "Ministral-8B-Instruct-2410", None, "Ministral-8B"),
     ModelSpec("qwen3-0.6b", "Qwen3-0.6B", "Qwen/Qwen3-0.6B", "Qwen3-0.6B"),
     ModelSpec("qwen3-1.7b", "Qwen3-1.7B", "Qwen/Qwen3-1.7B", "Qwen3-1.7B"),
     ModelSpec("qwen3-14b", "Qwen3-14B", "Qwen/Qwen3-14B", "Qwen3-14B"),
@@ -224,23 +224,11 @@ def _dist_k(data: dict, bits: str, method: str) -> float | None:
     return None if val in (None, "") else float(val)
 
 
-def _best_hayate(data: dict, bits: str) -> tuple[str, float | None]:
-    candidates = [
-        "HayateQuant-selected",
-        "HayateQuant-frontier",
-        "HayateQuant-auto",
-        "HayateQuant-K12",
-        f"HayateQuant-K{int(bits) + 1}V{int(bits) - 1}",
-        f"HayateQuant-K{int(bits) + 1}V{int(bits) - 1}-keyUB",
-        "HayateQuant-dense-LS",
-    ]
-    best_name = "HayateQuant-auto"
-    best_val = _ppl(data, bits, best_name)
-    for name in candidates[1:]:
-        val = _ppl(data, bits, name)
-        if val is not None and (best_val is None or val < best_val):
-            best_name, best_val = name, val
-    return best_name, best_val
+def _paper_model_names() -> set[str]:
+    names: set[str] = set()
+    for spec in DEFAULT_MODELS:
+        names.update({spec.key, spec.path_name, spec.display})
+    return names
 
 
 def _fmt(value: float | None, ndigits: int = 2) -> str:
@@ -254,20 +242,22 @@ def _summarize(args: argparse.Namespace) -> None:
     for path in _iter_result_files(args.output_root):
         data = json.loads(path.read_text())
         model = data.get("model") or path.stem.replace("results_", "")
+        if not args.include_extra_results and model not in _paper_model_names():
+            continue
         tq2 = _ppl(data, "2", "TurboQuant-hadamard")
         fib2 = _ppl(data, "2", "FibQuant")
         bq2 = _ppl(data, "2", "BlockQuant")
-        hq2_name, hq2 = _best_hayate(data, "2")
+        hq2 = _ppl(data, "2", args.hq_method)
         tq3 = _ppl(data, "3", "TurboQuant-hadamard")
         fib3 = _ppl(data, "3", "FibQuant")
         bq3 = _ppl(data, "3", "BlockQuant")
-        hq3_name, hq3 = _best_hayate(data, "3")
+        hq3 = _ppl(data, "3", args.hq_method)
         tq4 = _ppl(data, "4", "TurboQuant-hadamard")
         fib4 = _ppl(data, "4", "FibQuant")
         bq4 = _ppl(data, "4", "BlockQuant")
-        hq4_name, hq4 = _best_hayate(data, "4")
+        hq4 = _ppl(data, "4", args.hq_method)
         tq3_d = _dist_k(data, "3", "TurboQuant-hadamard")
-        hq3_d = _dist_k(data, "3", "HayateQuant-auto")
+        hq3_d = _dist_k(data, "3", args.hq_method)
         gain = None if tq3_d in (None, 0) or hq3_d is None else 100.0 * (1.0 - hq3_d / tq3_d)
         rows.append(
             f"| {model} | {_fmt(tq2)} | {_fmt(fib2)} | {_fmt(bq2)} | {_fmt(hq2)} "
@@ -297,6 +287,10 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--run-local", action="store_true", help="Run sequentially in the current process allocation.")
     ap.add_argument("--summarize", action="store_true", help="Summarize existing JSON results instead of launching jobs.")
     ap.add_argument("--summary-out", type=Path)
+    ap.add_argument("--hq-method", default="HayateQuant-frontier",
+                    help="Fixed implementation method reported as HQ in the paper tables.")
+    ap.add_argument("--include-extra-results", action="store_true",
+                    help="Summarize every result JSON instead of the current seven-model paper grid.")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--partition", default="debug")
     ap.add_argument("--gpus", type=int, default=1)

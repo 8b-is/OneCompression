@@ -5,7 +5,7 @@ same eight LLMs for WikiText-2 PPL and lm-eval-style zero-shot accuracy.
 
 Examples
 --------
-Submit the default eight-model grid:
+Submit the default seven-model grid:
 
     python benchmark/kvcomp-codec/hayatequant_zeroshot.py --submit
 
@@ -107,6 +107,8 @@ def _bench_cmd(args: argparse.Namespace, model_path: Path) -> list[str]:
         str(args.sample_seed),
         "--sink-tokens",
         str(args.sink_tokens),
+        "--recent-tokens",
+        str(args.recent_tokens),
         "--outlier-ratio",
         str(args.outlier_ratio),
     ]
@@ -158,12 +160,11 @@ def _method(payload: dict, bits: str, name: str) -> dict | None:
     return (payload.get("results") or {}).get(bits, {}).get(name)
 
 
-def _best_hayate(payload: dict, bits: str) -> tuple[str | None, dict | None]:
-    methods = (payload.get("results") or {}).get(bits, {})
-    candidates = [(k, v) for k, v in methods.items() if k.startswith("HayateQuant")]
-    if not candidates:
-        return None, None
-    return max(candidates, key=lambda item: item[1].get("avg_acc_norm", -1.0))
+def _paper_model_names() -> set[str]:
+    names: set[str] = set()
+    for spec in DEFAULT_MODELS:
+        names.update({spec.key, spec.path_name, spec.display})
+    return names
 
 
 def _fmt(x: float | None, scale: float = 100.0) -> str:
@@ -254,19 +255,21 @@ def _summarize(args: argparse.Namespace) -> None:
     hq4_vals: list[float] = []
     for payload in payloads:
         model = payload.get("model", "unknown")
+        if not args.include_extra_results and model not in _paper_model_names():
+            continue
         task_count = len(payload.get("tasks") or [])
         tq2 = _method(payload, "2", "TurboQuant-hadamard")
         fib2 = _method(payload, "2", "FibQuant")
         bq2 = _method(payload, "2", "BlockQuant")
-        hq2_name, hq2 = _best_hayate(payload, "2")
+        hq2 = _method(payload, "2", args.hq_method)
         tq3 = _method(payload, "3", "TurboQuant-hadamard")
         fib3 = _method(payload, "3", "FibQuant")
         bq3 = _method(payload, "3", "BlockQuant")
-        hq3_name, hq3 = _best_hayate(payload, "3")
+        hq3 = _method(payload, "3", args.hq_method)
         tq4 = _method(payload, "4", "TurboQuant-hadamard")
         fib4 = _method(payload, "4", "FibQuant")
         bq4 = _method(payload, "4", "BlockQuant")
-        hq4_name, hq4 = _best_hayate(payload, "4")
+        hq4 = _method(payload, "4", args.hq_method)
         tq2_a = None if tq2 is None else tq2.get("avg_acc_norm")
         fib2_a = None if fib2 is None else fib2.get("avg_acc_norm")
         bq2_a = None if bq2 is None else bq2.get("avg_acc_norm")
@@ -344,6 +347,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--limit", type=int)
     ap.add_argument("--sample-seed", type=int, default=2027)
     ap.add_argument("--sink-tokens", type=int, default=4)
+    ap.add_argument("--recent-tokens", type=int, default=0)
     ap.add_argument("--skip-outliers", action=argparse.BooleanOptionalAction, default=True)
     ap.add_argument("--outlier-ratio", type=float, default=50.0)
     ap.add_argument("--ablation", action="store_true",
@@ -352,6 +356,10 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--run-local", action="store_true")
     ap.add_argument("--summarize", action="store_true")
     ap.add_argument("--summary-out", type=Path)
+    ap.add_argument("--hq-method", default="HayateQuant-frontier",
+                    help="Fixed implementation method reported as HQ in the paper tables.")
+    ap.add_argument("--include-extra-results", action="store_true",
+                    help="Summarize every result JSON instead of the current seven-model paper grid.")
     ap.add_argument("--require-complete", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--partition", default="batch-1gpu")

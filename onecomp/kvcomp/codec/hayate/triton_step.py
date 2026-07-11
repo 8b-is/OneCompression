@@ -43,7 +43,10 @@ except Exception:  # pragma: no cover - exercised only on CPU-only installs
     HAS_TRITON = False
 
 # Scale-mode encoding shared with the kernel (compile-time constants).
-_MODE_ID = {"rms": 0, "nc": 1, "ls": 2, "ip": 3, "ls_iter": 4}
+_MODE_ID = {
+    "rms": 0, "nc": 1, "ls": 2, "ip": 3, "ls_iter": 4,
+    "bsm": 2, "ub": 3,
+}
 
 # Register-pressure guard: per-row score matrix is (n_blocks, K) fp32.
 _MAX_SCORE_ELEMS_PER_ROW = 65536

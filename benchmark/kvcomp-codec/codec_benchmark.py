@@ -47,6 +47,11 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from onecomp.kvcomp import CompressedDynamicCache, detect_outlier_layers
 from onecomp.kvcomp.eval import wikitext2_perplexity
 from onecomp.kvcomp.codec import HALOCodec, TurboQuantCodec, HayateQuantCodec
+from onecomp.kvcomp.codec.hayate.recipes import (
+    build_hayate_frontier,
+    hayate_frontier_bits,
+    hayate_frontier_kwargs,
+)
 
 
 @torch.no_grad()
@@ -113,8 +118,14 @@ def _stored_bits_per_coord(codec, x):
 
 def _kv_asym(bits: int) -> tuple[int, int] | None:
     """Return the K(r+1)V(r-1) matched-average allocation for rate ``bits``."""
-    if 2 <= bits <= 7:
-        return bits + 1, bits - 1
+    return hayate_frontier_bits(bits)
+
+
+def _env_calibration(*names: str) -> str | None:
+    for name in names:
+        path = os.getenv(name)
+        if path:
+            return path
     return None
 
 
@@ -193,13 +204,33 @@ def _codecs(bits, ablation=False):
         **(({"HayateQuant-selected":
              (HayateQuantCodec(bits=bits, block_size=None, rotation_mode="auto")
               if bits == 4 else
-              HayateQuantCodec(bits=_kv_asym(bits)[0], value_bits=_kv_asym(bits)[1],
-                                key_scale_mode="ub"))})
+              build_hayate_frontier(bits))})
            if _kv_asym(bits) is not None else {}),
         **(({"HayateQuant-frontier":
-             HayateQuantCodec(bits=_kv_asym(bits)[0], value_bits=_kv_asym(bits)[1],
-                              key_scale_mode="ub")})
+             build_hayate_frontier(bits)})
            if _kv_asym(bits) is not None else {}),
+        **(({"HayateQuant-calib-K4V2":
+             HayateQuantCodec(bits=4, value_bits=2,
+                              calibration=_env_calibration("HQ_CALIB_K4V2", "HQ_CALIB_PATH"))})
+           if bits == 3 and _env_calibration("HQ_CALIB_K4V2", "HQ_CALIB_PATH") else {}),
+        **(({"HayateQuant-SBR":
+             HayateQuantCodec(**hayate_frontier_kwargs(
+                 bits,
+                 calibration=_env_calibration(f"HQ_SBR_CALIB_{bits}BIT", "HQ_SBR_CALIB_PATH")))})
+           if _kv_asym(bits) is not None
+           and _env_calibration(f"HQ_SBR_CALIB_{bits}BIT", "HQ_SBR_CALIB_PATH") else {}),
+        **(({"HayateQuant-AW":
+             HayateQuantCodec(**hayate_frontier_kwargs(
+                 bits,
+                 calibration=_env_calibration(f"HQ_AW_CALIB_{bits}BIT", "HQ_AW_CALIB_PATH")))})
+           if _kv_asym(bits) is not None
+           and _env_calibration(f"HQ_AW_CALIB_{bits}BIT", "HQ_AW_CALIB_PATH") else {}),
+        **(({"HayateQuant-Pair":
+             HayateQuantCodec(**hayate_frontier_kwargs(
+                 bits,
+                 calibration=_env_calibration(f"HQ_PAIR_CALIB_{bits}BIT", "HQ_PAIR_CALIB_PATH")))})
+           if _kv_asym(bits) is not None
+           and _env_calibration(f"HQ_PAIR_CALIB_{bits}BIT", "HQ_PAIR_CALIB_PATH") else {}),
         **(({f"HayateQuant-K{_kv_asym(bits)[0]}V{_kv_asym(bits)[1]}":
              HayateQuantCodec(bits=_kv_asym(bits)[0], value_bits=_kv_asym(bits)[1])})
            if _kv_asym(bits) is not None else {}),
@@ -318,6 +349,26 @@ def main(cfg: DictConfig):
         skip_layers = set(detect_outlier_layers(model, calib_ids,
                                                ratio_thresh=getattr(cfg, "outlier_ratio", 50.0)))
         print(f"outlier layers (kept FP16): {sorted(skip_layers)}")
+    extra_skip = list(getattr(cfg, "extra_skip_layers", []) or [])
+    n_layers = int(getattr(model.config, "num_hidden_layers", 0) or 0)
+    for item in extra_skip:
+        if isinstance(item, str):
+            if item == "first":
+                skip_layers.add(0)
+            elif item == "last" and n_layers > 0:
+                skip_layers.add(n_layers - 1)
+            elif item.startswith("first"):
+                for i in range(int(item.removeprefix("first") or "1")):
+                    skip_layers.add(i)
+            elif item.startswith("last") and n_layers > 0:
+                for i in range(int(item.removeprefix("last") or "1")):
+                    skip_layers.add(n_layers - 1 - i)
+            else:
+                skip_layers.add(int(item))
+        else:
+            skip_layers.add(int(item))
+    if extra_skip:
+        print(f"extra skip layers requested: {extra_skip}; effective skip={sorted(skip_layers)}")
 
     results = {}
     for bits in list(cfg.bits):

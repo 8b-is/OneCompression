@@ -44,6 +44,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, DynamicCache
 
 from onecomp.kvcomp import build_codec
 from onecomp.kvcomp.cache import CompressedDynamicCache
+from onecomp.kvcomp.codec.hayate.recipes import hayate_frontier_bits, hayate_frontier_kwargs
 
 
 def _sync(device):
@@ -51,13 +52,25 @@ def _sync(device):
         torch.cuda.synchronize()
 
 
-def _methods(bits, model_config):
+def _kv_asym(bits: int) -> tuple[int, int] | None:
+    return hayate_frontier_bits(bits)
+
+
+def _methods(bits, model_config, recent_tokens: int = 0):
     """Codec factory per method label (cache built fresh for every run)."""
     sink = 4
 
     def comp(codec):
         return lambda: CompressedDynamicCache(
-            codec=codec, config=model_config, sink_tokens=sink, skip_layers=[])
+            codec=codec, config=model_config, sink_tokens=sink,
+            recent_tokens=recent_tokens, skip_layers=[])
+
+    asym = _kv_asym(bits)
+    hq_frontier = {}
+    if asym is not None:
+        kbits, vbits = asym
+        hq_frontier[f"HQ-Frontier-K{kbits}V{vbits}"] = comp(
+            build_codec("hayatequant", **hayate_frontier_kwargs(bits)))
 
     return {
         "FullKV": lambda: DynamicCache(config=model_config),
@@ -70,6 +83,7 @@ def _methods(bits, model_config):
             "hayatequant", bits=bits, block_size=1, rotation_mode="auto")),
         f"HayateQuant-{bits}bit": comp(build_codec(
             "hayatequant", bits=bits, block_size=None, rotation_mode="auto")),
+        **hq_frontier,
     }
 
 
@@ -113,6 +127,7 @@ def main():
     ap.add_argument("--gen-len", type=int, default=128)
     ap.add_argument("--bits", type=int, nargs="+", default=[3])
     ap.add_argument("--repeats", type=int, default=3)
+    ap.add_argument("--recent-tokens", type=int, default=0)
     ap.add_argument("--dtype", default="float16", choices=["float16", "bfloat16", "float32"])
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
@@ -129,26 +144,35 @@ def main():
 
     out = {"meta": {**vars(args), "prompt_len_actual": int(ids.shape[1])}, "results": {}}
     for bits in args.bits:
-        methods = _methods(bits, model.config)
+        methods = _methods(bits, model.config, recent_tokens=args.recent_tokens)
         print(f"\n--- bits={bits} (median over {args.repeats} reps) ---")
         print(f"{'method':20} {'TTFT ms':>9} {'tok/s':>8} {'ms/tok':>8} "
               f"{'tok/s x':>8} {'peak MB':>9} {'CR':>6}")
         base_tps = None
         rows = {}
         for label, make in methods.items():
-            ttfts, tpss, mspt, peaks, cr = [], [], [], [], 1.0
+            reps = []
             for _ in range(args.repeats):
                 r = _run_once(model, ids, make, args.gen_len, device)
-                ttfts.append(r["ttft"] * 1e3)
                 # exclude the first decode step (often a one-off allocation) from
                 # the steady-state throughput, if we have more than one step.
                 steps = r["step_t"][1:] if len(r["step_t"]) > 1 else r["step_t"]
                 tot = sum(steps)
-                tpss.append(len(steps) / max(tot, 1e-9))
-                mspt.append(1e3 * tot / max(len(steps), 1))
-                peaks.append(r["peak_mb"]); cr = r["compression_ratio"]
-            med = lambda xs: sorted(xs)[len(xs) // 2]
-            ttft_ms, tok_s, ms_tok, peak_mb = med(ttfts), med(tpss), med(mspt), med(peaks)
+                ms_tok = 1e3 * tot / max(len(steps), 1)
+                reps.append(dict(
+                    ttft_ms=r["ttft"] * 1e3,
+                    decode_tok_s=1e3 / max(ms_tok, 1e-9),
+                    decode_ms_per_tok=ms_tok,
+                    peak_mb=r["peak_mb"],
+                    compression_ratio=r["compression_ratio"],
+                ))
+            reps.sort(key=lambda row: row["decode_ms_per_tok"])
+            med = reps[len(reps) // 2]
+            ttft_ms = med["ttft_ms"]
+            tok_s = med["decode_tok_s"]
+            ms_tok = med["decode_ms_per_tok"]
+            peak_mb = med["peak_mb"]
+            cr = med["compression_ratio"]
             if base_tps is None:
                 base_tps = tok_s
             rows[label] = dict(ttft_ms=ttft_ms, decode_tok_s=tok_s, decode_ms_per_tok=ms_tok,

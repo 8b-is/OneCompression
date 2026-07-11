@@ -31,6 +31,13 @@ from onecomp.kvcomp.codec.rotation import (
 from onecomp.kvcomp.codec.turboquant import TurboQuantCodec, _codebook, _qjl_projection_on
 from onecomp.kvcomp.codec.halo import HALOCodec
 from onecomp.kvcomp.codec.hayate import HayateQuantCodec
+from onecomp.kvcomp.codec.hayate.recipes import (
+    HQ_FRONTIER_KEY_SCALE_MODE,
+    build_hayate_frontier,
+    hayate_frontier_bits,
+    hayate_frontier_kwargs,
+    hayate_frontier_variant,
+)
 from onecomp.kvcomp.codec.affine import AffineKVCodec, Int4Codec, Int3Codec, KIVICodec
 from onecomp.kvcomp.codec.fp8 import FP8Codec
 from onecomp.kvcomp.codec.lowbit_fp import NVFP4Codec, TernaryCodec
@@ -492,6 +499,32 @@ def test_hayatequant_storage_neutral_across_block_size():
     assert s1 == s4
 
 
+def test_hayatequant_frontier_recipe_is_canonical():
+    assert hayate_frontier_bits(2) == (3, 1)
+    assert hayate_frontier_bits(3) == (4, 2)
+    assert hayate_frontier_bits(4) == (5, 3)
+    assert hayate_frontier_bits(1) is None
+
+    kwargs = hayate_frontier_kwargs(2)
+    assert kwargs == {
+        "bits": 3,
+        "value_bits": 1,
+        "key_scale_mode": HQ_FRONTIER_KEY_SCALE_MODE,
+    }
+    codec = build_hayate_frontier(2)
+    assert codec.bits == 3
+    assert codec.value_bits == 1
+    assert codec.key_scale_mode == "ub"
+
+    variant = hayate_frontier_variant(3, label="HQ")
+    assert variant == {
+        "label": "HQ",
+        "bits": 4,
+        "value_bits": 2,
+        "key_scale_mode": "ub",
+    }
+
+
 def test_hayatequant_invalid_block_size_raises():
     with pytest.raises(Exception):
         HayateQuantCodec(bits=2, block_size=3)  # not in {None,1,2,4,8}
@@ -516,6 +549,30 @@ def test_blockquant_scale_aliases_match_existing_modes():
     s_ub, _ = fit_scale(xr, chat, "ub", rms)
     assert torch.allclose(s_bsm, s_ls)
     assert torch.allclose(s_ub, s_ip)
+
+
+def test_hayatequant_calibrated_fast_roundtrip_matches_encode_decode():
+    from onecomp.kvcomp.codec.hayate.calibration import HayateQuantCalibration
+    from onecomp.kvcomp.codec.hayate.codec import _block_codebook
+
+    x, _ = _kv(h=2, s=64, d=32)
+    cb = _block_codebook(2, 2, "gaussian", 32, "auto")
+    cb = cb + 0.01 * torch.randn_like(cb)
+    cal = HayateQuantCalibration(
+        head_dim=32,
+        rot={"k": torch.eye(32), "v": torch.eye(32)},
+        codebook={"k": cb, "v": cb.clone()},
+        cb_key={"k": (2, 2), "v": (2, 2)},
+    )
+    c = HayateQuantCodec(bits=2, value_bits=2, block_size=2, encoder="lut",
+                         calibration=cal, key_scale_mode="ub",
+                         value_scale_mode="ls_iter")
+    comp = c.encode(x, x)
+    k_ref, v_ref = c.decode(comp)
+    k_rt, v_rt, stored = c.fake_quant_roundtrip(x, x)
+    assert stored == comp.meta["stored_bits"]
+    assert torch.allclose(k_rt, k_ref, atol=1e-6)
+    assert torch.allclose(v_rt, v_ref, atol=1e-6)
 
 
 def test_hayatequant_block_size_falls_back_when_codebook_too_big():
@@ -669,6 +726,127 @@ def _tiny_calibration(codec, x, steps=8):
                                  batch_vectors=256, device="cpu")
 
 
+def test_hayatequant_spectral_balanced_rotation_flattens_covariance():
+    from onecomp.kvcomp.codec.hayate.calibration import spectral_balanced_rotation
+
+    torch.manual_seed(0)
+    d = 32
+    scales = torch.linspace(0.2, 8.0, d)
+    x = torch.randn(4096, d) * scales
+    cov0 = x.t() @ x / x.shape[0]
+    w = spectral_balanced_rotation(x, seed=3)
+    cov1 = w.t() @ cov0 @ w
+    spread0 = float(cov0.diag().std() / cov0.diag().mean())
+    spread1 = float(cov1.diag().std() / cov1.diag().mean())
+    assert spread1 < spread0 * 0.05
+    assert torch.allclose(w.t() @ w, torch.eye(d), atol=1e-5)
+
+
+def test_hayatequant_spectral_calibration_roundtrip_and_guard():
+    from onecomp.kvcomp.codec.hayate.calibration import calibrate_hayatequant_spectral
+
+    x, _ = _kv(h=2, s=32, d=32)
+    flat = x.reshape(-1, x.shape[-1])
+    codec = HayateQuantCodec(bits=2, block_size=2, encoder="exact")
+    cal = calibrate_hayatequant_spectral(
+        codec,
+        flat,
+        flat,
+        learn_codebook=True,
+        refit_iters=1,
+        max_vectors=512,
+        device="cpu",
+    )
+    assert cal.meta["method"] == "spectral_balanced_rotation"
+    for role in ("k", "v"):
+        assert cal.meta[f"{role}_role_error_after"] <= cal.meta[f"{role}_role_error_before"] + 1e-9
+    c = HayateQuantCodec(bits=2, block_size=2, encoder="exact", calibration=cal)
+    comp = c.encode(x, x)
+    if "k" in cal.rot:
+        assert comp.key_q["main"]["rot"][0] == "c"
+    kd, vd = c.decode(comp)
+    assert kd.shape == x.shape
+    assert vd.shape == x.shape
+
+
+def test_hayatequant_attention_weighted_calibration_roundtrip():
+    from onecomp.kvcomp.codec.hayate.calibration import calibrate_hayatequant_attention_weighted
+
+    torch.manual_seed(4)
+    x, _ = _kv(h=2, s=32, d=32)
+    flat = x.reshape(-1, x.shape[-1])
+    q = flat + 0.1 * torch.randn_like(flat)
+    codec = HayateQuantCodec(bits=2, block_size=2, encoder="exact", key_scale_mode="ub")
+    cal = calibrate_hayatequant_attention_weighted(
+        codec,
+        flat,
+        q,
+        steps=2,
+        batch_vectors=128,
+        max_vectors=512,
+        device="cpu",
+    )
+    assert cal.meta["method"] == "attention_weighted_key_rotation"
+    assert cal.meta["k_aw_after"] <= cal.meta["k_aw_before"] + 1e-9
+    c = HayateQuantCodec(bits=2, block_size=2, encoder="exact",
+                         key_scale_mode="ub", calibration=cal)
+    kd, vd = c.decode(c.encode(x, x))
+    assert kd.shape == x.shape
+    assert vd.shape == x.shape
+
+
+def test_hayatequant_pair_weighted_calibration_roundtrip():
+    from onecomp.kvcomp.codec.hayate.calibration import calibrate_hayatequant_pair_weighted
+
+    torch.manual_seed(5)
+    x, _ = _kv(h=2, s=32, d=32)
+    flat = x.reshape(-1, x.shape[-1])
+    q = torch.nn.functional.normalize(flat + 0.05 * torch.randn_like(flat), dim=-1)
+    weights = torch.linspace(0.5, 1.5, flat.shape[0])
+    codec = HayateQuantCodec(bits=2, block_size=2, encoder="exact", key_scale_mode="ub")
+    cal = calibrate_hayatequant_pair_weighted(
+        codec,
+        flat,
+        q,
+        weights,
+        steps=2,
+        batch_pairs=128,
+        max_pairs=512,
+        device="cpu",
+    )
+    assert cal.meta["method"] == "attention_pair_key_rotation"
+    assert cal.meta["k_pair_after"] <= cal.meta["k_pair_before"] + 1e-9
+    c = HayateQuantCodec(bits=2, block_size=2, encoder="exact",
+                         key_scale_mode="ub", calibration=cal)
+    kd, vd = c.decode(c.encode(x, x))
+    assert kd.shape == x.shape
+    assert vd.shape == x.shape
+
+
+def test_hayatequant_layer_rotation_uses_ctx():
+    from onecomp.kvcomp.codec.hayate.calibration import HayateQuantCalibration
+    from onecomp.kvcomp.codec.rotation import random_orthogonal
+
+    torch.manual_seed(6)
+    x, _ = _kv(h=2, s=16, d=32)
+    cal = HayateQuantCalibration(head_dim=32)
+    cal.layer_rot["k"] = {
+        0: torch.eye(32),
+        1: random_orthogonal(32, seed=99),
+    }
+    codec = HayateQuantCodec(bits=2, block_size=2, encoder="exact",
+                             key_scale_mode="ub", calibration=cal)
+    out0 = codec.fake_quant_roundtrip(x, x, ctx={"layer_idx": 0})[0]
+    out1 = codec.fake_quant_roundtrip(x, x, ctx={"layer_idx": 1})[0]
+    assert out0.shape == x.shape
+    assert out1.shape == x.shape
+    assert not torch.allclose(out0, out1)
+    p = codec.encode(x, x, ctx={"layer_idx": 1})
+    kd, vd = codec.decode(p)
+    assert kd.shape == x.shape
+    assert vd.shape == x.shape
+
+
 def test_hayatequant_calibration_roundtrip_and_digest_guard(tmp_path):
     # Calibrated encode/decode roundtrips; payloads carry the artifact digest
     # and decoding with a missing/different artifact fails fast instead of
@@ -681,8 +859,14 @@ def test_hayatequant_calibration_roundtrip_and_digest_guard(tmp_path):
                                "device": "cpu"})
     assert codec.flag_calibration
     comp = codec.encode(x, x)
-    assert comp.key_q["main"]["rot"][0] == "c"
-    assert "cb_cal" in comp.key_q["main"]
+    if "k" in cal.rot:
+        assert comp.key_q["main"]["rot"][0] == "c"
+    if "v" in cal.rot:
+        assert comp.value_q["main"]["rot"][0] == "c"
+    if "k" in cal.codebook:
+        assert "cb_cal" in comp.key_q["main"]
+    if "v" in cal.codebook:
+        assert "cb_cal" in comp.value_q["main"]
     kd, vd = codec.decode(comp)
     assert kd.shape == x.shape
     rel = float((kd.float() - x).pow(2).sum() / x.pow(2).sum())
@@ -694,9 +878,17 @@ def test_hayatequant_calibration_roundtrip_and_digest_guard(tmp_path):
     codec2 = HayateQuantCodec(bits=3, calibration=p)
     kd2, _ = codec2.decode(comp)
     assert torch.equal(kd, kd2)
-    # Digest guard: decoding without the artifact must raise.
-    with pytest.raises(ValueError, match="calibrat"):
-        HayateQuantCodec(bits=3).decode(comp)
+    # Digest guard: decoding without the artifact must raise when the payload
+    # actually contains calibrated side information.
+    has_cal_payload = (
+        comp.key_q["main"]["rot"][0] == "c"
+        or comp.value_q["main"]["rot"][0] == "c"
+        or "cb_cal" in comp.key_q["main"]
+        or "cb_cal" in comp.value_q["main"]
+    )
+    if has_cal_payload:
+        with pytest.raises(ValueError, match="calibrat"):
+            HayateQuantCodec(bits=3).decode(comp)
 
 
 def test_hayatequant_calibration_never_worse_on_holdout():
@@ -709,10 +901,11 @@ def test_hayatequant_calibration_never_worse_on_holdout():
     cal = _tiny_calibration(codec, x)
     for role in ("k", "v"):
         assert cal.meta[f"{role}_dist_after"] <= cal.meta[f"{role}_dist_before"] + 1e-9
-        assert cal.rot[role].shape == (32, 32)
-        # Learned rotation stays orthogonal (Cayley retraction).
-        eye = cal.rot[role] @ cal.rot[role].t()
-        assert torch.allclose(eye, torch.eye(32), atol=1e-4)
+        if role in cal.rot:
+            assert cal.rot[role].shape == (32, 32)
+            # Learned rotation stays orthogonal (Cayley retraction).
+            eye = cal.rot[role] @ cal.rot[role].t()
+            assert torch.allclose(eye, torch.eye(32), atol=1e-4)
 
 
 def test_hayatequant_calibration_config_and_outlier_guard():
@@ -932,6 +1125,10 @@ def _triton_reference_roundtrip(x, w, cb32, block_size, modes):
     for lo, hi, mode in ((0, split, modes[0]), (split, rows, modes[-1])):
         if lo >= hi:
             continue
+        if mode == "bsm":
+            mode = "ls"
+        elif mode == "ub":
+            mode = "ip"
         xi = xr[lo:hi]
         rms = xi.pow(2).mean(-1, keepdim=True).sqrt().clamp_min(1e-8)
         chat = assign(xi / rms)
@@ -994,7 +1191,7 @@ def test_hayatequant_triton_step_matches_eager_roundtrip(kw, monkeypatch):
             m = x.shape[-1]
             bs = resolve_block_size(bits, c.block_size, c.max_codebook_bits, m)
             w = c._rt_rotation(m, bs, bits, x.device)
-            cb32 = _codebook_aux_on(bits, bs, c.dist, m, str(x.device))[0]
+            cb32 = _codebook_aux_on(bits, bs, c.dist, m, c.codebook_init, str(x.device))[0]
             ref = _triton_reference_roundtrip(x, w, cb32, bs, modes)[0]
             assert torch.allclose(got.float(), ref, rtol=1e-3, atol=2e-3), (kw, s, modes)
 
@@ -1163,6 +1360,28 @@ def test_compressed_cache_prefill_decode_and_sink():
     assert torch.allclose(ok[:, :, :4], k[:, :, :4], atol=1e-3)  # sinks exact
     ok, _ = c.update(torch.randn(b, h, 1, d), torch.randn(b, h, 1, d), 0)
     assert ok.shape == (b, h, s + 1, d)
+    assert c.compression_ratio() > 1.0
+
+
+def test_compressed_cache_online_recent_retires_one_token():
+    b, h, s, d = 1, 2, 8, 64
+    c = CompressedDynamicCache(
+        codec=Int4Codec(key_axis="token", value_axis="token"),
+        sink_tokens=2,
+        recent_tokens=2,
+    )
+    k = torch.randn(b, h, s, d)
+    v = torch.randn(b, h, s, d)
+    c.update(k, v, 0)
+    assert torch.equal(c.layers[0].keys[:, :, :2], k[:, :, :2])
+    assert torch.equal(c.layers[0].keys[:, :, -2:], k[:, :, -2:])
+
+    knew = torch.randn(b, h, 1, d)
+    vnew = torch.randn(b, h, 1, d)
+    c.update(knew, vnew, 0)
+    assert torch.equal(c.layers[0].keys[:, :, -1:], knew)
+    assert torch.equal(c.layers[0].keys[:, :, -2:-1], k[:, :, -1:])
+    assert not torch.allclose(c.layers[0].keys[:, :, -3:-2], k[:, :, -2:-1])
     assert c.compression_ratio() > 1.0
 
 

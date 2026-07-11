@@ -12,6 +12,8 @@ Package layout (one module per concern):
 - :mod:`.calibration` -- optional SpinQuant-style calibration (learned
   per-role orthogonal rotations + real-data codebook refits); off by default,
   never required.
+- :mod:`.recipes` -- named operating points used by papers and benchmarks
+  (currently the HQ-frontier K/V rate allocation).
 - :mod:`.codebooks` -- committed ``gauss_b{B}_k{K}.pt`` codebook artifacts and
   the :mod:`.codebooks.fit_codebooks` refit script.
 
@@ -28,10 +30,24 @@ from .calibration import (
     calibrate_hayatequant,
     capture_kv_samples,
 )
+from .recipes import (
+    HQ_FRONTIER_NAME,
+    HQ_FRONTIER_KEY_SCALE_MODE,
+    hayate_frontier_bits,
+    hayate_frontier_kwargs,
+    build_hayate_frontier,
+    hayate_frontier_variant,
+)
 
 __all__ = [
     "HayateQuantCodec",
     "HayateQuantCalibration",
     "calibrate_hayatequant",
     "capture_kv_samples",
+    "HQ_FRONTIER_NAME",
+    "HQ_FRONTIER_KEY_SCALE_MODE",
+    "hayate_frontier_bits",
+    "hayate_frontier_kwargs",
+    "build_hayate_frontier",
+    "hayate_frontier_variant",
 ]

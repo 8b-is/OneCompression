@@ -4,7 +4,7 @@
 # This script is intentionally a thin orchestrator over the checked-in benchmark
 # entry points. It keeps all paper numbers reproducible from the kvcomp branch:
 # PPL/distortion, zero-shot ACC, long-context retrieval, reasoning-heavy decode,
-# codec speed, end-to-end decode speed, and the native vLLM kernel smoke.
+# codec speed, end-to-end decode speed, and the native kernel smoke.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -24,7 +24,6 @@ PAPER_METHODS=(
   TurboQuant-hadamard
   FibQuant
   BlockQuant
-  HayateQuant-selected
   HayateQuant-frontier
   HayateQuant-auto
   HayateQuant-K3V1-BQscale
@@ -48,7 +47,7 @@ submit_wrap() {
 }
 
 common_env='export TOKENIZERS_PARALLELISM=false; export HF_DATASETS_OFFLINE=${HF_DATASETS_OFFLINE:-1}; export PYTHONUNBUFFERED=1'
-speed_env="$common_env; export ONECOMP_TRITON_CODEC=1; export ONECOMP_TRITON_PREFILL=1; export ONECOMP_COMPILE_CODEC=0"
+speed_env="$common_env; export ONECOMP_TRITON_CODEC=1; export ONECOMP_TRITON_PREFILL=1; export ONECOMP_COMPILE_CODEC=1; export ONECOMP_COMPILE_DECODE_ONLY=1"
 
 submit_ppl() {
   if [ "$DRYRUN" = "1" ]; then
@@ -70,13 +69,13 @@ submit_zeroshot() {
   "$PY" "$HERE/hayatequant_zeroshot.py" --submit "${dry_args[@]}" \
     --partition "$PARTITIONS" --time 1-00:00:00 --mem 180G --cpus 20 \
     --output-root "$RUN_ROOT/zeroshot" \
+    --recent-tokens "${RECENT_TOKENS:-0}" \
     --methods "${PAPER_METHODS[@]}"
 }
 
 submit_long_reason() {
   for spec in \
     "llama31-8b:$MODELS/llama-3.1-8b-instruct" \
-    "ministral-8b:$MODELS/Ministral-8B-Instruct-2410" \
     "qwen3-8b:$MODELS/Qwen3-8B"; do
     key=${spec%%:*}
     model=${spec#*:}
@@ -97,6 +96,14 @@ submit_long_reason() {
   done
 }
 
+submit_long_reason_grid() {
+  local dry_args=()
+  [ "$DRYRUN" = "1" ] && dry_args=(--dry-run)
+  "$PY" "$LC/hayatequant_exhaustive_grid.py" --task both "${dry_args[@]}" \
+    --output-root "$RUN_ROOT/long_reason_grid" \
+    --partition "$PARTITIONS" --time 1-00:00:00 --mem 180G --cpus 20
+}
+
 submit_speed_native() {
   submit_wrap "hqspeed-synth" 04:00:00 120G 12 \
     "cd $LC; $speed_env; $PY -u codec_speed.py --device cuda --heads 32 --seq 4096 --dim 128 --bits 2 3 4 --repeats 50 --out $RUN_ROOT/speed/codec_speed_synth.json"
@@ -108,7 +115,7 @@ submit_speed_native() {
 
 submit_e2e_speed() {
   submit_wrap "hqe2e-llama" 08:00:00 180G 12 \
-    "cd $LC; $speed_env; $PY -u e2e_speed.py --device cuda --model $MODELS/llama-3.1-8b-instruct --prompt-len 4096 --gen-len 128 --bits 4 3 2 --repeats 5 --dtype float16 --out $RUN_ROOT/speed/e2e_speed_llama.json"
+    "cd $LC; $speed_env; $PY -u e2e_speed.py --device cuda --model $MODELS/llama-3.1-8b-instruct --prompt-len 4096 --gen-len 128 --bits 4 3 2 --repeats 5 --recent-tokens ${RECENT_TOKENS:-0} --dtype float16 --out $RUN_ROOT/speed/e2e_speed_llama.json"
 }
 
 submit_native_vllm() {
@@ -129,7 +136,7 @@ summarize() {
 
 usage() {
   cat <<'EOF'
-Usage: submit_hayatequant_paper.sh [all|ppl|zeroshot|long|speed|e2e-speed|native|summarize]
+Usage: submit_hayatequant_paper.sh [all|ppl|zeroshot|long|long-grid|reason-grid|speed|e2e-speed|native|summarize]
 
 Environment:
   OUT=/lustre/.../kvcomp_hayatequant
@@ -153,6 +160,14 @@ case "$cmd" in
   ppl) submit_ppl ;;
   zeroshot) submit_zeroshot ;;
   long|reason) submit_long_reason ;;
+  long-grid) submit_long_reason_grid ;;
+  reason-grid)
+    dry_args=()
+    [ "$DRYRUN" = "1" ] && dry_args=(--dry-run)
+    "$PY" "$LC/hayatequant_exhaustive_grid.py" --task reason "${dry_args[@]}" \
+      --output-root "$RUN_ROOT/reason_grid" \
+      --partition "$PARTITIONS" --time 1-00:00:00 --mem 180G --cpus 20
+    ;;
   speed) submit_speed_native ;;
   e2e-speed) submit_e2e_speed ;;
   native) submit_native_vllm ;;

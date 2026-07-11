@@ -20,17 +20,21 @@ logger = getLogger(__name__)
 
 
 def build_compressed_cache(model, kv_config: KVCompressionConfig,
-                           sink_tokens: int = 4) -> CompressedDynamicCache:
+                           sink_tokens: int = 4,
+                           recent_tokens: int = 0) -> CompressedDynamicCache:
     """Build a :class:`CompressedDynamicCache` for ``model`` from ``kv_config``.
 
     ``sink_tokens`` leading tokens are kept in full precision (StreamingLLM /
     KIVI), which is required for stable generation on outlier-heavy models.
+    ``recent_tokens`` trailing tokens are kept in full precision for
+    prefill-sized updates.
     """
     config = getattr(model, "config", None)
     return CompressedDynamicCache(
         codec=kv_config.codec, config=config,
         skip_layers=kv_config.codec.skip_layers if kv_config.codec else None,
         sink_tokens=sink_tokens,
+        recent_tokens=recent_tokens,
     )
 
 

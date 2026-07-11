@@ -254,6 +254,19 @@ def _codebook_aux_on(
     return cb32, cb_score, csq, None
 
 
+def _codebook_aux_from_tensor(cb32: torch.Tensor, device) -> tuple:
+    """Per-codebook constants for an already materialised learned codebook."""
+    cb32 = cb32.to(device=device, dtype=torch.float32).contiguous()
+    block_size = int(cb32.shape[1])
+    if block_size == 1:
+        c1 = cb32.squeeze(-1)
+        bounds = (c1[1:] + c1[:-1]) / 2.0
+        return cb32, cb32, None, bounds.contiguous()
+    cb_score = cb32.half() if torch.device(device).type == "cuda" else cb32
+    csq = cb_score.pow(2).sum(dim=1)
+    return cb32, cb_score, csq, None
+
+
 def _roundtrip_tensors(x, w, cb32, cb_score, csq, bounds, lut, bins, block_size, modes):
     """Fused encode+decode over ``R`` stacked role tensors (pure tensor ops).
 
@@ -333,7 +346,7 @@ def _roundtrip_tensors(x, w, cb32, cb_score, csq, bounds, lut, bins, block_size,
 _RT_COMPILED = None
 
 
-def _rt_dispatch():
+def _rt_dispatch(compile_allowed: bool = True):
     """Return ``(roundtrip_fn, compiled)`` honouring ``ONECOMP_COMPILE_CODEC``.
 
     ``ONECOMP_COMPILE_CODEC=1`` wraps :func:`_roundtrip_tensors` in
@@ -343,9 +356,12 @@ def _rt_dispatch():
     small kernel launches into a single launch.  Off by default: compilation
     adds tens of seconds of warmup per (shape, config) and CUDA-graph memory
     pools, which is the right trade for serving-style benchmarks but not for
-    unit tests or one-shot evaluation.
+    unit tests or one-shot evaluation.  Callers that need bit-identical
+    prefill quality can set ``ONECOMP_COMPILE_DECODE_ONLY=1``; ``compile_allowed``
+    then disables graphing for ``seq_len != 1`` while keeping the decode-step
+    speedup.
     """
-    if os.getenv("ONECOMP_COMPILE_CODEC", "0") != "1":
+    if not compile_allowed or os.getenv("ONECOMP_COMPILE_CODEC", "0") != "1":
         return _roundtrip_tensors, False
     global _RT_COMPILED  # pylint: disable=global-statement
     if _RT_COMPILED is None:
@@ -595,7 +611,7 @@ class HayateQuantCodec(KVCodec):
 
     # --- rotation ----------------------------------------------------------
     def _rotate(self, x: torch.Tensor, m: int, block_size: int, bits: int,
-                role: str = "k"):
+                role: str = "k", layer_idx=None):
         """Rotate ``x`` (``..., m``); returns ``(x_rotated, rot_tag)``.
 
         Any rotation that structurally requires a power-of-two ``m``
@@ -612,12 +628,12 @@ class HayateQuantCodec(KVCodec):
         """
         cal = self._calib()
         if cal is not None:
-            w = cal.rotation_on(role, m, x.device)
+            w = cal.rotation_on(role, m, x.device, layer_idx=layer_idx)
             if w is not None:
                 # Learned (SpinQuant-style) rotation: same single GEMM as the
                 # data-free path; the tag carries the artifact digest so
                 # decode can verify the matching artifact is loaded.
-                return x.float() @ w, ("c", role, cal.digest)
+                return x.float() @ w, ("c", role, cal.digest, layer_idx)
         mode = self._resolved_mode(m, block_size, bits)
         x = x.float()
         if mode == "hybrid" and is_power_of_two(m):
@@ -639,15 +655,16 @@ class HayateQuantCodec(KVCodec):
 
     def _unrotate(self, xr: torch.Tensor, m: int, rot) -> torch.Tensor:
         kind, bs = rot[0], rot[1]
-        if kind == "c":  # calibrated: rot == ("c", role, digest)
+        if kind == "c":  # calibrated: rot == ("c", role, digest[, layer_idx])
             role, digest = rot[1], rot[2]
+            layer_idx = rot[3] if len(rot) > 3 else None
             cal = self._calib()
             if cal is None or cal.digest != digest:
                 raise ValueError(
                     "payload was encoded with a calibrated rotation "
                     f"(digest {digest}) but the codec has "
                     f"{'no' if cal is None else 'a different'} calibration loaded")
-            return xr @ cal.rotation_on(role, m, xr.device).t()
+            return xr @ cal.rotation_on(role, m, xr.device, layer_idx=layer_idx).t()
         # Pre-fix payloads stored 2-tuples without the seed; fall back to the
         # instance seed for those (the historical behaviour).
         seed = rot[2] if len(rot) > 2 else self.seed
@@ -710,10 +727,10 @@ class HayateQuantCodec(KVCodec):
         return spec
 
     # --- rotate + block-VQ + role-asymmetric scale for one channel subset --
-    def _quant_rotor(self, xsub: torch.Tensor, bits: int, role: str) -> dict:
+    def _quant_rotor(self, xsub: torch.Tensor, bits: int, role: str, layer_idx=None) -> dict:
         m = xsub.shape[-1]
         block_size = resolve_block_size(bits, self.block_size, self.max_codebook_bits, m)
-        xr, rot = self._rotate(xsub, m, block_size, bits, role)
+        xr, rot = self._rotate(xsub, m, block_size, bits, role, layer_idx=layer_idx)
         # One RMS scale per whole subset vector (not per block) -- matches
         # TurboQuant/HALO's storage convention exactly (a single fp16 scale
         # per vector regardless of block_size).
@@ -722,8 +739,10 @@ class HayateQuantCodec(KVCodec):
         cal = self._calib()
         cb_cal = (cal.codebook_on(role, bits, block_size, xsub.device)
                   if cal is not None and m == cal.head_dim else None)
-        cb = cb_cal if cb_cal is not None \
-            else _block_codebook_on(bits, block_size, self.dist, m, self.codebook_init, device_str)
+        if cb_cal is not None:
+            cb = cb_cal
+        else:
+            cb = _block_codebook_on(bits, block_size, self.dist, m, self.codebook_init, device_str)
         n_blocks = m // block_size
         n_total_blocks = max(1, xr.numel() // block_size)
         lut_spec = self._use_lut(block_size, bits, n_total_blocks, xr.is_cuda)
@@ -792,11 +811,12 @@ class HayateQuantCodec(KVCodec):
         return self._unrotate(xr, p["m"], p["rot"])
 
     # --- full-tensor encode / decode (handles the outlier split) -----------
-    def _encode_tensor(self, x: torch.Tensor, bits: int, role: str) -> dict:
+    def _encode_tensor(self, x: torch.Tensor, bits: int, role: str, layer_idx=None) -> dict:
         head_dim = x.shape[-1]
         n_outlier = self._n_outlier_for(role)
         if n_outlier <= 0 or n_outlier >= head_dim:
-            return {"mode": "single", "main": self._quant_rotor(x, bits, role), "head_dim": head_dim}
+            return {"mode": "single", "main": self._quant_rotor(x, bits, role, layer_idx=layer_idx),
+                    "head_dim": head_dim}
         # Outlier mixed-precision: top-n_outlier channels by energy over tokens.
         energy = x.float().abs().amax(dim=-2)
         energy = energy.reshape(-1, head_dim).mean(dim=0)
@@ -806,8 +826,9 @@ class HayateQuantCodec(KVCodec):
         mask[out_idx] = True
         return {
             "mode": "outlier", "head_dim": head_dim, "mask": mask,
-            "out": self._quant_rotor(x[..., mask], self._outlier_bits_for(role, bits), role),
-            "in": self._quant_rotor(x[..., ~mask], bits, role),
+            "out": self._quant_rotor(x[..., mask], self._outlier_bits_for(role, bits), role,
+                                     layer_idx=layer_idx),
+            "in": self._quant_rotor(x[..., ~mask], bits, role, layer_idx=layer_idx),
         }
 
     def _decode_tensor(self, payload: dict, dtype) -> torch.Tensor:
@@ -873,8 +894,9 @@ class HayateQuantCodec(KVCodec):
         return self.calibration
 
     def encode(self, key, value, ctx=None) -> CompressedKV:
-        kp = self._encode_tensor(key, self.bits, "k")
-        vp = self._encode_tensor(value, self._value_bits(), "v")
+        layer_idx = (ctx or {}).get("layer_idx")
+        kp = self._encode_tensor(key, self.bits, "k", layer_idx=layer_idx)
+        vp = self._encode_tensor(value, self._value_bits(), "v", layer_idx=layer_idx)
         stored = self._stored_bits(key, self.bits, "k") + self._stored_bits(value, self._value_bits(), "v")
         return CompressedKV(key_q=kp, value_q=vp, meta={"dtype": key.dtype, "stored_bits": int(stored)})
 
@@ -886,12 +908,12 @@ class HayateQuantCodec(KVCodec):
     def _rt_supported(self, m: int) -> bool:
         """Whether the fused round-trip covers this configuration.
 
-        The fused path handles every *default* configuration (no outlier
-        split, no QJL residual, no calibration artifact, GEMM-expressible
-        rotation); anything else transparently falls back to the payload
-        path, so ``fake_quant_roundtrip`` is always semantically valid.
+        The fused path handles no-outlier/no-QJL configurations with a
+        GEMM-expressible rotation, including calibrated rotations/codebooks.
+        Anything else transparently falls back to the payload path, so
+        ``fake_quant_roundtrip`` is always semantically valid.
         """
-        if self._n_outlier_for("k") > 0 or self._n_outlier_for("v") > 0 or self.use_qjl or self._calib() is not None:
+        if self._n_outlier_for("k") > 0 or self._n_outlier_for("v") > 0 or self.use_qjl:
             return False
         for bits in {self.bits, self._value_bits()}:
             bs = resolve_block_size(bits, self.block_size, self.max_codebook_bits, m)
@@ -901,8 +923,14 @@ class HayateQuantCodec(KVCodec):
                 return False
         return True
 
-    def _rt_rotation(self, m: int, block_size: int, bits: int, device) -> torch.Tensor:
+    def _rt_rotation(self, m: int, block_size: int, bits: int, device, role: str | None = None,
+                     layer_idx=None) -> torch.Tensor:
         """The (m, m) fp32 rotation matrix ``_rotate`` would apply (cached)."""
+        cal = self._calib()
+        if cal is not None and role is not None:
+            w = cal.rotation_on(role, m, device, layer_idx=layer_idx)
+            if w is not None:
+                return w
         mode = self._resolved_mode(m, block_size, bits)
         dev = str(device)
         if mode == "hybrid" and is_power_of_two(m):
@@ -911,13 +939,20 @@ class HayateQuantCodec(KVCodec):
             return signed_hadamard_matrix(m, self.seed, dev, torch.float32)
         return _dense_rotation_on(m, self.seed, dev, torch.float32)
 
-    def _rt_call(self, fn, x: torch.Tensor, bits: int, modes: tuple) -> torch.Tensor:
+    def _rt_call(self, fn, x: torch.Tensor, bits: int, modes: tuple, role: str | None = None,
+                 layer_idx=None) -> torch.Tensor:
         """Run the fused round-trip core on stacked roles ``x`` (R, b, h, s, m)."""
         m = x.shape[-1]
         block_size = resolve_block_size(bits, self.block_size, self.max_codebook_bits, m)
-        w = self._rt_rotation(m, block_size, bits, x.device)
-        cb32, cb_score, csq, bounds = _codebook_aux_on(
-            bits, block_size, self.dist, m, self.codebook_init, str(x.device))
+        w = self._rt_rotation(m, block_size, bits, x.device, role, layer_idx=layer_idx)
+        cal = self._calib()
+        cb_cal = (cal.codebook_on(role, bits, block_size, x.device)
+                  if cal is not None and role is not None and m == cal.head_dim else None)
+        if cb_cal is not None:
+            cb32, cb_score, csq, bounds = _codebook_aux_from_tensor(cb_cal, x.device)
+        else:
+            cb32, cb_score, csq, bounds = _codebook_aux_on(
+                bits, block_size, self.dist, m, self.codebook_init, str(x.device))
         # Per-role block count (x[0], not the stacked x) so the LUT-vs-exact
         # crossover decision is identical to the standalone encode path.
         n_total_blocks = max(1, x[0].numel() // block_size)
@@ -937,6 +972,9 @@ class HayateQuantCodec(KVCodec):
                 return roundtrip_step_triton(x, w, cb32, block_size, modes)
         if spec is None:
             lut, bins = None, 0
+        elif cb_cal is not None:
+            lut = cal.lut_on(role, bits, block_size, spec[0], spec[1], x.device)
+            bins = spec[0]
         else:
             lut = _block_lut_on(
                 bits, block_size, self.dist, m, self.codebook_init, spec[0], spec[1], str(x.device))
@@ -953,9 +991,11 @@ class HayateQuantCodec(KVCodec):
         batches key and value through one rotation/quantization pipeline when
         their bit-widths agree, and reuses cached per-codebook constants.
         With ``ONECOMP_COMPILE_CODEC=1`` the whole pipeline additionally
-        replays as a single CUDA graph.  Configurations outside the fused
-        path's coverage (outliers, QJL, calibration, butterfly rotation)
-        fall back to the base-class encode/decode chain.
+        replays as a single CUDA graph.  ``ONECOMP_COMPILE_DECODE_ONLY=1``
+        restricts that graphing to serving decode steps (``seq_len == 1``),
+        preserving the eager prefill path exactly.  Configurations outside
+        the fused path's coverage (outliers, QJL, calibration, butterfly
+        rotation) fall back to the base-class encode/decode chain.
         """
         m = key.shape[-1]
         if not self._rt_supported(m):
@@ -963,14 +1003,22 @@ class HayateQuantCodec(KVCodec):
         kb, vb = self.bits, self._value_bits()
         stored = int(self._stored_bits(key, kb, "k") + self._stored_bits(value, vb, "v"))
         k_mode, v_mode = self._scale_mode_for("k"), self._scale_mode_for("v")
-        fn, compiled = _rt_dispatch()
+        compile_allowed = not (
+            os.getenv("ONECOMP_COMPILE_DECODE_ONLY", "0") == "1"
+            and key.shape[-2] != 1
+        )
+        fn, compiled = _rt_dispatch(compile_allowed=compile_allowed)
         dtype = key.dtype
-        if kb == vb:
+        cal = self._calib()
+        layer_idx = (ctx or {}).get("layer_idx")
+        if kb == vb and cal is None:
             y = self._rt_call(fn, torch.stack((key, value)).float(), kb, (k_mode, v_mode))
             khat, vhat = y[0], y[1]
         else:
-            khat = self._rt_call(fn, key.float().unsqueeze(0), kb, (k_mode,))[0]
-            vhat = self._rt_call(fn, value.float().unsqueeze(0), vb, (v_mode,))[0]
+            khat = self._rt_call(fn, key.float().unsqueeze(0), kb, (k_mode,), role="k",
+                                 layer_idx=layer_idx)[0]
+            vhat = self._rt_call(fn, value.float().unsqueeze(0), vb, (v_mode,), role="v",
+                                 layer_idx=layer_idx)[0]
         if compiled:
             # CUDA-graph outputs live in the graph's memory pool and are
             # overwritten by the next replay; copy them out unconditionally.
