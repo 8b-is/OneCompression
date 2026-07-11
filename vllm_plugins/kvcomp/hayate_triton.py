@@ -874,7 +874,6 @@ def triton_hayatequant_decode_attention(
         NUM_KV_SPLITS=num_splits,
         BLOCK_DV=cfg["block_d"],
         Lv=D,
-        OUTPUT_FP16=1 if out_dtype == torch.float16 else 0,
         num_warps=4,
         num_stages=2,
     )
