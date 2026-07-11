@@ -33,8 +33,12 @@ from onecomp.kvcomp.codec.halo import HALOCodec
 from onecomp.kvcomp.codec.hayate import HayateQuantCodec
 from onecomp.kvcomp.codec.hayate.recipes import (
     HQ_FRONTIER_KEY_SCALE_MODE,
+    build_hayate_adaptive2,
     build_hayate_frontier,
+    build_hayate_fractional_rate,
     build_hayate_fractional2,
+    hayate_adaptive2_kwargs,
+    hayate_fractional_rate_kwargs,
     hayate_fractional2_kwargs,
     hayate_fractional2_variant,
     hayate_frontier_bits,
@@ -533,10 +537,9 @@ def test_hayatequant_fractional2_recipe_is_opt_in():
     assert kwargs == {
         "bits": 2,
         "value_bits": 2,
+        "avg_bits": 2.0,
         "block_size": 4,
-        "max_codebook_bits": 10,
-        "key_code_bits_per_block": 10,
-        "value_code_bits_per_block": 6,
+        "key_bit_fraction": 0.625,
         "key_scale_mode": "ub",
     }
     codec = build_hayate_fractional2()
@@ -545,10 +548,31 @@ def test_hayatequant_fractional2_recipe_is_opt_in():
     assert codec.block_size == 4
     assert codec.key_code_bits_per_block == 10
     assert codec.value_code_bits_per_block == 6
+    assert codec.max_codebook_bits == 10
 
     variant = hayate_fractional2_variant(label="HQ-frac")
     assert variant["label"] == "HQ-frac"
-    assert variant["key_code_bits_per_block"] == 10
+    assert variant["avg_bits"] == 2.0
+
+
+def test_hayatequant_fractional_rate_ui_resolves_code_bits():
+    codec = build_hayate_fractional_rate(avg_bits=1.25, block_size=4, key_bit_fraction=0.6)
+    assert codec.bits == 1
+    assert codec.value_bits == 1
+    assert codec.key_code_bits_per_block == 6
+    assert codec.value_code_bits_per_block == 4
+    assert codec.max_codebook_bits == 9
+
+
+def test_hayatequant_adaptive2_recipe_is_opt_in():
+    kwargs = hayate_adaptive2_kwargs()
+    assert kwargs["avg_bits"] == 2.0
+    assert kwargs["block_size"] == 4
+    assert kwargs["adaptive_bit_split"] == "online_mse"
+    codec = build_hayate_adaptive2()
+    assert codec.key_code_bits_per_block is None
+    assert codec.value_code_bits_per_block is None
+    assert codec.max_codebook_bits == 10
 
 
 def test_hayatequant_invalid_block_size_raises():
@@ -660,7 +684,28 @@ def test_hayatequant_explicit_code_bits_per_block_fractional_rate_roundtrip():
     assert enc.meta["stored_bits"] == expected
     assert enc.key_q["main"]["code_bits"] == 5
     assert enc.value_q["main"]["code_bits"] == 3
-    assert c.fake_quant_roundtrip(x, x)[2] == expected
+    kr, vr, stored = c.fake_quant_roundtrip(x, x)
+    assert stored == expected
+    assert torch.allclose(kr, kd, atol=1e-5)
+    assert torch.allclose(vr, vd, atol=1e-5)
+
+
+def test_hayatequant_adaptive_bit_split_roundtrip_and_accounting():
+    x, _ = _kv(h=2, s=8, d=32)
+    c = build_hayate_adaptive2(encoder="exact", adaptive_bit_margin=1)
+    enc = c.encode(x, x * 0.25)
+    kd, vd = c.decode(enc)
+    assert kd.shape == x.shape
+    assert vd.shape == x.shape
+    chosen = enc.meta["adaptive_bit_split"]
+    assert chosen["policy"] == "online_mse"
+    assert chosen["key_code_bits_per_block"] + chosen["value_code_bits_per_block"] == 16
+    assert enc.key_q["main"]["code_bits"] == chosen["key_code_bits_per_block"]
+    assert enc.value_q["main"]["code_bits"] == chosen["value_code_bits_per_block"]
+    vecs = x.shape[0] * x.shape[1] * x.shape[2]
+    blocks = x.shape[-1] // 4
+    expected = vecs * blocks * 16 + vecs * 2 * 16
+    assert enc.meta["stored_bits"] == expected
 
 
 def test_hybrid_rotation_matrix_matches_two_stage():
@@ -1588,6 +1633,16 @@ def test_vllm_mapping_hayatequant_fractional_rate_needs_custom_backend():
     assert p.needs_custom_backend and not p.native_supported
     assert "key_code_bits_per_block" in notes
     assert "value_code_bits_per_block" in notes
+
+
+def test_vllm_mapping_hayatequant_adaptive_rate_needs_custom_backend():
+    from vllm_plugins.kvcomp.mapping import plan_from_kv_config
+
+    p = plan_from_kv_config({"codec": {**hayate_adaptive2_kwargs(), "name": "hayatequant"}})
+    notes = "\n".join(p.notes)
+    assert p.needs_custom_backend and not p.native_supported
+    assert "avg_bits" in notes
+    assert "adaptive_bit_split" in notes
 
 
 def test_vllm_mapping_hayatequant_block_vq_native_default(monkeypatch):

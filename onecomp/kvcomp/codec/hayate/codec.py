@@ -253,6 +253,16 @@ def _block_lut_on(
 
 
 @lru_cache(maxsize=64)
+def _block_lut_code_bits_on(
+    code_bits: int, block_size: int, dist: str, m: int, codebook_init: str,
+    bins: int, top_t: int, device_str: str,
+) -> torch.Tensor:
+    """Device-resident candidate-list LUT for an explicit-code-bit codebook."""
+    cb = _block_codebook_code_bits_on(code_bits, block_size, dist, m, codebook_init, device_str)
+    return build_vq_lut(cb, bins, top_t)
+
+
+@lru_cache(maxsize=64)
 def _codebook_aux_on(
     bits: int, block_size: int, dist: str, m: int, codebook_init: str, device_str: str,
 ):
@@ -284,6 +294,21 @@ def _codebook_aux_on(
         cb_score = cb32.half()
     else:
         cb_score = cb32
+    csq = cb_score.pow(2).sum(dim=1)
+    return cb32, cb_score, csq, None
+
+
+@lru_cache(maxsize=64)
+def _codebook_aux_code_bits_on(
+    code_bits: int, block_size: int, dist: str, m: int, codebook_init: str, device_str: str,
+):
+    """Precomputed constants for explicit-code-bit codebooks."""
+    cb32 = _block_codebook_code_bits_on(code_bits, block_size, dist, m, codebook_init, device_str)
+    if block_size == 1:
+        c1 = cb32.squeeze(-1)
+        bounds = (c1[1:] + c1[:-1]) / 2.0
+        return cb32, cb32, None, bounds.contiguous()
+    cb_score = cb32.half() if torch.device(device_str).type == "cuda" else cb32
     csq = cb_score.pow(2).sum(dim=1)
     return cb32, cb_score, csq, None
 
@@ -509,6 +534,17 @@ class HayateQuantCodec(KVCodec):
             block, so the payload rate is ``code_bits_per_block / block_size``
             bits per coordinate.  vLLM native kernels remain tied to their
             integer-bit cache layouts and do not consume these knobs.
+        avg_bits / key_bit_fraction: User-facing fractional-rate interface.
+            For example ``avg_bits=2, block_size=4, key_bit_fraction=0.625``
+            resolves to K10/V6 code bits per block, avoiding manual
+            ``10``/``6`` bookkeeping. ``block_size`` defaults to 4 when this
+            interface is used.
+        adaptive_bit_split: Optional online K/V bit-allocation policy for the
+            explicit-rate HF/research path. ``"online_mse"`` tries a small
+            fixed-budget set of K/V code-bit splits on the current KV tensors
+            and stores the lowest weighted reconstruction-error split in the
+            payload. It is deliberately opt-in because it spends extra encode
+            work to choose the split.
     """
 
     flag_calibration: bool = False
@@ -533,6 +569,13 @@ class HayateQuantCodec(KVCodec):
     use_qjl: bool = False
     seed: int = 0
     calibration: object = None
+    avg_bits: float = None
+    code_bits_per_pair_block: int = None
+    key_bit_fraction: float = None
+    adaptive_bit_split: str = None
+    adaptive_bit_margin: int = 4
+    key_error_weight: float = 1.0
+    value_error_weight: float = 1.0
     key_code_bits_per_block: int = None
     value_code_bits_per_block: int = None
     key_axis: str = "token"
@@ -551,7 +594,62 @@ class HayateQuantCodec(KVCodec):
             self.calibration = HayateQuantCalibration.load(self.calibration)
         return self.calibration
 
+    def _fractional_rate_requested(self) -> bool:
+        return self.avg_bits is not None or self.code_bits_per_pair_block is not None
+
+    def _adaptive_bit_split_enabled(self) -> bool:
+        return self.adaptive_bit_split not in (None, "", "off", "none", False)
+
+    def _pair_code_bits_total(self, block_size: int) -> int | None:
+        if self.code_bits_per_pair_block is not None:
+            return int(self.code_bits_per_pair_block)
+        if self.avg_bits is None:
+            return None
+        return max(2, int(round(float(self.avg_bits) * 2.0 * int(block_size))))
+
+    def _configure_fractional_rate_ui(self):
+        """Resolve the human-facing fractional-rate interface into code bits."""
+        if not self._fractional_rate_requested():
+            return
+        if self.block_size is None:
+            self.block_size = 4
+        if not (isinstance(self.block_size, int) and self.block_size >= 1):
+            return
+        block_size = int(self.block_size)
+        total = self._pair_code_bits_total(block_size)
+        if total is None:
+            return
+        if total < 2:
+            raise ValueError("fractional-rate UI needs at least 2 total K/V bits per block")
+        if self.avg_bits is not None:
+            nominal = max(1, min(8, int(round(float(self.avg_bits)))))
+            self.bits = nominal
+            if self.value_bits is None:
+                self.value_bits = nominal
+        if self._adaptive_bit_split_enabled():
+            if self.key_code_bits_per_block is not None or self.value_code_bits_per_block is not None:
+                raise ValueError(
+                    "adaptive_bit_split cannot be combined with explicit "
+                    "key/value_code_bits_per_block")
+            frac = 0.625 if self.key_bit_fraction is None else float(self.key_bit_fraction)
+            if not 0.0 < frac < 1.0:
+                raise ValueError(f"key_bit_fraction must be in (0, 1), got {frac!r}")
+            center = min(total - 1, max(1, int(round(total * frac))))
+            self.max_codebook_bits = max(self.max_codebook_bits, center, total - center)
+            return
+        if self.key_code_bits_per_block is not None or self.value_code_bits_per_block is not None:
+            return
+        frac = 0.625 if self.key_bit_fraction is None else float(self.key_bit_fraction)
+        if not 0.0 < frac < 1.0:
+            raise ValueError(f"key_bit_fraction must be in (0, 1), got {frac!r}")
+        key_bits = min(total - 1, max(1, int(round(total * frac))))
+        value_bits = total - key_bits
+        self.key_code_bits_per_block = key_bits
+        self.value_code_bits_per_block = value_bits
+        self.max_codebook_bits = max(self.max_codebook_bits, key_bits, value_bits)
+
     def validate_params(self):
+        self._configure_fractional_rate_ui()
         if self.rotation_mode not in ("auto", "hybrid", "hadamard_gemm", "hadamard", "dense"):
             raise ValueError(
                 "rotation_mode must be 'auto', 'hybrid', 'hadamard_gemm', 'hadamard' or 'dense'")
@@ -565,6 +663,27 @@ class HayateQuantCodec(KVCodec):
                 f"got {self.codebook_init!r}")
         if not (isinstance(self.bits, int) and 1 <= self.bits <= 8):
             raise ValueError(f"bits must be int in 1..8, got {self.bits!r}")
+        if self.avg_bits is not None and float(self.avg_bits) <= 0.0:
+            raise ValueError(f"avg_bits must be positive, got {self.avg_bits!r}")
+        if self.code_bits_per_pair_block is not None and not (
+                isinstance(self.code_bits_per_pair_block, int)
+                and self.code_bits_per_pair_block >= 2):
+            raise ValueError(
+                "code_bits_per_pair_block must be None or an int >= 2, "
+                f"got {self.code_bits_per_pair_block!r}")
+        if self.adaptive_bit_split not in (None, "", "off", "none", False, "online", "online_mse"):
+            raise ValueError(
+                "adaptive_bit_split must be None/'off' or 'online_mse', "
+                f"got {self.adaptive_bit_split!r}")
+        if self._adaptive_bit_split_enabled() and not self._fractional_rate_requested():
+            raise ValueError(
+                "adaptive_bit_split needs avg_bits or code_bits_per_pair_block "
+                "to define a fixed total K/V bit budget")
+        if not (isinstance(self.adaptive_bit_margin, int) and self.adaptive_bit_margin >= 0):
+            raise ValueError(
+                f"adaptive_bit_margin must be a non-negative int, got {self.adaptive_bit_margin!r}")
+        if float(self.key_error_weight) <= 0.0 or float(self.value_error_weight) <= 0.0:
+            raise ValueError("key_error_weight and value_error_weight must be positive")
         for label, b in (
             ("value_bits", self.value_bits),
             ("outlier_bits", self.outlier_bits),
@@ -612,6 +731,11 @@ class HayateQuantCodec(KVCodec):
             raise ValueError(
                 "calibration is not supported with explicit "
                 "code_bits_per_block yet")
+        if self._adaptive_bit_split_enabled() and (
+                self._n_outlier_for("k") or self._n_outlier_for("v") or self.calibration is not None):
+            raise ValueError(
+                "adaptive_bit_split is currently supported only without "
+                "outlier splits or calibration")
         # OneComp convention: the flag (not the folder) marks calibrated codecs.
         self.flag_calibration = self.calibration is not None
 
@@ -815,10 +939,17 @@ class HayateQuantCodec(KVCodec):
         return spec
 
     # --- rotate + block-VQ + role-asymmetric scale for one channel subset --
-    def _quant_rotor(self, xsub: torch.Tensor, bits: int, role: str, layer_idx=None) -> dict:
+    def _quant_rotor(
+        self, xsub: torch.Tensor, bits: int, role: str, layer_idx=None,
+        code_bits_override: int | None = None,
+    ) -> dict:
         m = xsub.shape[-1]
         block_size = resolve_block_size(bits, self.block_size, self.max_codebook_bits, m)
-        code_bits = self._code_bits_for(role, bits, block_size)
+        code_bits = (
+            int(code_bits_override)
+            if code_bits_override is not None
+            else self._code_bits_for(role, bits, block_size)
+        )
         explicit_code_bits = code_bits != int(bits) * int(block_size)
         xr, rot = self._rotate(xsub, m, block_size, bits, role, layer_idx=layer_idx)
         # One RMS scale per whole subset vector (not per block) -- matches
@@ -851,10 +982,9 @@ class HayateQuantCodec(KVCodec):
         elif cb_cal is not None:
             lut = cal.lut_on(role, bits, block_size, lut_spec[0], lut_spec[1], xsub.device)
         elif explicit_code_bits:
-            # Candidate-list LUTs are keyed by the codebook tensor.  Explicit
-            # fractional-rate codebooks are experimental, so use exact search
-            # unless a future fast-path adds a dedicated cache for them.
-            lut = None
+            lut = _block_lut_code_bits_on(
+                code_bits, block_size, self.dist, m, self.codebook_init,
+                lut_spec[0], lut_spec[1], device_str)
         else:
             lut = _block_lut_on(bits, block_size, self.dist, m, self.codebook_init,
                                 lut_spec[0], lut_spec[1], device_str)
@@ -956,6 +1086,79 @@ class HayateQuantCodec(KVCodec):
         x[..., ~mask] = x_in
         return x.to(dtype)
 
+    def _stored_bits_from_main_payload(self, x: torch.Tensor, payload: dict) -> int:
+        b, h, s, d = x.shape
+        vecs = b * h * s
+        block_size = int(payload["block_size"])
+        code_bits = int(payload.get("code_bits", int(payload["bits"]) * block_size))
+        return vecs * (d // block_size) * code_bits + vecs * 16
+
+    def _adaptive_code_bit_pairs(self, block_size: int) -> list[tuple[int, int]]:
+        total = self._pair_code_bits_total(block_size)
+        if total is None:
+            raise ValueError("adaptive_bit_split needs a total K/V bit budget")
+        frac = 0.625 if self.key_bit_fraction is None else float(self.key_bit_fraction)
+        center = min(total - 1, max(1, int(round(total * frac))))
+        margin = int(self.adaptive_bit_margin)
+        lo = max(1, total - int(self.max_codebook_bits), center - margin)
+        hi = min(int(self.max_codebook_bits), total - 1, center + margin)
+        pairs = [(k, total - k) for k in range(lo, hi + 1)]
+        if not pairs:
+            raise ValueError(
+                "adaptive_bit_split has no feasible K/V split under "
+                f"total={total} and max_codebook_bits={self.max_codebook_bits}")
+        return pairs
+
+    def _score_main_payload(self, x: torch.Tensor, payload: dict) -> float:
+        # Orthogonal rotations preserve MSE, but decoding here keeps the
+        # selector identical to the real payload semantics, including scale
+        # mode and future residual options. The scalar float intentionally
+        # syncs only in opt-in adaptive mode.
+        xhat = self._decode_rotor(payload, x.device, x.dtype)
+        return float((xhat.float() - x.float()).pow(2).mean())
+
+    def _encode_adaptive_pair(self, key: torch.Tensor, value: torch.Tensor, layer_idx=None):
+        if key.shape[-1] != value.shape[-1]:
+            raise ValueError("adaptive_bit_split expects key/value to share head_dim")
+        m = key.shape[-1]
+        kb, vb = self.bits, self._value_bits()
+        block_size = resolve_block_size(kb, self.block_size, self.max_codebook_bits, m)
+        pairs = self._adaptive_code_bit_pairs(block_size)
+        key_payloads, key_errs = {}, {}
+        value_payloads, value_errs = {}, {}
+        for k_code in sorted({p[0] for p in pairs}):
+            payload = self._quant_rotor(
+                key, kb, "k", layer_idx=layer_idx, code_bits_override=k_code)
+            key_payloads[k_code] = payload
+            key_errs[k_code] = self._score_main_payload(key, payload)
+        for v_code in sorted({p[1] for p in pairs}):
+            payload = self._quant_rotor(
+                value, vb, "v", layer_idx=layer_idx, code_bits_override=v_code)
+            value_payloads[v_code] = payload
+            value_errs[v_code] = self._score_main_payload(value, payload)
+        kw, vw = float(self.key_error_weight), float(self.value_error_weight)
+        best_k, best_v = min(
+            pairs, key=lambda pair: kw * key_errs[pair[0]] + vw * value_errs[pair[1]])
+        kp = {"mode": "single", "main": key_payloads[best_k], "head_dim": m}
+        vp = {"mode": "single", "main": value_payloads[best_v], "head_dim": m}
+        stored = (
+            self._stored_bits_from_main_payload(key, key_payloads[best_k])
+            + self._stored_bits_from_main_payload(value, value_payloads[best_v])
+        )
+        meta = {
+            "dtype": key.dtype,
+            "stored_bits": int(stored),
+            "adaptive_bit_split": {
+                "policy": "online_mse",
+                "key_code_bits_per_block": int(best_k),
+                "value_code_bits_per_block": int(best_v),
+                "candidates": pairs,
+                "key_error": key_errs[best_k],
+                "value_error": value_errs[best_v],
+            },
+        }
+        return CompressedKV(key_q=kp, value_q=vp, meta=meta)
+
     def _stored_bits(self, x: torch.Tensor, bits: int, role: str) -> int:
         """Bit accounting -- identical to TurboQuant/HALO at the same ``bits``.
 
@@ -1008,6 +1211,8 @@ class HayateQuantCodec(KVCodec):
 
     def encode(self, key, value, ctx=None) -> CompressedKV:
         layer_idx = (ctx or {}).get("layer_idx")
+        if self._adaptive_bit_split_enabled():
+            return self._encode_adaptive_pair(key, value, layer_idx=layer_idx)
         kp = self._encode_tensor(key, self.bits, "k", layer_idx=layer_idx)
         vp = self._encode_tensor(value, self._value_bits(), "v", layer_idx=layer_idx)
         stored = self._stored_bits(key, self.bits, "k") + self._stored_bits(value, self._value_bits(), "v")
@@ -1026,7 +1231,7 @@ class HayateQuantCodec(KVCodec):
         Anything else transparently falls back to the payload path, so
         ``fake_quant_roundtrip`` is always semantically valid.
         """
-        if self._has_explicit_code_bits():
+        if self._adaptive_bit_split_enabled():
             return False
         if self._n_outlier_for("k") > 0 or self._n_outlier_for("v") > 0 or self.use_qjl:
             return False
@@ -1059,19 +1264,31 @@ class HayateQuantCodec(KVCodec):
         """Run the fused round-trip core on stacked roles ``x`` (R, b, h, s, m)."""
         m = x.shape[-1]
         block_size = resolve_block_size(bits, self.block_size, self.max_codebook_bits, m)
+        code_bits = self._code_bits_for(role or "k", bits, block_size)
+        explicit_code_bits = code_bits != int(bits) * int(block_size)
         w = self._rt_rotation(m, block_size, bits, x.device, role, layer_idx=layer_idx)
         cal = self._calib()
-        cb_cal = (cal.codebook_on(role, bits, block_size, x.device)
-                  if cal is not None and role is not None and m == cal.head_dim else None)
+        cb_cal = (
+            cal.codebook_on(role, bits, block_size, x.device)
+            if cal is not None and role is not None and m == cal.head_dim and not explicit_code_bits
+            else None
+        )
         if cb_cal is not None:
             cb32, cb_score, csq, bounds = _codebook_aux_from_tensor(cb_cal, x.device)
+        elif explicit_code_bits:
+            cb32, cb_score, csq, bounds = _codebook_aux_code_bits_on(
+                code_bits, block_size, self.dist, m, self.codebook_init, str(x.device))
         else:
             cb32, cb_score, csq, bounds = _codebook_aux_on(
                 bits, block_size, self.dist, m, self.codebook_init, str(x.device))
         # Per-role block count (x[0], not the stacked x) so the LUT-vs-exact
         # crossover decision is identical to the standalone encode path.
         n_total_blocks = max(1, x[0].numel() // block_size)
-        spec = self._use_lut(block_size, bits, n_total_blocks, x.is_cuda)
+        spec = (
+            self._use_lut_code_bits(block_size, code_bits, n_total_blocks, x.is_cuda)
+            if explicit_code_bits
+            else self._use_lut(block_size, bits, n_total_blocks, x.is_cuda)
+        )
         # With ONECOMP_TRITON_CODEC=1 the whole normalize/assign/scale/
         # reconstruct pipeline collapses into ONE fused Triton kernel between
         # the two rotation GEMMs (see .triton_step).  It always serves the
@@ -1090,11 +1307,26 @@ class HayateQuantCodec(KVCodec):
         elif cb_cal is not None:
             lut = cal.lut_on(role, bits, block_size, spec[0], spec[1], x.device)
             bins = spec[0]
+        elif explicit_code_bits:
+            lut = _block_lut_code_bits_on(
+                code_bits, block_size, self.dist, m, self.codebook_init,
+                spec[0], spec[1], str(x.device))
+            bins = spec[0]
         else:
             lut = _block_lut_on(
                 bits, block_size, self.dist, m, self.codebook_init, spec[0], spec[1], str(x.device))
             bins = spec[0]
         return fn(x, w, cb32, cb_score, csq, bounds, lut, bins, block_size, modes)
+
+    def _rt_roles_share_codebook(self, m: int, kb: int, vb: int) -> bool:
+        if self._adaptive_bit_split_enabled():
+            return False
+        k_bs = resolve_block_size(kb, self.block_size, self.max_codebook_bits, m)
+        v_bs = resolve_block_size(vb, self.block_size, self.max_codebook_bits, m)
+        return (
+            k_bs == v_bs
+            and self._code_bits_for("k", kb, k_bs) == self._code_bits_for("v", vb, v_bs)
+        )
 
     def fake_quant_roundtrip(self, key, value, ctx=None):
         """Fused encode+decode: ``(key_hat, value_hat, stored_bits)``.
@@ -1126,7 +1358,7 @@ class HayateQuantCodec(KVCodec):
         dtype = key.dtype
         cal = self._calib()
         layer_idx = (ctx or {}).get("layer_idx")
-        if kb == vb and cal is None:
+        if kb == vb and cal is None and self._rt_roles_share_codebook(m, kb, vb):
             y = self._rt_call(fn, torch.stack((key, value)).float(), kb, (k_mode, v_mode))
             khat, vhat = y[0], y[1]
         else:
@@ -1155,6 +1387,13 @@ class HayateQuantCodec(KVCodec):
             "value_n_outlier": self.value_n_outlier,
             "key_outlier_bits": self.key_outlier_bits,
             "value_outlier_bits": self.value_outlier_bits,
+            "avg_bits": self.avg_bits,
+            "code_bits_per_pair_block": self.code_bits_per_pair_block,
+            "key_bit_fraction": self.key_bit_fraction,
+            "adaptive_bit_split": self.adaptive_bit_split,
+            "adaptive_bit_margin": self.adaptive_bit_margin,
+            "key_error_weight": self.key_error_weight,
+            "value_error_weight": self.value_error_weight,
             "key_code_bits_per_block": self.key_code_bits_per_block,
             "value_code_bits_per_block": self.value_code_bits_per_block,
             "use_qjl": self.use_qjl,

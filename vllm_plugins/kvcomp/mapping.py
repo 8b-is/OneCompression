@@ -456,6 +456,12 @@ def plan_from_kv_config(
             unsupported_native.append("key_code_bits_per_block")
         if codec.get("value_code_bits_per_block") is not None:
             unsupported_native.append("value_code_bits_per_block")
+        if codec.get("avg_bits") is not None:
+            unsupported_native.append("avg_bits")
+        if codec.get("code_bits_per_pair_block") is not None:
+            unsupported_native.append("code_bits_per_pair_block")
+        if codec.get("adaptive_bit_split") not in (None, "", "off", "none", False):
+            unsupported_native.append("adaptive_bit_split")
         key_scale_mode = _hayatequant_native_key_scale_mode(codec)
         if key_scale_mode is None:
             unsupported_native.append(f"key_scale_mode={codec.get('key_scale_mode')!r}")
