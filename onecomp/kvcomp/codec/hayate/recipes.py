@@ -94,8 +94,8 @@ def hayate_fractional_rate_kwargs(
     key/value block pair, avoiding manual K10/V6-style bookkeeping.  With the
     defaults, ``avg_bits=2`` and ``block_size=4`` give a 16-bit K/V pair
     budget; ``key_bit_fraction=0.625`` resolves to K10/V6.  Set
-    ``adaptive=True`` to let the codec choose the K/V split online under the
-    same total budget.
+    ``adaptive=True`` to let the codec choose the K/V split from cheap online
+    statistics under the same total budget, then quantize once.
     """
 
     nominal = max(1, min(8, int(round(float(avg_bits)))))
@@ -108,7 +108,7 @@ def hayate_fractional_rate_kwargs(
         "key_scale_mode": HQ_FRONTIER_KEY_SCALE_MODE,
     }
     if adaptive:
-        kwargs["adaptive_bit_split"] = "online_mse"
+        kwargs["adaptive_bit_split"] = "online_stats"
     kwargs.update(overrides)
     return kwargs
 
@@ -144,7 +144,7 @@ def hayate_fractional2_variant(label: str | None = None, **overrides: Any) -> di
 
 
 def hayate_adaptive2_kwargs(**overrides: Any) -> dict[str, Any]:
-    """Keyword arguments for opt-in online adaptive 2-bit K/V bit splitting."""
+    """Keyword arguments for opt-in stats-adaptive 2-bit K/V bit splitting."""
 
     kwargs = hayate_fractional_rate_kwargs(
         avg_bits=2, block_size=4, key_bit_fraction=0.625, adaptive=True)
@@ -153,13 +153,13 @@ def hayate_adaptive2_kwargs(**overrides: Any) -> dict[str, Any]:
 
 
 def build_hayate_adaptive2(**overrides: Any) -> HayateQuantCodec:
-    """Construct the opt-in online adaptive 2-bit HQ codec."""
+    """Construct the opt-in stats-adaptive 2-bit HQ codec."""
 
     return HayateQuantCodec(**hayate_adaptive2_kwargs(**overrides))
 
 
 def hayate_adaptive2_variant(label: str | None = None, **overrides: Any) -> dict[str, Any]:
-    """Hydra/YAML variant dictionary for opt-in online adaptive 2-bit HQ."""
+    """Hydra/YAML variant dictionary for opt-in stats-adaptive 2-bit HQ."""
 
     variant = {"label": label or f"{HQ_ADAPTIVE_2BIT_NAME}-2bit"}
     variant.update(hayate_adaptive2_kwargs(**overrides))

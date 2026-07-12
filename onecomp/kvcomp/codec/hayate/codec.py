@@ -540,11 +540,16 @@ class HayateQuantCodec(KVCodec):
             ``10``/``6`` bookkeeping. ``block_size`` defaults to 4 when this
             interface is used.
         adaptive_bit_split: Optional online K/V bit-allocation policy for the
-            explicit-rate HF/research path. ``"online_mse"`` tries a small
-            fixed-budget set of K/V code-bit splits on the current KV tensors
-            and stores the lowest weighted reconstruction-error split in the
-            payload. It is deliberately opt-in because it spends extra encode
-            work to choose the split.
+            explicit-rate HF/research path. ``"online_stats"`` chooses a
+            K/V split from cheap pre-quantization statistics, then quantizes
+            exactly once. It uses the high-rate block-VQ proxy
+            ``E[||x||^2] * 2**(-2 * code_bits / block_size)`` under the fixed
+            total K/V code-bit budget. The default key/value weights are
+            ``16:1`` to reflect that key error perturbs attention logits;
+            under the default 2-bit block4 cap, ordinary KV falls back to the
+            measured K10/V6 prior and only very strong online statistics move
+            bits toward values.
+            This is opt-in and never changes the canonical HQ/frontier path.
     """
 
     flag_calibration: bool = False
@@ -574,7 +579,8 @@ class HayateQuantCodec(KVCodec):
     key_bit_fraction: float = None
     adaptive_bit_split: str = None
     adaptive_bit_margin: int = 4
-    key_error_weight: float = 1.0
+    adaptive_stats_min_tokens: int = 16
+    key_error_weight: float = 16.0
     value_error_weight: float = 1.0
     key_code_bits_per_block: int = None
     value_code_bits_per_block: int = None
@@ -671,9 +677,9 @@ class HayateQuantCodec(KVCodec):
             raise ValueError(
                 "code_bits_per_pair_block must be None or an int >= 2, "
                 f"got {self.code_bits_per_pair_block!r}")
-        if self.adaptive_bit_split not in (None, "", "off", "none", False, "online", "online_mse"):
+        if self.adaptive_bit_split not in (None, "", "off", "none", False, "online", "online_stats"):
             raise ValueError(
-                "adaptive_bit_split must be None/'off' or 'online_mse', "
+                "adaptive_bit_split must be None/'off' or 'online_stats', "
                 f"got {self.adaptive_bit_split!r}")
         if self._adaptive_bit_split_enabled() and not self._fractional_rate_requested():
             raise ValueError(
@@ -682,6 +688,10 @@ class HayateQuantCodec(KVCodec):
         if not (isinstance(self.adaptive_bit_margin, int) and self.adaptive_bit_margin >= 0):
             raise ValueError(
                 f"adaptive_bit_margin must be a non-negative int, got {self.adaptive_bit_margin!r}")
+        if not (isinstance(self.adaptive_stats_min_tokens, int) and self.adaptive_stats_min_tokens >= 1):
+            raise ValueError(
+                "adaptive_stats_min_tokens must be a positive int, "
+                f"got {self.adaptive_stats_min_tokens!r}")
         if float(self.key_error_weight) <= 0.0 or float(self.value_error_weight) <= 0.0:
             raise ValueError("key_error_weight and value_error_weight must be positive")
         for label, b in (
@@ -1109,13 +1119,73 @@ class HayateQuantCodec(KVCodec):
                 f"total={total} and max_codebook_bits={self.max_codebook_bits}")
         return pairs
 
-    def _score_main_payload(self, x: torch.Tensor, payload: dict) -> float:
-        # Orthogonal rotations preserve MSE, but decoding here keeps the
-        # selector identical to the real payload semantics, including scale
-        # mode and future residual options. The scalar float intentionally
-        # syncs only in opt-in adaptive mode.
-        xhat = self._decode_rotor(payload, x.device, x.dtype)
-        return float((xhat.float() - x.float()).pow(2).mean())
+    @staticmethod
+    def _role_power_stats(key: torch.Tensor, value: torch.Tensor) -> tuple[float, float]:
+        """Cheap scale statistics with a single host sync on CUDA."""
+        stats = torch.stack((
+            key.float().pow(2).mean(),
+            value.float().pow(2).mean(),
+        )).clamp_min(1.0e-12)
+        key_power, value_power = stats.tolist()
+        return float(key_power), float(value_power)
+
+    @staticmethod
+    def _rate_distortion_proxy(power: float, code_bits: int, block_size: int) -> float:
+        """High-rate VQ proxy: distortion is proportional to variance times 2^-2R."""
+        rate_per_dim = float(code_bits) / float(block_size)
+        return float(power) * (2.0 ** (-2.0 * rate_per_dim))
+
+    def _select_adaptive_code_bits(
+        self, key: torch.Tensor, value: torch.Tensor, block_size: int,
+    ) -> tuple[int, int, dict]:
+        """Pick one K/V split from statistics, without trial quantization.
+
+        Under the standard high-rate VQ model for a fixed block dimension,
+        the expected per-coordinate MSE has the form
+        ``D_r(c) ~= alpha_b * sigma_r^2 * 2^{-2c/b}``, where ``r`` is K or V,
+        ``c`` is code bits per block, and ``b`` is ``block_size``.  The common
+        ``alpha_b`` cancels between roles, so a fixed K/V total budget can be
+        allocated using only role powers.  The implementation scores the small
+        feasible integer candidate set rather than trusting a continuous
+        formula, which keeps max-codebook and margin constraints exact.
+        """
+        pairs = self._adaptive_code_bit_pairs(block_size)
+        total = pairs[0][0] + pairs[0][1]
+        frac = 0.625 if self.key_bit_fraction is None else float(self.key_bit_fraction)
+        prior_k = min(total - 1, max(1, int(round(total * frac))))
+        prior = min(pairs, key=lambda pair: abs(pair[0] - prior_k))
+        if key.shape[-2] < self.adaptive_stats_min_tokens:
+            meta = {
+                "policy": "online_stats",
+                "used_stats": False,
+                "key_code_bits_per_block": int(prior[0]),
+                "value_code_bits_per_block": int(prior[1]),
+                "candidates": pairs,
+            }
+            return int(prior[0]), int(prior[1]), meta
+        key_power, value_power = self._role_power_stats(key, value)
+        kw, vw = float(self.key_error_weight), float(self.value_error_weight)
+        best = min(
+            pairs,
+            key=lambda pair: (
+                kw * self._rate_distortion_proxy(key_power, pair[0], block_size)
+                + vw * self._rate_distortion_proxy(value_power, pair[1], block_size)
+            ),
+        )
+        pred_key = self._rate_distortion_proxy(key_power, best[0], block_size)
+        pred_value = self._rate_distortion_proxy(value_power, best[1], block_size)
+        meta = {
+            "policy": "online_stats",
+            "used_stats": True,
+            "key_code_bits_per_block": int(best[0]),
+            "value_code_bits_per_block": int(best[1]),
+            "candidates": pairs,
+            "key_power": key_power,
+            "value_power": value_power,
+            "predicted_key_error": pred_key,
+            "predicted_value_error": pred_value,
+        }
+        return int(best[0]), int(best[1]), meta
 
     def _encode_adaptive_pair(self, key: torch.Tensor, value: torch.Tensor, layer_idx=None):
         if key.shape[-1] != value.shape[-1]:
@@ -1123,39 +1193,21 @@ class HayateQuantCodec(KVCodec):
         m = key.shape[-1]
         kb, vb = self.bits, self._value_bits()
         block_size = resolve_block_size(kb, self.block_size, self.max_codebook_bits, m)
-        pairs = self._adaptive_code_bit_pairs(block_size)
-        key_payloads, key_errs = {}, {}
-        value_payloads, value_errs = {}, {}
-        for k_code in sorted({p[0] for p in pairs}):
-            payload = self._quant_rotor(
-                key, kb, "k", layer_idx=layer_idx, code_bits_override=k_code)
-            key_payloads[k_code] = payload
-            key_errs[k_code] = self._score_main_payload(key, payload)
-        for v_code in sorted({p[1] for p in pairs}):
-            payload = self._quant_rotor(
-                value, vb, "v", layer_idx=layer_idx, code_bits_override=v_code)
-            value_payloads[v_code] = payload
-            value_errs[v_code] = self._score_main_payload(value, payload)
-        kw, vw = float(self.key_error_weight), float(self.value_error_weight)
-        best_k, best_v = min(
-            pairs, key=lambda pair: kw * key_errs[pair[0]] + vw * value_errs[pair[1]])
-        kp = {"mode": "single", "main": key_payloads[best_k], "head_dim": m}
-        vp = {"mode": "single", "main": value_payloads[best_v], "head_dim": m}
+        best_k, best_v, split_meta = self._select_adaptive_code_bits(key, value, block_size)
+        key_payload = self._quant_rotor(
+            key, kb, "k", layer_idx=layer_idx, code_bits_override=best_k)
+        value_payload = self._quant_rotor(
+            value, vb, "v", layer_idx=layer_idx, code_bits_override=best_v)
+        kp = {"mode": "single", "main": key_payload, "head_dim": m}
+        vp = {"mode": "single", "main": value_payload, "head_dim": m}
         stored = (
-            self._stored_bits_from_main_payload(key, key_payloads[best_k])
-            + self._stored_bits_from_main_payload(value, value_payloads[best_v])
+            self._stored_bits_from_main_payload(key, key_payload)
+            + self._stored_bits_from_main_payload(value, value_payload)
         )
         meta = {
             "dtype": key.dtype,
             "stored_bits": int(stored),
-            "adaptive_bit_split": {
-                "policy": "online_mse",
-                "key_code_bits_per_block": int(best_k),
-                "value_code_bits_per_block": int(best_v),
-                "candidates": pairs,
-                "key_error": key_errs[best_k],
-                "value_error": value_errs[best_v],
-            },
+            "adaptive_bit_split": split_meta,
         }
         return CompressedKV(key_q=kp, value_q=vp, meta=meta)
 
@@ -1392,6 +1444,7 @@ class HayateQuantCodec(KVCodec):
             "key_bit_fraction": self.key_bit_fraction,
             "adaptive_bit_split": self.adaptive_bit_split,
             "adaptive_bit_margin": self.adaptive_bit_margin,
+            "adaptive_stats_min_tokens": self.adaptive_stats_min_tokens,
             "key_error_weight": self.key_error_weight,
             "value_error_weight": self.value_error_weight,
             "key_code_bits_per_block": self.key_code_bits_per_block,

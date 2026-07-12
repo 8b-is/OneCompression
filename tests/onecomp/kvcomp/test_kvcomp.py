@@ -568,7 +568,8 @@ def test_hayatequant_adaptive2_recipe_is_opt_in():
     kwargs = hayate_adaptive2_kwargs()
     assert kwargs["avg_bits"] == 2.0
     assert kwargs["block_size"] == 4
-    assert kwargs["adaptive_bit_split"] == "online_mse"
+    assert kwargs["adaptive_bit_split"] == "online_stats"
+    assert kwargs.get("adaptive_stats_min_tokens", 16) == 16
     codec = build_hayate_adaptive2()
     assert codec.key_code_bits_per_block is None
     assert codec.value_code_bits_per_block is None
@@ -691,17 +692,22 @@ def test_hayatequant_explicit_code_bits_per_block_fractional_rate_roundtrip():
 
 
 def test_hayatequant_adaptive_bit_split_roundtrip_and_accounting():
-    x, _ = _kv(h=2, s=8, d=32)
+    x, _ = _kv(h=2, s=32, d=32)
     c = build_hayate_adaptive2(encoder="exact", adaptive_bit_margin=1)
     enc = c.encode(x, x * 0.25)
     kd, vd = c.decode(enc)
     assert kd.shape == x.shape
     assert vd.shape == x.shape
     chosen = enc.meta["adaptive_bit_split"]
-    assert chosen["policy"] == "online_mse"
+    assert chosen["policy"] == "online_stats"
+    assert chosen["used_stats"]
     assert chosen["key_code_bits_per_block"] + chosen["value_code_bits_per_block"] == 16
     assert enc.key_q["main"]["code_bits"] == chosen["key_code_bits_per_block"]
     assert enc.value_q["main"]["code_bits"] == chosen["value_code_bits_per_block"]
+    assert chosen["key_power"] > 0
+    assert chosen["value_power"] > 0
+    assert chosen["predicted_key_error"] > 0
+    assert chosen["predicted_value_error"] > 0
     vecs = x.shape[0] * x.shape[1] * x.shape[2]
     blocks = x.shape[-1] // 4
     expected = vecs * blocks * 16 + vecs * 2 * 16
