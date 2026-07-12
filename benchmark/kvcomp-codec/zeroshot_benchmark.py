@@ -49,6 +49,7 @@ DEFAULT_METHODS = (
     "HayateQuant-selected",
     "HayateQuant-frontier",
     "HayateQuant-auto",
+    "AdaptiveHQ",
 )
 
 
@@ -57,10 +58,7 @@ def _parse_bits(values: Iterable[str]) -> list[int]:
 
 
 def _method_list(args: argparse.Namespace, bits: int) -> list[str]:
-    methods = list(args.methods)
-    if bits == 3 and "HayateQuant-K4V2" not in methods:
-        methods.append("HayateQuant-K4V2")
-    return methods
+    return list(args.methods)
 
 
 def _build_cache_factory(
@@ -81,7 +79,8 @@ def _build_cache_factory(
 
 def _output_json(args: argparse.Namespace) -> Path:
     model_tag = os.path.basename(str(args.model_path).rstrip("/"))
-    return args.output_root / f"zeroshot_{model_tag}.json"
+    suffix = f"_{args.output_suffix}" if args.output_suffix else ""
+    return args.output_root / f"zeroshot_{model_tag}{suffix}.json"
 
 
 def _acquire_output_lock(out_json: Path) -> Path | None:
@@ -256,6 +255,8 @@ def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model-path", type=Path, required=True)
     ap.add_argument("--output-root", type=Path, required=True)
+    ap.add_argument("--output-suffix", default="",
+                    help="Optional filename suffix for task/bit shards.")
     ap.add_argument("--device", default="cuda:0")
     ap.add_argument("--dtype", default="bfloat16")
     ap.add_argument("--bits", nargs="+", default=["2", "3"], type=str)

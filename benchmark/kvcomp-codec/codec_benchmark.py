@@ -48,6 +48,7 @@ from onecomp.kvcomp import CompressedDynamicCache, detect_outlier_layers
 from onecomp.kvcomp.eval import wikitext2_perplexity
 from onecomp.kvcomp.codec import HALOCodec, TurboQuantCodec, HayateQuantCodec
 from onecomp.kvcomp.codec.hayate.recipes import (
+    build_hayate_adaptive_rate,
     build_hayate_frontier,
     hayate_frontier_bits,
     hayate_frontier_kwargs,
@@ -208,6 +209,9 @@ def _codecs(bits, ablation=False):
            if _kv_asym(bits) is not None else {}),
         **(({"HayateQuant-frontier":
              build_hayate_frontier(bits)})
+           if _kv_asym(bits) is not None else {}),
+        **(({"AdaptiveHQ":
+             build_hayate_adaptive_rate(bits)})
            if _kv_asym(bits) is not None else {}),
         **(({"HayateQuant-calib-K4V2":
              HayateQuantCodec(bits=4, value_bits=2,

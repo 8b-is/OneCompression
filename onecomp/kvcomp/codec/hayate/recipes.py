@@ -17,6 +17,7 @@ HQ_FRONTIER_NAME = "HayateQuant-frontier"
 HQ_FRONTIER_KEY_SCALE_MODE = "ub"
 HQ_FRACTIONAL_2BIT_NAME = "HayateQuant-frac2"
 HQ_ADAPTIVE_2BIT_NAME = "HayateQuant-adaptive2"
+HQ_ADAPTIVE_NAME = "AdaptiveHQ"
 
 
 def hayate_frontier_bits(avg_bits: int) -> tuple[int, int] | None:
@@ -166,11 +167,57 @@ def hayate_adaptive2_variant(label: str | None = None, **overrides: Any) -> dict
     return variant
 
 
+def hayate_adaptive_rate_kwargs(
+    avg_bits: float,
+    *,
+    block_size: int | None = None,
+    key_bit_fraction: float = 0.625,
+    **overrides: Any,
+) -> dict[str, Any]:
+    """Keyword arguments for the paper's opt-in Adaptive HQ row.
+
+    Adaptive HQ keeps a fixed total K/V code-bit budget for each matched
+    block pair and selects the key/value split from cheap online statistics
+    before quantizing once.  The default block size is 4 at 2 average bits,
+    where the extra block-vector shape gain is most useful, and 2 at higher
+    rates to keep the candidate codebooks small enough for Table-1 sweeps.
+    """
+
+    avg = float(avg_bits)
+    if block_size is None:
+        block_size = 4 if avg <= 2.0 else 2
+    kwargs = hayate_fractional_rate_kwargs(
+        avg_bits=avg,
+        block_size=int(block_size),
+        key_bit_fraction=key_bit_fraction,
+        adaptive=True,
+    )
+    kwargs.update(overrides)
+    return kwargs
+
+
+def build_hayate_adaptive_rate(avg_bits: float, **overrides: Any) -> HayateQuantCodec:
+    """Construct the paper's opt-in Adaptive HQ codec."""
+
+    return HayateQuantCodec(**hayate_adaptive_rate_kwargs(avg_bits, **overrides))
+
+
+def hayate_adaptive_rate_variant(
+    avg_bits: float, label: str | None = None, **overrides: Any,
+) -> dict[str, Any]:
+    """Hydra/YAML variant dictionary for the paper's Adaptive HQ row."""
+
+    variant = {"label": label or f"{HQ_ADAPTIVE_NAME}-{float(avg_bits):g}bit"}
+    variant.update(hayate_adaptive_rate_kwargs(avg_bits, **overrides))
+    return variant
+
+
 __all__ = [
     "HQ_FRONTIER_NAME",
     "HQ_FRONTIER_KEY_SCALE_MODE",
     "HQ_FRACTIONAL_2BIT_NAME",
     "HQ_ADAPTIVE_2BIT_NAME",
+    "HQ_ADAPTIVE_NAME",
     "hayate_frontier_bits",
     "hayate_frontier_kwargs",
     "build_hayate_frontier",
@@ -184,4 +231,7 @@ __all__ = [
     "hayate_adaptive2_kwargs",
     "build_hayate_adaptive2",
     "hayate_adaptive2_variant",
+    "hayate_adaptive_rate_kwargs",
+    "build_hayate_adaptive_rate",
+    "hayate_adaptive_rate_variant",
 ]

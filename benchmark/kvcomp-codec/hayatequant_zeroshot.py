@@ -93,6 +93,8 @@ def _bench_cmd(args: argparse.Namespace, model_path: Path) -> list[str]:
         str(model_path),
         "--output-root",
         str(args.output_root),
+        "--output-suffix",
+        args.output_suffix,
         "--device",
         args.device,
         "--dtype",
@@ -238,21 +240,24 @@ def _summarize(args: argparse.Namespace) -> None:
         if incomplete:
             raise SystemExit("Incomplete zero-shot results:\n" + "\n".join(incomplete))
     rows = [
-        "| Model | Tasks | 2b TQ | 2b Fib | 2b Block | 2b HayateQuant | delta | 3b TQ | 3b Fib | 3b Block | 3b HayateQuant | delta | 4b TQ | 4b Fib | 4b Block | 4b HayateQuant | delta |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| Model | Tasks | 2b TQ | 2b Fib | 2b Block | 2b HayateQuant | 2b AdaptiveHQ | delta | 3b TQ | 3b Fib | 3b Block | 3b HayateQuant | 3b AdaptiveHQ | delta | 4b TQ | 4b Fib | 4b Block | 4b HayateQuant | 4b AdaptiveHQ | delta |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     tq2_vals: list[float] = []
     fib2_vals: list[float] = []
     bq2_vals: list[float] = []
     hq2_vals: list[float] = []
+    ahq2_vals: list[float] = []
     tq3_vals: list[float] = []
     fib3_vals: list[float] = []
     bq3_vals: list[float] = []
     hq3_vals: list[float] = []
+    ahq3_vals: list[float] = []
     tq4_vals: list[float] = []
     fib4_vals: list[float] = []
     bq4_vals: list[float] = []
     hq4_vals: list[float] = []
+    ahq4_vals: list[float] = []
     for payload in payloads:
         model = payload.get("model", "unknown")
         if not args.include_extra_results and model not in _paper_model_names():
@@ -262,59 +267,71 @@ def _summarize(args: argparse.Namespace) -> None:
         fib2 = _method(payload, "2", "FibQuant")
         bq2 = _method(payload, "2", "BlockQuant")
         hq2 = _method(payload, "2", args.hq_method)
+        ahq2 = _method(payload, "2", args.adaptive_method)
         tq3 = _method(payload, "3", "TurboQuant-hadamard")
         fib3 = _method(payload, "3", "FibQuant")
         bq3 = _method(payload, "3", "BlockQuant")
         hq3 = _method(payload, "3", args.hq_method)
+        ahq3 = _method(payload, "3", args.adaptive_method)
         tq4 = _method(payload, "4", "TurboQuant-hadamard")
         fib4 = _method(payload, "4", "FibQuant")
         bq4 = _method(payload, "4", "BlockQuant")
         hq4 = _method(payload, "4", args.hq_method)
+        ahq4 = _method(payload, "4", args.adaptive_method)
         tq2_a = None if tq2 is None else tq2.get("avg_acc_norm")
         fib2_a = None if fib2 is None else fib2.get("avg_acc_norm")
         bq2_a = None if bq2 is None else bq2.get("avg_acc_norm")
         hq2_a = None if hq2 is None else hq2.get("avg_acc_norm")
+        ahq2_a = None if ahq2 is None else ahq2.get("avg_acc_norm")
         tq3_a = None if tq3 is None else tq3.get("avg_acc_norm")
         fib3_a = None if fib3 is None else fib3.get("avg_acc_norm")
         bq3_a = None if bq3 is None else bq3.get("avg_acc_norm")
         hq3_a = None if hq3 is None else hq3.get("avg_acc_norm")
+        ahq3_a = None if ahq3 is None else ahq3.get("avg_acc_norm")
         tq4_a = None if tq4 is None else tq4.get("avg_acc_norm")
         fib4_a = None if fib4 is None else fib4.get("avg_acc_norm")
         bq4_a = None if bq4 is None else bq4.get("avg_acc_norm")
         hq4_a = None if hq4 is None else hq4.get("avg_acc_norm")
+        ahq4_a = None if ahq4 is None else ahq4.get("avg_acc_norm")
         if tq2_a is not None and hq2_a is not None:
             tq2_vals.append(tq2_a); hq2_vals.append(hq2_a)
             if fib2_a is not None:
                 fib2_vals.append(fib2_a)
             if bq2_a is not None:
                 bq2_vals.append(bq2_a)
+            if ahq2_a is not None:
+                ahq2_vals.append(ahq2_a)
         if tq3_a is not None and hq3_a is not None:
             tq3_vals.append(tq3_a); hq3_vals.append(hq3_a)
             if fib3_a is not None:
                 fib3_vals.append(fib3_a)
             if bq3_a is not None:
                 bq3_vals.append(bq3_a)
+            if ahq3_a is not None:
+                ahq3_vals.append(ahq3_a)
         if tq4_a is not None and hq4_a is not None:
             tq4_vals.append(tq4_a); hq4_vals.append(hq4_a)
             if fib4_a is not None:
                 fib4_vals.append(fib4_a)
             if bq4_a is not None:
                 bq4_vals.append(bq4_a)
+            if ahq4_a is not None:
+                ahq4_vals.append(ahq4_a)
         rows.append(
-            f"| {model} | {task_count} | {_fmt(tq2_a)} | {_fmt(fib2_a)} | {_fmt(bq2_a)} | {_fmt(hq2_a)}"
+            f"| {model} | {task_count} | {_fmt(tq2_a)} | {_fmt(fib2_a)} | {_fmt(bq2_a)} | {_fmt(hq2_a)} | {_fmt(ahq2_a)}"
             f" | {_fmt(None if tq2_a is None or hq2_a is None else hq2_a - tq2_a, 100.0)} |"
-            f" {_fmt(tq3_a)} | {_fmt(fib3_a)} | {_fmt(bq3_a)} | {_fmt(hq3_a)}"
+            f" {_fmt(tq3_a)} | {_fmt(fib3_a)} | {_fmt(bq3_a)} | {_fmt(hq3_a)} | {_fmt(ahq3_a)}"
             f" | {_fmt(None if tq3_a is None or hq3_a is None else hq3_a - tq3_a, 100.0)} |"
-            f" {_fmt(tq4_a)} | {_fmt(fib4_a)} | {_fmt(bq4_a)} | {_fmt(hq4_a)}"
+            f" {_fmt(tq4_a)} | {_fmt(fib4_a)} | {_fmt(bq4_a)} | {_fmt(hq4_a)} | {_fmt(ahq4_a)}"
             f" | {_fmt(None if tq4_a is None or hq4_a is None else hq4_a - tq4_a, 100.0)} |"
         )
     if tq2_vals and tq3_vals and tq4_vals:
         rows.append(
-            f"| **Average** | **{len(args.tasks)}** | **{_fmt(mean(tq2_vals))}** | **{_fmt(mean(fib2_vals) if fib2_vals else None)}** | **{_fmt(mean(bq2_vals) if bq2_vals else None)}** | **{_fmt(mean(hq2_vals))}** | "
+            f"| **Average** | **{len(args.tasks)}** | **{_fmt(mean(tq2_vals))}** | **{_fmt(mean(fib2_vals) if fib2_vals else None)}** | **{_fmt(mean(bq2_vals) if bq2_vals else None)}** | **{_fmt(mean(hq2_vals))}** | **{_fmt(mean(ahq2_vals) if ahq2_vals else None)}** | "
             f"**{_fmt(mean(hq2_vals) - mean(tq2_vals), 100.0)}** | "
-            f"**{_fmt(mean(tq3_vals))}** | **{_fmt(mean(fib3_vals) if fib3_vals else None)}** | **{_fmt(mean(bq3_vals) if bq3_vals else None)}** | **{_fmt(mean(hq3_vals))}** | "
+            f"**{_fmt(mean(tq3_vals))}** | **{_fmt(mean(fib3_vals) if fib3_vals else None)}** | **{_fmt(mean(bq3_vals) if bq3_vals else None)}** | **{_fmt(mean(hq3_vals))}** | **{_fmt(mean(ahq3_vals) if ahq3_vals else None)}** | "
             f"**{_fmt(mean(hq3_vals) - mean(tq3_vals), 100.0)}** | "
-            f"**{_fmt(mean(tq4_vals))}** | **{_fmt(mean(fib4_vals) if fib4_vals else None)}** | **{_fmt(mean(bq4_vals) if bq4_vals else None)}** | **{_fmt(mean(hq4_vals))}** | "
+            f"**{_fmt(mean(tq4_vals))}** | **{_fmt(mean(fib4_vals) if fib4_vals else None)}** | **{_fmt(mean(bq4_vals) if bq4_vals else None)}** | **{_fmt(mean(hq4_vals))}** | **{_fmt(mean(ahq4_vals) if ahq4_vals else None)}** | "
             f"**{_fmt(mean(hq4_vals) - mean(tq4_vals), 100.0)}** |"
         )
     text = "\n".join(rows)
@@ -330,6 +347,8 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--models", nargs="*")
     ap.add_argument("--models-root", type=Path, default=DEFAULT_MODELS_ROOT)
     ap.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
+    ap.add_argument("--output-suffix", default="",
+                    help="Optional filename suffix passed to zeroshot_benchmark.py.")
     ap.add_argument("--python", type=Path, default=REPO_ROOT / ".venv" / "bin" / "python")
     ap.add_argument("--device", default="cuda:0")
     ap.add_argument("--dtype", default="bfloat16")
@@ -342,6 +361,7 @@ def parse_args() -> argparse.Namespace:
         "HayateQuant-selected",
         "HayateQuant-frontier",
         "HayateQuant-auto",
+        "AdaptiveHQ",
     ])
     ap.add_argument("--include-fullkv", action="store_true")
     ap.add_argument("--limit", type=int)
@@ -358,6 +378,8 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--summary-out", type=Path)
     ap.add_argument("--hq-method", default="HayateQuant-frontier",
                     help="Fixed implementation method reported as HQ in the paper tables.")
+    ap.add_argument("--adaptive-method", default="AdaptiveHQ",
+                    help="Implementation method reported as Adaptive HQ.")
     ap.add_argument("--include-extra-results", action="store_true",
                     help="Summarize every result JSON instead of the current seven-model paper grid.")
     ap.add_argument("--require-complete", action="store_true")

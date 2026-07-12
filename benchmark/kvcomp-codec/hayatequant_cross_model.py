@@ -237,8 +237,8 @@ def _fmt(value: float | None, ndigits: int = 2) -> str:
 
 def _summarize(args: argparse.Namespace) -> None:
     rows: list[str] = []
-    rows.append("| Model | 2b TQ | 2b Fib | 2b Block | 2b HayateQuant | 3b TQ | 3b Fib | 3b Block | 3b HayateQuant | 4b TQ | 4b Fib | 4b Block | 4b HayateQuant | 3b dist(K) gain |")
-    rows.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+    rows.append("| Model | 2b TQ | 2b Fib | 2b Block | 2b HayateQuant | 2b AdaptiveHQ | 3b TQ | 3b Fib | 3b Block | 3b HayateQuant | 3b AdaptiveHQ | 4b TQ | 4b Fib | 4b Block | 4b HayateQuant | 4b AdaptiveHQ | 3b dist(K) gain |")
+    rows.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     for path in _iter_result_files(args.output_root):
         data = json.loads(path.read_text())
         model = data.get("model") or path.stem.replace("results_", "")
@@ -248,22 +248,25 @@ def _summarize(args: argparse.Namespace) -> None:
         fib2 = _ppl(data, "2", "FibQuant")
         bq2 = _ppl(data, "2", "BlockQuant")
         hq2 = _ppl(data, "2", args.hq_method)
+        ahq2 = _ppl(data, "2", args.adaptive_method)
         tq3 = _ppl(data, "3", "TurboQuant-hadamard")
         fib3 = _ppl(data, "3", "FibQuant")
         bq3 = _ppl(data, "3", "BlockQuant")
         hq3 = _ppl(data, "3", args.hq_method)
+        ahq3 = _ppl(data, "3", args.adaptive_method)
         tq4 = _ppl(data, "4", "TurboQuant-hadamard")
         fib4 = _ppl(data, "4", "FibQuant")
         bq4 = _ppl(data, "4", "BlockQuant")
         hq4 = _ppl(data, "4", args.hq_method)
+        ahq4 = _ppl(data, "4", args.adaptive_method)
         tq3_d = _dist_k(data, "3", "TurboQuant-hadamard")
         hq3_d = _dist_k(data, "3", args.hq_method)
         gain = None if tq3_d in (None, 0) or hq3_d is None else 100.0 * (1.0 - hq3_d / tq3_d)
         rows.append(
-            f"| {model} | {_fmt(tq2)} | {_fmt(fib2)} | {_fmt(bq2)} | {_fmt(hq2)} "
+            f"| {model} | {_fmt(tq2)} | {_fmt(fib2)} | {_fmt(bq2)} | {_fmt(hq2)} | {_fmt(ahq2)} "
             f"| {_fmt(tq3)} | {_fmt(fib3)} "
-            f"| {_fmt(bq3)} | {_fmt(hq3)} | {_fmt(tq4)} "
-            f"| {_fmt(fib4)} | {_fmt(bq4)} | {_fmt(hq4)} "
+            f"| {_fmt(bq3)} | {_fmt(hq3)} | {_fmt(ahq3)} | {_fmt(tq4)} "
+            f"| {_fmt(fib4)} | {_fmt(bq4)} | {_fmt(hq4)} | {_fmt(ahq4)} "
             f"| {_fmt(gain, 1)}% |"
         )
     text = "\n".join(rows)
@@ -289,6 +292,8 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--summary-out", type=Path)
     ap.add_argument("--hq-method", default="HayateQuant-frontier",
                     help="Fixed implementation method reported as HQ in the paper tables.")
+    ap.add_argument("--adaptive-method", default="AdaptiveHQ",
+                    help="Implementation method reported as Adaptive HQ.")
     ap.add_argument("--include-extra-results", action="store_true",
                     help="Summarize every result JSON instead of the current seven-model paper grid.")
     ap.add_argument("--dry-run", action="store_true")
