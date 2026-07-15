@@ -30,7 +30,7 @@ from vllm_plugins.kvcomp.vllm_plugin import (
     plan_for_model,
     read_kv_compression_config,
 )
-from vllm_plugins.kvcomp.hayate_triton import _store_group_codes
+from vllm_plugins.kvcomp.hayate_config import resolve_store_group_codes
 from vllm_plugins.kvcomp.native_turboquant import (
     resolve_turboquant_preset,
     turboquant_engine_kwargs,
@@ -201,17 +201,27 @@ def test_hayate_native_backend_registers_from_env_for_spawn(monkeypatch):
 
 def test_hayate_store_group_codes_auto_tracks_cache_layout(monkeypatch):
     monkeypatch.delenv("KVCOMP_VLLM_HAYATE_STORE_GROUP_CODES", raising=False)
-    assert _store_group_codes(6, 32) == 32
-    assert _store_group_codes(6, 64) == 64
-    assert _store_group_codes(6, 128) == 128
-    assert _store_group_codes(8, 32) == 64
-    assert _store_group_codes(8, 128) == 128
+    assert resolve_store_group_codes(6, 32) == 32
+    assert resolve_store_group_codes(6, 64) == 64
+    assert resolve_store_group_codes(6, 128) == 128
+    assert resolve_store_group_codes(8, 32) == 64
+    assert resolve_store_group_codes(8, 128) == 128
 
 
 def test_hayate_store_group_codes_rejects_unsafe_6bit_override(monkeypatch):
     monkeypatch.setenv("KVCOMP_VLLM_HAYATE_STORE_GROUP_CODES", "64")
     with pytest.raises(ValueError, match="number of key VQ blocks"):
-        _store_group_codes(6, 32)
+        resolve_store_group_codes(6, 32)
+
+
+def test_hayate_store_group_codes_rejects_invalid_inputs(monkeypatch):
+    with pytest.raises(ValueError, match="code_bits"):
+        resolve_store_group_codes(7, 32)
+    with pytest.raises(ValueError, match="n_key_blocks"):
+        resolve_store_group_codes(6, 0)
+    monkeypatch.setenv("KVCOMP_VLLM_HAYATE_STORE_GROUP_CODES", "fastest")
+    with pytest.raises(ValueError, match="must be 'auto' or an integer"):
+        resolve_store_group_codes(8, 64)
 
 
 def test_plan_for_model_hayatequant_strict_mode_requires_custom_backend(tmp_path, monkeypatch):

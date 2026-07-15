@@ -23,6 +23,7 @@ from typing import Any
 
 import torch
 
+from vllm_plugins.kvcomp.hayate_config import resolve_store_group_codes
 from vllm.triton_utils import tl, triton
 from vllm.v1.attention.ops.triton_decode_attention import _fwd_kernel_stage2
 from vllm.v1.attention.ops.triton_turboquant_store import _store_quantized_value
@@ -620,7 +621,7 @@ def triton_hayatequant_store(
     code_bits = key_bits * hayate_block_size
     # The cache layout is unchanged, but each store program can score many
     # adjacent 2D blocks to reduce repeated codebook loads and launch work.
-    group_codes = _store_group_codes(code_bits, n_key_blocks)
+    group_codes = resolve_store_group_codes(code_bits, n_key_blocks)
     n_groups = math.ceil(n_key_blocks / group_codes)
     key_scale_id = _key_scale_mode_id(key_scale_mode)
 
@@ -750,40 +751,6 @@ def _decode_block_kv(key_bits: int) -> int:
     if block_kv not in {1, 2, 4, 8, 16}:
         raise ValueError("KVCOMP_VLLM_HAYATE_BLOCK_KV must be one of 1,2,4,8,16")
     return block_kv
-
-
-def _store_group_codes(code_bits: int, n_key_blocks: int) -> int:
-    mode = os.environ.get("KVCOMP_VLLM_HAYATE_STORE_GROUP_CODES", "auto")
-    mode = mode.strip().lower().replace("-", "_")
-    if mode == "auto":
-        if code_bits == 8:
-            return 64 if n_key_blocks <= 64 else 128
-        if n_key_blocks >= 128:
-            return 128
-        if n_key_blocks >= 64:
-            return 64
-        if n_key_blocks >= 32:
-            return 32
-        if n_key_blocks >= 16:
-            return 16
-        return 8 if n_key_blocks >= 8 else 4
-    group_codes = int(mode)
-    if group_codes not in {1, 2, 4, 8, 16, 32, 64, 128}:
-        raise ValueError(
-            "KVCOMP_VLLM_HAYATE_STORE_GROUP_CODES must be one of "
-            "1,2,4,8,16,32,64,128"
-        )
-    if code_bits != 8 and group_codes not in {4, 8, 16, 32, 64, 128}:
-        raise ValueError(
-            "6-bit Hayate key packing requires STORE_GROUP_CODES=4, 8, "
-            "16, 32, 64, or 128"
-        )
-    if code_bits != 8 and group_codes > n_key_blocks:
-        raise ValueError(
-            "6-bit Hayate key packing requires STORE_GROUP_CODES <= "
-            "the number of key VQ blocks"
-        )
-    return group_codes
 
 
 def _decode_num_warps(key_bits: int) -> int:

@@ -1,9 +1,9 @@
 # OneComp
 
 **OneComp** is a research library for post-training compression of large language models (LLMs).
-It provides weight quantization (GPTQ, QEP, LPCD, JointQ, AutoBit, DBF) and
-KV-cache compression (TaperKV, ThinKV, PM-KVQ, HALO/TurboQuant) under a unified Python API,
-with built-in vLLM plugin integration for deployment.
+It provides weight quantization (GPTQ, QEP, LPCD, JointQ, AutoBit, DBF), KV-cache compression
+(TaperKV, ThinKV, PM-KVQ, HayateQuant/TurboQuant), and lossless addressable context compaction
+under a unified Python API, with built-in MCP and vLLM integrations for deployment.
 
 Full documentation: **[https://FujitsuResearch.github.io/OneCompression/](https://FujitsuResearch.github.io/OneCompression/)**
 
@@ -24,11 +24,19 @@ Full documentation: **[https://FujitsuResearch.github.io/OneCompression/](https:
 
 | Algorithm | Description | Reference |
 |---|---|---|
+| **HayateQuant** | Hybrid rotated low-bit KV codec with rate-aware K/V allocation and native vLLM integration. | (proposed) |
 | **TaperKV** | Static age-graded precision ladder; no eviction; length-proportional allocation prevents collapse at long context. | (proposed) |
-| **ThinKV** | Per-thought static precision (R/E=4-bit, T=2-bit); TBQ buffer + KDE-calibrated L\* threshold + attention-sparsity thought classification. | [Ramachandran et al., ICLR 2026](https://openreview.net/...) |
+| **ThinKV** | Per-thought static precision (R/E=4-bit, T=2-bit); TBQ buffer, KDE-calibrated threshold, and attention-sparsity classification. | Ramachandran et al., ICLR 2026 |
 | **PM-KVQ** | Progressive dynamic quantization: fixed absolute high-precision window, older KV shrinks to a floor; block-wise layer allocation; K≥V. | [arXiv:2505.18610](https://arxiv.org/abs/2505.18610) |
-| **HALO / TurboQuant** | Data-free rotated scalar quantization (Lloyd-Max + random orthogonal rotation). HALO selects the cheapest orthogonal transform per head dimension, achieving 2.9× lower overhead than TurboQuant's Hadamard default at identical quality. | — |
+| **HALO / TurboQuant** | Data-free rotated scalar quantization using Lloyd-Max codebooks and orthogonal rotations. | — |
 | **StreamingLLM / SnapKV / H2O** | Eviction baselines. | — |
+
+### Agent Context Compaction
+
+`onecomp.compaction` implements ARC (Addressable Recall for Compaction): long observations are
+stored losslessly and compacted into bounded citations, then restored by stable observation ID.
+The `onecomp-mcp` stdio server exposes the same session-based operations to MCP-capable single-
+and multi-agent systems such as OpenHands. See the [MCP server guide](docs/user-guide/mcp-server.md).
 
 ## Installation
 
@@ -41,22 +49,25 @@ uv sync --extra cu130 --extra vllm
 ```
 
 Or with pip:
+
 ```bash
 pip install torch --index-url https://download.pytorch.org/whl/cu128
 pip install -e ".[dev]"
 ```
 
-See [installation guide](docs/getting-started/installation.md) for details.
+See the [installation guide](docs/getting-started/installation.md) for details.
 
 ## Quick Start
 
 **Weight quantization (one line):**
+
 ```python
 from onecomp import Runner
 Runner.auto_run(model_id="meta-llama/Llama-3.1-8B")
 ```
 
 **GPTQ with QEP:**
+
 ```python
 from onecomp import Runner
 runner = Runner(model_id="meta-llama/Llama-3.1-8B", quantizer="gptq", qep=True)
@@ -65,6 +76,7 @@ runner.save_quantized_model("./quantized")
 ```
 
 **KV-cache compression:**
+
 ```python
 import onecomp.kvcomp as kv
 from transformers import AutoModelForCausalLM
@@ -75,6 +87,7 @@ out = kv.kv_compressed_generate(model, kv_cfg, input_ids=ids, max_new_tokens=512
 ```
 
 **Joint weight + KV compression:**
+
 ```python
 from onecomp import Runner
 from onecomp.kvcomp import KVCompressionConfig
@@ -86,7 +99,15 @@ runner.run()
 runner.save_quantized_model("./joint")
 ```
 
+**MCP server:**
+
+```bash
+onecomp-mcp
+# equivalent: python -m onecomp.mcp
+```
+
 **vLLM serving:**
+
 ```bash
 vllm serve ./quantized --kv-cache-dtype fp8
 ```
@@ -115,15 +136,14 @@ GSM8K = 40 samples; PPL = WikiText-2 (16 windows).
 | PM-KVQ | 1.00 | 1.00 | 0.800 | 7.42 |
 | **TaperKV** (proposed) | **1.00** | **1.00** | **0.825** | 6.24 |
 
-Full results, including the DeepSeek-R1-Distill reasoning models (GSM8K / MATH-500 /
-AIME / LiveCodeBench, the ThinKV/PM-KVQ benchmark suite) and the Ministral-8B
-retrieval model (the second TurboQuant model): `benchmark/kvcomp-longcontext/README.md`.
+Full results, including the DeepSeek-R1-Distill reasoning models and the Ministral-8B
+retrieval model: [benchmark/kvcomp-longcontext/README.md](benchmark/kvcomp-longcontext/README.md).
 
-### KV codec speed-quality — HALO vs TurboQuant
+### KV codec speed-quality — HayateQuant vs TurboQuant
 
-HALO(auto) is **2.9× faster** than TurboQuant(hadamard) at identical WikiText-2 PPL
-and distortion at bits {2, 3, 4} on llama-3.1-8b-instruct (head_dim=128).
-Full results: `benchmark/kvcomp-codec/README.md`.
+HayateQuant/HALO operating points and TurboQuant baselines are documented with their
+quality, memory-accounting, and runtime methodology in
+[benchmark/kvcomp-codec/README.md](benchmark/kvcomp-codec/README.md).
 
 ## License
 
@@ -132,19 +152,21 @@ See [LICENSE](./LICENSE) for details.
 ## Citation
 
 OneComp technical report:
+
 ```bibtex
 @misc{ichikawa2026onecomponelinerevolutiongenerative,
-      title={OneComp: One-Line Revolution for Generative AI Model Compression}, 
+      title={OneComp: One-Line Revolution for Generative AI Model Compression},
       author={Yuma Ichikawa and Keiji Kimura and Akihiro Yoshida and Yudai Fujimoto and Hiroki Tokura and Yamato Arai and Yoshiyuki Ishii and Yusei Kawakami and Genki Shikada and Achille Jacquemond and Yoshihiko Fujisawa and Katsuki Fujisawa and Takumi Honda and Akira Sakai},
       year={2026},
       eprint={2603.28845},
       archivePrefix={arXiv},
       primaryClass={cs.LG},
-      url={https://arxiv.org/abs/2603.28845}, 
+      url={https://arxiv.org/abs/2603.28845},
 }
 ```
 
 QEP (Quantization Error Propagation):
+
 ```bibtex
 @inproceedings{arai2025quantization,
   title={Quantization Error Propagation: Revisiting Layer-Wise Post-Training Quantization},
@@ -156,6 +178,7 @@ QEP (Quantization Error Propagation):
 ```
 
 LPCD (Layer-Projected Coordinate Descent):
+
 ```bibtex
 @article{ichikawa2025lpcd,
   title={LPCD: Unified Framework from Layer-Wise to Submodule Quantization},

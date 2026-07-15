@@ -1,0 +1,167 @@
+"""Tests for onecomp.compaction.compactor."""
+
+from onecomp.compaction.compactor import (
+    SUMMARY_HEADER,
+    compact_messages,
+    compact_messages_arc,
+    compact_messages_max,
+)
+from onecomp.compaction.store import ObsStore
+
+
+def _assistant(thought: str, cmd: str) -> dict:
+    return {"role": "assistant", "content": f"{thought}\n\n```bash\n{cmd}\n```"}
+
+
+def _observation(body: str, obs_id: str | None = None) -> dict:
+    msg = {"role": "user", "content": f"<output>\n{body}\n</output>"}
+    if obs_id is not None:
+        msg["_obs_id"] = obs_id
+    return msg
+
+
+def _history(n_turns: int, obs_body: str = "ok", store: ObsStore | None = None) -> list[dict]:
+    msgs = [
+        {"role": "system", "content": "system prompt"},
+        {"role": "user", "content": "the task"},
+    ]
+    for i in range(n_turns):
+        cmd = f"echo step-{i}"
+        msgs.append(_assistant(f"thought {i}", cmd))
+        if store is not None:
+            rec = store.put(cmd_signature=cmd, full_content=obs_body)
+            msgs.append(_observation(obs_body, rec.obs_id))
+        else:
+            msgs.append(_observation(obs_body))
+    return msgs
+
+
+def test_no_compaction_when_history_is_short():
+    msgs = _history(2)
+    assert compact_messages(msgs, keep_recent=5) == msgs
+
+
+def test_baseline_keeps_short_observations_and_drops_long():
+    short, long = "short output", "X" * 2000
+    msgs = [
+        {"role": "system", "content": "s"},
+        {"role": "user", "content": "task"},
+        _assistant("t1", "echo a"),
+        _observation(short),
+        _assistant("t2", "cat big"),
+        _observation(long),
+        _assistant("t3", "echo b"),
+        _observation("recent"),
+    ]
+    out = compact_messages(msgs, keep_recent=1)
+    summary = out[2]["content"]
+    assert summary.startswith(SUMMARY_HEADER)
+    assert short in summary
+    assert long not in summary  # L3: long observation dropped
+    assert out[-1]["content"] == "<output>\nrecent\n</output>"
+
+
+def test_max_drops_prior_summary_but_base_inherits():
+    prior = {"role": "user", "content": SUMMARY_HEADER + "\n\nPRIOR-BODY"}
+    msgs = [
+        {"role": "system", "content": "s"},
+        {"role": "user", "content": "task"},
+        prior,
+        _assistant("t", "echo x"),
+        _observation("obs-x"),
+        _assistant("t2", "echo y"),
+        _observation("recent"),
+    ]
+    inherited = compact_messages(msgs, keep_recent=1)[2]["content"]
+    dropped = compact_messages_max(msgs, keep_recent=1)[2]["content"]
+    assert "PRIOR-BODY" in inherited
+    assert "PRIOR-BODY" not in dropped  # L4
+
+
+def test_arc_replaces_long_observations_with_citations():
+    store = ObsStore()
+    long_body = "line\n" * 500  # 2500 chars > RESULT_MAX_CHARS
+    msgs = _history(3, obs_body=long_body, store=store)
+    out = compact_messages_arc(msgs, obs_store=store, keep_recent=1)
+    summary = out[2]["content"]
+    assert long_body not in summary
+    # Two compacted turns -> both citations present (dedup by content:
+    # identical body+cmd would collide, but cmds differ per turn).
+    cited = [oid for oid in store.known_ids() if f"\u00a7{oid}" in summary]
+    assert len(cited) == 2
+    assert "_recall \u00a7" in summary
+
+
+def test_arc_keeps_short_observations_verbatim_with_id():
+    store = ObsStore()
+    msgs = _history(3, obs_body="tiny", store=store)
+    out = compact_messages_arc(msgs, obs_store=store, keep_recent=1)
+    summary = out[2]["content"]
+    assert "result: tiny" in summary
+
+
+def test_arc_inherits_prior_summary_and_dedups_ids():
+    store = ObsStore()
+    rec = store.put(cmd_signature="cat big", full_content="Z" * 5000)
+    prior = {
+        "role": "user",
+        "content": SUMMARY_HEADER + f"\n\n\u00a7{rec.obs_id}  cmd='cat big'  rc=0 old citation",
+    }
+    msgs = [
+        {"role": "system", "content": "s"},
+        {"role": "user", "content": "task"},
+        prior,
+        _observation("Z" * 5000, rec.obs_id),  # same obs re-observed
+        _assistant("t", "echo y"),
+        _observation("recent"),
+    ]
+    out = compact_messages_arc(msgs, obs_store=store, keep_recent=1)
+    summary = out[2]["content"]
+    # Prior summary body inherited...
+    assert "old citation" in summary
+    # ...and the id it referenced is NOT cited a second time.
+    assert summary.count(f"\u00a7{rec.obs_id}") == 1
+
+
+def test_arc_degenerates_to_max_without_store_except_summary_inheritance():
+    msgs = _history(4, obs_body="X" * 2000)  # long, no store, no _obs_id
+    arc_out = compact_messages_arc(msgs, obs_store=None, keep_recent=1)
+    max_out = compact_messages_max(msgs, keep_recent=1)
+    assert arc_out[2]["content"] == max_out[2]["content"]
+
+
+def test_arc_summary_budget_collapses_oldest_to_id_only():
+    store = ObsStore()
+    msgs = [
+        {"role": "system", "content": "s"},
+        {"role": "user", "content": "task"},
+    ]
+    ids = []
+    for i in range(6):
+        body = f"data-{i}\n" * 200  # ~1400 chars each, unique per turn
+        cmd = f"cat part-{i}"
+        rec = store.put(cmd_signature=cmd, full_content=body + str(i))
+        ids.append(rec.obs_id)
+        msgs.append(_assistant(f"t{i}", cmd))
+        msgs.append(_observation(body + str(i), rec.obs_id))
+    msgs.append(_assistant("t-final", "echo done"))
+    msgs.append(_observation("recent"))
+
+    out = compact_messages_arc(
+        msgs, obs_store=store, keep_recent=1, summary_max_chars=1200
+    )
+    summary = out[2]["content"]
+    # Budget forces the oldest citations to collapse to bare ids...
+    assert "elided to keep this summary within the context budget" in summary
+    # ...but every id remains recall-able (present in some form).
+    for oid in ids:
+        assert f"\u00a7{oid}" in summary
+    # And the assembled summary respects the order of magnitude of the cap.
+    assert len(summary) < 6 * 1600
+
+
+def test_arc_unbounded_by_default():
+    store = ObsStore()
+    msgs = _history(5, obs_body="Y" * 3000, store=store)
+    out = compact_messages_arc(msgs, obs_store=store, keep_recent=1)
+    assert "elided to keep this summary" not in out[2]["content"]

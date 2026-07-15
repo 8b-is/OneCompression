@@ -9,7 +9,9 @@ try:
     from gemlite.core import GemLiteLinearTriton
 
     _HAS_GEMLITE = True
-except (ImportError, AttributeError):
+except (ImportError, AttributeError, RuntimeError):
+    # RuntimeError: recent gemlite queries CUDA device properties at import
+    # time, which raises on driver-less (CPU-only) machines.
     _HAS_GEMLITE = False
 
 pytestmark = pytest.mark.skipif(
