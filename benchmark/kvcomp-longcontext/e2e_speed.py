@@ -74,6 +74,8 @@ def _methods(bits, model_config, recent_tokens: int = 0):
 
     return {
         "FullKV": lambda: DynamicCache(config=model_config),
+        f"TurboQuant-paper-{bits}bit": comp(build_codec(
+            "turboquant", bits=bits, rotation_mode="dense", dist="beta")),
         f"TurboQuant-{bits}bit": comp(build_codec(
             "turboquant", bits=bits, rotation_mode="hadamard", dist="beta")),
         f"HALO-NCIT-{bits}bit": comp(build_codec(

@@ -182,6 +182,10 @@ def _merge_task_payloads(paths: list[Path]) -> list[dict]:
     grouped: dict[str, list[tuple[Path, dict]]] = {}
     for path in paths:
         payload = json.loads(path.read_text())
+        if payload.get("schema_version") != 2 or not payload.get("run_fingerprint"):
+            raise RuntimeError(
+                f"Refusing to summarize legacy/unidentified benchmark result: {path}"
+            )
         grouped.setdefault(payload.get("model", path.stem), []).append((path, payload))
 
     merged_payloads: list[dict] = []
@@ -191,7 +195,29 @@ def _merge_task_payloads(paths: list[Path]) -> list[dict]:
             continue
 
         first = items[0][1]
+        def merge_identity(payload: dict) -> dict:
+            config = dict(payload.get("config") or {})
+            # Task/method/bit shards are intentionally mergeable. Everything
+            # that changes scoring or cache semantics must agree.
+            for key in ("tasks", "methods", "bits", "include_fullkv"):
+                config.pop(key, None)
+            return {
+                "model": payload.get("model"),
+                "limit": payload.get("limit"),
+                "sample_seed": payload.get("sample_seed"),
+                "config": config,
+            }
+
+        identity = merge_identity(first)
+        mismatched = [str(path) for path, payload in items
+                      if merge_identity(payload) != identity]
+        if mismatched:
+            raise RuntimeError(
+                f"Refusing to merge incompatible zero-shot shards for {model}: "
+                + ", ".join(mismatched)
+            )
         merged = {
+            "schema_version": 2,
             "model": model,
             "tasks": [],
             "limit": first.get("limit"),
@@ -209,7 +235,14 @@ def _merge_task_payloads(paths: list[Path]) -> list[dict]:
                 out_methods = merged["results"].setdefault(bits, {})
                 for method, data in methods.items():
                     out_data = out_methods.setdefault(method, {"tasks": {}})
-                    out_data["tasks"].update(data.get("tasks", {}))
+                    for task, task_data in data.get("tasks", {}).items():
+                        previous = out_data["tasks"].get(task)
+                        if previous is not None and previous != task_data:
+                            raise RuntimeError(
+                                f"Conflicting duplicate result for {model}/"
+                                f"{bits}/{method}/{task}"
+                            )
+                        out_data["tasks"][task] = task_data
 
         merged["tasks"] = task_order
         for methods in merged["results"].values():
@@ -217,8 +250,10 @@ def _merge_task_payloads(paths: list[Path]) -> list[dict]:
                 tasks = data.get("tasks", {})
                 acc = [v["acc"] for v in tasks.values()]
                 acc_norm = [v["acc_norm"] for v in tasks.values()]
+                primary = [v.get("primary_score", v["acc_norm"]) for v in tasks.values()]
                 data["avg_acc"] = round(mean(acc), 4) if acc else 0.0
                 data["avg_acc_norm"] = round(mean(acc_norm), 4) if acc_norm else 0.0
+                data["avg_primary_score"] = round(mean(primary), 4) if primary else 0.0
                 data["n_total"] = sum(v["n"] for v in tasks.values())
         merged_payloads.append(merged)
     return merged_payloads
@@ -263,36 +298,31 @@ def _summarize(args: argparse.Namespace) -> None:
         if not args.include_extra_results and model not in _paper_model_names():
             continue
         task_count = len(payload.get("tasks") or [])
-        tq2 = _method(payload, "2", "TurboQuant-hadamard")
+        tq2 = _method(payload, "2", "TurboQuant-paper")
         fib2 = _method(payload, "2", "FibQuant")
         bq2 = _method(payload, "2", "BlockQuant")
         hq2 = _method(payload, "2", args.hq_method)
         ahq2 = _method(payload, "2", args.adaptive_method)
-        tq3 = _method(payload, "3", "TurboQuant-hadamard")
+        tq3 = _method(payload, "3", "TurboQuant-paper")
         fib3 = _method(payload, "3", "FibQuant")
         bq3 = _method(payload, "3", "BlockQuant")
         hq3 = _method(payload, "3", args.hq_method)
         ahq3 = _method(payload, "3", args.adaptive_method)
-        tq4 = _method(payload, "4", "TurboQuant-hadamard")
+        tq4 = _method(payload, "4", "TurboQuant-paper")
         fib4 = _method(payload, "4", "FibQuant")
         bq4 = _method(payload, "4", "BlockQuant")
         hq4 = _method(payload, "4", args.hq_method)
         ahq4 = _method(payload, "4", args.adaptive_method)
-        tq2_a = None if tq2 is None else tq2.get("avg_acc_norm")
-        fib2_a = None if fib2 is None else fib2.get("avg_acc_norm")
-        bq2_a = None if bq2 is None else bq2.get("avg_acc_norm")
-        hq2_a = None if hq2 is None else hq2.get("avg_acc_norm")
-        ahq2_a = None if ahq2 is None else ahq2.get("avg_acc_norm")
-        tq3_a = None if tq3 is None else tq3.get("avg_acc_norm")
-        fib3_a = None if fib3 is None else fib3.get("avg_acc_norm")
-        bq3_a = None if bq3 is None else bq3.get("avg_acc_norm")
-        hq3_a = None if hq3 is None else hq3.get("avg_acc_norm")
-        ahq3_a = None if ahq3 is None else ahq3.get("avg_acc_norm")
-        tq4_a = None if tq4 is None else tq4.get("avg_acc_norm")
-        fib4_a = None if fib4 is None else fib4.get("avg_acc_norm")
-        bq4_a = None if bq4 is None else bq4.get("avg_acc_norm")
-        hq4_a = None if hq4 is None else hq4.get("avg_acc_norm")
-        ahq4_a = None if ahq4 is None else ahq4.get("avg_acc_norm")
+        def _official(row):
+            if row is None:
+                return None
+            return row.get("avg_primary_score", row.get("avg_acc_norm"))
+        tq2_a, fib2_a, bq2_a, hq2_a, ahq2_a = map(
+            _official, (tq2, fib2, bq2, hq2, ahq2))
+        tq3_a, fib3_a, bq3_a, hq3_a, ahq3_a = map(
+            _official, (tq3, fib3, bq3, hq3, ahq3))
+        tq4_a, fib4_a, bq4_a, hq4_a, ahq4_a = map(
+            _official, (tq4, fib4, bq4, hq4, ahq4))
         if tq2_a is not None and hq2_a is not None:
             tq2_vals.append(tq2_a); hq2_vals.append(hq2_a)
             if fib2_a is not None:
@@ -355,7 +385,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--bits", nargs="+", default=["2", "3", "4"])
     ap.add_argument("--tasks", nargs="+", default=["arc_easy", "arc_challenge", "piqa", "hellaswag", "winogrande"])
     ap.add_argument("--methods", nargs="+", default=[
-        "TurboQuant-hadamard",
+        "TurboQuant-paper",
         "FibQuant",
         "BlockQuant",
         "HayateQuant-selected",

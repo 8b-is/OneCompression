@@ -11,15 +11,22 @@ folder, marks calibration).
 
 Faithful options
 ----------------
-* ``dist``: ``"gaussian"`` (the high-dimensional limit, normalise by RMS, fast
-  default) or ``"beta"`` (the exact ``Beta((d-1)/2)`` codebook, normalise by the
-  per-vector L2 norm).
+* ``dist``: ``"beta"`` (paper-faithful default: exact finite-dimensional law,
+  normalised by the per-vector L2 norm) or ``"gaussian"`` (explicit
+  high-dimensional approximation, normalised by RMS).
+* ``rotation_mode``: ``"dense"`` is the paper-faithful Gaussian-QR random
+  rotation. ``"hadamard"`` is an explicit fast/deployment approximation; it is
+  orthogonal but does not make every fixed vector uniform on the sphere.
 * ``n_outlier`` / ``outlier_bits``: the paper's KV mixed-precision -- split the
   ``n_outlier`` highest-energy channels off and quantize them at
   ``outlier_bits`` while the rest use ``bits``.  The effective payload bit-width
-  is ``(n_outlier*outlier_bits + (d-n_outlier)*bits) / d``; for ``head_dim=128``,
-  ``64 ch @ 3 + 64 @ 2`` = ``2.5`` bit and ``64 @ 4 + 64 @ 3`` = ``3.5`` bit
-  (``32 @ 3 + 96 @ 2`` = ``2.25``, ``32 @ 4 + 96 @ 3`` = ``3.25``).  The
+  is ``(n_outlier*outlier_bits + (d-n_outlier)*bits) / d``. Each of the two
+  subsets also stores one fp16 norm. For ``head_dim=128``, the paper's
+  ``32 ch @ 3 + 96 @ 2`` has 2.25 payload bits plus 0.25 norm bits = 2.5 stored
+  bits/coordinate; ``32 @ 4 + 96 @ 3`` similarly totals 3.5. The paper text
+  prints the payload-only arithmetic as 2.5 even though it is 2.25; this
+  implementation keeps the stated 32/96 split and reports payload plus the two
+  required norms explicitly rather than hiding that inconsistency. The
   outlier channel set is chosen *per encoded block* from that block's energy, so
   under incremental decode (``q_len=1``) the channel mask is dynamic per step.
   This is exact for the fake-quant research layer but is a layout a real kernel
@@ -95,27 +102,27 @@ class TurboQuantCodec(KVCodec):
     Attributes:
         bits: Bits per coordinate (key; value shares unless ``value_bits`` set).
         value_bits: Optional separate bit-width for values.
-        dist: ``"gaussian"`` (RMS-normalised, high-d limit) or ``"beta"``
-            (L2-normalised, exact Beta codebook).
+        dist: ``"beta"`` (L2-normalised, exact paper codebook) or ``"gaussian"``
+            (RMS-normalised high-dimensional approximation).
         n_outlier: Number of highest-energy channels quantized at ``outlier_bits``.
         outlier_bits: Bit-width for the outlier channels.
         use_qjl: Enable TurboQuant-prod's 1-bit Gaussian QJL residual sketch.
         qjl_roles: Which roles receive QJL when ``use_qjl`` is true:
             ``"key"`` (TurboQuant-prod default), ``"value"``, or ``"both"``.
-        rotation_mode: ``"hadamard"`` (fast WHT, power-of-two dims) or ``"dense"``
-            (QR random orthogonal, any dim).
+        rotation_mode: ``"dense"`` (paper Gaussian-QR random orthogonal) or
+            ``"hadamard"`` (fast WHT approximation, power-of-two dims).
         seed: Seed for the deterministic rotations.
     """
 
     flag_calibration: bool = False
     bits: int = 4
     value_bits: int = None
-    dist: str = "gaussian"
+    dist: str = "beta"
     n_outlier: int = 0
     outlier_bits: int = None
     use_qjl: bool = False
     qjl_roles: str = "key"
-    rotation_mode: str = "hadamard"
+    rotation_mode: str = "dense"
     seed: int = 0
     key_axis: str = "token"
     value_axis: str = "token"
@@ -200,8 +207,6 @@ class TurboQuantCodec(KVCodec):
     # --- full-tensor encode (handles outlier split) ----------------------
     def _encode_tensor(self, x, bits, use_qjl=False):
         head_dim = x.shape[-1]
-        if self.rotation_mode == "hadamard" and not is_power_of_two(head_dim) and self.n_outlier == 0:
-            return None  # graceful affine fallback handled by caller
         if self.n_outlier <= 0 or self.n_outlier >= head_dim:
             return {"mode": "single", "main": self._quant_subset(x, bits, self.seed, use_qjl),
                     "head_dim": head_dim}
@@ -246,8 +251,8 @@ class TurboQuantCodec(KVCodec):
             no = self.n_outlier
             payload_bits = vecs * (no * self._outlier_bits() + (d - no) * bits)
             scale_bits = vecs * 2 * 16  # two per-vector norms
-        # QJL stores a 1-bit sign per element AND a per-vector fp16 residual RMS
-        # (``qjl_rms``) for every encoded subset vector -- two subsets when the
+        # QJL stores a 1-bit projected sign per element AND a per-vector fp16
+        # residual L2 norm for every encoded subset vector -- two subsets when the
         # outlier split is active; count all of it for honest whole-cache
         # accounting (memo A-7).
         qjl_bits = (x.numel() * 1 + vecs * (2 if split else 1) * 16) if use_qjl else 0
@@ -261,13 +266,17 @@ class TurboQuantCodec(KVCodec):
         if kp is None or vp is None:
             kq = fake_quantize_affine(key, self.bits, axis="token")
             vq = fake_quantize_affine(value, self._value_bits(), axis="token")
-            # Count the per-token affine scale + zero (two fp16 per vector), like
+            # Count the per-token affine scale + integer zero, like
             # the AffineKVCodec path, so the fallback's compression ratio is not
-            # over-stated (memo A-6).
+            # over-stated. This is retained only for legacy/custom subclasses;
+            # the built-in rotation now falls back to dense QR for non-power-of-two dims.
             kvecs = key.shape[0] * key.shape[1] * key.shape[2]
             vvecs = value.shape[0] * value.shape[1] * value.shape[2]
-            stored = (key.numel() * self.bits + value.numel() * self._value_bits()
-                      + (kvecs + vvecs) * 2 * 16)
+            stored = (
+                key.numel() * self.bits + kvecs * (16 + self.bits)
+                + value.numel() * self._value_bits()
+                + vvecs * (16 + self._value_bits())
+            )
             return CompressedKV(key_q=kq, value_q=vq,
                                 meta={"dtype": key.dtype, "fallback": True,
                                       "stored_bits": int(stored), "passthrough": True})

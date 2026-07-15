@@ -7,7 +7,8 @@
 #   * **Codecs** (see codec_benchmark.py `_codecs`): HayateQuant-auto
 #     (proposed: block-VQ + folded hybrid rotation + NC/ls_iter scales) plus
 #     its -exact / -K12 / -dense-LS ablations, vs HALO-auto (superseded
-#     scalar predecessor) and TurboQuant-hadamard / -dense.  All share the
+#     scalar predecessor), paper-faithful TurboQuant-paper, and the explicit
+#     TurboQuant-hadamard deployment approximation. All share the
 #     same data-free per-coordinate bit budget, so quality differences come
 #     from the codec design only.
 #   * **Models**: Llama-3.1-8B-Instruct (the TurboQuant paper headline model)
@@ -43,11 +44,11 @@ timing_heads: 8
 timing_seq: 1024
 timing_iters: 100
 
-# PPL: 32 WikiText-2 windows for low-noise comparison.
+# PPL: complete WikiText-2 raw test split (no window cap).
 run_ppl: true
 ppl_max_length: 2048
 ppl_stride: 1024
-ppl_windows: 32
+ppl_windows: null
 
 # Outlier layers: massive-activation layers (common in small Qwen R1-Distill models)
 # destroy generation quality when quantized at any bit-width.  Detect them once and

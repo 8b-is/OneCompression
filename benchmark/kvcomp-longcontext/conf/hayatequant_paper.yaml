@@ -64,18 +64,18 @@ uniform_bits: [4, 3, 2]
 kivi_bits: [2]
 
 turboquant_variants:
-  - {label: "TurboQuant-4bit",   bits: 4, dist: beta}
-  - {label: "TurboQuant-3.5bit", bits: 3, n_outlier: 64, outlier_bits: 4, dist: beta}
-  - {label: "TurboQuant-3bit",   bits: 3, dist: beta}
-  - {label: "TurboQuant-2.5bit", bits: 2, n_outlier: 64, outlier_bits: 3, dist: beta}
-  - {label: "TurboQuant-2bit",   bits: 2, dist: beta}
+  - {label: "TurboQuant-4bit",   bits: 4, dist: beta, rotation_mode: dense}
+  - {label: "TurboQuant-3.5bit", bits: 3, n_outlier: 32, outlier_bits: 4, dist: beta, rotation_mode: dense}
+  - {label: "TurboQuant-3bit",   bits: 3, dist: beta, rotation_mode: dense}
+  - {label: "TurboQuant-2.5bit", bits: 2, n_outlier: 32, outlier_bits: 3, dist: beta, rotation_mode: dense}
+  - {label: "TurboQuant-2bit",   bits: 2, dist: beta, rotation_mode: dense}
 
 halo_variants:
   - {label: "HALO-4bit",    bits: 4, key_scale_mode: nc, value_scale_mode: ls_iter}
   - {label: "HALO-3bit",    bits: 3, key_scale_mode: nc, value_scale_mode: ls_iter}
   - {label: "HALO-2bit",    bits: 2, key_scale_mode: nc, value_scale_mode: ls_iter}
-  - {label: "HALO-3.5bit",  bits: 3, n_outlier: 64, outlier_bits: 4, key_scale_mode: nc, value_scale_mode: ls_iter}
-  - {label: "HALO-2.5bit",  bits: 2, n_outlier: 64, outlier_bits: 3, key_scale_mode: nc, value_scale_mode: ls_iter}
+  - {label: "HALO-3.5bit",  bits: 3, n_outlier: 32, outlier_bits: 4, key_scale_mode: nc, value_scale_mode: ls_iter}
+  - {label: "HALO-2.5bit",  bits: 2, n_outlier: 32, outlier_bits: 3, key_scale_mode: nc, value_scale_mode: ls_iter}
 
 # HayateQuant: same role-asymmetric scale defaults as HALO (ls_scale=True ->
 # nc keys / ls_iter values), block_size left at its "auto" default (None) so
@@ -86,8 +86,8 @@ hayatequant_variants:
   - {label: "HayateQuant-4bit",   bits: 4}
   - {label: "HayateQuant-3bit",   bits: 3}
   - {label: "HayateQuant-2bit",   bits: 2}
-  - {label: "HayateQuant-3.5bit", bits: 3, n_outlier: 64, outlier_bits: 4}
-  - {label: "HayateQuant-2.5bit", bits: 2, n_outlier: 64, outlier_bits: 3}
+  - {label: "HayateQuant-3.5bit", bits: 3, n_outlier: 32, outlier_bits: 4}
+  - {label: "HayateQuant-2.5bit", bits: 2, n_outlier: 32, outlier_bits: 3}
 
 codec_variants:
   - {label: "FP8", codec: fp8}
@@ -103,12 +103,13 @@ max_new_needle: 32
 # --- LongBench-E ---
 run_longbench: true
 longbench_tasks: []
-longbench_max_length: 7500
-longbench_limit: 10
+longbench_max_length: 32768
+longbench_limit: null
 
 run_gsm8k: false
 run_math: false
-run_ruler: true
+# Keep the synthetic multi-key diagnostic out of official paper benchmark tables.
+run_ruler: false
 ruler_keys: 4
 ruler_seeds: 5
 
@@ -116,4 +117,4 @@ ruler_seeds: 5
 run_ppl: true
 ppl_max_length: 4096
 ppl_stride: 2048
-ppl_windows: 16
+ppl_windows: null            # complete WikiText-2 test split

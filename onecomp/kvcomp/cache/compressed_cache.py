@@ -14,10 +14,11 @@ dequantized tensor (simulated quantization), mirroring the weight side's
 ``compute_dequantized_weight``.  Real low-bit storage / Triton dequant kernels
 belong to :mod:`onecomp.kvcomp.kernels`.
 
-Per-token codecs (FP8, INT-token, TurboQuant, NVFP4, Ternary) quantize each
-arriving block correctly and incrementally.  Per-channel-key codecs such as
-KIVI need block (prefill) granularity and are intended for the offline /
-kernel path; ``CompressedDynamicCache`` warns when given one.
+Per-token codecs (FP8, INT-token, TurboQuant, HayateQuant) quantize each
+arriving block incrementally. Per-channel-key codecs (KIVI, NVFP4, Ternary)
+buffer only the unfinished sequence group in full precision and quantize each
+retired group once, preserving the paper axis without a hidden full-history FP
+shadow.
 
 Copyright 2025-2026 Fujitsu Ltd.
 """
@@ -59,15 +60,13 @@ class CompressedDynamicCache(DynamicCache):
         self._seen = {}  # layer_idx -> tokens seen so far
         self.stored_bits = 0
         self.fp16_bits = 0
-        if codec is not None and (codec.key_axis == "channel"):
-            logger.warning(
-                "Codec '%s' uses per-channel key quantization; incremental cache "
-                "updates quantize per arriving token. Use the block/offline path "
-                "for faithful per-channel results.",
-                codec.name,
-            )
+        self._channel_quantized_until = {}
 
     def update(self, key_states, value_states, layer_idx, *args, **kwargs):
+        if self.codec is not None and self.codec.key_axis == "channel":
+            return self._update_channel_codec(
+                key_states, value_states, layer_idx, *args, **kwargs
+            )
         if self.codec is not None and layer_idx not in self.skip_layers:
             seen = self._seen.get(layer_idx, 0)
             q_len = key_states.shape[2]
@@ -75,12 +74,12 @@ class CompressedDynamicCache(DynamicCache):
                 self._count_fp((key_states.numel() + value_states.numel()) * 16)
                 out = super().update(key_states, value_states, layer_idx, *args, **kwargs)
                 self._seen[layer_idx] = seen + q_len
-                self._requantize_retired_recent(layer_idx, q_len)
+                self._requantize_retired_recent(layer_idx, seen)
                 return out
             # Indices (within this block) that fall in the sink region stay FP.
             sink_in_block = max(0, min(self.sink_tokens - seen, q_len))
             recent_in_block = 0
-            if self.recent_tokens > 0 and q_len > self.recent_tokens:
+            if self.recent_tokens > 0:
                 recent_in_block = min(self.recent_tokens, q_len - sink_in_block)
             quant_end = q_len - recent_in_block
             kq_in, vq_in = key_states, value_states
@@ -119,14 +118,69 @@ class CompressedDynamicCache(DynamicCache):
         elif self.codec is not None:
             # outlier-skip layer kept in full precision; count it in the ratio
             self._count_fp((key_states.numel() + value_states.numel()) * 16)
-        return super().update(key_states, value_states, layer_idx, *args, **kwargs)
+        out = super().update(key_states, value_states, layer_idx, *args, **kwargs)
+        if self.codec is not None and layer_idx not in self.skip_layers:
+            self._requantize_retired_recent(layer_idx, seen)
+        return out
+
+    def _update_channel_codec(self, key_states, value_states, layer_idx, *args, **kwargs):
+        """Faithful block update for per-channel keys (KIVI-style research path).
+
+        A one-token per-channel affine group has min=max and reconstructs exactly.
+        Accumulate an FP residual until a complete sequence-axis group retires,
+        then quantize that group exactly once. This matches KIVI's streaming
+        layout and avoids keeping an unreported full-history FP shadow.
+        """
+        group_size = int(getattr(self.codec, "group_size", -1))
+        if group_size <= 0:
+            raise ValueError(
+                "incremental per-channel KV quantization requires group_size>0; "
+                "an unbounded sequence-axis group cannot be finalized online"
+            )
+
+        out = super().update(key_states, value_states, layer_idx, *args, **kwargs)
+        layer = self.layers[layer_idx]
+        appended_fp_bits = (key_states.numel() + value_states.numel()) * 16
+        self._count_fp(appended_fp_bits)
+        self._seen[layer_idx] = self._seen.get(layer_idx, 0) + key_states.shape[2]
+        if layer_idx in self.skip_layers:
+            return out
+
+        total = int(layer.keys.shape[2])
+        # A sliding-window DynamicLayer may discard positions. The KIVI block
+        # cursor is defined over a growing full cache, so fail rather than
+        # silently applying global offsets to a truncated local tensor.
+        if total != self._seen[layer_idx]:
+            raise NotImplementedError(
+                "per-channel compressed cache does not yet support a model-side "
+                "sliding-window DynamicLayer"
+            )
+        sink_end = min(self.sink_tokens, total)
+        start = max(sink_end, self._channel_quantized_until.get(layer_idx, sink_end))
+        retire_before = max(sink_end, total - self.recent_tokens)
+        n_complete = max(0, retire_before - start) // group_size
+        end = start + n_complete * group_size
+        if end > start:
+            raw_k = layer.keys[:, :, start:end]
+            raw_v = layer.values[:, :, start:end]
+            kq, vq, quant_bits = self.codec.fake_quant_roundtrip(
+                raw_k, raw_v, ctx={"layer_idx": layer_idx}
+            )
+            fp_bits = (raw_k.numel() + raw_v.numel()) * 16
+            self.stored_bits += (quant_bits if quant_bits is not None else fp_bits) - fp_bits
+            layer.keys[:, :, start:end].copy_(kq.to(layer.keys.dtype))
+            layer.values[:, :, start:end].copy_(vq.to(layer.values.dtype))
+            self._channel_quantized_until[layer_idx] = end
+        else:
+            self._channel_quantized_until.setdefault(layer_idx, start)
+        return layer.keys, layer.values
 
     def _count_fp(self, bits: int) -> None:
         """Account full-precision (sink / skip-layer) KV equally in stored & fp16."""
         self.stored_bits += bits
         self.fp16_bits += bits
 
-    def _requantize_retired_recent(self, layer_idx: int, q_len: int) -> None:
+    def _requantize_retired_recent(self, layer_idx: int, old_total: int) -> None:
         """Quantize tokens that just moved out of the FP recent window."""
         if self.codec is None or self.recent_tokens <= 0:
             return
@@ -138,8 +192,12 @@ class CompressedDynamicCache(DynamicCache):
         if keys is None or values is None:
             return
         total = keys.shape[2]
-        retire_end = max(self.sink_tokens, total - self.recent_tokens)
-        retire_start = max(self.sink_tokens, retire_end - q_len)
+        # Only re-quantize tokens from the *previous* cache that used to be in
+        # its FP recent window.  A large incoming chunk already quantized its
+        # own non-recent prefix above; including it again would double-quantize
+        # data and subtract FP accounting for bits that were never FP.
+        retire_start = max(self.sink_tokens, old_total - self.recent_tokens)
+        retire_end = min(old_total, max(self.sink_tokens, total - self.recent_tokens))
         if retire_end <= retire_start:
             return
         k_old = keys[:, :, retire_start:retire_end]

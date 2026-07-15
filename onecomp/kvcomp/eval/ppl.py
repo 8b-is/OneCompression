@@ -7,17 +7,15 @@ time.  This is the KV analogue of the weight side's perplexity validation.
 
 Measurement-validity guards
 ---------------------------
-* **Non-finite windows.**  A window whose summed loss is ``NaN``/``inf`` (e.g. a
-  numerically unstable layer, logit overflow before soft-capping) is *excluded*
-  from the average and counted in ``n_skipped_nonfinite`` instead of poisoning
-  the whole PPL.  A run with any skipped window is flagged.
+* **Non-finite windows.**  A window whose summed loss is ``NaN``/``inf`` makes
+  the complete run invalid. It is never silently dropped from the denominator.
 * **Instruct / multimodal models.**  Raw-text WikiText PPL is only meaningful for
   a *base* causal LM.  On instruction-tuned or multimodal (``*ForConditional
   Generation``) checkpoints scored on raw text, the absolute PPL is unreliable
-  and KV quantization can even appear to *lower* it (a physical impossibility for
-  lossy compression) -- prefer the base model, or compare codecs only relative to
-  the *same* model's FullKV (never across models).  This is why a compressed PPL
-  below the FullKV PPL should be treated as a measurement artefact, not a result.
+    and KV quantization can occasionally lower the observed test NLL by acting as
+  a perturbation -- prefer the base model, and compare codecs only relative to the
+  *same* model's FullKV (never across models). A small negative delta is not proof
+  that the codec is lossless or generally improves the model.
 
 Copyright 2025-2026 Fujitsu Ltd.
 """
@@ -59,6 +57,7 @@ def perplexity_over_text(
     max_length: int = 2048,
     stride: int = 512,
     max_windows: Optional[int] = None,
+    fail_on_nonfinite: bool = True,
 ) -> dict:
     """Sliding-window perplexity over ``text``.
 
@@ -75,6 +74,12 @@ def perplexity_over_text(
     Returns:
         dict with ``ppl``, ``nll``, ``n_tokens``, ``compression_ratio``.
     """
+    if max_length < 2:
+        raise ValueError("max_length must be at least 2 to score next-token loss")
+    if stride <= 0 or stride > max_length:
+        raise ValueError("stride must satisfy 0 < stride <= max_length")
+    if max_windows is not None and max_windows <= 0:
+        raise ValueError("max_windows must be positive or None")
     device = model.device
     enc = tokenizer(text, return_tensors="pt")
     input_ids = enc.input_ids.to(device)
@@ -86,6 +91,7 @@ def perplexity_over_text(
     prev_end = 0
     n_win = 0
     n_skipped = 0
+    complete_text = False
     for begin in range(0, seq_len, stride):
         end = min(begin + max_length, seq_len)
         trg_len = end - prev_end  # number of newly-scored targets
@@ -104,7 +110,9 @@ def perplexity_over_text(
         valid = (tgt != -100).sum().item()
         prev_end = end
         n_win += 1
-        # Exclude non-finite windows (NaN/inf loss) rather than poisoning the mean.
+        # Count non-finite windows, then invalidate the complete run below. Using
+        # a different denominator for each codec can make an unstable codec look
+        # artificially better than FullKV.
         if valid > 0 and torch.isfinite(loss):
             nlls.append(loss)
             n_tokens += valid
@@ -116,7 +124,10 @@ def perplexity_over_text(
             )
         if past is not None and hasattr(past, "compression_ratio"):
             ratios.append(past.compression_ratio())
-        if end == seq_len or (max_windows is not None and n_win >= max_windows):
+        if end == seq_len:
+            complete_text = True
+            break
+        if max_windows is not None and n_win >= max_windows:
             break
 
     if not nlls:
@@ -126,6 +137,10 @@ def perplexity_over_text(
             "is numerically unstable (e.g. raw text on an instruct/multimodal model)."
         )
     if n_skipped:
+        if fail_on_nonfinite:
+            raise ValueError(
+                f"Perplexity run is invalid: {n_skipped}/{n_win} windows had non-finite loss."
+            )
         logger.warning(
             "%d/%d windows had non-finite loss and were excluded; treat the PPL "
             "as approximate and check the model/text suitability.", n_skipped, n_win,
@@ -137,6 +152,8 @@ def perplexity_over_text(
         "n_tokens": n_tokens,
         "n_windows": n_win,
         "n_skipped_nonfinite": n_skipped,
+        "complete_text_eval": complete_text,
+        "max_windows": max_windows,
         "compression_ratio": float(sum(ratios) / len(ratios)) if ratios else 1.0,
     }
 
@@ -149,6 +166,7 @@ def wikitext2_perplexity(
     stride: int = 512,
     max_windows: Optional[int] = None,
     fallback_text: Optional[str] = None,
+    fail_on_nonfinite: bool = True,
 ) -> dict:
     """WikiText-2 (raw, test) sliding-window perplexity.
 
@@ -166,6 +184,7 @@ def wikitext2_perplexity(
     out = perplexity_over_text(
         model, tokenizer, text, cache_factory=cache_factory,
         max_length=max_length, stride=stride, max_windows=max_windows,
+        fail_on_nonfinite=fail_on_nonfinite,
     )
     out["source"] = source
     return out

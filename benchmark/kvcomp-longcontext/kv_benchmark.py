@@ -9,7 +9,8 @@ contrasts and the proposed method:
 * **Uniform-INT{4,2}**  -- uniform per-token quantization (the baseline the memo
   argues is less memory-efficient than eviction).
 * **StreamingLLM**      -- sink + recent eviction (the "evict" regime).
-* **ThinKV**            -- static-precision quant + (TBE) eviction (paper baseline).
+* **ThinKV-TBQ**        -- thought-adaptive quantization only; the HF path does
+  not implement the paper's TBE eviction and is labelled non-comparable.
 * **PM-KVQ**            -- progressive *dynamic*-precision quantization (paper baseline).
 * **TaperKV**           -- proposed: static age-graded precision, *no eviction*.
 
@@ -32,10 +33,13 @@ Usage (GPU node):
 from __future__ import annotations
 
 import json
+import hashlib
 import os
+import tempfile
 
 import hydra
 import torch
+from filelock import FileLock
 from omegaconf import DictConfig, OmegaConf
 from transformers import AutoModelForCausalLM, AutoTokenizer, DynamicCache
 
@@ -59,8 +63,8 @@ def build_methods(cfg: DictConfig, model, tok):
     ``make(ctx)`` builds the needle cache for a given context length (so the
     eviction baseline can be sized to the *same* memory budget as the quant
     methods -- a fair iso-memory test); ``reason`` builds the cache for the
-    generate-based GSM8K / PPL evals (eviction caches degrade to FullKV under
-    HF ``generate``, acceptable since those prompts are short).  ``capture``
+    generate-based GSM8K / PPL evals (the reasoning harness explicitly drives
+    eviction after prefill and every decode step). ``capture``
     flags methods (ThinKV) whose decode-time policy needs attention sparsity.
     """
     mc = model.config
@@ -85,13 +89,16 @@ def build_methods(cfg: DictConfig, model, tok):
             "Write a Python function that returns the n-th Fibonacci number.",
             "Summarize in one sentence why the sky appears blue during the day.",
         ])
-        probes = [
-            tok.apply_chat_template(
-                [{"role": "user", "content": t}],
-                add_generation_prompt=True, return_tensors="pt",
-                return_dict=True)["input_ids"].to(model.device)
-            for t in _probe_texts
-        ]
+        def _probe_ids(text):
+            if getattr(tok, "chat_template", None):
+                return tok.apply_chat_template(
+                    [{"role": "user", "content": text}],
+                    add_generation_prompt=True, return_tensors="pt",
+                    return_dict=True)["input_ids"].to(model.device)
+            return tok(text, return_tensors="pt", truncation=True,
+                       max_length=512).input_ids.to(model.device)
+
+        probes = [_probe_ids(text) for text in _probe_texts]
         skip = detect_outlier_layers(
             model, probes, ratio_thresh=cfg.get("outlier_ratio", 50.0),
             agg=cfg.get("outlier_agg", "mean"))
@@ -148,7 +155,9 @@ def build_methods(cfg: DictConfig, model, tok):
     methods["ThinKV"] = dict(
         make=lambda ctx: ThinKVCache(thinp, config=mc, sink_tokens=sink), evict=False,
         reason=lambda: ThinKVCache(thinp, config=mc, sink_tokens=sink),
-        capture=capture, capture_long=capture_long)
+        capture=capture, capture_long=capture_long,
+        method_definition="ThinKV-TBQ (HF research path; TBE eviction disabled)",
+        paper_comparable=False)
 
     pmp = PMKVQPolicy(key_bits=cfg.pmkvq.key_bits, value_bits=cfg.pmkvq.value_bits,
                       final_bits=cfg.pmkvq.final_bits, key_final_bits=cfg.pmkvq.key_final_bits,
@@ -169,9 +178,19 @@ def build_methods(cfg: DictConfig, model, tok):
             pos_scale=cfg.pmkvq.get("pos_scale", 4))
         print(f"  [PM-KVQ] block_final_bits set for {len(pmp.block_final_bits)} layers; "
               f"channel_reparam on {len(pmp.key_channel_scale)} layers", flush=True)
+    pm_paper_comparable = bool(
+        cfg.pmkvq.get("block_allocation", False)
+        and cfg.pmkvq.get("channel_reparam", False)
+    )
     methods["PM-KVQ"] = dict(
         make=lambda ctx: PMKVQCache(pmp, config=mc, requant_stride=cfg.requant_stride), evict=False,
-        reason=lambda: PMKVQCache(pmp, config=mc, requant_stride=cfg.requant_stride))
+        reason=lambda: PMKVQCache(pmp, config=mc, requant_stride=cfg.requant_stride),
+        method_definition=(
+            "PM-KVQ (offline allocation + channel reparameterization)"
+            if pm_paper_comparable
+            else "PM-KVQ online precision path (offline allocation/reparameterization disabled)"
+        ),
+        paper_comparable=pm_paper_comparable)
 
     tap = TaperKVPolicy(key_bits=cfg.taperkv.key_bits, value_bits=cfg.taperkv.value_bits,
                         b_min=cfg.taperkv.b_min, b_min_value=cfg.taperkv.b_min_value,
@@ -238,8 +257,9 @@ def build_methods(cfg: DictConfig, model, tok):
             reason=lambda p=vp: TaperKVCache(p, config=mc, requant_stride=cfg.requant_stride))
 
     # TurboQuant (arXiv:2504.19874): random rotation + Lloyd-Max scalar quant.
-    # Paper bit-widths: pure 2/3/4-bit plus the *outlier-split* 2.5-bit
-    # (32 ch @ 3 + 96 @ 2) and 3.5-bit (32 ch @ 4 + 96 @ 3) for head_dim=128.
+    # Pure 2/3/4-bit plus matched-rate outlier splits. At head_dim=128 the
+    # paper's 32 ch @ 3 + 96 @ 2 is 2.25 payload bits plus 0.25 bits for the two
+    # fp16 subset norms, hence 2.5 stored bits/coordinate (likewise 3.5).
     # Each variant is a dict {label, bits, [n_outlier, outlier_bits, ...]}.
     for variant in (cfg.get("turboquant_variants", None) or []):
         v = dict(variant)
@@ -255,9 +275,13 @@ def build_methods(cfg: DictConfig, model, tok):
     for b in (cfg.get("kivi_bits", None) or []):
         codec = build_codec("kivi", skip_layers=skip, bits=b)
         methods[f"KIVI-INT{b}"] = dict(
-            make=lambda ctx, c=codec: CompressedDynamicCache(codec=c, config=mc, sink_tokens=sink),
+            make=lambda ctx, c=codec: CompressedDynamicCache(
+                codec=c, config=mc, sink_tokens=sink,
+                recent_tokens=c.residual_window),
             evict=False,
-            reason=lambda c=codec: CompressedDynamicCache(codec=c, config=mc, sink_tokens=sink))
+            reason=lambda c=codec: CompressedDynamicCache(
+                codec=c, config=mc, sink_tokens=sink,
+                recent_tokens=c.residual_window))
 
     # HALO (fast online-whitened randomized-Hadamard Lloyd-Max codec). Each entry
     # is a codec kwargs dict {label, bits, [value_bits, rotation_mode, ...]}.
@@ -322,6 +346,8 @@ def main(cfg: DictConfig):
                 f"Available: {sorted(methods)}.  Add the codec to the registry "
                 f"and/or the corresponding sweep section in the YAML.")
 
+    run_fingerprint = _config_fingerprint(cfg)
+
     # Resume: load existing results so we can (a) skip already-done methods in a
     # normal run (if cfg.resume=true), or (b) merge a targeted re-run of specific
     # methods (cfg.methods=[...]) into the existing JSON without losing other results.
@@ -330,7 +356,10 @@ def main(cfg: DictConfig):
     existing_json = os.path.join(cfg.output_dir, f"results_{model_tag_pre}.json")
     if os.path.exists(existing_json):
         try:
-            existing_results = json.load(open(existing_json)).get("results", {})
+            with open(existing_json, encoding="utf-8") as stream:
+                existing_doc = json.load(stream)
+            _validate_result_fingerprint(existing_doc, run_fingerprint, existing_json)
+            existing_results = existing_doc.get("results", {})
             loaded_n = len(existing_results)
             if only is not None:
                 print(f"[resume] loaded {loaded_n} existing method(s); "
@@ -338,9 +367,8 @@ def main(cfg: DictConfig):
             elif cfg.get("resume", False):
                 print(f"[resume] loaded {loaded_n} existing method(s); "
                       f"will skip already-done methods", flush=True)
-        except Exception as exc:
-            print(f"[resume] WARNING: could not load {existing_json}: {exc}", flush=True)
-            existing_results = {}
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"Could not read existing result file {existing_json}: {exc}") from exc
 
     results = dict(existing_results)  # start from existing; overwritten per method below
     for name, spec in methods.items():
@@ -352,6 +380,9 @@ def main(cfg: DictConfig):
             continue
         print(f"\n===== {name} =====", flush=True)
         entry = {}
+        if spec.get("method_definition"):
+            entry["method_definition"] = spec["method_definition"]
+            entry["paper_comparable"] = bool(spec.get("paper_comparable", True))
         cap = spec.get("capture", False)            # short reasoning prompts
         cap_long = spec.get("capture_long", False)  # long context (OOM-prone)
 
@@ -393,13 +424,13 @@ def main(cfg: DictConfig):
                 accs_r.append(rr2.accuracy * rr2.n); n_r += rr2.n
             acc_all_r = sum(accs_r) / max(1, n_r)
             se_r, lo_r, hi_r = proportion_stats(int(round(acc_all_r * n_r)), n_r)
-            entry["ruler"] = {
+            entry["synthetic_multikey"] = {
                 "accuracy": round(acc_all_r, 4),
                 "accuracy_stderr": round(se_r, 4),
                 "accuracy_ci95": [round(lo_r, 4), round(hi_r, 4)],
                 "mem_fraction": round(sum(mems_r) / max(1, len(mems_r)), 4),
                 "by_length": by_len_r, "n": n_r}
-            print("  ruler:", entry["ruler"], flush=True)
+            print("  synthetic_multikey:", entry["synthetic_multikey"], flush=True)
 
         # LongBench-E: end-to-end long-context generation (TurboQuant Table 1).
         # cache_factory ignores ctx (codec/graded caches are length-agnostic);
@@ -408,10 +439,10 @@ def main(cfg: DictConfig):
             lb = longbench_e(
                 model, tok,
                 cache_factory=(spec["reason"] if spec["evict"]
-                               else lambda: spec["make"](cfg.get("longbench_max_length", 7500))),
+                               else lambda: spec["make"](cfg.get("longbench_max_length", 32768))),
                 tasks=list(cfg.get("longbench_tasks", [])) or None,
-                max_length=cfg.get("longbench_max_length", 7500),
-                limit_per_task=cfg.get("longbench_limit", 20),
+                max_length=cfg.get("longbench_max_length", 32768),
+                limit_per_task=cfg.get("longbench_limit", None),
                 evict=spec["evict"],
                 attn_capture=cap_long)
             entry["longbench"] = lb.as_dict()
@@ -421,7 +452,7 @@ def main(cfg: DictConfig):
             rr = gsm8k_pass_at_1(
                 model, tok, cache_factory=spec["reason"],
                 limit=cfg.gsm8k_limit, max_new_tokens=cfg.max_new_reason,
-                attn_capture=cap)
+                attn_capture=cap, sample_seed=cfg.get("sample_seed", 0))
             entry["gsm8k"] = rr.as_dict()
             print("  gsm8k:", rr.as_dict(), flush=True)
 
@@ -430,7 +461,7 @@ def main(cfg: DictConfig):
                 model, tok, cache_factory=spec["reason"],
                 limit=cfg.get("math_limit", 50),
                 max_new_tokens=cfg.get("max_new_math", 3072),
-                attn_capture=cap)
+                attn_capture=cap, sample_seed=cfg.get("sample_seed", 0))
             entry["math500"] = rm.as_dict()
             print("  math500:", rm.as_dict(), flush=True)
 
@@ -444,13 +475,12 @@ def main(cfg: DictConfig):
                 limit=cfg.get("aime_limit", 30),
                 k=cfg.get("aime_k", 8),
                 max_new_tokens=cfg.get("max_new_aime", 8192),
-                attn_capture=cap)
+                attn_capture=cap, sample_seed=cfg.get("sample_seed", 0))
             entry[f"aime{aime_year}"] = ra.as_dict()
             print(f"  aime{aime_year}:", ra.as_dict(), flush=True)
 
-        # LiveCodeBench (functional subset): ThinKV's code axis. Either a local
-        # JSONL of {prompt, entry_point, test} (lcb_problems_path) or the HF
-        # dataset (lcb_dataset). pass@1 with the same CI as the math evals.
+        # HumanEval-shaped functional-code smoke axis. This is deliberately not
+        # named LiveCodeBench: official LCB requires its APPS checker/runner.
         if cfg.get("run_livecodebench", False):
             problems = _load_lcb_problems(cfg)
             rc = livecodebench_pass_at_1(
@@ -459,17 +489,25 @@ def main(cfg: DictConfig):
                 split=cfg.get("lcb_split", "test"),
                 limit=cfg.get("lcb_limit", 50), problems=problems,
                 k=cfg.get("lcb_k", 1), max_new_tokens=cfg.get("max_new_code", 4096),
-                timeout=cfg.get("lcb_timeout", 6.0), attn_capture=cap)
-            entry["livecodebench"] = rc.as_dict()
-            print("  livecodebench:", rc.as_dict(), flush=True)
+                timeout=cfg.get("lcb_timeout", 6.0), attn_capture=cap,
+                sample_seed=cfg.get("sample_seed", 0))
+            entry["functional_code_smoke"] = rc.as_dict()
+            print("  functional_code_smoke:", rc.as_dict(), flush=True)
 
         if cfg.run_ppl:
             pp = wikitext2_perplexity(
                 model, tok, cache_factory=spec["reason"],
                 max_length=cfg.ppl_max_length, stride=cfg.ppl_stride,
                 max_windows=cfg.ppl_windows)
-            entry["ppl"] = {k: round(float(v), 4) for k, v in pp.items()
-                            if isinstance(v, (int, float))}
+            # Preserve provenance/completeness as typed values. The previous
+            # numeric-only conversion silently dropped the dataset source and
+            # turned booleans into 0.0/1.0, making capped PPL look official.
+            entry["ppl"] = {
+                key: (round(float(value), 4)
+                      if isinstance(value, float)
+                      else value)
+                for key, value in pp.items()
+            }
             print("  ppl:", entry["ppl"], flush=True)
 
         # Targeted re-run (cfg.methods=[X,Y,...]): merge the newly computed
@@ -484,16 +522,21 @@ def main(cfg: DictConfig):
             results[name] = entry
         # Persist after every method so a long multi-method sweep is crash-safe
         # (a failure late in the run still leaves the completed methods on disk).
-        _save(cfg, results)
+        # Persist only the method touched by this process. Passing a complete
+        # stale in-memory snapshot can overwrite fields a concurrent shard added
+        # after this process started.
+        _save(cfg, {name: entry}, run_fingerprint)
 
     model_tag = os.path.basename(str(cfg.model_path).rstrip("/"))
-    out_json = _save(cfg, results)
+    out_json = _save(cfg, {}, run_fingerprint)
+    with open(out_json, encoding="utf-8") as stream:
+        results = json.load(stream)["results"]
     print(f"\nWrote {out_json}")
     print(_markdown_table(model_tag, results))
 
 
 def _load_lcb_problems(cfg):
-    """Local LiveCodeBench problems (JSONL of {prompt, entry_point, test}) or None.
+    """Local HumanEval-shaped problems ({prompt, entry_point, test}) or None.
 
     Returning ``None`` lets ``livecodebench_pass_at_1`` load the HF dataset itself.
     A local file is the reproducible path for the functional subset on an offline
@@ -511,7 +554,38 @@ def _load_lcb_problems(cfg):
     return problems
 
 
-def _save(cfg, results) -> str:
+_RESULT_SCHEMA_VERSION = 2
+_NON_SEMANTIC_CONFIG_KEYS = {"methods", "output_dir", "resume"}
+
+
+def _semantic_config(cfg) -> dict:
+    """Return config fields that must match before result shards may be merged."""
+    raw = OmegaConf.to_container(cfg, resolve=True)
+    return {
+        key: value for key, value in raw.items()
+        if key not in _NON_SEMANTIC_CONFIG_KEYS and not key.startswith("run_")
+    }
+
+
+def _config_fingerprint(cfg) -> str:
+    payload = json.dumps(_semantic_config(cfg), sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _validate_result_fingerprint(doc: dict, expected: str, path: str) -> None:
+    actual = doc.get("run_fingerprint")
+    if doc.get("schema_version") != _RESULT_SCHEMA_VERSION or actual is None:
+        raise RuntimeError(
+            f"Refusing to merge legacy result file {path}. Move it aside or choose a new output_dir."
+        )
+    if actual != expected:
+        raise RuntimeError(
+            f"Refusing to merge results from a different configuration in {path}: "
+            f"expected {expected[:12]}, found {actual[:12]}. Use a new output_dir."
+        )
+
+
+def _save(cfg, results, run_fingerprint=None) -> str:
     """Persist results to disk, merging with any on-disk state written by
     concurrent jobs since this process started.  The in-memory ``results``
     (freshly computed by *this* job) take precedence over on-disk entries for
@@ -522,16 +596,46 @@ def _save(cfg, results) -> str:
     os.makedirs(cfg.output_dir, exist_ok=True)
     model_tag = os.path.basename(str(cfg.model_path).rstrip("/"))
     out_json = os.path.join(cfg.output_dir, f"results_{model_tag}.json")
-    # Re-read whatever is currently on disk and layer our fresh results on top.
-    try:
-        with open(out_json) as f:
-            on_disk = json.load(f).get("results", {})
-    except (FileNotFoundError, json.JSONDecodeError):
-        on_disk = {}
-    merged = {**on_disk, **results}   # our results win for shared keys
-    with open(out_json, "w") as f:
-        json.dump({"model": model_tag, "config": OmegaConf.to_container(cfg, resolve=True),
-                   "results": merged}, f, indent=2)
+    fingerprint = run_fingerprint or _config_fingerprint(cfg)
+    lock_path = out_json + ".lock"
+    with FileLock(lock_path):
+        try:
+            with open(out_json, encoding="utf-8") as stream:
+                on_disk_doc = json.load(stream)
+            _validate_result_fingerprint(on_disk_doc, fingerprint, out_json)
+            on_disk = on_disk_doc.get("results", {})
+        except FileNotFoundError:
+            on_disk = {}
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"Existing result file is not valid JSON: {out_json}") from exc
+        # Merge at benchmark-field granularity. Parallel shards commonly write
+        # different axes (PPL vs AIME) for the same method; replacing the whole
+        # method entry loses the first shard. Fresh values win only for fields
+        # this process actually recomputed.
+        merged = {name: dict(entry) for name, entry in on_disk.items()}
+        for name, fresh in results.items():
+            entry = dict(merged.get(name, {}))
+            entry.update(fresh)
+            merged[name] = entry
+        doc = {
+            "schema_version": _RESULT_SCHEMA_VERSION,
+            "run_fingerprint": fingerprint,
+            "model": model_tag,
+            "config": OmegaConf.to_container(cfg, resolve=True),
+            "semantic_config": _semantic_config(cfg),
+            "results": merged,
+        }
+        fd, tmp_path = tempfile.mkstemp(prefix=f".{os.path.basename(out_json)}.",
+                                        suffix=".tmp", dir=cfg.output_dir)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                json.dump(doc, stream, indent=2)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(tmp_path, out_json)
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
     return out_json
 
 
@@ -556,16 +660,16 @@ def _markdown_table(model_tag, results) -> str:
     aime_cols = [f"AIME-{y} p@1" for y in aime_years]
     has_lb = any("longbench" in e for e in results.values())
     lb_cols = ["LongBench-E"] if has_lb else []
-    has_lcb = any("livecodebench" in e for e in results.values())
-    lcb_cols = ["LiveCodeBench p@1"] if has_lcb else []
-    header = (["Method", "Needle acc", "RULER acc"] + lb_cols
+    has_lcb = any("functional_code_smoke" in e for e in results.values())
+    lcb_cols = ["Functional-code smoke p@1"] if has_lcb else []
+    header = (["Method", "Needle acc", "Synthetic multi-key acc"] + lb_cols
               + ["Mem", "GSM8K p@1", "MATH p@1"] + aime_cols + lcb_cols + ["PPL"])
     lines = [f"\n### {model_tag}", "",
              "| " + " | ".join(header) + " |",
              "| " + " | ".join(["---"] + ["---:"] * (len(header) - 1)) + " |"]
     for name, e in results.items():
         nd = e.get("needle", {})
-        ru = e.get("ruler", {})
+        ru = e.get("synthetic_multikey", {})
         lb = e.get("longbench", {})
         gs = e.get("gsm8k", {})
         ma = e.get("math500", {})
@@ -574,14 +678,15 @@ def _markdown_table(model_tag, results) -> str:
         mem = nd.get("mem_fraction", lb.get("mem_fraction", ru.get("mem_fraction", "")))
         # Reasoning columns carry their 95% CI half-width; needle carries its CI too.
         aime_vals = [_fmt_ci(e.get(f"aime{y}", {})) for y in aime_years]
-        row = [name, _fmt_ci(nd, "accuracy", "accuracy_ci95"),
+        display_name = e.get("method_definition", name)
+        row = [display_name, _fmt_ci(nd, "accuracy", "accuracy_ci95"),
                _fmt_ci(ru, "accuracy", "accuracy_ci95")]
         if has_lb:
             row.append(str(lb.get("score", "")))
         row += [str(mem), _fmt_ci(gs), _fmt_ci(ma)]
         row += aime_vals
         if has_lcb:
-            row.append(_fmt_ci(e.get("livecodebench", {})))
+            row.append(_fmt_ci(e.get("functional_code_smoke", {})))
         row += [str(ppl_val)]
         lines.append("| " + " | ".join(row) + " |")
     return "\n".join(lines)

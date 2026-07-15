@@ -21,7 +21,7 @@ logger = getLogger(__name__)
 
 def build_compressed_cache(model, kv_config: KVCompressionConfig,
                            sink_tokens: int = 4,
-                           recent_tokens: int = 0) -> CompressedDynamicCache:
+                           recent_tokens: Optional[int] = None) -> CompressedDynamicCache:
     """Build a :class:`CompressedDynamicCache` for ``model`` from ``kv_config``.
 
     ``sink_tokens`` leading tokens are kept in full precision (StreamingLLM /
@@ -29,10 +29,30 @@ def build_compressed_cache(model, kv_config: KVCompressionConfig,
     ``recent_tokens`` trailing tokens are kept in full precision for
     prefill-sized updates.
     """
+    plan = kv_config.policy.plan() if kv_config.policy is not None else None
+    codec = (plan.codec if plan is not None and plan.codec is not None else kv_config.codec)
+    selector = (
+        plan.selector if plan is not None and plan.selector is not None else kv_config.selector
+    )
+    if selector is not None:
+        # Attention-aware selectors need query/attention integration and eviction
+        # must run during decode. A plain DynamicCache passed to HF generate cannot
+        # do either. Fail loudly instead of silently producing a mislabeled FullKV
+        # or quant-only run.
+        raise NotImplementedError(
+            f"Selector {selector.name!r} is not supported by kv_compressed_generate; "
+            "use an attention-integrated/native cache backend."
+        )
     config = getattr(model, "config", None)
+    if recent_tokens is None:
+        recent_tokens = (
+            plan.residual_window if plan is not None and plan.residual_window is not None
+            else kv_config.residual_window
+        )
     return CompressedDynamicCache(
-        codec=kv_config.codec, config=config,
-        skip_layers=kv_config.codec.skip_layers if kv_config.codec else None,
+        codec=codec, config=config,
+        skip_layers=(plan.skip_layers if plan is not None and plan.skip_layers
+                     else (codec.skip_layers if codec else None)),
         sink_tokens=sink_tokens,
         recent_tokens=recent_tokens,
     )
@@ -49,7 +69,9 @@ def kv_compressed_generate(model, kv_config: Optional[KVCompressionConfig] = Non
     Returns:
         The output of ``model.generate``.
     """
-    if kv_config is not None and kv_config.codec is not None:
+    if kv_config is not None and any(
+        component is not None for component in (kv_config.codec, kv_config.selector, kv_config.policy)
+    ):
         if "past_key_values" in gen_kwargs and gen_kwargs["past_key_values"] is not None:
             logger.warning("Overriding provided past_key_values with CompressedDynamicCache")
         gen_kwargs["past_key_values"] = build_compressed_cache(model, kv_config)

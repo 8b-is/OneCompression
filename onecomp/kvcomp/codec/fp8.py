@@ -30,6 +30,7 @@ class FP8Codec(KVCodec):
     bits: int = 8
     key_axis: str = "token"
     value_axis: str = "token"
+    scale_bits: int = 32
 
     def validate_params(self):
         for attr in ("key_axis", "value_axis"):
@@ -42,7 +43,13 @@ class FP8Codec(KVCodec):
         # the dequantized tensor, matching the weight side's behaviour.)
         kq = fake_quantize_fp8(key, axis=self.key_axis)
         vq = fake_quantize_fp8(value, axis=self.value_axis)
-        stored = (key.numel() + value.numel()) * 8
+        def n_scales(x, axis):
+            reduced = x.shape[-1] if axis == "token" else x.shape[-2]
+            return x.numel() // reduced
+
+        stored = (key.numel() + value.numel()) * 8 + self.scale_bits * (
+            n_scales(key, self.key_axis) + n_scales(value, self.value_axis)
+        )
         return CompressedKV(
             key_q=kq,
             value_q=vq,
@@ -52,3 +59,8 @@ class FP8Codec(KVCodec):
     def decode(self, compressed: CompressedKV, ctx=None):
         dtype = compressed.meta.get("dtype", torch.float16)
         return compressed.key_q.to(dtype), compressed.value_q.to(dtype)
+
+    def get_kv_config(self) -> dict:
+        cfg = super().get_kv_config()
+        cfg["scale_bits"] = self.scale_bits
+        return cfg

@@ -29,8 +29,8 @@ timing_heads: 8
 timing_seq: 1024
 timing_iters: 100            # more iterations for tighter timing estimate
 
-# PPL: 32 WikiText-2 windows to match the longcontext benchmark resolution
+# PPL: complete WikiText-2 raw test split (no window cap)
 run_ppl: true
 ppl_max_length: 2048
 ppl_stride: 1024
-ppl_windows: 32
+ppl_windows: null

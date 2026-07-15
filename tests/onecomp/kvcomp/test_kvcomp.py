@@ -31,6 +31,8 @@ from onecomp.kvcomp.codec.rotation import (
 from onecomp.kvcomp.codec.turboquant import TurboQuantCodec, _codebook, _qjl_projection_on
 from onecomp.kvcomp.codec.halo import HALOCodec
 from onecomp.kvcomp.codec.hayate import HayateQuantCodec
+from onecomp.kvcomp.codec.hayate.codec import _block_codebook_on
+from onecomp.kvcomp.codec.hayate.vq import lookup_codewords
 from onecomp.kvcomp.codec.hayate.recipes import (
     HQ_FRONTIER_KEY_SCALE_MODE,
     build_hayate_adaptive2,
@@ -195,11 +197,12 @@ def test_halo_precond_off_matches_turboquant_quality():
     assert float((h.decode(h.encode(x, x))[0] - x).pow(2).mean()) < 1.0
 
 
-def test_halo_non_pow2_hadamard_falls_back():
+def test_halo_non_pow2_hadamard_uses_dense_rotated_quantizer():
     x = torch.randn(1, 2, 16, 96)  # 96 not power of two
     h = HALOCodec(bits=4, rotation_mode="hadamard")
     enc = h.encode(x, x)
-    assert enc.meta.get("fallback") or enc.meta.get("passthrough")
+    assert not enc.meta.get("fallback")
+    assert enc.key_q["kind"] == "d"
     assert h.decode(enc)[0].shape == x.shape
 
 
@@ -235,7 +238,7 @@ def test_halo_hadamard_gemm_matches_wht_quality():
     rms_kw = dict(key_scale_mode="rms", value_scale_mode="rms")
     hg = HALOCodec(bits=4, rotation_mode="hadamard_gemm", **rms_kw)
     hw = HALOCodec(bits=4, rotation_mode="hadamard", **rms_kw)
-    tq = TurboQuantCodec(bits=4, rotation_mode="hadamard")
+    tq = TurboQuantCodec(bits=4, rotation_mode="hadamard", dist="gaussian")
     m_hg = float((hg.decode(hg.encode(x, x))[0] - x).pow(2).mean())
     m_hw = float((hw.decode(hw.encode(x, x))[0] - x).pow(2).mean())
     m_tq = float((tq.decode(tq.encode(x, x))[0] - x).pow(2).mean())
@@ -351,8 +354,8 @@ def test_halo_stateless_precond_no_ema():
 
 # --- HALO outlier mixed-precision (lever 3) -------------------------------
 @pytest.mark.parametrize("rot", ["auto", "hadamard_gemm", "dense"])
-@pytest.mark.parametrize("n_o,ob,base,eff", [(64, 3, 2, 2.5), (64, 4, 3, 3.5),
-                                             (32, 3, 2, 2.25)])
+@pytest.mark.parametrize("n_o,ob,base,eff", [(32, 3, 2, 2.5), (32, 4, 3, 3.5),
+                                             (64, 3, 2, 2.75)])
 def test_halo_outlier_roundtrip_and_accounting(rot, n_o, ob, base, eff):
     x, _ = _kv(h=4, s=64)  # head_dim 128
     b, h, s, d = x.shape
@@ -365,16 +368,16 @@ def test_halo_outlier_roundtrip_and_accounting(rot, n_o, ob, base, eff):
     vecs = b * h * s * 2
     payload = vecs * (n_o * ob + (d - n_o) * base)
     assert enc.meta["stored_bits"] == payload + vecs * 2 * 16
-    assert abs(payload / (vecs * d) - eff) < 1e-6
+    assert abs(enc.meta["stored_bits"] / (vecs * d) - eff) < 1e-6
 
 
 def test_halo_outlier_matches_turboquant_storage():
     # HALO and TurboQuant compute identical mixed-precision storage at the same
     # split, so the 2.5/3.5-bit comparison table is iso-memory.
     x, _ = _kv(h=4, s=64)
-    hh = HALOCodec(bits=2, n_outlier=64, outlier_bits=3, rotation_mode="hadamard",
+    hh = HALOCodec(bits=2, n_outlier=32, outlier_bits=3, rotation_mode="hadamard",
                    key_scale_mode="nc", value_scale_mode="ls")
-    tq = TurboQuantCodec(bits=2, n_outlier=64, outlier_bits=3, rotation_mode="hadamard")
+    tq = TurboQuantCodec(bits=2, n_outlier=32, outlier_bits=3, rotation_mode="hadamard")
     assert hh.encode(x, x).meta["stored_bits"] == tq.encode(x, x).meta["stored_bits"]
 
 
@@ -383,7 +386,7 @@ def test_halo_outlier_beats_uniform_on_anisotropic_kv():
     # reconstruction MSE vs uniform base bits at the SAME nominal base.
     x = torch.randn(2, 4, 64, 128)
     x[..., [3, 17, 40, 91]] *= 12.0
-    mix = HALOCodec(bits=2, n_outlier=64, outlier_bits=3, rotation_mode="dense",
+    mix = HALOCodec(bits=2, n_outlier=32, outlier_bits=3, rotation_mode="dense",
                     key_scale_mode="nc")
     uni = HALOCodec(bits=2, rotation_mode="dense", key_scale_mode="nc")
     mse_mix = (mix.decode(mix.encode(x, x))[0] - x).pow(2).sum()
@@ -402,7 +405,7 @@ def test_hayatequant_block_size_1_matches_turboquant():
     for rot in ("hadamard", "dense"):
         hq = HayateQuantCodec(bits=4, block_size=1, rotation_mode=rot,
                                key_scale_mode="rms", value_scale_mode="rms")
-        tq = TurboQuantCodec(bits=4, rotation_mode=rot)
+        tq = TurboQuantCodec(bits=4, rotation_mode=rot, dist="gaussian")
         mse_hq = float((hq.decode(hq.encode(x, x))[0] - x).pow(2).mean())
         mse_tq = float((tq.decode(tq.encode(x, x))[0] - x).pow(2).mean())
         assert abs(mse_hq - mse_tq) < 1e-6
@@ -640,9 +643,9 @@ def test_hayatequant_outlier_mixed_precision_matches_halo_accounting():
     # HayateQuant inherits HALO/TurboQuant's outlier mixed-precision accounting
     # verbatim (same n_outlier/outlier_bits split logic) at block_size=1.
     x, _ = _kv(h=4, s=64)
-    hq = HayateQuantCodec(bits=2, block_size=1, n_outlier=64, outlier_bits=3,
+    hq = HayateQuantCodec(bits=2, block_size=1, n_outlier=32, outlier_bits=3,
                           rotation_mode="hadamard")
-    ha = HALOCodec(bits=2, n_outlier=64, outlier_bits=3, rotation_mode="hadamard")
+    ha = HALOCodec(bits=2, n_outlier=32, outlier_bits=3, rotation_mode="hadamard")
     assert hq.encode(x, x).meta["stored_bits"] == ha.encode(x, x).meta["stored_bits"]
 
 
@@ -1080,6 +1083,36 @@ def test_hayatequant_qjl_outlier_accounting_counts_two_rms():
     assert s1 - s0 == x.numel() * 2 * 1 + vecs * 2 * 16
 
 
+def test_hayatequant_qjl_uses_gaussian_projection_formula():
+    """HayateQuant QJL must match TurboQuant's Gaussian residual sketch."""
+    torch.manual_seed(0)
+    x = torch.randn(1, 2, 8, 32)
+    c = HayateQuantCodec(
+        bits=2, block_size=2, rotation_mode="dense", use_qjl=True, seed=13
+    )
+    enc = c.encode(x, x)
+    p = enc.key_q["main"]
+    cb = _block_codebook_on(
+        p["bits"], p["block_size"], p["dist"], p["m"],
+        p["codebook_init"], str(x.device),
+    )
+    xr, _ = c._rotate(x, p["m"], p["block_size"], p["bits"], "k")
+    recon = lookup_codewords(cb, p["codes"]).reshape_as(xr) * p["scale"]
+    resid = xr - recon
+    proj = _qjl_projection_on(p["m"], p["qjl_seed"], str(x.device))
+    projected = (resid.reshape(-1, p["m"]) @ proj.t()).reshape_as(resid)
+
+    assert torch.equal(p["qjl_sign"], projected >= 0)
+    assert torch.allclose(p["qjl_norm"], resid.norm(dim=-1, keepdim=True), atol=1e-6)
+
+    sign = torch.where(p["qjl_sign"], 1.0, -1.0).float()
+    expected_rot = recon + (
+        sign.reshape(-1, p["m"]) @ proj
+    ).reshape_as(resid) * (torch.sqrt(torch.tensor(torch.pi / 2.0)) / p["m"]) * p["qjl_norm"]
+    got_rot, _ = c._rotate(c.decode(enc)[0], p["m"], p["block_size"], p["bits"], "k")
+    assert torch.allclose(got_rot, expected_rot, atol=1e-5)
+
+
 def test_hayatequant_large_codebook_not_worse_at_3bit():
     # max_codebook_bits=12 lets 3-bit resolve block_size=4 (K=4096), which the
     # O(T) LUT encoder makes affordable; the bigger joint codebook must not do
@@ -1095,17 +1128,21 @@ def test_hayatequant_large_codebook_not_worse_at_3bit():
     assert mse_b <= mse_s * 1.02
 
 
-# --- honest fallback / QJL accounting (memo A-6, A-7) ---------------------
-def test_fallback_affine_accounting_counts_scale_zero():
-    # Non-power-of-two head dim falls back to per-token affine; the stored-bits
-    # must count the scale + zero metadata (two fp16 per vector), not just codes.
+# --- non-power-of-two rotation / QJL accounting (memo A-6, A-7) -----------
+def test_non_power_of_two_hadamard_preserves_rotated_codec():
+    # A Hadamard is undefined at d=96. The codec records a dense QR rotation
+    # instead of silently changing the requested algorithm to affine INT.
     kf = torch.randn(1, 2, 8, 96)
     for codec in (HALOCodec(bits=4, rotation_mode="hadamard"),
                   TurboQuantCodec(bits=4, rotation_mode="hadamard")):
         enc = codec.encode(kf, kf)
-        assert enc.meta.get("fallback")
+        assert not enc.meta.get("fallback")
         vecs = 1 * 2 * 8
-        assert enc.meta["stored_bits"] == kf.numel() * 4 * 2 + (vecs * 2) * 2 * 16
+        assert enc.meta["stored_bits"] == kf.numel() * 4 * 2 + (vecs * 2) * 16
+        if isinstance(codec, HALOCodec):
+            assert enc.key_q["kind"] == "d"
+        else:
+            assert enc.key_q["main"]["rot"][0] == "d"
 
 
 def test_turboquant_qjl_counts_residual_norm():
@@ -1585,9 +1622,10 @@ def test_vllm_mapping_lowbit_needs_custom_backend(name):
     (3, None, "turboquant_3bit_nc"),
     (3, 3, "turboquant_3bit_nc"),
 ])
-def test_vllm_mapping_turboquant_native_presets(bits, vbits, preset):
+def test_vllm_mapping_turboquant_native_presets(bits, vbits, preset, monkeypatch):
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
+    monkeypatch.setenv("KVCOMP_VLLM_TURBOQUANT_MODE", "native")
     codec = {"name": "turboquant", "bits": bits}
     if vbits is not None:
         codec["value_bits"] = vbits
@@ -1604,19 +1642,21 @@ def test_vllm_mapping_turboquant_unsupported_bits_custom():
     assert p.needs_custom_backend and p.kv_cache_dtype == "auto"
 
 
-def test_vllm_mapping_halo_maps_to_turboquant_with_warning():
+def test_vllm_mapping_halo_maps_to_turboquant_with_warning(monkeypatch):
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
+    monkeypatch.setenv("KVCOMP_VLLM_TURBOQUANT_MODE", "native")
     p = plan_from_kv_config({"codec": {"name": "halo", "bits": 4}})
     assert p.native_supported and p.kv_cache_dtype == "turboquant_4bit_nc"
     # honestly warns that vLLM runs faithful TurboQuant (no HALO LS/hadamard-gemm)
     assert any("HALO" in w for w in p.warnings)
 
 
-def test_vllm_mapping_hayatequant_block_size_1_native():
+def test_vllm_mapping_hayatequant_block_size_1_native(monkeypatch):
     # block_size=1 is TurboQuant/HALO-equivalent -> same native preset path.
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
+    monkeypatch.setenv("KVCOMP_VLLM_HAYATEQUANT_MODE", "native")
     p = plan_from_kv_config({"codec": {"name": "hayatequant", "bits": 4, "block_size": 1}})
     assert p.native_supported and p.kv_cache_dtype == "turboquant_4bit_nc"
     assert any("HayateQuant" in w for w in p.warnings)
@@ -1651,21 +1691,25 @@ def test_vllm_mapping_hayatequant_adaptive_rate_needs_custom_backend():
     assert "adaptive_bit_split" in notes
 
 
-def test_vllm_mapping_hayatequant_block_vq_native_default(monkeypatch):
-    """Block-VQ HayateQuant defaults to the native vLLM backend override when
-    a byte-compatible TurboQuant preset exists."""
+def test_vllm_mapping_hayatequant_block_vq_is_strict_by_default(monkeypatch):
+    """The key-only vLLM hybrid must never be mistaken for full HayateQuant."""
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
     monkeypatch.delenv("KVCOMP_VLLM_HAYATEQUANT_MODE", raising=False)
     monkeypatch.delenv("KVCOMP_VLLM_SCALAR_FALLBACK", raising=False)
     codec = {"name": "hayatequant", "bits": 3, "block_size": 4}
     p = plan_from_kv_config({"codec": codec})
-    assert p.native_supported and p.kv_cache_dtype == "turboquant_3bit_nc"
-    assert not p.needs_custom_backend
-    assert p.hayate_native
-    assert p.hayate_config["bits"] == 3
-    assert p.hayate_config["key_scale_mode"] == "nc"
-    assert any("native HayateQuant" in n for n in p.notes)
+    assert p.needs_custom_backend and not p.native_supported
+    assert p.kv_cache_dtype == "auto" and not p.hayate_native
+
+    monkeypatch.setenv("KVCOMP_VLLM_HAYATEQUANT_MODE", "native")
+    p_native = plan_from_kv_config({"codec": codec})
+    assert p_native.native_supported and p_native.kv_cache_dtype == "turboquant_3bit_nc"
+    assert not p_native.needs_custom_backend and p_native.hayate_native
+    assert p_native.hayate_config["bits"] == 3
+    assert p_native.hayate_config["key_scale_mode"] == "nc"
+    assert any("EXPERIMENTAL APPROXIMATION" in n for n in p_native.notes)
+    assert any("key-only" in w for w in p_native.warnings)
 
     monkeypatch.setenv("KVCOMP_VLLM_HAYATEQUANT_MODE", "scalar_fallback")
     p_fb = plan_from_kv_config({"codec": codec})
@@ -1688,6 +1732,7 @@ def test_vllm_mapping_hayatequant_block_vq_native_key_ub():
         "name": "hayatequant",
         "bits": 3,
         "block_size": 4,
+        "vllm_mode": "native",
         "key_scale_mode": "ub",
         "codebook_init": "fibquant",
     }
@@ -1757,14 +1802,8 @@ def test_vllm_mapping_hayatequant_block_vq_detection_matches_resolve_block_size(
     assert (real_block_size > 1) == expect_block_vq
     p = plan_from_kv_config({"codec": codec.get_kv_config()})
     if expect_block_vq:
-        if bits in (3, 4):
-            assert p.native_supported and not p.needs_custom_backend
-            assert p.kv_cache_dtype in ("turboquant_3bit_nc", "turboquant_4bit_nc")
-            assert p.hayate_native
-            assert any("native HayateQuant" in n for n in p.notes)
-        else:
-            assert p.needs_custom_backend and not p.native_supported
-            assert any("block-VQ" in n for n in p.notes)
+        assert p.needs_custom_backend and not p.native_supported
+        assert any("block-VQ" in n or "block_size" in n for n in p.notes)
     else:
         assert not any("block-VQ" in n for n in p.notes)
 
@@ -2030,14 +2069,15 @@ def test_code_pass_at_1_fake_model():
     res = code_pass_at_1(_Model(), _Tok(), problems, cache_factory=None,
                          k=1, max_new_tokens=8)
     d = res.as_dict()
-    assert d["task"] == "livecodebench" and d["pass@1"] == 1.0
+    assert d["task"] == "functional_code_smoke" and d["pass@1"] == 1.0
     assert "pass@1_ci95" in d and d["n"] == 1
 
 
 # --- vLLM mapping: TurboQuant semantic warning + skip_layers propagation ---
-def test_vllm_mapping_turboquant_warns_semantics_and_propagates_skip_layers():
+def test_vllm_mapping_turboquant_warns_semantics_and_propagates_skip_layers(monkeypatch):
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
+    monkeypatch.setenv("KVCOMP_VLLM_TURBOQUANT_MODE", "native")
     p = plan_from_kv_config({"codec": {
         "name": "turboquant", "bits": 4, "value_bits": 4,
         "skip_layers": [0, 1, 34, 35]}})
@@ -2049,9 +2089,10 @@ def test_vllm_mapping_turboquant_warns_semantics_and_propagates_skip_layers():
     assert p.engine_kwargs()["kv_cache_dtype_skip_layers"] == "0,1,34,35"
 
 
-def test_vllm_mapping_turboquant_outlier_and_qjl_warn():
+def test_vllm_mapping_turboquant_outlier_and_qjl_warn(monkeypatch):
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
+    monkeypatch.setenv("KVCOMP_VLLM_TURBOQUANT_MODE", "native")
     p = plan_from_kv_config({"codec": {
         "name": "turboquant", "bits": 4, "value_bits": 4,
         "n_outlier": 32, "use_qjl": True}})
@@ -2059,9 +2100,10 @@ def test_vllm_mapping_turboquant_outlier_and_qjl_warn():
     assert any("use_qjl" in w or "QJL" in w for w in p.warnings)
 
 
-def test_vllm_mapping_hayatequant_role_specific_outlier_warns():
+def test_vllm_mapping_hayatequant_role_specific_outlier_warns(monkeypatch):
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
+    monkeypatch.setenv("KVCOMP_VLLM_HAYATEQUANT_MODE", "native")
     p = plan_from_kv_config({"codec": {
         "name": "hayatequant", "bits": 4, "block_size": 1,
         "key_n_outlier": 32, "value_n_outlier": 0}})
@@ -2070,13 +2112,14 @@ def test_vllm_mapping_hayatequant_role_specific_outlier_warns():
 
 # --- vLLM mapping: rotation-family check against the native Hadamard kernel ---
 @pytest.mark.parametrize("mode", ["hadamard", "hadamard_gemm", "auto", None])
-def test_vllm_mapping_hadamard_family_rotation_is_native_compatible(mode):
+def test_vllm_mapping_hadamard_family_rotation_is_native_compatible(mode, monkeypatch):
     """Hadamard-family rotations (incl. the folded hadamard_gemm and the
     'auto' default that resolves to Hadamard on power-of-two head dims) map
     onto vLLM's native TurboQuant kernel with a confirming note and *no*
     rotation-mismatch warning."""
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
+    monkeypatch.setenv("KVCOMP_VLLM_HAYATEQUANT_MODE", "native")
     codec = {"name": "hayatequant", "bits": 4, "block_size": 1}
     if mode is not None:
         codec["rotation_mode"] = mode
@@ -2087,12 +2130,16 @@ def test_vllm_mapping_hadamard_family_rotation_is_native_compatible(mode):
 
 
 @pytest.mark.parametrize("name", ["turboquant", "halo", "hayatequant"])
-def test_vllm_mapping_dense_rotation_warns(name):
+def test_vllm_mapping_dense_rotation_warns(name, monkeypatch):
     """A dense rotation cannot be reproduced by vLLM's native kernel
     (it hard-codes a randomized Hadamard rotation); the mapping must warn
     loudly instead of silently quantizing under a different transform."""
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
+    if name == "hayatequant":
+        monkeypatch.setenv("KVCOMP_VLLM_HAYATEQUANT_MODE", "native")
+    else:
+        monkeypatch.setenv("KVCOMP_VLLM_TURBOQUANT_MODE", "native")
     codec = {"name": name, "bits": 4, "block_size": 1, "rotation_mode": "dense"}
     p = plan_from_kv_config({"codec": codec})
     # Still mapped (the preset is a valid quantizer) but with an explicit
@@ -2101,12 +2148,13 @@ def test_vllm_mapping_dense_rotation_warns(name):
     assert any("does NOT match" in w and "Hadamard" in w for w in p.warnings)
 
 
-def test_vllm_mapping_hybrid_rotation_at_block_size_1_is_hadamard():
+def test_vllm_mapping_hybrid_rotation_at_block_size_1_is_hadamard(monkeypatch):
     """rotation_mode='hybrid' with block_size=1 degenerates to signed-Hadamard
     (1x1 block rotations are sign flips), so it is native-compatible: a
     confirming note, no rotation-mismatch warning."""
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
+    monkeypatch.setenv("KVCOMP_VLLM_HAYATEQUANT_MODE", "native")
     p = plan_from_kv_config({"codec": {
         "name": "hayatequant", "bits": 4, "block_size": 1,
         "rotation_mode": "hybrid"}})
@@ -2115,13 +2163,14 @@ def test_vllm_mapping_hybrid_rotation_at_block_size_1_is_hadamard():
     assert not any("does NOT match" in w for w in p.warnings)
 
 
-def test_vllm_mapping_hayatequant_real_codec_hadamard_gemm_bs1(tmp_path):
+def test_vllm_mapping_hayatequant_real_codec_hadamard_gemm_bs1(tmp_path, monkeypatch):
     """End-to-end: a real HayateQuantCodec(block_size=1, rotation_mode=
     'hadamard_gemm') get_kv_config() payload maps to the native preset with
     the Hadamard-compatibility note."""
     from onecomp.kvcomp.codec.hayate import HayateQuantCodec
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
+    monkeypatch.setenv("KVCOMP_VLLM_HAYATEQUANT_MODE", "native")
     codec = HayateQuantCodec(bits=3, value_bits=4, block_size=1,
                              rotation_mode="hadamard_gemm")
     p = plan_from_kv_config({"codec": codec.get_kv_config()})

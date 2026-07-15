@@ -82,8 +82,8 @@ halo_variants:
 
 # Faithful TurboQuant references (beta codebook) at the same bit-widths.
 turboquant_variants:
-  - {label: "TurboQuant-3bit", bits: 3, dist: beta}
-  - {label: "TurboQuant-4bit", bits: 4, dist: beta}
+  - {label: "TurboQuant-3bit", bits: 3, dist: beta, rotation_mode: dense}
+  - {label: "TurboQuant-4bit", bits: 4, dist: beta, rotation_mode: dense}
 
 # TaperKV K>=V asymmetry ablation (age-graded ladder; ~matched average bits).
 taperkv:
@@ -111,4 +111,4 @@ run_math: false
 run_ppl: true
 ppl_max_length: 4096
 ppl_stride: 2048
-ppl_windows: 16
+ppl_windows: null            # complete WikiText-2 test split

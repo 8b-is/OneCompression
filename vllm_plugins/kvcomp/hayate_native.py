@@ -1,12 +1,14 @@
 # Copyright 2026 Fujitsu Ltd.
-"""Native vLLM attention backend override for HayateQuant.
+"""Experimental vLLM key-block-VQ/TurboQuant-value backend.
 
 vLLM exposes TurboQuant through fixed ``kv_cache_dtype`` strings.  Rather than
 adding a new dtype to vLLM's pydantic config surface, the OneComp plugin maps a
 HayateQuant model onto the byte-compatible TurboQuant dtype and overrides the
 TurboQuant attention backend in-process.  The cache size and scheduler behavior
 therefore stay identical to upstream vLLM, while the key quantizer uses
-HayateQuant block-VQ codebooks.
+HayateQuant block-VQ codebooks. Values still use upstream TurboQuant's
+uniform scalar quantizer, so this backend is not a faithful HayateQuant
+implementation and is never selected by default.
 """
 
 from __future__ import annotations
@@ -61,13 +63,14 @@ class HayateQuantNativeBackend(TurboQuantAttentionBackend):
 
 
 class HayateQuantNativeImpl(TurboQuantAttentionImpl):
-    """Drop-in replacement for vLLM's TurboQuant implementation.
+    """Explicit opt-in hybrid replacement for vLLM's TurboQuant implementation.
 
     The implementation keeps the upstream TurboQuant value path and cache
     layout, then swaps the key scalar MSE indexer for a HayateQuant block-VQ
     indexer when the model config requests the supported 3/4-bit block_size=2
-    operating point.  Unsupported or non-block settings delegate to upstream
-    TurboQuant so the engine remains serveable.
+    operating point. Values remain uniform scalar-quantized. Unsupported or
+    non-block settings delegate to upstream TurboQuant so the engine remains
+    serveable; benchmark output must label this hybrid distinctly.
     """
 
     def _ensure_on_device(self, layer, device):

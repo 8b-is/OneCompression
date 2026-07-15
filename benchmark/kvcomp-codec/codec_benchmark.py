@@ -36,13 +36,16 @@ Usage (GPU node):
 from __future__ import annotations
 
 import json
+import hashlib
 import os
+import tempfile
 import time
 
 import hydra
 import torch
+from filelock import FileLock
 from omegaconf import DictConfig, OmegaConf
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, DynamicCache
 
 from onecomp.kvcomp import CompressedDynamicCache, detect_outlier_layers
 from onecomp.kvcomp.eval import wikitext2_perplexity
@@ -56,36 +59,39 @@ from onecomp.kvcomp.codec.hayate.recipes import (
 
 
 @torch.no_grad()
-def _capture_real_kv(model, tok, max_tokens=2048):
+def _capture_real_kv(model, tok, max_tokens=2048, skip_layers=None):
     text = ("The history of cartography spans many centuries of patient observation. "
             "Merchants traded spices along routes that crossed deserts and mountains. ") * 64
     ids = tok(text, return_tensors="pt", truncation=True, max_length=max_tokens).input_ids.to(model.device)
     out = model(ids, use_cache=True)
     layers = out.past_key_values.layers
     n = len(layers)
-    pick = [n // 4, n // 2, 3 * n // 4]
+    allowed = [i for i in range(n) if i not in set(skip_layers or [])]
+    if not allowed:
+        raise ValueError("All layers were marked as outliers; cannot capture representative KV")
+    pick = [allowed[min(len(allowed) - 1, int(q * len(allowed)))] for q in (0.25, 0.5, 0.75)]
     ks = torch.cat([layers[i].keys for i in pick], dim=1).float()
     vs = torch.cat([layers[i].values for i in pick], dim=1).float()
     return ks, vs
 
 
 @torch.no_grad()
-def _relmse(codec, x, role="k"):
+def _relmse(codec, key, value, role="k"):
     """Relative MSE for one KV role.
 
-    ``role='k'`` measures key reconstruction quality; ``role='v'`` measures
-    value reconstruction quality.  Passing the same tensor as both key and
-    value lets the codec apply role-specific settings (e.g. HALO's NC scale
-    for keys and LS scale for values) independently -- the decoded output for
-    the requested role is then compared back to the original tensor.
+    K/V are always encoded jointly using the real captured pair. Adaptive codecs
+    choose their K/V bit allocation from joint statistics, so ``encode(x, x)``
+    would measure a different algorithm than the serving path.
     """
-    kd, vd = codec.decode(codec.encode(x, x))
+    kd, vd = codec.decode(codec.encode(key, value))
     decoded = kd if role == "k" else vd
-    return float((decoded.float() - x).pow(2).sum() / x.float().pow(2).sum().clamp_min(1e-12))
+    target = key if role == "k" else value
+    return float((decoded.float() - target).pow(2).sum()
+                 / target.float().pow(2).sum().clamp_min(1e-12))
 
 
 @torch.no_grad()
-def _ms_per_encode(codec, x, iters=50, warmup=10):
+def _ms_per_encode(codec, key, value, iters=50, warmup=10):
     """Encode-only latency (ms) and throughput (Melem/s).
 
     Only times ``codec.encode``; ``codec.decode`` is excluded because the
@@ -93,28 +99,30 @@ def _ms_per_encode(codec, x, iters=50, warmup=10):
     caches) and the two have different complexity profiles.  Warmup runs
     encode+decode so that any lazy device allocations happen before timing.
     """
-    dev = x.device
+    dev = key.device
     for _ in range(warmup):
-        codec.decode(codec.encode(x, x))
+        codec.decode(codec.encode(key, value))
     if dev.type == "cuda":
         torch.cuda.synchronize(dev)
     t0 = time.perf_counter()
     for _ in range(iters):
-        codec.encode(x, x)
+        codec.encode(key, value)
     if dev.type == "cuda":
         torch.cuda.synchronize(dev)
     ms = (time.perf_counter() - t0) / iters * 1e3
-    melem = x.numel() / (ms * 1e-3) / 1e6
+    # One encode consumes both K and V tensors. Report total processed KV
+    # coordinates, not one role (the old value was exactly 2x too small).
+    melem = (key.numel() + value.numel()) / (ms * 1e-3) / 1e6
     return ms, melem
 
 
 @torch.no_grad()
-def _stored_bits_per_coord(codec, x):
-    enc = codec.encode(x, x)
+def _stored_bits_per_coord(codec, key, value):
+    enc = codec.encode(key, value)
     stored = enc.meta.get("stored_bits")
     if stored is None:
         return None
-    return float(stored) / float(2 * x.numel())
+    return float(stored) / float(key.numel() + value.numel())
 
 
 def _kv_asym(bits: int) -> tuple[int, int] | None:
@@ -130,11 +138,114 @@ def _env_calibration(*names: str) -> str | None:
     return None
 
 
+_RESULT_SCHEMA_VERSION = 2
+_NON_SEMANTIC_CONFIG_KEYS = {"bits", "methods", "output_dir"}
+
+
+def _semantic_config(cfg: DictConfig) -> dict:
+    """Fields that must agree before independently-run bit/method shards merge."""
+    raw = OmegaConf.to_container(cfg, resolve=True)
+    return {key: value for key, value in raw.items()
+            if key not in _NON_SEMANTIC_CONFIG_KEYS}
+
+
+def _config_fingerprint(cfg: DictConfig) -> str:
+    canonical = json.dumps(_semantic_config(cfg), sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _validate_existing(doc: dict, expected: str, path: str) -> None:
+    actual = doc.get("run_fingerprint")
+    if doc.get("schema_version") != _RESULT_SCHEMA_VERSION or actual is None:
+        raise RuntimeError(
+            f"Refusing to merge legacy result file {path}. Move it aside or use a new output_dir."
+        )
+    if actual != expected:
+        raise RuntimeError(
+            f"Refusing to merge a different benchmark configuration in {path}: "
+            f"expected {expected[:12]}, found {actual[:12]}."
+        )
+
+
+def _merge_results(on_disk: dict, current: dict) -> dict:
+    """Merge bit shards, refusing a same-name collision with a changed codec."""
+    merged = {str(bits): dict(methods) for bits, methods in on_disk.items()}
+    for bits, methods in current.items():
+        bit_key = str(bits)
+        dest = merged.setdefault(bit_key, {})
+        for name, entry in methods.items():
+            old = dest.get(name)
+            if old is not None and old.get("codec_config") != entry.get("codec_config"):
+                raise RuntimeError(
+                    f"Refusing to overwrite {bit_key}bit/{name} with a different codec config."
+                )
+            dest[name] = entry
+    return merged
+
+
+def _save_results(cfg: DictConfig, model_tag: str, head_dim: int, results: dict,
+                  fullkv_ppl: dict | None, skip_layers: set[int]) -> str:
+    """Lock, compatibility-check, merge, and atomically replace the result JSON."""
+    os.makedirs(cfg.output_dir, exist_ok=True)
+    out_json = os.path.join(cfg.output_dir, f"results_{model_tag}.json")
+    fingerprint = _config_fingerprint(cfg)
+    with FileLock(out_json + ".lock"):
+        try:
+            with open(out_json, encoding="utf-8") as stream:
+                old_doc = json.load(stream)
+            _validate_existing(old_doc, fingerprint, out_json)
+            old_results = old_doc.get("results", {})
+            old_fullkv = old_doc.get("fullkv_ppl")
+        except FileNotFoundError:
+            old_results, old_fullkv = {}, None
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"Existing result file is not valid JSON: {out_json}") from exc
+
+        doc = {
+            "schema_version": _RESULT_SCHEMA_VERSION,
+            "run_fingerprint": fingerprint,
+            "model": model_tag,
+            "head_dim": int(head_dim),
+            "config": OmegaConf.to_container(cfg, resolve=True),
+            "semantic_config": _semantic_config(cfg),
+            "skip_layers": sorted(skip_layers),
+            "fullkv_ppl": fullkv_ppl if fullkv_ppl is not None else old_fullkv,
+            "results": _merge_results(old_results, results),
+        }
+        fd, tmp_path = tempfile.mkstemp(
+            prefix=f".{os.path.basename(out_json)}.", suffix=".tmp", dir=cfg.output_dir)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                json.dump(doc, stream, indent=2)
+                stream.write("\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(tmp_path, out_json)
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+    return out_json
+
+
+def _ppl_fields(result: dict) -> dict:
+    """Keep the score together with enough provenance to audit its denominator."""
+    return {
+        "ppl": round(float(result["ppl"]), 4),
+        "ppl_nll": round(float(result["nll"]), 6),
+        "ppl_n_tokens": int(result["n_tokens"]),
+        "ppl_n_windows": int(result["n_windows"]),
+        "ppl_complete_text_eval": bool(result["complete_text_eval"]),
+        "ppl_source": result["source"],
+    }
+
+
 def _codecs(bits, ablation=False):
     # Pareto / lever ablation for the HayateQuant paper (HayateQuant-auto is
     # the proposed method; TurboQuant and HALO rows are baselines):
-    #   TurboQuant-hadamard : Hadamard incoherence via the WHT *butterfly* (slow).
-    #   TurboQuant-dense    : dense random-orthogonal rotation (fast, lower quality).
+    #   TurboQuant-paper    : exact Beta codebook + Gaussian-QR random rotation
+    #                         (Algorithm 1 in the paper).
+    #   TurboQuant-hadamard : fast WHT deployment approximation, kept separate
+    #                         because it does not induce the exact Beta law.
     #   HALO-RMS            : Hadamard incoherence via a *single GEMM* (folded
     #                         signed-Hadamard) + RMS scale -> matches/beats
     #                         TurboQuant-dense speed at strictly better quality
@@ -148,10 +259,12 @@ def _codecs(bits, ablation=False):
     #                         which matters at the coarse low-bit codebook, so this
     #                         fixes the 2-bit PPL edge cases while keeping LS.
     codecs = {
-        "TurboQuant-hadamard": TurboQuantCodec(bits=bits, rotation_mode="hadamard"),
-        "TurboQuant-dense": TurboQuantCodec(bits=bits, rotation_mode="dense"),
+        "TurboQuant-paper": TurboQuantCodec(bits=bits, dist="beta", rotation_mode="dense"),
+        "TurboQuant-hadamard": TurboQuantCodec(
+            bits=bits, dist="beta", rotation_mode="hadamard"),
         **({"TurboQuant-QJL": TurboQuantCodec(bits=bits - 1, value_bits=bits,
-                                              rotation_mode="hadamard", use_qjl=True,
+                                              dist="beta", rotation_mode="dense",
+                                              use_qjl=True,
                                               qjl_roles="key")}
            if bits > 1 else {}),
         "HALO-RMS": HALOCodec(bits=bits, rotation_mode="auto", ls_scale=False),
@@ -271,7 +384,7 @@ def _codecs(bits, ablation=False):
         # (a) scale lever off: block-VQ + hybrid rotation with the
         # TurboQuant-faithful plain RMS scale on both roles. (auto - noscale)
         # = the NC/ls_iter role-asymmetric scale's contribution;
-        # (noscale - TurboQuant-dense) = the pure block-VQ gain with zero
+        # (noscale - TurboQuant-paper) = the pure block-VQ gain with zero
         # confound from the scale.
         "HayateQuant-noscale": HayateQuantCodec(bits=bits, block_size=None,
                                                 rotation_mode="auto", ls_scale=False),
@@ -334,11 +447,6 @@ def main(cfg: DictConfig):
     model = AutoModelForCausalLM.from_pretrained(
         cfg.model_path, dtype=dtype, device_map=cfg.device).eval()
 
-    ks, vs = _capture_real_kv(model, tok, cfg.capture_tokens)
-    D = ks.shape[-1]
-    timing_x = torch.randn(1, cfg.timing_heads, cfg.timing_seq, D, device=model.device)
-    print(f"head_dim={D}; captured KV {tuple(ks.shape)}")
-
     # Detect outlier layers once and skip them uniformly for ALL codecs in the PPL
     # measurement.  Massive-activation outlier layers (common in small Qwen models)
     # destroy generation quality when quantized at any bit-width; skipping them
@@ -347,11 +455,25 @@ def main(cfg: DictConfig):
     # representative non-outlier layers so they are unaffected.
     skip_layers: set = set()
     if getattr(cfg, "skip_outliers", True):
-        calib_text = ("The history of cartography spans many centuries. " * 8)
-        calib_ids = tok(calib_text, return_tensors="pt",
-                        truncation=True, max_length=512).input_ids.to(model.device)
-        skip_layers = set(detect_outlier_layers(model, calib_ids,
-                                               ratio_thresh=getattr(cfg, "outlier_ratio", 50.0)))
+        probe_texts = list(getattr(cfg, "outlier_probes", []) or [
+            "Solve: what is 17 times 23? Reason step by step.",
+            "Repeat the following key exactly: QH-4821-ZX.",
+            "Write a Python function that returns the n-th Fibonacci number.",
+            "Explain briefly why the daytime sky appears blue.",
+        ])
+
+        def _probe_ids(text):
+            if getattr(tok, "chat_template", None):
+                return tok.apply_chat_template(
+                    [{"role": "user", "content": text}], add_generation_prompt=True,
+                    return_tensors="pt", return_dict=True)["input_ids"].to(model.device)
+            return tok(text, return_tensors="pt", truncation=True,
+                       max_length=512).input_ids.to(model.device)
+
+        skip_layers = set(detect_outlier_layers(
+            model, [_probe_ids(text) for text in probe_texts],
+            ratio_thresh=getattr(cfg, "outlier_ratio", 50.0),
+            agg=getattr(cfg, "outlier_agg", "mean")))
         print(f"outlier layers (kept FP16): {sorted(skip_layers)}")
     extra_skip = list(getattr(cfg, "extra_skip_layers", []) or [])
     n_layers = int(getattr(model.config, "num_hidden_layers", 0) or 0)
@@ -374,21 +496,42 @@ def main(cfg: DictConfig):
     if extra_skip:
         print(f"extra skip layers requested: {extra_skip}; effective skip={sorted(skip_layers)}")
 
+    ks, vs = _capture_real_kv(model, tok, cfg.capture_tokens, skip_layers=skip_layers)
+    D = ks.shape[-1]
+    # Independent K/V samples match the serving API and avoid benchmarking an
+    # adaptive allocation policy on the artificial, perfectly-correlated (x,x).
+    with torch.random.fork_rng(devices=[model.device] if model.device.type == "cuda" else []):
+        torch.manual_seed(int(getattr(cfg, "sample_seed", 0)))
+        timing_k = torch.randn(1, cfg.timing_heads, cfg.timing_seq, D, device=model.device)
+        timing_v = torch.randn_like(timing_k)
+    print(f"head_dim={D}; captured non-outlier KV {tuple(ks.shape)}")
+
+    fullkv_ppl = None
+    if cfg.run_ppl:
+        fullkv_ppl = _ppl_fields(wikitext2_perplexity(
+            model, tok, cache_factory=lambda: DynamicCache(config=model.config),
+            max_length=cfg.ppl_max_length,
+            stride=cfg.ppl_stride, max_windows=cfg.ppl_windows))
+        print(f"  [FullKV] {fullkv_ppl}", flush=True)
+
     results = {}
     for bits in list(cfg.bits):
-        results[bits] = {}
+        results[str(bits)] = {}
         codecs = _codecs(bits, ablation=bool(getattr(cfg, "ablation", False)))
         selected = list(getattr(cfg, "methods", []) or [])
         if selected:
+            missing = sorted(set(selected) - set(codecs))
+            if missing:
+                raise ValueError(f"Unknown codec method(s) for {bits} bit: {missing}")
             codecs = {name: codec for name, codec in codecs.items() if name in selected}
         for name, codec in codecs.items():
-            entry = {}
-            entry["distortion_key"] = round(_relmse(codec, ks, role="k"), 5)
-            entry["distortion_value"] = round(_relmse(codec, vs, role="v"), 5)
-            bpc = _stored_bits_per_coord(codec, ks)
+            entry = {"codec_config": codec.get_kv_config()}
+            entry["distortion_key"] = round(_relmse(codec, ks, vs, role="k"), 5)
+            entry["distortion_value"] = round(_relmse(codec, ks, vs, role="v"), 5)
+            bpc = _stored_bits_per_coord(codec, ks, vs)
             if bpc is not None:
                 entry["stored_bits_per_coord"] = round(bpc, 4)
-            ms, melem = _ms_per_encode(codec, timing_x, cfg.timing_iters)
+            ms, melem = _ms_per_encode(codec, timing_k, timing_v, cfg.timing_iters)
             entry["ms_per_encode"] = round(ms, 4)
             entry["throughput_Melem_s"] = round(melem, 1)
             if cfg.run_ppl:
@@ -397,30 +540,32 @@ def main(cfg: DictConfig):
                         codec=c, config=model.config, sink_tokens=cfg.sink_tokens,
                         skip_layers=sl if sl else None),
                     max_length=cfg.ppl_max_length, stride=cfg.ppl_stride, max_windows=cfg.ppl_windows)
-                entry["ppl"] = round(float(pp.get("ppl", pp.get("perplexity", 0.0))), 4)
-            results[bits][name] = entry
+                entry.update(_ppl_fields(pp))
+                entry["ppl_delta_vs_fullkv"] = round(entry["ppl"] - fullkv_ppl["ppl"], 4)
+            results[str(bits)][name] = entry
             print(f"  [{bits}bit] {name}: {entry}", flush=True)
 
-    os.makedirs(cfg.output_dir, exist_ok=True)
     model_tag = os.path.basename(str(cfg.model_path).rstrip("/"))
-    out_json = os.path.join(cfg.output_dir, f"results_{model_tag}.json")
-    with open(out_json, "w") as f:
-        json.dump({"model": model_tag, "head_dim": D,
-                   "config": OmegaConf.to_container(cfg, resolve=True), "results": results}, f, indent=2)
+    out_json = _save_results(cfg, model_tag, D, results, fullkv_ppl, skip_layers)
     print(f"\nWrote {out_json}")
-    print(_markdown(model_tag, D, results))
+    print(_markdown(model_tag, D, results, fullkv_ppl))
 
 
-def _markdown(model_tag, D, results):
+def _markdown(model_tag, D, results, fullkv_ppl=None):
     lines = [f"\n### {model_tag} (head_dim={D})", ""]
+    if fullkv_ppl:
+        scope = "complete test split" if fullkv_ppl["ppl_complete_text_eval"] else "capped subset"
+        lines += [f"FullKV WikiText-2 PPL: {fullkv_ppl['ppl']} ({scope}, "
+                  f"n={fullkv_ppl['ppl_n_tokens']} tokens)", ""]
     for bits, methods in results.items():
         lines += [f"\n**{bits}-bit**", "",
-                  "| Codec | dist(K) | dist(V) | stored b/coord | ms/encode | Melem/s | PPL |",
-                  "|---|---:|---:|---:|---:|---:|---:|"]
+                  "| Codec | dist(K) | dist(V) | stored b/coord | ms/encode | Melem/s | PPL | delta FullKV |",
+                  "|---|---:|---:|---:|---:|---:|---:|---:|"]
         for name, e in methods.items():
             lines.append(f"| {name} | {e.get('distortion_key','')} | {e.get('distortion_value','')} "
                          f"| {e.get('stored_bits_per_coord','')} | {e.get('ms_per_encode','')} "
-                         f"| {e.get('throughput_Melem_s','')} | {e.get('ppl','')} |")
+                         f"| {e.get('throughput_Melem_s','')} | {e.get('ppl','')} "
+                         f"| {e.get('ppl_delta_vs_fullkv','')} |")
     return "\n".join(lines)
 
 

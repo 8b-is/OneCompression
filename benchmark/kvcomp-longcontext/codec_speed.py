@@ -9,7 +9,8 @@ encode and decode (warmup + median over repeats, CUDA-synchronised) **and**
 measures the reconstruction quality (KV-MSE and softmax attention-output error)
 on the *same* tensors, then reports each lever's effect:
 
-  * ``TurboQuant-hadamard``      -- shipped default (butterfly WHT + RMS scale).
+  * ``TurboQuant-hadamard``      -- explicit fast WHT deployment approximation.
+  * ``TurboQuant-paper``         -- exact Beta codebook + Gaussian-QR rotation.
   * ``HALO-hadamard-noLS``       -- HALO with the butterfly + RMS  (== TurboQuant
                                    quality, the internal control).
   * ``HALO-hadamard_gemm-noLS``  -- swap butterfly -> single dense GEMM.  Same
@@ -77,6 +78,7 @@ def _codecs(bits: int) -> dict:
     ("auto", the shipped default -- the actual proposed operating point).
     """
     codecs = {
+        "TurboQuant-paper": TurboQuantCodec(bits=bits, rotation_mode="dense", dist="beta"),
         "TurboQuant-hadamard": TurboQuantCodec(bits=bits, rotation_mode="hadamard", dist="beta"),
         "HALO-hadamard-noLS": HALOCodec(bits=bits, rotation_mode="hadamard", ls_scale=False),
         "HALO-hadamard_gemm-noLS": HALOCodec(bits=bits, rotation_mode="hadamard_gemm", ls_scale=False),

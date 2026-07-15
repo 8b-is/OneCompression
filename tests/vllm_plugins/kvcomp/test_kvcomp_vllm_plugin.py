@@ -72,36 +72,43 @@ def test_apply_to_engine_args_noop_without_model_path():
     assert out.kv_cache_dtype == "auto"
 
 
-def test_apply_to_engine_args_hayatequant_block_size_1_sets_native_dtype(tmp_path):
+def test_apply_to_engine_args_hayatequant_block_size_1_stays_faithful(tmp_path):
     codec = HayateQuantCodec(bits=4, block_size=1)
     model_path = _write_model_config(tmp_path, {"codec": codec.get_kv_config()})
     engine_args = _FakeEngineArgs(model=model_path)
     apply_to_engine_args(engine_args)
-    assert engine_args.kv_cache_dtype == "turboquant_4bit_nc"
+    assert engine_args.kv_cache_dtype == "auto"
 
 
 @pytest.mark.parametrize("bits", [2, 3, 4])
-def test_apply_to_engine_args_hayatequant_default_auto_serves_when_possible(tmp_path, bits):
+def test_apply_to_engine_args_hayatequant_default_auto_is_faithful(tmp_path, bits):
     """The exact regression this test guards: a HayateQuant model saved with
     its *default* ``block_size=None`` ("auto", the recommended/shipped
     setting) must not crash ``apply_to_engine_args``.  Supported 3/4-bit
-    presets keep the byte-compatible TurboQuant dtype but activate OneComp's
-    native HayateQuant key block-VQ backend; unsupported 2-bit remains on the
-    faithful custom/HF path.
+    settings remain on the faithful custom/HF path because the byte-compatible
+    native override only block-quantizes keys, not values.
     """
     codec = HayateQuantCodec(bits=bits)  # block_size left at its None default
     model_path = _write_model_config(tmp_path, {"codec": codec.get_kv_config()})
     engine_args = _FakeEngineArgs(model=model_path)
     apply_to_engine_args(engine_args)  # must not raise
-    expected = {2: "auto", 3: "turboquant_3bit_nc", 4: "turboquant_4bit_nc"}[bits]
-    assert engine_args.kv_cache_dtype == expected
+    assert engine_args.kv_cache_dtype == "auto"
 
 
-def test_apply_to_engine_args_turboquant_unaffected_by_hayatequant_change(tmp_path):
-    # Plain TurboQuant model config still maps to its native preset (no
-    # regression from the hayatequant-specific branch added to the mapper).
+def test_apply_to_engine_args_turboquant_defaults_to_faithful_path(tmp_path):
+    # The native preset changes both the rotation and the value quantizer, so it
+    # must not be selected silently for a serialized OneComp reference codec.
     codec = TurboQuantCodec(bits=8, value_bits=4)
     model_path = _write_model_config(tmp_path, {"codec": codec.get_kv_config()})
+    engine_args = _FakeEngineArgs(model=model_path)
+    apply_to_engine_args(engine_args)
+    assert engine_args.kv_cache_dtype == "auto"
+
+
+def test_apply_to_engine_args_turboquant_native_is_explicit(tmp_path, monkeypatch):
+    codec = TurboQuantCodec(bits=8, value_bits=4)
+    model_path = _write_model_config(tmp_path, {"codec": codec.get_kv_config()})
+    monkeypatch.setenv("KVCOMP_VLLM_TURBOQUANT_MODE", "native")
     engine_args = _FakeEngineArgs(model=model_path)
     apply_to_engine_args(engine_args)
     assert engine_args.kv_cache_dtype == "turboquant_k8v4"
@@ -128,12 +135,12 @@ def test_turboquant_engine_kwargs_rejects_unsupported_preset():
         turboquant_engine_kwargs(2, 2)
 
 
-def test_apply_to_engine_args_halo_still_maps_with_warning(tmp_path):
+def test_apply_to_engine_args_halo_defaults_to_faithful_path(tmp_path):
     codec = HALOCodec(bits=4)
     model_path = _write_model_config(tmp_path, {"codec": codec.get_kv_config()})
     engine_args = _FakeEngineArgs(model=model_path)
     apply_to_engine_args(engine_args)
-    assert engine_args.kv_cache_dtype == "turboquant_4bit_nc"
+    assert engine_args.kv_cache_dtype == "auto"
 
 
 def test_apply_to_engine_args_lowbit_leaves_auto_and_warns(tmp_path):
@@ -151,12 +158,18 @@ def test_plan_for_model_roundtrips_hayatequant_config(tmp_path):
     model_path = _write_model_config(tmp_path, {"codec": codec.get_kv_config()})
     plan = plan_for_model(model_path)
     assert plan.codec_name == "hayatequant"
+    assert plan.needs_custom_backend and not plan.native_supported
+    assert not plan.hayate_native and plan.kv_cache_dtype == "auto"
+
+
+def test_plan_for_model_hayatequant_key_only_native_is_explicit(tmp_path, monkeypatch):
+    codec = HayateQuantCodec(bits=3, block_size=4)
+    model_path = _write_model_config(tmp_path, {"codec": codec.get_kv_config()})
+    monkeypatch.setenv("KVCOMP_VLLM_HAYATEQUANT_MODE", "native")
+    plan = plan_for_model(model_path)
     assert plan.native_supported and not plan.needs_custom_backend
-    assert plan.hayate_native
-    assert plan.kv_cache_dtype == "turboquant_3bit_nc"
-    assert plan.hayate_config["bits"] == 3
-    assert plan.hayate_config["value_bits"] == 3
-    assert not any("NOT reproduced" in w for w in plan.warnings)
+    assert plan.hayate_native and plan.kv_cache_dtype == "turboquant_3bit_nc"
+    assert any("key-only" in warning for warning in plan.warnings)
 
 
 def test_plan_for_model_hayatequant_scalar_fallback_is_explicit(tmp_path, monkeypatch):
@@ -225,10 +238,13 @@ def test_plan_for_model_hayatequant_strict_mode_requires_custom_backend(tmp_path
 
 
 @pytest.mark.parametrize("mode", ["hadamard", "hadamard_gemm"])
-def test_apply_to_engine_args_hayatequant_hadamard_rotation_native(tmp_path, mode):
+def test_apply_to_engine_args_hayatequant_hadamard_rotation_native(
+    tmp_path, mode, monkeypatch
+):
     """A HayateQuant model saved with an explicit Hadamard-family rotation and
     block_size=1 maps to the native TurboQuant preset (vLLM's kernel applies
     the same randomized-Hadamard transform family) with no rotation warning."""
+    monkeypatch.setenv("KVCOMP_VLLM_HAYATEQUANT_MODE", "native")
     codec = HayateQuantCodec(bits=4, block_size=1, rotation_mode=mode)
     model_path = _write_model_config(tmp_path, {"codec": codec.get_kv_config()})
     engine_args = _FakeEngineArgs(model=model_path)
@@ -239,10 +255,11 @@ def test_apply_to_engine_args_hayatequant_hadamard_rotation_native(tmp_path, mod
     assert not any("does NOT match" in w for w in plan.warnings)
 
 
-def test_apply_to_engine_args_hayatequant_dense_rotation_warns(tmp_path):
+def test_apply_to_engine_args_hayatequant_dense_rotation_warns(tmp_path, monkeypatch):
     """Dense rotation still maps to the preset (a valid quantizer) but the plan
     must carry an explicit rotation-mismatch warning -- vLLM's native kernel
     hard-codes Hadamard and would quantize under a different transform."""
+    monkeypatch.setenv("KVCOMP_VLLM_HAYATEQUANT_MODE", "native")
     codec = HayateQuantCodec(bits=4, block_size=1, rotation_mode="dense")
     model_path = _write_model_config(tmp_path, {"codec": codec.get_kv_config()})
     engine_args = _FakeEngineArgs(model=model_path)

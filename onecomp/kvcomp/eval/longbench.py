@@ -15,9 +15,9 @@ Faithful to the official LongBench protocol:
 * the official per-task prompt format, ``max_gen`` and metric,
 * English LongBench-E tasks only.
 
-The metrics are re-implemented with the standard library (token-F1, LCS ROUGE-L,
-``difflib`` code similarity) so no ``rouge``/``fuzzywuzzy``/``jieba`` dependency
-is needed; they match the official definitions on English text.
+The metrics follow THUDM/LongBench's English evaluation definitions.  Length
+buckets always use the dataset's original ``length`` field, never a model
+tokenizer count after truncation.
 
 Copyright 2025-2026 Fujitsu Ltd.
 """
@@ -28,7 +28,6 @@ import re
 import string
 from collections import Counter
 from dataclasses import dataclass, field
-from difflib import SequenceMatcher
 from logging import getLogger
 from typing import Callable, List, Optional
 
@@ -38,7 +37,7 @@ logger = getLogger(__name__)
 
 # Official LongBench English prompt formats (THUDM/LongBench config/dataset2prompt).
 _PROMPT = {
-    "qasper": "You are given a scientific article and a question. Answer the question as concisely as you can, using a single phrase or sentence if possible. If the question cannot be answered based on the information in the article, write \"unanswerable\". If the question is a yes/no question, answer \"yes\", \"no\", or \"unanswerable\".\n\nArticle: {context}\n\n Answer the question based on the above article as concisely as you can, using a single phrase or sentence if possible. If the question cannot be answered based on the information in the article, write \"unanswerable\". If the question is a yes/no question, answer \"yes\", \"no\", or \"unanswerable\".\n\nQuestion: {input}\n\nAnswer:",
+    "qasper": "You are given a scientific article and a question. Answer the question as concisely as you can, using a single phrase or sentence if possible. If the question cannot be answered based on the information in the article, write \"unanswerable\". If the question is a yes/no question, answer \"yes\", \"no\", or \"unanswerable\". Do not provide any explanation.\n\nArticle: {context}\n\n Answer the question based on the above article as concisely as you can, using a single phrase or sentence if possible. If the question cannot be answered based on the information in the article, write \"unanswerable\". If the question is a yes/no question, answer \"yes\", \"no\", or \"unanswerable\". Do not provide any explanation.\n\nQuestion: {input}\n\nAnswer:",
     "multifieldqa_en": "Read the following text and answer briefly.\n\n{context}\n\nNow, answer the following question based on the above text, only give me the answer and do not output any other words.\n\nQuestion: {input}\nAnswer:",
     "hotpotqa": "Answer the question based on the given passages. Only give me the answer and do not output any other words.\n\nThe following are given passages.\n{context}\n\nAnswer the question based on the given passages. Only give me the answer and do not output any other words.\n\nQuestion: {input}\nAnswer:",
     "2wikimqa": "Answer the question based on the given passages. Only give me the answer and do not output any other words.\n\nThe following are given passages.\n{context}\n\nAnswer the question based on the given passages. Only give me the answer and do not output any other words.\n\nQuestion: {input}\nAnswer:",
@@ -75,6 +74,10 @@ def _normalize(s: str) -> str:
 
 def qa_f1_score(pred: str, gold: str) -> float:
     pt, gt = _normalize(pred).split(), _normalize(gold).split()
+    # THUDM's official f1_score returns zero when no tokens overlap, including
+    # the empty/empty normalized edge case.
+    if not pt or not gt:
+        return 0.0
     common = Counter(pt) & Counter(gt)
     ns = sum(common.values())
     if ns == 0:
@@ -83,53 +86,54 @@ def qa_f1_score(pred: str, gold: str) -> float:
     return 2 * prec * rec / (prec + rec)
 
 
-def _lcs(a: List[str], b: List[str]) -> int:
-    m, n = len(a), len(b)
-    if m == 0 or n == 0:
-        return 0
-    dp = [0] * (n + 1)
-    for i in range(1, m + 1):
-        prev = 0
-        for j in range(1, n + 1):
-            tmp = dp[j]
-            dp[j] = prev + 1 if a[i - 1] == b[j - 1] else max(dp[j], dp[j - 1])
-            prev = tmp
-    return dp[n]
-
-
 def rouge_score(pred: str, gold: str) -> float:
-    """ROUGE-L F1 (LCS-based), the LongBench summary metric."""
-    pt, gt = pred.split(), gold.split()
-    if not pt or not gt:
+    """ROUGE-L F1 from the same ``rouge`` package used by LongBench."""
+    from rouge import Rouge  # dependency declared by onecomp
+
+    try:
+        return float(Rouge().get_scores([pred], [gold], avg=True)["rouge-l"]["f"])
+    except Exception:
         return 0.0
-    lcs = _lcs(pt, gt)
-    if lcs == 0:
-        return 0.0
-    prec, rec = lcs / len(pt), lcs / len(gt)
-    return 2 * prec * rec / (prec + rec)
 
 
 def classification_score(pred: str, gold: str, all_classes=None) -> float:
     pred = pred.strip()
     em = [c for c in (all_classes or []) if c in pred]
-    matched = [c for c in em if c == gold]
-    return (len(matched) / len(em)) if em else (1.0 if gold.strip() in pred else 0.0)
+    # Preserve the official evaluator's exact class disambiguation behaviour.
+    for match in list(em):
+        if match in gold and match != gold:
+            em.remove(match)
+    return (1.0 / len(em)) if gold in em else 0.0
 
 
 def retrieval_score(pred: str, gold: str) -> float:
-    m = re.search(r"Paragraph (\d+)", gold)
+    pattern = r"Paragraph (\d+)"
+    m = re.search(pattern, gold)
     target = m.group(1) if m else gold.strip()
-    return 1.0 if re.search(rf"Paragraph {re.escape(target)}\b", pred) else 0.0
+    # Official LongBench accepts any emitted integer, not only one preceded by
+    # the word "Paragraph", and fractionally penalises multiple guesses.
+    predicted = re.findall(r"\d+", pred)
+    if not predicted:
+        return 0.0
+    return sum(p == target for p in predicted) / len(predicted)
 
 
 def count_score(pred: str, gold: str) -> float:
     nums = re.findall(r"\d+", pred)
-    return 1.0 if (nums and nums[0] == str(gold).strip()) else 0.0
+    if not nums:
+        return 0.0
+    return sum(n == str(gold).strip() for n in nums) / len(nums)
 
 
 def code_sim_score(pred: str, gold: str) -> float:
-    line = pred.lstrip("\n").split("\n", 1)[0]
-    return SequenceMatcher(None, line, gold).ratio()
+    from fuzzywuzzy import fuzz  # same package/function as THUDM/LongBench
+
+    line = ""
+    for candidate in pred.lstrip("\n").splitlines():
+        if "`" not in candidate and "#" not in candidate and "//" not in candidate:
+            line = candidate
+            break
+    return fuzz.ratio(line, gold) / 100.0
 
 
 _METRIC = {
@@ -141,6 +145,21 @@ _METRIC = {
     "lcc": code_sim_score, "repobench-p": code_sim_score,
 }
 
+# Official LongBench prediction code deliberately leaves few-shot/classification
+# and code-completion prompts raw; all other tasks use the model's chat wrapper.
+_NO_CHAT_TASKS = {"trec", "triviaqa", "samsum", "lcc", "repobench-p"}
+
+
+def _postprocess_prediction(task: str, prediction: str) -> str:
+    """Apply LongBench's task-specific prediction post-processing exactly."""
+    # The official evaluator scores only the first non-leading-newline line for
+    # these short-answer / classification tasks.  Scoring the whole generation
+    # can turn an otherwise correct first line into a false positive or negative
+    # when the model continues with an explanation.
+    if task in {"trec", "triviaqa", "samsum"}:
+        return prediction.lstrip("\n").split("\n")[0]
+    return prediction
+
 
 @dataclass
 class LongBenchResult:
@@ -148,21 +167,31 @@ class LongBenchResult:
     score: float                                  # macro-average over tasks (x100)
     per_task: dict = field(default_factory=dict)  # task -> score (x100)
     by_length: dict = field(default_factory=dict)  # bucket -> score (x100)
+    by_length_n: dict = field(default_factory=dict)
     mem_fraction: float = 1.0
+    limit_per_task: Optional[int] = None
+    tasks: List[str] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return {
             "n": self.n, "score": round(self.score, 2),
             "per_task": {k: round(v, 2) for k, v in self.per_task.items()},
             "by_length": {k: round(v, 2) for k, v in self.by_length.items()},
+            "by_length_n": dict(self.by_length_n),
             "mem_fraction": round(self.mem_fraction, 4),
+            "limit_per_task": self.limit_per_task,
+            "tasks": list(self.tasks),
+            "official_full_eval": (
+                self.limit_per_task is None and set(self.tasks) == set(LONGBENCH_E_TASKS)
+            ),
         }
 
 
-def _bucket(n_tokens: int) -> str:
-    if n_tokens < 4096:
+def _bucket(original_length: int) -> str:
+    """Official LongBench-E bucket from the row's language-normalised length."""
+    if original_length < 4000:
         return "0-4k"
-    if n_tokens < 8192:
+    if original_length < 8000:
         return "4-8k"
     return "8k+"
 
@@ -190,13 +219,54 @@ def _load_task(task: str) -> list:
     return rows
 
 
+def _prompt_ids(tokenizer, prompt: str, task: str,
+                max_length: Optional[int] = None) -> torch.Tensor:
+    """Middle-truncate raw prompt first, then apply the official chat split.
+
+    LongBench truncates the unwrapped prompt and only then adds the chat
+    template. Truncating after wrapping consumes part of the scientific context
+    budget with system/control tokens and is not leaderboard-equivalent.
+    """
+    raw_ids = tokenizer(prompt, return_tensors="pt", truncation=False).input_ids
+    if max_length is not None and raw_ids.shape[1] > max_length:
+        head = max_length // 2
+        tail = max_length - head
+        prompt = tokenizer.decode(
+            torch.cat([raw_ids[0, :head], raw_ids[0, -tail:]]),
+            skip_special_tokens=True,
+        )
+    if task not in _NO_CHAT_TASKS:
+        messages = [{"role": "user", "content": prompt}]
+        try:
+            encoded = tokenizer.apply_chat_template(
+                messages,
+                add_generation_prompt=True,
+                return_tensors="pt",
+                return_dict=True,
+                enable_thinking=False,
+            )
+            return encoded["input_ids"]
+        except Exception:
+            try:
+                encoded = tokenizer.apply_chat_template(
+                    messages,
+                    add_generation_prompt=True,
+                    return_tensors="pt",
+                    return_dict=True,
+                )
+                return encoded["input_ids"]
+            except Exception:
+                pass
+    return tokenizer(prompt, return_tensors="pt", truncation=False).input_ids
+
+
 @torch.no_grad()
 def longbench_e(
     model, tokenizer,
     cache_factory: Optional[Callable[[], object]] = None,
     tasks: Optional[List[str]] = None,
-    max_length: int = 7500,
-    limit_per_task: int = 20,
+    max_length: int = 32768,
+    limit_per_task: Optional[int] = None,
     evict: bool = False,
     attn_capture: bool = False,
 ) -> LongBenchResult:
@@ -207,7 +277,8 @@ def longbench_e(
         tasks: subset of :data:`LONGBENCH_E_TASKS` (default: all 13 English tasks).
         max_length: prompt budget; longer prompts are middle-truncated (keep
             head + tail) exactly as the official LongBench harness does.
-        limit_per_task: samples per task (the -E split has ~150-300 each).
+        limit_per_task: samples per task. ``None`` runs the complete official
+            split; a finite value is a smoke/debug subset and is marked as such.
         evict: call ``cache.evict_now()`` after prefill (for eviction caches).
         attn_capture: materialise ``attn_weights`` via ``output_attentions=True``
             and feed them into a :class:`ThinKVCache`'s thought classifier.
@@ -217,10 +288,16 @@ def longbench_e(
     from transformers import DynamicCache
     from .longcontext import greedy_answer
 
-    tasks = tasks or LONGBENCH_E_TASKS
+    tasks = list(tasks or LONGBENCH_E_TASKS)
+    unknown = set(tasks) - set(LONGBENCH_E_TASKS)
+    if unknown:
+        raise ValueError(f"Unknown LongBench-E task(s): {sorted(unknown)}")
+    if limit_per_task is not None and limit_per_task <= 0:
+        raise ValueError("limit_per_task must be positive or None")
     eos = tokenizer.eos_token_id
     per_task: dict = {}
-    bucket_acc: dict = {"0-4k": [0.0, 0], "4-8k": [0.0, 0], "8k+": [0.0, 0]}
+    bucket_task_scores: dict = {"0-4k": [], "4-8k": [], "8k+": []}
+    bucket_counts: dict = {"0-4k": 0, "4-8k": 0, "8k+": 0}
     mem: List[float] = []
     n_total = 0
 
@@ -228,32 +305,36 @@ def longbench_e(
         try:
             ds = _load_task(task)
         except Exception as e:  # task missing / offline
-            logger.warning("LongBench-E task %s unavailable: %s", task, e)
-            continue
+            raise RuntimeError(
+                f"LongBench-E task {task!r} is unavailable; refusing to report "
+                "a silently incomplete macro-average"
+            ) from e
         metric = _METRIC[task]
         prompt_fmt = _PROMPT[task]
         max_gen = _MAXLEN[task]
         scores: List[float] = []
-        for row in ds[:limit_per_task]:
+        task_buckets: dict = {"0-4k": [], "4-8k": [], "8k+": []}
+        rows = ds if limit_per_task is None else ds[:limit_per_task]
+        for row in rows:
             prompt = prompt_fmt.format(context=row["context"], input=row.get("input", ""))
-            ids = tokenizer(prompt, return_tensors="pt", truncation=False).input_ids
-            if ids.shape[1] > max_length:
-                half = max_length // 2
-                ids = torch.cat([ids[:, :half], ids[:, -half:]], dim=1)
-            n_tok = ids.shape[1]
+            ids = _prompt_ids(tokenizer, prompt, task, max_length=max_length)
             cache = cache_factory() if cache_factory is not None else DynamicCache()
             pp = (lambda c: c.evict_now()) if evict else None
             gen = greedy_answer(model, ids, cache, max_new_tokens=max_gen,
                                 post_prefill=pp, eos=eos, attn_capture=attn_capture)
-            pred = tokenizer.decode(gen[0], skip_special_tokens=True)
+            pred = _postprocess_prediction(
+                task, tokenizer.decode(gen[0], skip_special_tokens=True)
+            )
             golds = row["answers"] if isinstance(row["answers"], list) else [row["answers"]]
             s = max(metric(pred, g, **({"all_classes": row.get("all_classes")}
                                        if metric is classification_score else {}))
                     for g in golds) if golds else 0.0
             scores.append(s * 100.0)
-            b = _bucket(n_tok)
-            bucket_acc[b][0] += s * 100.0
-            bucket_acc[b][1] += 1
+            if "length" not in row:
+                raise ValueError(f"LongBench-E row for {task!r} is missing official length")
+            b = _bucket(int(row["length"]))
+            task_buckets[b].append(s * 100.0)
+            bucket_counts[b] += 1
             n_total += 1
             if hasattr(cache, "mem_fraction"):
                 mem.append(cache.mem_fraction())
@@ -261,10 +342,22 @@ def longbench_e(
                 mem.append(1.0 / max(1e-9, cache.compression_ratio()))
         if scores:
             per_task[task] = sum(scores) / len(scores)
+            for bucket, values in task_buckets.items():
+                if values:
+                    bucket_task_scores[bucket].append(sum(values) / len(values))
             print(f"    [LongBench-E] {task}: {per_task[task]:.2f} (n={len(scores)})", flush=True)
+        else:
+            raise RuntimeError(f"LongBench-E task {task!r} produced no scored rows")
 
     macro = sum(per_task.values()) / max(1, len(per_task))
-    by_len = {b: (acc / cnt if cnt else 0.0) for b, (acc, cnt) in bucket_acc.items()}
+    # Macro-average task-level bucket scores, matching LongBench's per-task
+    # scorer_e outputs. Pooling rows would overweight tasks with more examples.
+    by_len = {
+        bucket: (sum(values) / len(values) if values else 0.0)
+        for bucket, values in bucket_task_scores.items()
+    }
     return LongBenchResult(
         n=n_total, score=macro, per_task=per_task, by_length=by_len,
-        mem_fraction=(sum(mem) / len(mem) if mem else 1.0))
+        by_length_n=bucket_counts,
+        mem_fraction=(sum(mem) / len(mem) if mem else 1.0),
+        limit_per_task=limit_per_task, tasks=tasks)

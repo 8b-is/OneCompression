@@ -109,7 +109,11 @@ class ThinKVCache(DynamicCache):
                                else getattr(self.policy, "skip_layers", None) or [])
         self.classifier = ThoughtClassifier(thresholds=tuple(self.policy.thresholds))
         self.calib_layers = list(self.policy.calib_layers) if self.policy.calib_layers else None
-        self._codecs = {2: TernaryCodec(), 4: NVFP4Codec(), 8: FP8Codec()}
+        self._codecs = {
+            2: TernaryCodec(group_size=self.policy.group_size),
+            4: NVFP4Codec(group_size=self.policy.group_size),
+            8: FP8Codec(),
+        }
         self._states: List[_LayerTBQ] = []
         self._pending_sparsity: dict = {}
         self._step = 0
@@ -121,10 +125,6 @@ class ThinKVCache(DynamicCache):
         bits = self.policy.precision.get(_ID_TO_NAME[thought], 4)
         return self._codecs[2] if bits <= 2 else (self._codecs[4] if bits <= 4 else self._codecs[8])
 
-    def _bits_for(self, thought: int) -> float:
-        bits = self.policy.precision.get(_ID_TO_NAME[thought], 4)
-        return bits + 16.0 / max(self.policy.group_size, 1)  # + amortized fp16 scale
-
     def _ensure_state(self, layer_idx: int) -> _LayerTBQ:
         while len(self._states) <= layer_idx:
             self._states.append(_LayerTBQ())
@@ -133,17 +133,18 @@ class ThinKVCache(DynamicCache):
     def _quant_block(self, k_block, v_block, thought):
         """Fake-quantize a ``(heads, n, dim)`` block under ``thought``'s codec."""
         codec = self._codec_for(thought)
-        kq, vq = codec.decode(codec.encode(k_block[None], v_block[None]))
-        return kq[0], vq[0]
+        encoded = codec.encode(k_block[None], v_block[None])
+        kq, vq = codec.decode(encoded)
+        return kq[0], vq[0], int(encoded.numel_bits())
 
     def _commit_buffer(self, st: _LayerTBQ):
         if st.buf_k is None:
             return
         n = st.buf_k.shape[1]
-        kq, vq = self._quant_block(st.buf_k, st.buf_v, st.buf_thought)
+        kq, vq, stored_bits = self._quant_block(st.buf_k, st.buf_v, st.buf_thought)
         st.committed_k = kq if st.committed_k is None else torch.cat([st.committed_k, kq], dim=1)
         st.committed_v = vq if st.committed_v is None else torch.cat([st.committed_v, vq], dim=1)
-        st.committed_bits += n * st.heads * st.dim * 2 * self._bits_for(st.buf_thought)
+        st.committed_bits += stored_bits
         st.n_committed += n
         st.buf_k = st.buf_v = None
         st.buf_thought = None
@@ -201,10 +202,12 @@ class ThinKVCache(DynamicCache):
                 st.sink_k = sk if st.sink_k is None else torch.cat([st.sink_k, sk], dim=1)
                 st.sink_v = sv if st.sink_v is None else torch.cat([st.sink_v, sv], dim=1)
             if ns < q_len:
-                kq, vq = self._quant_block(k0[:, ns:], v0[:, ns:], T_REASONING)
+                kq, vq, stored_bits = self._quant_block(
+                    k0[:, ns:], v0[:, ns:], T_REASONING
+                )
                 st.committed_k = kq if st.committed_k is None else torch.cat([st.committed_k, kq], dim=1)
                 st.committed_v = vq if st.committed_v is None else torch.cat([st.committed_v, vq], dim=1)
-                st.committed_bits += (q_len - ns) * st.heads * st.dim * 2 * self._bits_for(T_REASONING)
+                st.committed_bits += stored_bits
                 st.n_committed += (q_len - ns)
         else:
             if layer_idx == self._first_layer:

@@ -1,6 +1,6 @@
 # CPU-feasible reasoning run on azalea (no GPU): TaperKV vs ThinKV/PM-KVQ turf.
 # Small limits/generation so it finishes on CPU; produces every reasoning metric
-# (GSM8K, MATH-500, LiveCodeBench, PPL) for the full method set with error bars.
+# (GSM8K, MATH-500, functional-code smoke, PPL) with error bars.
 defaults:
   - benchmark_longcontext
   - _self_
@@ -62,7 +62,7 @@ run_math: true
 math_limit: 6
 max_new_math: 512
 
-run_livecodebench: true
+run_livecodebench: true      # HumanEval-shaped smoke only; output is not named LiveCodeBench
 # Point at a local functional JSONL ({prompt, entry_point, test}) on the CLI, e.g.:
 #   lcb_problems_path=/path/to/lcb_functional.jsonl
 # null -> load lcb_dataset from HF (functional rows only).

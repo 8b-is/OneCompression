@@ -20,16 +20,18 @@ defaults to the full validation splits.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
-import time
+import tempfile
 from pathlib import Path
 from statistics import mean
 from typing import Iterable
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from filelock import FileLock
+from transformers import AutoModelForCausalLM, AutoTokenizer, DynamicCache
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 THIS_DIR = Path(__file__).resolve().parent
@@ -43,7 +45,7 @@ from onecomp.kvcomp.eval import zeroshot_accuracy  # noqa: E402
 DEFAULT_TASKS = ("arc_easy", "arc_challenge", "piqa", "hellaswag", "winogrande")
 DEFAULT_METHODS = (
     "FullKV",
-    "TurboQuant-hadamard",
+    "TurboQuant-paper",
     "FibQuant",
     "BlockQuant",
     "HayateQuant-selected",
@@ -83,47 +85,99 @@ def _output_json(args: argparse.Namespace) -> Path:
     return args.output_root / f"zeroshot_{model_tag}{suffix}.json"
 
 
-def _acquire_output_lock(out_json: Path) -> Path | None:
-    lock_dir = out_json.with_suffix(out_json.suffix + ".lock")
-    while True:
-        if out_json.exists() and out_json.stat().st_size > 0:
-            print(f"[skip] existing result: {out_json}", flush=True)
-            return None
-        try:
-            lock_dir.mkdir()
-        except FileExistsError:
-            print(f"[wait] another process is writing {out_json}", flush=True)
-            time.sleep(30)
-            continue
-        if out_json.exists() and out_json.stat().st_size > 0:
-            try:
-                lock_dir.rmdir()
-            finally:
-                print(f"[skip] existing result: {out_json}", flush=True)
-            return None
-        return lock_dir
+def _benchmark_config(args: argparse.Namespace) -> dict:
+    """Scientific run identity; output location and device are not results."""
+    return {
+        "schema_version": 2,
+        "model_path": str(args.model_path.resolve()),
+        "dtype": args.dtype,
+        "bits": list(args.bits),
+        "tasks": list(args.tasks),
+        "methods": list(args.methods),
+        "include_fullkv": bool(args.include_fullkv),
+        "limit": args.limit,
+        "sample_seed": args.sample_seed,
+        "sink_tokens": args.sink_tokens,
+        "recent_tokens": args.recent_tokens,
+        "skip_outliers": bool(args.skip_outliers),
+        "outlier_ratio": args.outlier_ratio,
+        "ablation": bool(args.ablation),
+    }
+
+
+def _fingerprint(config: dict) -> str:
+    canonical = json.dumps(config, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def _validate_existing(out_json: Path, expected_fingerprint: str) -> None:
+    try:
+        payload = json.loads(out_json.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Existing result is unreadable: {out_json}") from exc
+    actual = payload.get("run_fingerprint")
+    if payload.get("schema_version") != 2 or actual is None:
+        raise RuntimeError(
+            f"Refusing to reuse legacy result without a run fingerprint: {out_json}"
+        )
+    if actual != expected_fingerprint:
+        raise RuntimeError(
+            f"Existing result was produced by a different benchmark config: {out_json}"
+        )
+
+
+def _atomic_write_json(path: Path, payload: dict) -> None:
+    fd, tmp_name = tempfile.mkstemp(prefix=path.name + ".tmp.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w") as handle:
+            json.dump(payload, handle, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_name, path)
+    finally:
+        if os.path.exists(tmp_name):
+            os.unlink(tmp_name)
 
 
 @torch.no_grad()
 def _detect_skips(model, tok, args: argparse.Namespace) -> set[int]:
     if not args.skip_outliers:
         return set()
-    calib_text = "The history of cartography spans many centuries. " * 8
-    ids = tok(
-        calib_text,
-        return_tensors="pt",
-        truncation=True,
-        max_length=512,
-    ).input_ids.to(model.device)
-    return set(detect_outlier_layers(model, ids, ratio_thresh=args.outlier_ratio))
+    probe_texts = (
+        "Solve: what is 17 times 23? Reason step by step.",
+        "Repeat the following key exactly: QH-4821-ZX.",
+        "Write a Python function that returns the n-th Fibonacci number.",
+        "Explain briefly why the daytime sky appears blue.",
+    )
+
+    def _ids(text):
+        if getattr(tok, "chat_template", None):
+            return tok.apply_chat_template(
+                [{"role": "user", "content": text}], add_generation_prompt=True,
+                return_tensors="pt", return_dict=True)["input_ids"].to(model.device)
+        return tok(text, return_tensors="pt", truncation=True,
+                   max_length=512).input_ids.to(model.device)
+
+    return set(detect_outlier_layers(
+        model, [_ids(text) for text in probe_texts],
+        ratio_thresh=args.outlier_ratio, agg="mean"))
 
 
 def _run(args: argparse.Namespace) -> Path:
     args.output_root.mkdir(parents=True, exist_ok=True)
     out_json = _output_json(args)
-    lock_dir = _acquire_output_lock(out_json)
-    if lock_dir is None:
-        return out_json
+    run_config = _benchmark_config(args)
+    run_fingerprint = _fingerprint(run_config)
+    output_lock = FileLock(str(out_json) + ".lock")
+    output_lock.acquire()
+    if out_json.exists() and out_json.stat().st_size > 0:
+        try:
+            _validate_existing(out_json, run_fingerprint)
+            print(f"[skip] matching existing result: {out_json}", flush=True)
+            return out_json
+        finally:
+            output_lock.release()
 
     dtype = getattr(torch, args.dtype)
     try:
@@ -138,9 +192,10 @@ def _run(args: argparse.Namespace) -> Path:
             print(f"outlier layers (kept FP16): {sorted(skip_layers)}", flush=True)
 
         results: dict[str, dict] = {}
+        fullkv_factory = lambda: DynamicCache(config=model.config)
         if args.include_fullkv:
             results["full"] = {
-                "FullKV": _eval_method(model, tok, args, cache_factory=None)
+                "FullKV": _eval_method(model, tok, args, cache_factory=fullkv_factory)
             }
 
         for bits in args.bits:
@@ -153,7 +208,7 @@ def _run(args: argparse.Namespace) -> Path:
                         results[bit_key][method] = results["full"]["FullKV"]
                     else:
                         results[bit_key][method] = _eval_method(
-                            model, tok, args, cache_factory=None
+                            model, tok, args, cache_factory=fullkv_factory
                         )
                     continue
                 if method not in codecs:
@@ -172,34 +227,22 @@ def _run(args: argparse.Namespace) -> Path:
                 )
 
         payload = {
+            "schema_version": 2,
+            "run_fingerprint": run_fingerprint,
             "model": os.path.basename(str(args.model_path).rstrip("/")),
             "tasks": list(args.tasks),
             "limit": args.limit,
             "sample_seed": args.sample_seed,
-            "config": {
-                "model_path": str(args.model_path),
-                "dtype": args.dtype,
-                "device": args.device,
-                "bits": args.bits,
-                "sink_tokens": args.sink_tokens,
-                "recent_tokens": args.recent_tokens,
-                "skip_outliers": args.skip_outliers,
-                "outlier_ratio": args.outlier_ratio,
-                "ablation": args.ablation,
-            },
+            "config": run_config,
             "results": results,
         }
-        tmp_json = out_json.with_suffix(out_json.suffix + f".tmp.{os.getpid()}")
-        tmp_json.write_text(json.dumps(payload, indent=2) + "\n")
-        tmp_json.replace(out_json)
+        _atomic_write_json(out_json, payload)
         print(f"\nWrote {out_json}")
         print(_markdown(payload))
         return out_json
     finally:
-        try:
-            lock_dir.rmdir()
-        except OSError:
-            pass
+        if output_lock.is_locked:
+            output_lock.release()
 
 
 def _eval_method(model, tok, args: argparse.Namespace, cache_factory):
@@ -217,10 +260,16 @@ def _eval_method(model, tok, args: argparse.Namespace, cache_factory):
         print(f"  {task}: {res}", flush=True)
     acc = [v["acc"] for v in tasks.values()]
     acc_norm = [v["acc_norm"] for v in tasks.values()]
+    primary = [v["primary_score"] for v in tasks.values()]
     return {
         "tasks": tasks,
         "avg_acc": round(mean(acc), 4),
         "avg_acc_norm": round(mean(acc_norm), 4),
+        "avg_primary_score": round(mean(primary), 4),
+        "primary_metric_definition": (
+            "custom unweighted task macro: lm-eval acc_norm for ARC/PIQA/"
+            "HellaSwag and lm-eval acc for WinoGrande"
+        ),
         "n_total": sum(v["n"] for v in tasks.values()),
     }
 
@@ -233,20 +282,22 @@ def _best_hayate(methods: dict) -> tuple[str, dict] | tuple[None, None]:
     ]
     if not candidates:
         return None, None
-    return max(candidates, key=lambda item: item[1].get("avg_acc_norm", -1.0))
+    return max(candidates, key=lambda item: item[1].get(
+        "avg_primary_score", item[1].get("avg_acc_norm", -1.0)))
 
 
 def _markdown(payload: dict) -> str:
     lines = [f"### {payload['model']}", ""]
     lines += [
-        "| bits | method | avg acc | avg acc_norm | n |",
-        "|---:|---|---:|---:|---:|",
+        "| bits | method | protocol-aligned macro | avg acc | avg acc_norm | n |",
+        "|---:|---|---:|---:|---:|---:|",
     ]
     for bits, methods in payload["results"].items():
         for name, data in methods.items():
             lines.append(
-                f"| {bits} | {name} | {data['avg_acc']:.4f} "
-                f"| {data['avg_acc_norm']:.4f} | {data['n_total']} |"
+                f"| {bits} | {name} | {data['avg_primary_score']:.4f} "
+                f"| {data['avg_acc']:.4f} | {data['avg_acc_norm']:.4f} "
+                f"| {data['n_total']} |"
             )
     return "\n".join(lines)
 

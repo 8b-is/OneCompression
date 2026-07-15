@@ -97,15 +97,14 @@ class KVCompressionConfig:
         residual_window: Recent tokens kept in full precision.
 
     Examples:
-        FP8 + SnapKV recipe::
+        FP8 recipe::
 
             from onecomp.kvcomp import KVCompressionConfig
             from onecomp.kvcomp.codec import FP8Codec
-            from onecomp.kvcomp.select import SnapKVSelector
 
             kv_config = KVCompressionConfig(
                 codec=FP8Codec(),
-                selector=SnapKVSelector(keep_ratio=0.3),
+                residual_window=128,
             )
     """
 

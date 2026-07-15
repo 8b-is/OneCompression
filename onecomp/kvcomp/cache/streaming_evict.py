@@ -40,9 +40,14 @@ class StreamingLLMEvictCache(DynamicCache):
     def evict_now(self):
         """Trim every layer to ``sink`` + last ``recent`` tokens (idempotent)."""
         budget = self.sink + self.recent
+        if not self.layers or getattr(self.layers[0], "keys", None) is None:
+            return
+        current = int(self.layers[0].keys.shape[2])
+        # Before the first trim current is the whole prefill. Afterwards it is the
+        # previous kept cache plus newly appended decode tokens.
+        self.total += current if self.total == 0 else max(0, current - self.kept)
         for layer in self.layers:
             s = layer.keys.shape[2]
-            self.total = max(self.total, s)
             if s > budget:
                 idx = torch.cat([
                     torch.arange(self.sink, device=layer.keys.device),
@@ -50,7 +55,7 @@ class StreamingLLMEvictCache(DynamicCache):
                 ])
                 layer.keys = layer.keys.index_select(2, idx).contiguous()
                 layer.values = layer.values.index_select(2, idx).contiguous()
-            self.kept = layer.keys.shape[2]
+        self.kept = int(self.layers[0].keys.shape[2])
 
     def mem_fraction(self) -> float:
         return self.kept / max(1, self.total)

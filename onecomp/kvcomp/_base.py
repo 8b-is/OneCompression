@@ -96,15 +96,8 @@ class KVCodec:
         group_size (int): Group size along the quantization axis (-1 = whole).
         symmetric (bool): Symmetric quantization (zero point at center).
         skip_layers (list[int]): Layer indices to leave uncompressed.
-        residual_window (int): Intended number of most-recent tokens kept in full
-            precision (KIVI-style).  NOTE (memo A-2): the current research caches
-            (``CompressedDynamicCache`` and the graded caches) quantise every
-            arriving block immediately and do **not** honour this window -- it is
-            carried in the config/serialization only.  Codecs measured here are
-            therefore evaluated *without* a full-precision residual window (a
-            slightly harder setting than KIVI's original protocol); a future
-            cache-side implementation would populate ``CompressedKV.key_residual``
-            / ``value_residual``.  Do not assume residual protection in results.
+        residual_window (int): Number of most-recent tokens kept in full precision
+            by cache integrations (KIVI-style).
     """
 
     name: str = None

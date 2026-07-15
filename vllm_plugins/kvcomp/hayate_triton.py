@@ -1,5 +1,5 @@
 # Copyright 2026 Fujitsu Ltd.
-"""Triton kernels for the vLLM HayateQuant native key block-VQ path.
+"""Triton kernels for the experimental Hayate-key-VQ/TurboQuant-value path.
 
 The cache layout intentionally matches vLLM's native TurboQuant layout.  This
 lets vLLM keep its existing cache-capacity accounting and paged-cache
@@ -11,8 +11,8 @@ allocation while replacing the key quantizer:
 The shipped native path supports the production HayateQuant presets that have
 the same byte budget as upstream TurboQuant: 3-bit and 4-bit keys with resolved
 ``block_size == 2``.  Values remain vLLM-compatible uniform quantized values;
-that keeps the kernel practical inside upstream paged attention while preserving
-HayateQuant's main block-VQ gain on attention logits.
+    that keeps the kernel practical inside upstream paged attention, but it is
+    an algorithmic approximation and must not be labelled as full HayateQuant.
 """
 
 from __future__ import annotations

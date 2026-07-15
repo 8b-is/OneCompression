@@ -60,7 +60,7 @@ in-repo, data-free and CPU-only, by
    (``HALO-NCIT``) beats the shipped TurboQuant default at every tested
    bit-width in perplexity (e.g. Llama 3-bit: HALO-NCIT 6.878 vs TurboQuant
    6.917; Ministral 3-bit: 9.073 vs 9.114) while matching or exceeding it on
-   the RULER long-context benchmark.
+   the repository's local synthetic multi-key diagnostic (not NVIDIA RULER).
 
 This makes HALO dominate the shipped TurboQuant default on *both* the MSE axis
 (values) and the attention axis (keys) at identical bit-width and metadata
@@ -186,9 +186,10 @@ class HALOCodec(KVCodec):
     # ``n_outlier`` highest-energy rotated-input channels off and quantise them at
     # ``outlier_bits`` while the rest use ``bits`` -- the data-free way to reach
     # the 2.5 / 3.5-bit operating points of the TurboQuant headline table.  The
-    # effective payload bit-width is ``(n_o*outlier_bits + (d-n_o)*bits)/d``; for
-    # head_dim=128, ``64 ch @ 3 + 64 @ 2`` = 2.5-bit and ``64 @ 4 + 64 @ 3`` =
-    # 3.5-bit.  Each subset keeps the role-asymmetric scale (nc keys / ls
+    # effective payload bit-width is ``(n_o*outlier_bits + (d-n_o)*bits)/d``.
+    # Each subset stores an fp16 scale/norm, so at head_dim=128 the paper's
+    # 32/96 split totals 2.5 or 3.5 stored bits/coordinate (2.25/3.25 payload +
+    # 0.25 metadata). Each subset keeps the role-asymmetric scale (nc keys / ls
     # values).  ``outlier_bits`` defaults to ``bits + 1``.  Like TurboQuant, the
     # channel set is chosen per encoded block from that block's energy, so under
     # incremental decode (q_len=1) the mask is per-step dynamic -- faithful in
@@ -404,15 +405,10 @@ class HALOCodec(KVCodec):
     # --- per-tensor encode / decode --------------------------------------
     def _encode_tensor(self, x, bits, role):
         d = x.shape[-1]
-        single_pow2 = is_power_of_two(d)
-        # Single-subset path needs a power-of-two dim for the Hadamard transforms;
-        # the outlier path rotates each subset by its own resolved transform (the
-        # dense QR for non-power-of-two subset dims), exactly like TurboQuant, so
-        # it does not require ``d`` itself to be a power of two.
         use_outlier = 0 < self.n_outlier < d
-        if not use_outlier and self._resolved_mode(d) in ("hadamard", "hadamard_gemm") \
-                and not single_pow2:
-            return None  # caller falls back to affine
+        # _rotate transparently uses dense QR when a requested Hadamard cannot
+        # represent a non-power-of-two dimension. Retain the rotated Lloyd-Max
+        # algorithm instead of silently changing the codec to affine INT.
         # Stateless block-wise affine preconditioning -- only when this role opts
         # in.  When it is off (the default), the (x-mu)*w step is the identity, so
         # we skip it entirely instead of paying a full-tensor subtract-0 /
@@ -488,13 +484,16 @@ class HALOCodec(KVCodec):
             kq = fake_quantize_affine(key, self.bits, axis="token")
             vq = fake_quantize_affine(value, self._value_bits(), axis="token")
             # Honest whole-cache accounting: the per-token affine fallback also
-            # stores a scale + zero (two fp16) per quantised vector, like the
+            # stores a fp16 scale + integer zero per quantised vector, like the
             # AffineKVCodec path -- count it so the fallback's compression ratio
             # is not over-stated (memo A-6).
             kvecs = key.shape[0] * key.shape[1] * key.shape[2]
             vvecs = value.shape[0] * value.shape[1] * value.shape[2]
-            stored = (key.numel() * self.bits + value.numel() * self._value_bits()
-                      + (kvecs + vvecs) * 2 * 16)
+            stored = (
+                key.numel() * self.bits + kvecs * (16 + self.bits)
+                + value.numel() * self._value_bits()
+                + vvecs * (16 + self._value_bits())
+            )
             return CompressedKV(key_q=kq, value_q=vq,
                                 meta={"dtype": key.dtype, "fallback": True,
                                       "stored_bits": int(stored), "passthrough": True})

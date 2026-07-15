@@ -21,7 +21,7 @@ LOGS="$RUN_ROOT/logs"
 mkdir -p "$LOGS"
 
 PAPER_METHODS=(
-  TurboQuant-hadamard
+  TurboQuant-paper
   FibQuant
   BlockQuant
   HayateQuant-frontier

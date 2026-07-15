@@ -14,7 +14,7 @@
 #   * Uniform-INT3              — per-token uniform affine (lower bound at 3-bit)
 #   * KIVI-INT2                 — per-channel-key/per-token-value (KIVI paper)
 #   * StreamingLLM              — eviction baseline (must fail at iso-memory)
-#   * ThinKV                    — thought-adaptive eviction+quant baseline
+#   * ThinKV                    — HF TBQ-only diagnostic (TBE is not implemented)
 #   * PM-KVQ                    — progressive precision baseline (no evict)
 #   * TurboQuant-3bit           — uniform rotated Lloyd-Max
 #   * HALO-3bit                 — proposed companion codec at iso-bit
@@ -45,7 +45,7 @@ methods:
   - Uniform-INT3
   - KIVI-INT2
   - StreamingLLM
-  - ThinKV                  # eager attention only
+  - ThinKV                  # TBQ-only; output is marked paper_comparable=false
   - PM-KVQ
   - TurboQuant-3bit
   - HayateQuant-3bit        # PROPOSED companion codec (supersedes HALO)
@@ -108,9 +108,9 @@ turbotaper:
 turbotaper_sweep:
   - {label: "TurboTaper-3bit", key_bits: 4, value_bits: 3, b_min: 3, b_min_value: 3}
 
-# Single TurboQuant variant at 3-bit (paper-faithful Beta + Hadamard rotation).
+# Single TurboQuant variant at 3-bit (paper-faithful Beta + Gaussian-QR rotation).
 turboquant_variants:
-  - {label: "TurboQuant-3bit", bits: 3, dist: beta}
+  - {label: "TurboQuant-3bit", bits: 3, dist: beta, rotation_mode: dense}
 
 # HayateQuant at 3-bit (PROPOSED companion codec at iso-bit to TurboQuant-3bit),
 # with the strongest prior HALO operating point as baseline (iso-storage).
@@ -119,11 +119,12 @@ hayatequant_variants:
 halo_variants:
   - {label: "HALO-NCIT-3bit", bits: 3, key_scale_mode: nc, value_scale_mode: ls_iter}
 
-# ThinKV: keep eager attention so its sparsity calibration runs (faithful regime).
+# ThinKV TBQ: keep eager attention so its sparsity calibration runs. The HF
+# cache does not reproduce TBE eviction and is not a paper-comparable ThinKV row.
 attn_implementation: eager
 thinkv:
   group_size: 16
-  precision: {R: 4, E: 4, T: 2}     # match the ThinKV faithful preset
+  precision: {R: 4, E: 4, T: 2}     # TBQ precision preset
   auto_configure: true
   calib_max_new: 200
   capture_long: false                # cheaper, GSM8K only
@@ -135,28 +136,28 @@ depths: [0.1, 0.25, 0.5, 0.75, 0.9]
 seeds: 3
 max_new_needle: 256     # R1-Distill models always emit <think> prefix; 32 is too short
 
-run_ruler: true
+run_ruler: false            # local multi-key diagnostic is not official RULER
 ruler_keys: 4
 ruler_seeds: 5
 
 run_longbench: true
 longbench_tasks: []
-longbench_max_length: 7500
-longbench_limit: 10
+longbench_max_length: 32768
+longbench_limit: null       # complete official split
 
 # --- Reasoning non-degradation (TaperKV thesis: keeps reasoning intact) ---
 run_gsm8k: true
-gsm8k_limit: 100
+gsm8k_limit: null           # complete 1,319-example test split
 max_new_reason: 4096
 run_math: true
-math_limit: 100
+math_limit: null            # complete MATH-500 test split
 max_new_math: 4096
 
 # --- WikiText-2 PPL sanity ---
 run_ppl: true
 ppl_max_length: 4096
 ppl_stride: 2048
-ppl_windows: 16
+ppl_windows: null           # complete WikiText-2 test split
 
 skip_outliers: true
 outlier_ratio: 50.0

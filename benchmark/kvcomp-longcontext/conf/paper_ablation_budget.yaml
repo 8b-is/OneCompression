@@ -45,4 +45,4 @@ max_new_needle: 256
 run_ppl: true
 ppl_max_length: 4096
 ppl_stride: 2048
-ppl_windows: 16
+ppl_windows: null            # complete WikiText-2 test split

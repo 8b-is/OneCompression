@@ -12,7 +12,9 @@ clone the repo, sync `.venv`, place the models under `$MODELS`, and run
 
 The two papers share one harness (`kv_benchmark.py`, `codec_benchmark.py`,
 `codec_speed.py`) and one fairness contract (iso-memory budget, uniform
-outlier-layer skip, 95% CIs) so the cross-paper numbers are directly comparable.
+outlier-layer skip, 95% CIs). Only results from the same official harness are
+directly comparable; the historical `ruler` field below is a local synthetic
+multi-key diagnostic, not an NVIDIA RULER score.
 
 ---
 
@@ -59,7 +61,7 @@ PM-KVQ/KIVI/R-KV) reports Gemma KV results, so it adds no comparable point.
 |---|---|---|---|
 | Codec quality (KV-MSE, attn-err) | `kvcomp-codec/conf/paper_hayatequant.yaml` | `p1-hq-{llama,minis,r1q7,r1q15}` | `kvcomp-codec/results_paper_*` |
 | Codec speed × quality Pareto | `codec_speed.py` (CLI) | `p1-speed-{synth,llama}` | `results_codec_speed/` |
-| Retrieval (Needle/RULER/PPL), full bit-grid | `conf/turboquant_paper.yaml`, `conf/turboquant_paper_ministral.yaml` | `p1-tq-{llama,minis}-retr` | `results_tq_{llama,minis}_retr/` |
+| Retrieval (Needle/local multi-key/PPL), full bit-grid | `conf/turboquant_paper.yaml`, `conf/turboquant_paper_ministral.yaml` | `p1-tq-{llama,minis}-retr` | `results_tq_{llama,minis}_retr/` |
 | LongBench-E downstream | same configs, `run_longbench=true` | `p1-tq-{llama,minis}-lb` | `results_tq_{llama,minis}_lb/` |
 | Lever ablation (HALO levers + TaperKV asymmetry) | `conf/paper_ablation.yaml` | `p1-ablation-llama` | `results_ablation_llama/` |
 
@@ -87,9 +89,10 @@ Enhanced HALO makes the scale **role-asymmetric** (iso-storage, same fp16/vector
 | `HALO-NC-{2,2.5,3,3.5,4}bit` | norm-correcting (`nc`) | least-squares (`ls`) | logit shrink `cos²θ → cosθ`; value MSE unchanged |
 | `HALO-NCIT-{2,2.5,3,3.5,4}bit` | `nc` | `ls_iter` | + one Lloyd alternating-min step on values (monotone-lower value MSE) |
 
-The **2.5 / 3.5-bit** points use lever 3 (outlier split, `n_outlier=64`,
-`outlier_bits=b+1` on head_dim=128) so HALO now covers TurboQuant's full
-headline bit-grid at exactly iso-memory. The needle/RULER filler is now a
+The **2.5 / 3.5-bit** points use lever 3 (paper outlier split,
+`n_outlier=32`, `outlier_bits=b+1` on head_dim=128). The 2.25/3.25 payload
+plus two fp16 subset norms totals 2.5/3.5 stored bits/coordinate, so HALO covers TurboQuant's full
+headline bit-grid at exactly iso-memory. The needle/local-multi-key filler is now a
 diverse 30-sentence bank (not a 4-sentence repeat), so retrieval actually
 stresses the codec.
 
@@ -105,7 +108,7 @@ TurboQuant + legacy HALO at iso-bit; writes to `results_halo_enh_*`):
 ```bash
 cd benchmark/kvcomp-longcontext/paper
 bash submit_halo_enhanced.sh             # 8 jobs (retrieval + reasoning)
-bash submit_halo_enhanced.sh retrieval   # Llama/Ministral needle/RULER/PPL/LB
+bash submit_halo_enhanced.sh retrieval   # Llama/Ministral needle/local-multikey/PPL/LB
 bash submit_halo_enhanced.sh reason      # R1/QwQ GSM8K/MATH/PPL
 DRYRUN=1 bash submit_halo_enhanced.sh    # print sbatch lines, submit nothing
 ```
@@ -141,9 +144,9 @@ Results land in `results_codec_speed/{codec_speed_enh_*,e2e_*}.json`.
 
 ### Validated retrieval result (Llama-3.1-8B, completed)
 
-`needle = 45 cells (5 depths × 3 ctx × 3 seeds); RULER = 15 cells; PPL = WikiText-2`
+`needle = 45 cells (5 depths × 3 ctx × 3 seeds); local synthetic multi-key = 15 cells; PPL = WikiText-2`
 
-| Method | Needle ↑ | RULER ↑ | PPL ↓ | Mem |
+| Method | Needle ↑ | Synthetic multi-key ↑ | PPL ↓ | Mem |
 |---|---:|---:|---:|---:|
 | FullKV | 1.00 | 1.00 | 6.49 | 1.00 |
 | Uniform-INT3 | 1.00 | 0.87 | 8.54 | 0.197 |
@@ -215,20 +218,20 @@ srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py \
 
 ---
 
-## LiveCodeBench axis
+## Functional-code smoke axis (not official LiveCodeBench)
 
-LiveCodeBench is now enabled via a local pre-fetched JSONL
-(`data/lcb_functional.jsonl`, 50 functional programming tasks from
-`livecodebench/code_generation_lite`). Jobs use `run_livecodebench=true
+This local HumanEval-shaped diagnostic is enabled via a pre-fetched JSONL
+(`data/lcb_functional.jsonl`). It does not run LiveCodeBench's official
+stdin/stdout APPS checker and must not be cited as an LCB score. Jobs use `run_livecodebench=true
 lcb_problems_path=<...>/lcb_functional.jsonl HF_DATASETS_OFFLINE=0`.
 
 **Important caveat (2026-06-04):** R1-Distill-Llama-8B achieves **FullKV=0%**
-pass@1 on LCB (avg_gen_len≈10400, well below the 16384 limit). This is a
+pass@1 on this smoke set (avg_gen_len≈10400, well below the 16384 limit). This is a
 model-capability issue: the model was distilled for MATH/reasoning, not
 functional code generation, and its long `<think>` blocks precede code that
-fails the test harness. LCB results for R1-Llama-8B are therefore included for
+fails the test harness. Smoke-test results for R1-Llama-8B are therefore included for
 completeness but should not be used as a primary comparison point; QwQ-32B and
-R1-Qwen-14B are the relevant models for the LCB claim.
+R1-Qwen-14B are the relevant models for this diagnostic only.
 
 ---
 
@@ -309,9 +312,9 @@ Before fix (OLD cascade-error code): R1-7B MATH=6%, QwQ-32B GSM=0%.
 
 ### Paper 1 — HALO codec: Retrieval (Llama-3.1-8B, iso-memory)
 
-`Needle = 45 cells (5 depths × 3 ctx-len × 3 seeds); RULER = 15 cells`
+`Needle = 45 cells (5 depths × 3 ctx-len × 3 seeds); local synthetic multi-key = 15 cells`
 
-| Method | Needle ↑ | RULER ↑ | PPL ↓ | Mem |
+| Method | Needle ↑ | Synthetic multi-key ↑ | PPL ↓ | Mem |
 |---|---:|---:|---:|---:|
 | FullKV | 1.000 | 1.000 | 6.49 | 1.000 |
 | Uniform-INT3 | 1.000 | 0.867 | 8.54 | 0.197 |

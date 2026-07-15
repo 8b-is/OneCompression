@@ -1,4 +1,4 @@
-"""Long-context retrieval evaluation (Needle-in-a-Haystack / simple RULER).
+"""Long-context retrieval evaluation (Needle / synthetic multi-key retrieval).
 
 This is the quality axis that distinguishes *eviction* from *graded
 quantization*: a needle hidden mid-context is unrecoverable once evicted, but
@@ -192,9 +192,9 @@ def greedy_answer(model, input_ids, cache, max_new_tokens=32, post_prefill=None,
                   eos=None, attn_capture=False):
     """Greedy decode with explicit ``cache_position`` (robust to eviction).
 
-    ``post_prefill(cache)`` is called once after the prefill forward so an
-    eviction cache can trim itself; survivors keep their true positions while
-    new tokens decode at their true position index.
+    ``post_prefill(cache)`` is called after prefill and after every decode cache
+    update.  This maintains a bounded StreamingLLM window throughout generation;
+    calling it only once lets generated tokens grow without bound.
 
     ``attn_capture=True`` materializes ``attn_weights`` (eager + output_attentions)
     and feeds attention sparsity into a ThinKV cache so its thought
@@ -222,6 +222,8 @@ def greedy_answer(model, input_ids, cache, max_new_tokens=32, post_prefill=None,
             out = model(nxt, past_key_values=cache, use_cache=True,
                         cache_position=cp, position_ids=cp.unsqueeze(0),
                         output_attentions=oa)
+            if post_prefill is not None:
+                post_prefill(cache)
             nxt = out.logits[:, -1].argmax(-1, keepdim=True)
             toks.append(nxt)
             cur += 1
@@ -344,7 +346,10 @@ def ruler_multikey(
     evict: bool = False,
     attn_capture: bool = False,
 ) -> NeedleResult:
-    """RULER-style multi-key retrieval accuracy over context lengths.
+    """Synthetic multi-key retrieval accuracy over context lengths.
+
+    This is not NVIDIA's multi-task RULER benchmark.  The historical function
+    name is kept for API compatibility; result tables must label it synthetic.
 
     Like :func:`needle_in_haystack` but with ``num_keys`` competing facts so the
     model must disambiguate among distractors -- the regime where eviction loses

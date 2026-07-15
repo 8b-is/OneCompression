@@ -57,7 +57,7 @@ Final 2-bit Llama PPL: 8.825 vs TurboQuant-hadamard 10.161 / -dense 9.942.
 real-data codebook refit; opt-in, holdout-distortion guarded and -0.18 on Qwen3-8B
 2-bit) and the K/V-asymmetric `HayateQuant-K4V2` row at the 3.0-avg-bit
 point (keys are the sensitive role: -0.09/-0.15 PPL vs uniform 3-bit on
-Llama/Qwen3-8B, RULER +0.067 on Llama, same storage).
+Llama/Qwen3-8B, local synthetic multi-key +0.067 on Llama, same storage).
 
 ## Run
 

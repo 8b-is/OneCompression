@@ -23,27 +23,29 @@ from onecomp.kvcomp.codec.hayate.recipes import (
 
 
 @torch.no_grad()
-def _ms_per_encode(codec, x: torch.Tensor, *, iters: int, warmup: int) -> float:
+def _ms_per_encode(codec, key: torch.Tensor, value: torch.Tensor, *,
+                   iters: int, warmup: int) -> float:
     for _ in range(warmup):
-        codec.encode(x, x)
-    if x.is_cuda:
-        torch.cuda.synchronize(x.device)
+        codec.encode(key, value)
+    if key.is_cuda:
+        torch.cuda.synchronize(key.device)
     t0 = time.perf_counter()
     for _ in range(iters):
-        codec.encode(x, x)
-    if x.is_cuda:
-        torch.cuda.synchronize(x.device)
+        codec.encode(key, value)
+    if key.is_cuda:
+        torch.cuda.synchronize(key.device)
     return (time.perf_counter() - t0) * 1e3 / float(iters)
 
 
-def _stored_bits_per_coord(codec, x: torch.Tensor) -> float:
-    enc = codec.encode(x, x)
-    return float(enc.meta["stored_bits"]) / float(2 * x.numel())
+def _stored_bits_per_coord(codec, key: torch.Tensor, value: torch.Tensor) -> float:
+    enc = codec.encode(key, value)
+    return float(enc.meta["stored_bits"]) / float(key.numel() + value.numel())
 
 
 def run(args: argparse.Namespace) -> dict:
     device = torch.device(args.device)
     dtype = getattr(torch, args.dtype)
+    torch.manual_seed(args.seed)
     rows = []
     for bits in args.bits:
         codecs = {
@@ -51,13 +53,15 @@ def run(args: argparse.Namespace) -> dict:
             "Adaptive HQ": build_hayate_adaptive_rate(bits),
         }
         for seq in args.seq_lens:
-            x = torch.randn(
+            key = torch.randn(
                 args.batch, args.heads, seq, args.head_dim,
                 device=device, dtype=dtype,
             )
+            value = torch.randn_like(key)
             base_ms = None
             for name, codec in codecs.items():
-                ms = _ms_per_encode(codec, x, iters=args.iters, warmup=args.warmup)
+                ms = _ms_per_encode(
+                    codec, key, value, iters=args.iters, warmup=args.warmup)
                 if name == "HQ":
                     base_ms = ms
                 rows.append({
@@ -66,7 +70,8 @@ def run(args: argparse.Namespace) -> dict:
                     "method": name,
                     "ms_per_encode": round(ms, 4),
                     "relative_to_hq": None if base_ms is None else round(ms / base_ms, 4),
-                    "stored_bits_per_coord": round(_stored_bits_per_coord(codec, x), 4),
+                    "stored_bits_per_coord": round(
+                        _stored_bits_per_coord(codec, key, value), 4),
                 })
     return {
         "shape": {
@@ -108,6 +113,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--head-dim", type=int, default=128)
     ap.add_argument("--iters", type=int, default=100)
     ap.add_argument("--warmup", type=int, default=10)
+    ap.add_argument("--seed", type=int, default=0)
     return ap.parse_args()
 
 

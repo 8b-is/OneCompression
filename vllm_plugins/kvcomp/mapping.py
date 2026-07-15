@@ -10,16 +10,20 @@ ships native KV-cache dtypes well beyond FP8, so the bridge maps onto them:
 
 * **FP8** -> ``"fp8_e4m3"`` / ``"fp8_e5m2"`` (data-free, ``calculate_kv_scales``).
 * **TurboQuant** (and the TurboQuant-family **HALO**, **HayateQuant** at
-  ``block_size=1``) -> the native ``turboquant_*`` presets
+  ``block_size=1``) can explicitly opt into the native ``turboquant_*`` presets
   (``turboquant_k8v4``, ``turboquant_4bit_nc``, ``turboquant_k3v4_nc``,
   ``turboquant_3bit_nc``) chosen by ``(key_bits, value_bits)`` -- vLLM runs
   Hadamard rotation + Lloyd-Max keys + uniform values with automatic
-  boundary-layer protection (FlashAttention-2).  For HayateQuant block-VQ
-  (``block_size>1``), the bridge keeps the byte-compatible ``turboquant_*``
-  dtype but registers OneComp's native vLLM backend override for the supported
-  3/4-bit ``block_size=2`` key block-VQ path.  Set
-  ``KVCOMP_VLLM_HAYATEQUANT_MODE=scalar_fallback`` to force the older scalar
-  TurboQuant fallback, or ``strict`` to require the HF/custom path.
+  boundary-layer protection (FlashAttention-2). Since that differs from
+  OneComp's dense-QR / Lloyd-Max-on-both-roles reference, strict/custom is the
+  default; set ``KVCOMP_VLLM_TURBOQUANT_MODE=native`` to request the deployment
+  approximation explicitly. No native vLLM dtype
+  reproduces HayateQuant block-VQ (``block_size>1``), so the default is strict
+  and requires the HF/custom path.  An explicitly requested
+  ``KVCOMP_VLLM_HAYATEQUANT_MODE=native`` enables an experimental,
+  byte-compatible hybrid that applies block-VQ to keys but retains vLLM's
+  uniform scalar value quantizer; it must not be reported as faithful
+  HayateQuant.  ``scalar_fallback`` explicitly selects TurboQuant semantics.
 * **NVFP4** -> ``"nvfp4"``; **INT8** -> ``"int8_per_token_head"``.
 * Remaining low-bit/asymmetric codecs (INT4/INT3/INT2, KIVI, Ternary) and
   token-eviction selectors (SnapKV, ThinKV TBE) / adaptive per-token policies
@@ -191,10 +195,10 @@ def _hayatequant_vllm_mode(codec: dict) -> str:
     """Resolve how block-VQ HayateQuant should be represented in vLLM.
 
     Upstream vLLM currently exposes TurboQuant scalar presets as dtype strings,
-    not HayateQuant-specific dtype strings.  For operational usability, the
-    default is OneComp's byte-compatible native backend override for supported
-    HayateQuant key block-VQ presets.  Scalar fallback and strict/custom modes
-    remain explicit escape hatches.
+    not HayateQuant-specific dtype strings.  Neither the scalar preset nor the
+    experimental key-only block-VQ override reproduces HayateQuant's value
+    block-VQ path, so strict/custom is the correctness-preserving default.
+    The two approximate serving modes remain explicit opt-ins.
     ``KVCOMP_VLLM_SCALAR_FALLBACK=0`` is kept as a backward-compatible way to
     force strict behavior from older scripts.
     """
@@ -210,7 +214,7 @@ def _hayatequant_vllm_mode(codec: dict) -> str:
         if legacy is not None:
             raw = "scalar_fallback" if legacy.strip().lower() in ("1", "true", "yes", "on") else "strict"
     if raw is None:
-        return "native"
+        return "strict"
     mode = str(raw).strip().lower().replace("-", "_")
     if mode in ("1", "true", "yes", "on"):
         return "native"
@@ -229,6 +233,18 @@ def _hayatequant_native_key_scale_mode(codec: dict) -> str | None:
     if mode in {"nc", "ip"}:
         return mode
     return None
+
+
+def _turboquant_native_opted_in(codec: dict, name: str) -> bool:
+    """Whether an inexact native TurboQuant-family deployment was requested."""
+    if name == "hayatequant":
+        mode = _hayatequant_vllm_mode(codec)
+        return mode in (_HAYATEQUANT_NATIVE_MODES | _HAYATEQUANT_SCALAR_FALLBACK_MODES)
+    raw = codec.get("vllm_mode") or os.environ.get("KVCOMP_VLLM_TURBOQUANT_MODE")
+    if raw is None:
+        return False
+    mode = str(raw).strip().lower().replace("-", "_")
+    return mode in {"native", "approximate", "deployment", "vllm", "1", "true", "yes", "on"}
 
 
 @dataclass
@@ -255,9 +271,9 @@ class KVCompVLLMPlan:
     codec_name: Optional[str] = None
     calculate_kv_scales: bool = False
     needs_custom_backend: bool = False
-    # True when the plugin should override vLLM's TURBOQUANT backend with the
-    # OneComp HayateQuant key block-VQ implementation while retaining the same
-    # byte-compatible ``turboquant_*`` cache dtype.
+    # True only for the explicitly requested experimental hybrid: block-VQ
+    # keys plus upstream TurboQuant uniform scalar values. This is not a
+    # faithful HayateQuant result and is labelled accordingly in notes.
     hayate_native: bool = False
     hayate_config: dict = field(default_factory=dict)
     # Boundary / outlier layers vLLM should keep in full precision; mapped onto
@@ -475,9 +491,9 @@ def plan_from_kv_config(
         ):
             _set_native(
                 preset,
-                f"Codec 'hayatequant' (k{kb}v{vb}, block-VQ) -> byte-compatible "
+                f"Codec 'hayatequant' (k{kb}v{vb}) -> experimental byte-compatible "
                 f"vLLM kv_cache_dtype='{preset}' with OneComp's native "
-                "HayateQuant key block-VQ backend override.",
+                "key-block-VQ/TurboQuant-value hybrid backend override.",
             )
             plan.hayate_native = True
             plan.hayate_config = {
@@ -493,17 +509,22 @@ def plan_from_kv_config(
             }
             plan.skip_layers = [int(x) for x in (codec.get("skip_layers") or [])]
             plan.notes.append(
-                "The native HayateQuant vLLM path preserves the TurboQuant byte "
-                "budget and paged-cache capacity while replacing scalar key "
-                "indices with block-VQ key indices (values keep vLLM's uniform "
-                "quantization for compatibility)."
+                "EXPERIMENTAL APPROXIMATION: keys use HayateQuant block-VQ, "
+                "but values keep vLLM's uniform TurboQuant quantizer. This is "
+                "not algorithmically equivalent to HayateQuant and must be "
+                "reported as 'Hayate-key-VQ/TurboQuant-value', not HayateQuant."
+            )
+            plan.warnings.append(
+                "Explicit native mode selected a key-only HayateQuant hybrid; "
+                "faithful HayateQuant quality comparisons require the HF/custom "
+                "path because value block-VQ is not reproduced."
             )
         elif mode in _HAYATEQUANT_SCALAR_FALLBACK_MODES and preset is not None:
             _set_native(
                 preset,
                 f"Codec 'hayatequant' (block-VQ) served via scalar fallback "
-                f"kv_cache_dtype='{preset}' (vllm_mode='{mode}'): equivalent "
-                "to HayateQuant at block_size=1.",
+                f"kv_cache_dtype='{preset}' (vllm_mode='{mode}'): an explicit "
+                "vLLM TurboQuant deployment approximation.",
             )
             _check_rotation_for_native(codec, name, plan)
             plan.skip_layers = [int(x) for x in (codec.get("skip_layers") or [])]
@@ -514,6 +535,11 @@ def plan_from_kv_config(
                 "accuracy and use the HF cache/custom backend path for faithful "
                 "block-VQ results."
             )
+            if unsupported_native:
+                plan.warnings.append(
+                    "The scalar fallback also drops native-inexpressible knobs: "
+                    f"{unsupported_native}."
+                )
         else:
             plan.needs_custom_backend = True
             plan.native_supported = False
@@ -527,17 +553,14 @@ def plan_from_kv_config(
                     f"Unknown HayateQuant vLLM mode '{mode}'; treating it as "
                     "strict/custom to avoid silently changing accuracy."
                 )
-            if unsupported_native and mode in _HAYATEQUANT_NATIVE_MODES:
+            if unsupported_native:
                 plan.notes.append(
-                    "Codec 'hayatequant' requested native vLLM block-VQ, but "
-                    f"the config uses unsupported native knobs {unsupported_native}; "
-                    "use the HF cache/custom backend for faithful results or set "
-                    "vllm_mode='scalar_fallback' explicitly."
+                    "Codec 'hayatequant' requires the HF/custom path because "
+                    f"its config uses native-inexpressible knobs {unsupported_native}. "
+                    "The experimental key-only hybrid and scalar fallback would "
+                    "change the requested algorithm."
                 )
-            elif preset is None and (
-                mode in _HAYATEQUANT_SCALAR_FALLBACK_MODES
-                or mode in _HAYATEQUANT_NATIVE_MODES
-            ):
+            elif preset is None:
                 plan.notes.append(
                     f"Codec 'hayatequant' k{kb}v{vb} uses block-VQ but has no "
                     "native scalar TurboQuant preset in vLLM (presets: k8v4, "
@@ -551,6 +574,29 @@ def plan_from_kv_config(
                     f"(vllm_mode='{mode}'); use the HF cache/custom backend path "
                     "to get its accuracy gain over the scalar turboquant_* presets."
                 )
+    elif name in ("turboquant", "halo", "hayatequant") and not _turboquant_native_opted_in(
+        codec, name
+    ):
+        # vLLM's named presets are deployment approximations, not a serialization
+        # of OneComp's requested codec: the rotation may differ and values are
+        # uniformly quantized instead of Lloyd-Max. Correctness therefore wins by
+        # default; users can opt in explicitly when native paged-cache throughput
+        # is more important than algorithmic equivalence.
+        plan.needs_custom_backend = True
+        plan.native_supported = False
+        plan.kv_cache_dtype = "auto"
+        opt_in = (
+            "KVCOMP_VLLM_HAYATEQUANT_MODE=native"
+            if name == "hayatequant"
+            else "KVCOMP_VLLM_TURBOQUANT_MODE=native"
+        )
+        plan.notes.append(
+            f"Codec '{name}' remains on the HF/custom path: vLLM's native "
+            "TurboQuant presets use randomized Hadamard keys and uniform values, "
+            "which is not algorithmically equivalent to the serialized codec. "
+            f"Set {opt_in} for an explicitly labelled "
+            "deployment approximation."
+        )
     elif name in ("turboquant", "halo", "hayatequant"):
         tq_preset = resolve_turboquant_codec(codec)
         kb = tq_preset.key_bits if tq_preset is not None else int(codec.get("bits", 4))

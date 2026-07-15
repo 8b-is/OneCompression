@@ -8,8 +8,8 @@
 #   * **Bits**: {4, 3, 2}.  3-bit is the iso-quality operating point most
 #     KV-quant papers headline on (KIVI, TurboQuant Table 1, KVTuner Fig 4),
 #     so it is the bit width readers expect to compare HALO at.
-#   * **Codecs**: HALO-auto vs TurboQuant-hadamard (the paper-shipped default)
-#     vs TurboQuant-dense (rotation ablation).  All share the same data-free
+#   * **Codecs**: HALO-auto vs TurboQuant-paper (exact Beta + Gaussian-QR)
+#     vs TurboQuant-hadamard (fast deployment approximation). All share a data-free
 #     Lloyd-Max codebook so any quality difference is rotation only.
 #   * **Models**: Llama-3.1-8B-Instruct (the TurboQuant paper headline model)
 #     plus DeepSeek-R1-Distill-Qwen-7B and -1.5B for the reasoning regime.
@@ -40,11 +40,11 @@ timing_heads: 8
 timing_seq: 1024
 timing_iters: 100
 
-# PPL: 32 WikiText-2 windows for low-noise comparison.
+# PPL: complete WikiText-2 raw test split (no window cap).
 run_ppl: true
 ppl_max_length: 2048
 ppl_stride: 1024
-ppl_windows: 32
+ppl_windows: null
 
 # Outlier layers: massive-activation layers (common in small Qwen R1-Distill models)
 # destroy generation quality when quantized at any bit-width.  Detect them once and

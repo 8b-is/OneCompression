@@ -10,7 +10,7 @@ attn_implementation: eager  # ThinKV thought-classification reads attn weights
 output_dir: ${hydra:runtime.cwd}/results
 
 # Which methods to run (empty/null = all). Names: FullKV, Uniform-INT4,
-# Uniform-INT2, StreamingLLM, ThinKV, PM-KVQ, TaperKV.
+# Uniform-INT2, StreamingLLM, ThinKV (TBQ-only in HF), PM-KVQ, TaperKV.
 methods: null
 
 # --- shared budget knobs (kept identical across methods for a fair iso-memory
@@ -23,8 +23,8 @@ target_mem: 0.27            # iso-memory budget (stored/fp16) for the evict wind
 uniform_bits: [4, 2]        # uniform-quant baselines (per-token INT)
 
 # TurboQuant (arXiv:2504.19874): rotation + Lloyd-Max scalar quant. Each entry
-# is a codec kwargs dict; "2.5-bit"/"3.5-bit" use the paper's outlier split
-# (32 ch @ +1 bit, 96 ch @ base; head_dim=128). Empty = skip TurboQuant.
+# is a codec kwargs dict; "2.5-bit"/"3.5-bit" use the paper's 32/96 outlier
+# split at head_dim=128 (2.25/3.25 payload + 0.25 for two fp16 norms).
 turboquant_variants: []
 # KIVI baseline (arXiv:2402.02750): per-channel key, per-token value. Empty=skip.
 kivi_bits: []
@@ -62,7 +62,7 @@ outlier_ratio: 50.0         # key max/median ratio threshold for outlier layers
 thinkv:
   group_size: 16
   precision: {R: 4, E: 4, T: 2}   # static per-thought bits (paper)
-  auto_configure: true            # outlier-layer skip + L*/threshold calibration (faithful 08 setup)
+  auto_configure: true            # outlier-layer skip + L*/threshold calibration for TBQ
   calib_max_new: 200              # CoT length per calibration prompt
   capture_long: false             # attn capture on needle/RULER (output_attentions OOMs at long ctx; K25)
 
@@ -100,10 +100,11 @@ turbotaper_sweep: []
 context_lens: [2048, 4096, 8192]
 depths: [0.1, 0.25, 0.4, 0.5, 0.6, 0.75, 0.9]
 seeds: 3
+sample_seed: 0              # common random numbers across compression methods
 max_new_needle: 64          # raise to ~256 for long-CoT reasoning models
 
-# --- RULER multi-key retrieval (harder: disambiguate among distractor keys) ---
-run_ruler: false            # enable for the retrieval-stress comparison
+# --- synthetic multi-key retrieval (not the official NVIDIA RULER suite) ---
+run_ruler: false            # historical config name retained for compatibility
 ruler_keys: 4
 ruler_seeds: 5
 
@@ -112,25 +113,25 @@ run_needle: true
 
 # --- reasoning (GSM8K pass@1) ---
 run_gsm8k: true
-gsm8k_limit: 50
+gsm8k_limit: 50             # finite value = smoke; null = complete test split
 max_new_reason: 1024
 
 # --- reasoning (MATH-500 pass@1) ---
 run_math: false
-math_limit: 50
+math_limit: 50              # finite value = smoke; null = complete MATH-500
 max_new_math: 3072
 
 # --- LongBench-E end-to-end generation (TurboQuant Table 1 downstream metric) ---
 run_longbench: false
 longbench_tasks: []         # empty = all 13 English LongBench-E tasks
-longbench_max_length: 7500  # prompt budget; longer prompts middle-truncated
-longbench_limit: 20         # samples per task
+longbench_max_length: 32768 # model prompt budget; bucket uses original row length
+longbench_limit: null       # null = complete official split; integer = smoke only
 
-# --- LiveCodeBench functional pass@1 (ThinKV code axis) ---
+# --- HumanEval-shaped functional-code smoke test (NOT official LiveCodeBench) ---
 # Either point lcb_problems_path at a local JSONL of {prompt, entry_point, test}
 # (the reproducible offline path) or let lcb_dataset load the HF set. Generated
 # code runs in a sandboxed subprocess (rlimits + timeout); use an isolated node.
-run_livecodebench: false
+run_livecodebench: false    # local smoke only; use the external official runner for paper numbers
 lcb_problems_path: null     # local JSONL; null -> load lcb_dataset from HF
 lcb_dataset: livecodebench/code_generation_lite
 lcb_split: test
@@ -143,7 +144,7 @@ max_new_code: 4096
 run_ppl: true
 ppl_max_length: 2048
 ppl_stride: 1024
-ppl_windows: 16
+ppl_windows: 16             # finite value = smoke; null = complete test split
 
 hydra:
   run:

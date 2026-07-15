@@ -29,7 +29,7 @@ DEFAULT_RUN_ROOT = Path(
 )
 
 METHODS = {
-    "TQ": "TurboQuant-hadamard",
+    "TQ": "TurboQuant-paper",
     "FibQ": "FibQuant",
     "BlockQ": "BlockQuant",
 }
@@ -69,7 +69,8 @@ def _ppl(payload: dict[str, Any], bits: int, method: str) -> float | None:
 
 
 def _acc(payload: dict[str, Any], bits: int, method: str) -> float | None:
-    val = (((payload.get("results") or {}).get(str(bits)) or {}).get(method) or {}).get("avg_acc_norm")
+    entry = ((payload.get("results") or {}).get(str(bits)) or {}).get(method) or {}
+    val = entry.get("avg_primary_score", entry.get("avg_acc_norm"))
     return None if val is None else float(val) * 100.0
 
 

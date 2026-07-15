@@ -140,7 +140,26 @@ class GradedQuantCache(DynamicCache):
             return out_k, out_v
         regrade = q_len > 1 or (self._since % self.requant_stride == 0)
         if not regrade:
-            return out_k, out_v
+            # The age ladder for older tokens may intentionally wait until the
+            # next stride, but newly appended tokens must never remain unquantized
+            # or disappear from memory accounting during that interval.
+            layer = self.layers[layer_idx]
+            kbits, vbits = self.token_bits(layer.keys.shape[2], layer.keys.device, layer_idx)
+            k_new_bits, v_new_bits = kbits[-q_len:], vbits[-q_len:]
+            kq = fake_quant_tokens(layer.keys[:, :, -q_len:], k_new_bits)
+            vq = fake_quant_tokens(layer.values[:, :, -q_len:], v_new_bits)
+            layer.keys[:, :, -q_len:] = kq.to(layer.keys.dtype)
+            layer.values[:, :, -q_len:] = vq.to(layer.values.dtype)
+            per = layer.keys.shape[1] * layer.keys.shape[-1]
+            heads = layer.keys.shape[1]
+            added = int(
+                k_new_bits.sum() * per + v_new_bits.sum() * per
+                + self._meta_bits(k_new_bits, heads) + self._meta_bits(v_new_bits, heads)
+            )
+            self._layer_bits[layer_idx] = self._layer_bits.get(layer_idx, 0) + added
+            self._layer_fp16[layer_idx] = (layer.keys.numel() + layer.values.numel()) * 16
+            self.fp16_bits_layer = self._layer_fp16[layer_idx]
+            return layer.keys, layer.values
         # Re-grade the materialised layer cache and return the graded tensors so
         # the *current* forward attends to quantized KV (faithful; makes both
         # the prefill/PPL path and the decode path reflect the precision ladder).

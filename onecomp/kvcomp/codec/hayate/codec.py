@@ -1,14 +1,15 @@
 """HayateQuant: block-vector-quantized, hybrid-rotation KV codec.
 
-HayateQuant is a **strict, data-free generalization of TurboQuant**
+HayateQuant is a **data-free block-VQ generalization of TurboQuant**
 (arXiv:2504.19874) that closes TurboQuant's own stated distortion slack and
 absorbs HALO's validated, storage-neutral levers into one codec, replacing
 both ``turboquant`` and the (now removed) ``halo`` codec.
 
 Recap: TurboQuant rotates a KV vector by a random orthogonal transform so its
-coordinates are (exactly, for finite ``d``, or asymptotically as ``d -> inf``)
-i.i.d. draws from a scalar law -- ``Beta((d-1)/2, (d-1)/2)`` or its Gaussian
-limit -- then fits a **scalar** Lloyd-Max quantizer to that law, *entirely
+coordinates are identically Beta-distributed for finite ``d`` and become
+approximately independent Gaussian coordinates as ``d -> inf`` (finite-sphere
+coordinates are dependent through the fixed norm). It then fits a **scalar**
+Lloyd-Max quantizer to that marginal law, *entirely
 data-free* (the codebook only depends on the bit-width, not on any real KV
 data). The paper proves this is within a constant factor (``<= sqrt(3*pi/2)
 ~= 2.7x``) of the information-theoretic distortion-rate optimum. Classical
@@ -22,7 +23,7 @@ only closes as the joint quantization dimension grows (``E8``: ``~0.65`` dB
 gap remaining; this repo's own HALO analysis flags exactly this as unexplored
 "Lever 5", see ``benchmark/kvcomp-longcontext/paper/HALO_ENHANCED_REPORT.md``).
 
-HayateQuant closes this gap with two data-free, storage-neutral additions on
+HayateQuant targets this gap with two data-free, storage-neutral additions on
 top of TurboQuant's own skeleton:
 
 1. **Block vector quantization (the core contribution).** Instead of an
@@ -38,15 +39,16 @@ top of TurboQuant's own skeleton:
    a single GEMM (``z @ cb.T``) + ``argmax`` (:func:`._vq.quantize_to_vq_codebook`),
    so encode/decode remain O(1) matmuls per block; no explicit lattice
    geometry (e.g. ``E8``) or per-lattice decoding algorithm is required, and
-   because the codebook is *learned* on the exact source law it is always at
-   least as good as any fixed lattice at the same rate. The total number of
+   the codebook is *fit* on the target source law. Lloyd fitting is a local,
+   finite-sample optimization, so quality against a fixed lattice is an
+   empirical comparison rather than a universal guarantee. The total number of
    stored bits is unchanged (``bits`` per coordinate, same as TurboQuant --
    see ``_stored_bits``); only *how* those bits are allocated changes (jointly
    per block instead of independently per coordinate), which is exactly the
    controlled comparison needed to isolate the vector-quantization gain.
    ``block_size=1`` reduces the block codebook to the ordinary scalar
-   Lloyd-Max codebook, bit-for-bit -- HayateQuant is therefore **always able
-   to fall back to exactly TurboQuant's quantizer**, never worse.
+   Lloyd-Max codebook, bit-for-bit -- HayateQuant can therefore explicitly
+   select exactly TurboQuant's scalar quantizer as its fallback baseline.
 
 2. **Hybrid rotation (resolves the Hadamard-vs-Dense trade-off).**
    TurboQuant/HALO's own benchmarks (``benchmark/kvcomp-codec/README.md``)
@@ -69,17 +71,13 @@ top of TurboQuant's own skeleton:
 
    Composing two orthogonal transforms is orthogonal (norm-preserving,
    invertible via the transposes in reverse order, :mod:`.rotation`
-   ``hybrid_rotate``/``hybrid_unrotate``), and the combined cost
-   ``O(D log D + D*b)`` stays far below a single full ``D x D`` dense
-   rotation (``O(D^2)``) while giving each block genuine Haar-random local
-   isotropy -- keeping the Hadamard step's proven-good global incoherence
-   against real anisotropic KV (the robustness lever) *and* the exact local
-   isotropy the block-VQ codebook needs (the accuracy lever). The block size
-   ``block_size`` is therefore literally the interpolation knob between "pure
-   Hadamard" (``block_size=1``, cheapest, most robust, no vector-quantization
-   gain) and "pure dense" (``block_size=D``, most expensive, most isotropic)
-   that was raised as an open question for HALO -- HayateQuant answers it by
-   only paying the dense-rotation cost on small blocks.
+   ``hybrid_rotate``/``hybrid_unrotate``). The explicit two-stage reference
+   transform costs ``O(D log D + D*b)``. The shipped runtime instead folds the
+   two matrices offline into one BLAS-friendly ``D x D`` GEMM, so its online
+   asymptotic cost is ``O(D^2)``--the same as dense QR rotation--while avoiding
+   two launches. It therefore makes no sub-quadratic runtime claim. The block
+   size controls the local randomization and VQ dimension, but is not by itself
+   a measured guarantee of better end-to-end accuracy.
 
 3. **HALO's validated, storage-neutral levers (inherited, not reinvented).**
    Role-asymmetric reconstruction scale (:mod:`._scale`): keys use the
@@ -87,18 +85,20 @@ top of TurboQuant's own skeleton:
    ``cos(theta)`` instead of ``cos^2(theta)``), values use the least-squares
    (``"ls"``/``"ls_iter"``) scale (the correct MSE objective for values, which
    are consumed linearly). Outlier mixed-precision (``n_outlier``/
-   ``outlier_bits``) for true 2.5/3.5-bit operating points. Optional QJL-style
-   1-bit residual (``use_qjl``, off by default -- community evaluations agree
-   it is unbiased but high-variance through softmax and can hurt attention).
+   ``outlier_bits``) for 2.5/3.5 stored-bit operating points at head_dim 128.
+   Optional QJL-style 1-bit residual (``use_qjl``, off by default; its
+   high-variance attention effect requires separate downstream validation).
    These levers are dimension-agnostic (:func:`._scale.fit_scale` reduces
    over the concatenated per-block codewords exactly as it would over
    concatenated scalar centroids), so they compose for free with block-VQ.
 
-**HayateQuant is a strict superset of TurboQuant and HALO**: setting
+**HayateQuant contains the scalar TurboQuant path and HALO's default
+non-preconditioned scale path**: setting
 ``block_size=1`` and ``rotation_mode`` to ``"hadamard"``/``"hadamard_gemm"``/
 ``"dense"`` with ``key_scale_mode=value_scale_mode="rms"`` reproduces
 TurboQuant bit-for-bit; adding the role-asymmetric scale modes reproduces
-HALO bit-for-bit. The only genuinely new, previously-unexplored lever is
+HALO bit-for-bit when HALO's optional centering/whitening is disabled. The
+principal additional lever is
 block-VQ (default on, via ``block_size=None`` auto-resolution), which is
 exactly the "Lever 5 / future work" gap this repository's own HALO analysis
 identified and left unimplemented.
@@ -106,11 +106,11 @@ identified and left unimplemented.
 See ``docs/design/kvcomp-architecture.md`` (HayateQuant section) and
 ``papers/hayatequant_paper/README.md`` for the full derivation, and
 ``benchmark/kvcomp-longcontext/paper/tests/verify_hayatequant_vq_gain.py`` /
-``verify_hayatequant_isotropy.py`` for the CPU-only, data-free, in-repo proofs
-that (a) block-VQ strictly reduces distortion at equal bit-rate as
-``block_size`` grows from 1, matching the classical space-filling-gain curve,
-and (b) the hybrid rotation's block marginals are measurably closer to
-isotropic than the Hadamard-only rotation's.
+``verify_hayatequant_isotropy.py`` for CPU-only, data-free checks on sampled
+source draws: (a) block-VQ distortion at equal bit-rate as ``block_size`` grows
+from 1, and (b) the hybrid rotation's measured block isotropy relative to the
+Hadamard-only rotation. These checks are regression evidence, not universal
+end-to-end quality proofs.
 
 Copyright 2025-2026 Fujitsu Ltd.
 """
@@ -151,6 +151,7 @@ from .vq import (
     quantize_via_lut,
 )
 from .._scale import SCALE_MODES, resolve_scale_mode, fit_scale
+from ..turboquant import _qjl_projection_on
 
 
 @lru_cache(maxsize=16)
@@ -516,7 +517,9 @@ class HayateQuantCodec(KVCodec):
             ``key_outlier_bits``/``value_outlier_bits`` optionally override
             that split per role, enabling BlockQuant-style key-only outlier
             protection with lower-bit values.
-        use_qjl: Optional 1-bit QJL-style residual refinement (off by default).
+        use_qjl: Optional 1-bit Gaussian QJL residual refinement (off by
+            default).  It stores ``sign(S r)`` and ``||r||_2`` for the
+            quantization residual, not the coordinate-wise sign of ``r``.
         seed: Seed for the deterministic rotations.
         calibration: Optional SpinQuant-style per-model artifact
             (:class:`.hayatequant_calib.HayateQuantCalibration` instance, or a
@@ -1031,8 +1034,15 @@ class HayateQuantCodec(KVCodec):
         if self.use_qjl:
             recon = lookup_codewords(cb, codes).reshape(*codes.shape[:-1], m) * scale
             resid = xr - recon
-            payload["qjl_sign"] = (resid >= 0)
-            payload["qjl_rms"] = resid.abs().mean(dim=-1, keepdim=True)
+            # TurboQuant-prod QJL: S is a deterministic Gaussian projection.
+            # Storing sign(Sr), rather than sign(r), is essential to the
+            # unbiased inner-product estimator used at decode.
+            qjl_seed = int(self.seed) + 104729
+            proj = _qjl_projection_on(m, qjl_seed, str(xsub.device))
+            projected = resid.float().reshape(-1, m) @ proj.t()
+            payload["qjl_sign"] = (projected >= 0).reshape_as(resid)
+            payload["qjl_norm"] = resid.float().norm(dim=-1, keepdim=True)
+            payload["qjl_seed"] = qjl_seed
         return payload
 
     def _decode_rotor(self, p: dict, device, dtype) -> torch.Tensor:
@@ -1057,8 +1067,16 @@ class HayateQuantCodec(KVCodec):
         chat = lookup_codewords(cb, p["codes"]).reshape(*p["codes"].shape[:-1], p["m"])
         xr = chat * p["scale"]
         if "qjl_sign" in p:
-            sign = torch.where(p["qjl_sign"], 1.0, -1.0).to(xr.dtype)
-            xr = xr + sign * p["qjl_rms"]
+            sign = torch.where(p["qjl_sign"], 1.0, -1.0).to(torch.float32)
+            if "qjl_norm" in p:
+                proj = _qjl_projection_on(p["m"], p["qjl_seed"], str(device))
+                qjl = (sign.reshape(-1, p["m"]) @ proj).reshape_as(xr)
+                qjl = qjl * (math.sqrt(math.pi / 2.0) / float(p["m"]))
+                xr = xr.float() + qjl * p["qjl_norm"].float()
+            else:
+                # Decode payloads produced by the old coordinate-sign
+                # prototype, while all new payloads use the Gaussian sketch.
+                xr = xr + sign.to(xr.dtype) * p["qjl_rms"]
         return self._unrotate(xr, p["m"], p["rot"])
 
     # --- full-tensor encode / decode (handles the outlier split) -----------
@@ -1233,7 +1251,8 @@ class HayateQuantCodec(KVCodec):
             no = n_outlier
             payload_bits = vecs * (no * self._outlier_bits_for(role, bits) + (d - no) * bits)
             scale_bits = vecs * 2 * 16
-        # QJL residual: 1 sign bit per coordinate + one fp16 residual-RMS per
+        # QJL residual: 1 projected-sign bit per coordinate + one fp16
+        # residual L2 norm per
         # encoded subset vector (two subsets when the outlier split is active).
         qjl_bits = (x.numel() * 1 + vecs * (2 if split else 1) * 16) if self.use_qjl else 0
         return payload_bits + scale_bits + qjl_bits
