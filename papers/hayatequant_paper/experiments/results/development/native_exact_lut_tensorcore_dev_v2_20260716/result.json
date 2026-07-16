@@ -1,0 +1,336 @@
+{
+  "all_empirical_coverage_and_parity_passed": true,
+  "candidate": {
+    "bins": 256,
+    "candidates": 16,
+    "limit": 16.0,
+    "score": "row_specific_padded_16x16x16_tensorcore_mma",
+    "table_build": "canonical_fp16_center_score_top16_with_forced_exact_center_winner_and_best_candidate_padding_for_codebooks_smaller_than_16"
+  },
+  "development_only": true,
+  "promotion_allowed": false,
+  "provenance": {
+    "created_at_utc": "2026-07-16T06:18:40.943569+00:00",
+    "git_commit": "c53cd395e024add91888a56f68d0177fab12cc99",
+    "git_status_porcelain": "",
+    "gpu": "NVIDIA B200",
+    "gpu_uuid": "0f41d145-e323-bdf4-090d-d663daeefdab",
+    "hostname": "kagura-gpu11",
+    "reference_source_sha256": "d7a81483628629a96e3a2b0546d571208b528c08c97dea9908b10140ffad3049",
+    "script": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/worktrees/native-lut-source-c53cd39/benchmark/kvcomp-codec/hayatequant_exact_lut_tensorcore_dev.py",
+    "script_sha256": "8349555be2de16b8550eb1add8d378fbc25bdb65edcd935afdd20583ffb930bc",
+    "torch_version": "2.11.0+cu130"
+  },
+  "results": [
+    {
+      "codebook_sha256": "54cc4dc55a5c071202382497f99dc921e9d770ab8b9d175c8705c6d7b1208512",
+      "codebook_size": 32,
+      "csq_sha256": "f0870f2105a4a74852723519d5b0cab670bb34166e9061c30baf15dabf0f2701",
+      "exact_kernel_only_over_lut_speedup": 0.05927299204636343,
+      "exact_kernel_only_timing": {
+        "max_ms": 0.11321599781513214,
+        "mean_ms": 0.10044693375627199,
+        "median_ms": 0.10028800368309021,
+        "min_ms": 0.09628800302743912,
+        "n": 30
+      },
+      "exact_with_cast_over_lut_speedup": 0.06453077081115144,
+      "exact_with_fp32_to_fp16_cast_timing": {
+        "max_ms": 0.11622399836778641,
+        "mean_ms": 0.10967146654923757,
+        "median_ms": 0.10918399691581726,
+        "min_ms": 0.10745599865913391,
+        "n": 30
+      },
+      "fixtures": {
+        "gaussian": {
+          "mismatch_count": 0,
+          "mismatch_examples": [],
+          "rows": 1000010,
+          "winner_absent": 0
+        },
+        "wide": {
+          "mismatch_count": 0,
+          "mismatch_examples": [],
+          "rows": 1000010,
+          "winner_absent": 0
+        }
+      },
+      "lut_bytes": 2097152,
+      "lut_sha256": "800bf2686a34d316b1729008ec627cdd0b1aa8eb2346c3e871b2755a682a8010",
+      "lut_tensorcore_timing": {
+        "max_ms": 1.7023040056228638,
+        "mean_ms": 1.6929770549138388,
+        "median_ms": 1.6919679641723633,
+        "min_ms": 1.688480019569397,
+        "n": 30
+      },
+      "rate": 2,
+      "role": "key",
+      "timing_outputs_match": {
+        "exact_kernel_only": true,
+        "exact_with_fp32_to_fp16_cast": true
+      },
+      "timing_rows": 2097152
+    },
+    {
+      "codebook_sha256": "88df6e456f9d0b96d83bfef897894591dd755baa8927f4281d1f0288d2b30eba",
+      "codebook_size": 8,
+      "csq_sha256": "744d52a720521e8bee784bb8714f106d905b3a87a372a3ddfae4f3f5aa1ac489",
+      "exact_kernel_only_over_lut_speedup": 0.05516014471710838,
+      "exact_kernel_only_timing": {
+        "max_ms": 0.10339199751615524,
+        "mean_ms": 0.0936842662592729,
+        "median_ms": 0.09324800223112106,
+        "min_ms": 0.09046400338411331,
+        "n": 30
+      },
+      "exact_with_cast_over_lut_speedup": 0.05994926858703265,
+      "exact_with_fp32_to_fp16_cast_timing": {
+        "max_ms": 0.11043199896812439,
+        "mean_ms": 0.10133439948161443,
+        "median_ms": 0.10134399682283401,
+        "min_ms": 0.09603200107812881,
+        "n": 30
+      },
+      "fixtures": {
+        "gaussian": {
+          "mismatch_count": 0,
+          "mismatch_examples": [],
+          "rows": 1000010,
+          "winner_absent": 0
+        },
+        "wide": {
+          "mismatch_count": 0,
+          "mismatch_examples": [],
+          "rows": 1000010,
+          "winner_absent": 0
+        }
+      },
+      "lut_bytes": 2097152,
+      "lut_sha256": "3b3488bdeba48bea3b5fac5d2e9bea0b7d6c39545a1b33e1004cd9f2e46a24c2",
+      "lut_tensorcore_timing": {
+        "max_ms": 1.6988799571990967,
+        "mean_ms": 1.6907893339792888,
+        "median_ms": 1.6904959678649902,
+        "min_ms": 1.6879359483718872,
+        "n": 30
+      },
+      "rate": 2,
+      "role": "value",
+      "timing_outputs_match": {
+        "exact_kernel_only": true,
+        "exact_with_fp32_to_fp16_cast": true
+      },
+      "timing_rows": 2097152
+    },
+    {
+      "codebook_sha256": "1cbfbd035db0b8f77e92d42124bcbbb4acfddc99bc46d6fa92cdf84de9d5565a",
+      "codebook_size": 128,
+      "csq_sha256": "38b40019ab6a4e2ce3e209a99eed241ee879c7849812fc0d8b7127991edf6727",
+      "exact_kernel_only_over_lut_speedup": 0.11329899933606942,
+      "exact_kernel_only_timing": {
+        "max_ms": 0.1987839937210083,
+        "mean_ms": 0.191866668065389,
+        "median_ms": 0.19148799777030945,
+        "min_ms": 0.18934400379657745,
+        "n": 30
+      },
+      "exact_with_cast_over_lut_speedup": 0.1182596198519547,
+      "exact_with_fp32_to_fp16_cast_timing": {
+        "max_ms": 0.20268799364566803,
+        "mean_ms": 0.19999253352483112,
+        "median_ms": 0.1998720020055771,
+        "min_ms": 0.19808000326156616,
+        "n": 30
+      },
+      "fixtures": {
+        "gaussian": {
+          "mismatch_count": 0,
+          "mismatch_examples": [],
+          "rows": 1000010,
+          "winner_absent": 0
+        },
+        "wide": {
+          "mismatch_count": 0,
+          "mismatch_examples": [],
+          "rows": 1000010,
+          "winner_absent": 0
+        }
+      },
+      "lut_bytes": 2097152,
+      "lut_sha256": "abb8cd7f2ba628630b8a0c0d4551842fa35c56c96a05f4cc7def86812cc9ca04",
+      "lut_tensorcore_timing": {
+        "max_ms": 1.6998080015182495,
+        "mean_ms": 1.6906079967816672,
+        "median_ms": 1.6901119947433472,
+        "min_ms": 1.6877119541168213,
+        "n": 30
+      },
+      "rate": 3,
+      "role": "key",
+      "timing_outputs_match": {
+        "exact_kernel_only": true,
+        "exact_with_fp32_to_fp16_cast": true
+      },
+      "timing_rows": 2097152
+    },
+    {
+      "codebook_sha256": "54cc4dc55a5c071202382497f99dc921e9d770ab8b9d175c8705c6d7b1208512",
+      "codebook_size": 32,
+      "csq_sha256": "f0870f2105a4a74852723519d5b0cab670bb34166e9061c30baf15dabf0f2701",
+      "exact_kernel_only_over_lut_speedup": 0.05743927792939841,
+      "exact_kernel_only_timing": {
+        "max_ms": 0.1034879982471466,
+        "mean_ms": 0.09728213300307592,
+        "median_ms": 0.09708800166845322,
+        "min_ms": 0.09491200000047684,
+        "n": 30
+      },
+      "exact_with_cast_over_lut_speedup": 0.06391397640839863,
+      "exact_with_fp32_to_fp16_cast_timing": {
+        "max_ms": 0.11472000181674957,
+        "mean_ms": 0.10857066710789999,
+        "median_ms": 0.10803200304508209,
+        "min_ms": 0.10608000308275223,
+        "n": 30
+      },
+      "fixtures": {
+        "gaussian": {
+          "mismatch_count": 0,
+          "mismatch_examples": [],
+          "rows": 1000010,
+          "winner_absent": 0
+        },
+        "wide": {
+          "mismatch_count": 0,
+          "mismatch_examples": [],
+          "rows": 1000010,
+          "winner_absent": 0
+        }
+      },
+      "lut_bytes": 2097152,
+      "lut_sha256": "800bf2686a34d316b1729008ec627cdd0b1aa8eb2346c3e871b2755a682a8010",
+      "lut_tensorcore_timing": {
+        "max_ms": 1.6987839937210083,
+        "mean_ms": 1.6906293312708536,
+        "median_ms": 1.6902719736099243,
+        "min_ms": 1.6880320310592651,
+        "n": 30
+      },
+      "rate": 3,
+      "role": "value",
+      "timing_outputs_match": {
+        "exact_kernel_only": true,
+        "exact_with_fp32_to_fp16_cast": true
+      },
+      "timing_rows": 2097152
+    },
+    {
+      "codebook_sha256": "6e3a6d7ec0872eb06a0bf749d05244c010a03a2ef94ac365dac7d0ed059c307d",
+      "codebook_size": 512,
+      "csq_sha256": "54dab312bd8fcb2a58962c0f313fd33e417aca9b3a33a200626998d97cb7a5be",
+      "exact_kernel_only_over_lut_speedup": 0.30336185101828456,
+      "exact_kernel_only_timing": {
+        "max_ms": 0.5196800231933594,
+        "mean_ms": 0.5134026686350505,
+        "median_ms": 0.51283198595047,
+        "min_ms": 0.5108479857444763,
+        "n": 30
+      },
+      "exact_with_cast_over_lut_speedup": 0.3093056876188746,
+      "exact_with_fp32_to_fp16_cast_timing": {
+        "max_ms": 0.5304960012435913,
+        "mean_ms": 0.5235946695009868,
+        "median_ms": 0.5228800177574158,
+        "min_ms": 0.520576000213623,
+        "n": 30
+      },
+      "fixtures": {
+        "gaussian": {
+          "mismatch_count": 0,
+          "mismatch_examples": [],
+          "rows": 1000010,
+          "winner_absent": 0
+        },
+        "wide": {
+          "mismatch_count": 0,
+          "mismatch_examples": [],
+          "rows": 1000010,
+          "winner_absent": 0
+        }
+      },
+      "lut_bytes": 2097152,
+      "lut_sha256": "d0ef41509044ec6f5a37556118000bd1f5450469a87ec357d5785725d906f72e",
+      "lut_tensorcore_timing": {
+        "max_ms": 1.698464035987854,
+        "mean_ms": 1.6909023920694988,
+        "median_ms": 1.6904959678649902,
+        "min_ms": 1.6881920099258423,
+        "n": 30
+      },
+      "rate": 4,
+      "role": "key",
+      "timing_outputs_match": {
+        "exact_kernel_only": true,
+        "exact_with_fp32_to_fp16_cast": true
+      },
+      "timing_rows": 2097152
+    },
+    {
+      "codebook_sha256": "1cbfbd035db0b8f77e92d42124bcbbb4acfddc99bc46d6fa92cdf84de9d5565a",
+      "codebook_size": 128,
+      "csq_sha256": "38b40019ab6a4e2ce3e209a99eed241ee879c7849812fc0d8b7127991edf6727",
+      "exact_kernel_only_over_lut_speedup": 0.11283633933852484,
+      "exact_kernel_only_timing": {
+        "max_ms": 0.19590400159358978,
+        "mean_ms": 0.19102720121542613,
+        "median_ms": 0.19068799912929535,
+        "min_ms": 0.18892799317836761,
+        "n": 30
+      },
+      "exact_with_cast_over_lut_speedup": 0.11885781384411849,
+      "exact_with_fp32_to_fp16_cast_timing": {
+        "max_ms": 0.2112320065498352,
+        "mean_ms": 0.20143146713574728,
+        "median_ms": 0.2008640021085739,
+        "min_ms": 0.19811199605464935,
+        "n": 30
+      },
+      "fixtures": {
+        "gaussian": {
+          "mismatch_count": 0,
+          "mismatch_examples": [],
+          "rows": 1000010,
+          "winner_absent": 0
+        },
+        "wide": {
+          "mismatch_count": 0,
+          "mismatch_examples": [],
+          "rows": 1000010,
+          "winner_absent": 0
+        }
+      },
+      "lut_bytes": 2097152,
+      "lut_sha256": "abb8cd7f2ba628630b8a0c0d4551842fa35c56c96a05f4cc7def86812cc9ca04",
+      "lut_tensorcore_timing": {
+        "max_ms": 1.6930240392684937,
+        "mean_ms": 1.6901664018630982,
+        "median_ms": 1.68995201587677,
+        "min_ms": 1.6885119676589966,
+        "n": 30
+      },
+      "rate": 4,
+      "role": "value",
+      "timing_outputs_match": {
+        "exact_kernel_only": true,
+        "exact_with_fp32_to_fp16_cast": true
+      },
+      "timing_rows": 2097152
+    }
+  ],
+  "schema": {
+    "name": "onecomp.hq_exact_lut_tensorcore_dev",
+    "version": 1
+  }
+}
