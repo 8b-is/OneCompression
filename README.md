@@ -39,6 +39,8 @@ The `onecomp-mcp` stdio server exposes the same session-based store/recall opera
 MCP-capable systems. Automatic history reduction requires a host-owned condenser or output hook;
 OneComp includes an OpenHands condenser/recall tool and PostToolUse hook adapters for Claude Code
 and Codex. See the [MCP server guide](docs/user-guide/mcp-server.md).
+See the [cross-platform ARC guide](docs/user-guide/arc-compaction.md) for setup
+and measured context/token reductions.
 
 ## Installation
 

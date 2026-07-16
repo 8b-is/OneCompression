@@ -89,6 +89,7 @@ nav:
       - Pre-Process (Rotation): user-guide/pre-process.md
       - Post-Process (Block-wise PTQ / LoRA SFT): user-guide/post-process.md
       - vLLM Inference: user-guide/vllm-inference.md
+      - ARC Context Compaction: user-guide/arc-compaction.md
       - MCP Server: user-guide/mcp-server.md
       - Examples: user-guide/examples.md
   - Algorithms:

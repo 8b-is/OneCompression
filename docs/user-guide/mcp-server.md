@@ -43,6 +43,9 @@ Example `tools/call` request and response for `estimate_memory`:
 
 ## Context compaction (ARC) tools
 
+For the short cross-platform setup and measured results, see the
+[ARC Context Compaction guide](arc-compaction.md).
+
 The server also exposes [`onecomp.compaction`](../algorithms/overview.md) — ARC
 (Addressable Recall for Compaction) — as session-based tools, so MCP-capable agent
 platforms (e.g. OpenHands) can manage an agent's context window without importing
