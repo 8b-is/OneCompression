@@ -66,13 +66,10 @@ def _valid_cache_accounting(value: object) -> bool:
             and stored_bits >= 0
         )
     if mode == "legacy_cache_ratio_only":
-        ratio = value.get("compression_ratio")
-        return (
-            not isinstance(ratio, bool)
-            and isinstance(ratio, (int, float))
-            and float(ratio) > 0.0
-            and not math.isnan(float(ratio))
-        )
+        # A displayed ratio is useful for diagnostics, but is not sufficient
+        # for a citable v2 result. TaperKV now exposes integer counters; reject
+        # older rows so they cannot silently re-enter the paper aggregate.
+        return False
     return False
 
 
