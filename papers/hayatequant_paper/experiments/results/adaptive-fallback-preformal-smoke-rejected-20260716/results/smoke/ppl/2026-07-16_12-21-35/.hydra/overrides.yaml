@@ -1,0 +1,14 @@
+- model_path=/lustre/home/frj/yuma-ichikawa/conference/models/Qwen3-0.6B
+- output_dir=/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/results/smoke/ppl
+- methods=[TurboQuant-paper,FibQuant-paper,BlockQuant-paper,HQ,AdaptiveHQ]
+- bits=[3]
+- capture_tokens=128
+- timing_seq=128
+- timing_iters=2
+- run_ppl=true
+- ppl_windows=2
+- ppl_max_length=512
+- ppl_stride=256
+- skip_outliers=false
+- sink_tokens=0
+- recent_tokens=0
