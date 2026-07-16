@@ -81,6 +81,85 @@ def _manual(z: torch.Tensor, cb: torch.Tensor, csq: torch.Tensor) -> torch.Tenso
     return codes.reshape(z.shape[:-1])
 
 
+@triton.jit
+def _candidate_tensorcore_b2_score(
+    Z_ptr,
+    CB_ptr,
+    CSQ_ptr,
+    Candidate_ptr,
+    Codes_ptr,
+    N: tl.constexpr,
+    T: tl.constexpr,
+    BLOCK_T: tl.constexpr,
+):
+    """Score one row-specific candidate set through a padded tensor-core MMA."""
+
+    row = tl.program_id(0)
+    inner = tl.arange(0, 16)
+    padded_row = tl.arange(0, 16)
+    slot = tl.arange(0, BLOCK_T)
+    candidate = tl.load(
+        Candidate_ptr + row * T + slot,
+        mask=slot < T,
+        other=0,
+    ).to(tl.int32)
+    z0 = tl.load(Z_ptr + row * 2).to(tl.float16)
+    z1 = tl.load(Z_ptr + row * 2 + 1).to(tl.float16)
+    lhs = tl.where(
+        padded_row[:, None] == 0,
+        tl.where(
+            inner[None, :] == 0,
+            z0,
+            tl.where(inner[None, :] == 1, z1, 0.0),
+        ),
+        0.0,
+    ).to(tl.float16)
+    rhs = tl.load(
+        CB_ptr + candidate[None, :] * 2 + inner[:, None],
+        mask=(slot[None, :] < T) & (inner[:, None] < 2),
+        other=0.0,
+    ).to(tl.float16)
+    dot_matrix = tl.dot(lhs, rhs, out_dtype=tl.float32).to(tl.float16)
+    dot = tl.sum(
+        tl.where(padded_row[:, None] == 0, dot_matrix, 0.0).to(tl.float32),
+        axis=0,
+    ).to(tl.float16)
+    csq = tl.load(CSQ_ptr + candidate, mask=slot < T, other=0.0).to(tl.float16)
+    correction = (0.5 * csq.to(tl.float32)).to(tl.float16)
+    score = (dot.to(tl.float32) - correction.to(tl.float32)).to(tl.float16)
+    scoref = tl.where(slot < T, score, -float("inf")).to(tl.float32)
+    best = tl.max(scoref, axis=0)
+    winner = tl.min(tl.where(scoref == best, candidate, 2**31 - 1), axis=0)
+    tl.store(Codes_ptr + row, winner.to(tl.int64))
+
+
+def _candidate_tensorcore(
+    z: torch.Tensor,
+    cb: torch.Tensor,
+    csq: torch.Tensor,
+    candidates: torch.Tensor,
+) -> torch.Tensor:
+    flat = z.reshape(-1, 2).contiguous()
+    candidate_rows = candidates.reshape(flat.shape[0], -1).to(torch.int32).contiguous()
+    t = int(candidate_rows.shape[1])
+    if t < 1 or t > 16:
+        raise ValueError("diagnostic candidate count must be in 1..16")
+    codes = torch.empty(flat.shape[0], device=flat.device, dtype=torch.int64)
+    _candidate_tensorcore_b2_score[(flat.shape[0],)](
+        flat,
+        cb,
+        csq,
+        candidate_rows,
+        codes,
+        N=flat.shape[0],
+        T=t,
+        BLOCK_T=16,
+        num_warps=4,
+        num_stages=1,
+    )
+    return codes.reshape(z.shape[:-1])
+
+
 def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -143,16 +222,41 @@ def main() -> None:
             ("value", value_score, value_csq),
         ):
             reference = _quantize_exact_b2_tensorcore(z, cb, csq)
-            observed = _manual(z, cb, csq)
-            mismatch = (reference != observed).nonzero(as_tuple=False).flatten()
-            examples = []
-            for index in mismatch[:16].cpu().tolist():
-                examples.append(
+            manual = _manual(z, cb, csq)
+            manual_mismatch = (reference != manual).nonzero(as_tuple=False).flatten()
+            # This list is diagnostic, not an encoder: including the accepted
+            # winner isolates score-path parity from candidate coverage.
+            filler = torch.arange(14, device=device, dtype=torch.int64).remainder(cb.shape[0])
+            candidates = torch.cat(
+                (
+                    reference.unsqueeze(1),
+                    manual.unsqueeze(1),
+                    filler.unsqueeze(0).expand(reference.numel(), -1),
+                ),
+                dim=1,
+            )
+            candidate_tensorcore = _candidate_tensorcore(z, cb, csq, candidates)
+            candidate_mismatch = (
+                (reference != candidate_tensorcore).nonzero(as_tuple=False).flatten()
+            )
+            manual_examples = []
+            for index in manual_mismatch[:16].cpu().tolist():
+                manual_examples.append(
                     {
                         "index": int(index),
                         "query": [float(v) for v in z[index].cpu().tolist()],
                         "reference": int(reference[index]),
-                        "observed": int(observed[index]),
+                        "observed": int(manual[index]),
+                    }
+                )
+            candidate_examples = []
+            for index in candidate_mismatch[:16].cpu().tolist():
+                candidate_examples.append(
+                    {
+                        "index": int(index),
+                        "query": [float(v) for v in z[index].cpu().tolist()],
+                        "reference": int(reference[index]),
+                        "observed": int(candidate_tensorcore[index]),
                     }
                 )
             results.append(
@@ -163,16 +267,23 @@ def main() -> None:
                     "codebook_sha256": _tensor_sha(cb),
                     "csq_sha256": _tensor_sha(csq),
                     "rows": int(z.shape[0]),
-                    "mismatch_count": int(mismatch.numel()),
-                    "examples": examples,
+                    "manual_fp32_mismatch_count": int(manual_mismatch.numel()),
+                    "manual_fp32_examples": manual_examples,
+                    "candidate_tensorcore_mismatch_count": int(candidate_mismatch.numel()),
+                    "candidate_tensorcore_examples": candidate_examples,
+                    "candidate_count": int(candidates.shape[1]),
+                    "candidate_contains_reference_by_construction": True,
                 }
             )
 
     document = {
-        "schema": {"name": "onecomp.hq_exact_score_emulation_dev", "version": 1},
+        "schema": {"name": "onecomp.hq_exact_score_emulation_dev", "version": 2},
         "development_only": True,
         "promotion_allowed": False,
-        "all_zero_mismatch": all(row["mismatch_count"] == 0 for row in results),
+        "manual_all_zero_mismatch": all(row["manual_fp32_mismatch_count"] == 0 for row in results),
+        "candidate_tensorcore_all_zero_mismatch": all(
+            row["candidate_tensorcore_mismatch_count"] == 0 for row in results
+        ),
         "fixture": {
             "random_rows": args.rows,
             "total_rows": int(z.shape[0]),
