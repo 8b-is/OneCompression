@@ -1,0 +1,30 @@
+JobId=69532 JobName=hq_lut_frontier
+   UserId=yuma-ichikawa(10003) GroupId=frj(3001) MCS_label=N/A
+   Priority=1107 Nice=0 Account=yuma-ichikawa QOS=normal
+   JobState=COMPLETING Reason=None Dependency=(null)
+   Requeue=0 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=0:0
+   RunTime=00:00:37 TimeLimit=00:30:00 TimeMin=N/A
+   SubmitTime=2026-07-16T15:37:45 EligibleTime=2026-07-16T15:37:45
+   AccrueTime=2026-07-16T15:37:45
+   StartTime=2026-07-16T15:43:24 EndTime=2026-07-16T15:44:01 Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-07-16T15:43:24 Scheduler=Backfill
+   Partition=batch-1gpu AllocNode:Sid=kagura01:1715230
+   ReqNodeList=(null) ExcNodeList=(null)
+   NodeList=kagura-gpu15
+   BatchHost=kagura-gpu15
+   NumNodes=1 NumCPUs=8 NumTasks=1 CPUs/Task=8 ReqB:S:C:T=0:0:*:*
+   ReqTRES=cpu=8,mem=32G,node=1,billing=8,gres/gpu=1
+   AllocTRES=cpu=8,mem=32G,node=1,billing=8,gres/gpu=1
+   Socks/Node=* NtasksPerN:B:S:C=0:0:*:* CoreSpec=*
+   MinCPUsNode=8 MinMemoryNode=32G MinTmpDiskNode=0
+   Features=(null) DelayBoot=00:00:00
+   OverSubscribe=OK Contiguous=0 Licenses=(null) LicensesAlloc=(null) Network=(null)
+   Command=(null)
+   SubmitLine=sbatch --parsable --job-name=hq_lut_frontier --partition=batch-1gpu --gres=gpu:nvidia_b200:1 --cpus-per-task=8 --mem=32G --time=00:30:00 --chdir=/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/worktrees/native-direct-lut-source-9cb9af1 --output=/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/worktrees/native-direct-lut-f764/papers/hayatequant_paper/experiments/results/development/native_direct_lut_frontier_dev_20260716/slurm-%j.out --error=/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/worktrees/native-direct-lut-f764/papers/hayatequant_paper/experiments/results/development/native_direct_lut_frontier_dev_20260716/slurm-%j.err --wrap=PYTHONPATH=.:benchmark/kvcomp-codec /lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/bin/python -u benchmark/kvcomp-codec/hayatequant_direct_lut_frontier_dev.py --random-rows 1000000 --timing-rows 2097152 --bins 256 512 1024 2048 --limit 16 --table-chunk-rows 262144 --warmups 10 --iters 30 --seed 271828 --output /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/worktrees/native-direct-lut-f764/papers/hayatequant_paper/experiments/results/development/native_direct_lut_frontier_dev_20260716/result.json
+   WorkDir=/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/worktrees/native-direct-lut-source-9cb9af1
+   StdErr=/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/worktrees/native-direct-lut-f764/papers/hayatequant_paper/experiments/results/development/native_direct_lut_frontier_dev_20260716/slurm-69532.err
+   StdIn=/dev/null
+   StdOut=/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/worktrees/native-direct-lut-f764/papers/hayatequant_paper/experiments/results/development/native_direct_lut_frontier_dev_20260716/slurm-69532.out
+   TresPerNode=gres/gpu:nvidia_b200:1
+   TresPerTask=cpu=8
+
