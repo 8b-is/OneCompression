@@ -8,6 +8,7 @@ from onecomp.kvcomp import (
     BlockTaperKVPolicy,
     BudgetTaperKVCache,
     BudgetTaperKVPolicy,
+    TaperKVCache,
     TaperKVPolicy,
     build_policy,
     list_policies,
@@ -159,3 +160,23 @@ def test_budget_policy_refuses_shape_ambiguous_static_rate():
     with pytest.raises(ValueError, match="shape-dependent"):
         BudgetTaperKVPolicy(max_bytes=1024).target_avg_bits(128)
     assert BudgetTaperKVPolicy(max_bytes=None).target_avg_bits(128) == 6.0
+
+
+def test_graded_cache_exposes_exact_whole_cache_bit_ledger():
+    policy = TaperKVPolicy(
+        key_bits=4,
+        value_bits=2,
+        b_min=2,
+        b_min_value=2,
+        sink_tokens=0,
+        recent_tokens=0,
+    )
+    cache = TaperKVCache(policy)
+    keys = torch.randn(1, 1, 4, 2)
+    values = torch.randn(1, 1, 4, 2)
+    _, _, stored = cache._grade_layer(keys, values, 0)  # pylint: disable=protected-access
+    cache._layer_fp16[0] = (keys.numel() + values.numel()) * 16  # pylint: disable=protected-access
+    cache._layer_bits[0] = stored  # pylint: disable=protected-access
+    assert cache.fp16_bits == (keys.numel() + values.numel()) * 16
+    assert cache.stored_bits == cache._layer_bits[0]  # pylint: disable=protected-access
+    assert cache.stored_bits > 0

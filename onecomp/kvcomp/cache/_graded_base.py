@@ -242,3 +242,20 @@ class GradedQuantCache(DynamicCache):
     def mem_fraction(self) -> float:
         """Stored / fp16 (the iso-memory comparison knob)."""
         return 1.0 / max(1e-9, self.compression_ratio())
+
+    @property
+    def fp16_bits(self) -> int:
+        """Exact whole-cache fp16 reference bits for formal evaluation.
+
+        ``compression_ratio()`` remains a convenient display metric, but the
+        evaluator must not reconstruct memory from a rounded/legacy ratio.
+        Exposing the integer layer ledger lets
+        :func:`cache_compression_sufficient_statistics` aggregate TaperKV (and
+        its block/budget subclasses) exactly across generations.
+        """
+        return int(sum(self._layer_fp16.values()))
+
+    @property
+    def stored_bits(self) -> int:
+        """Exact whole-cache stored payload plus quantization metadata bits."""
+        return int(sum(self._layer_bits.values()))
