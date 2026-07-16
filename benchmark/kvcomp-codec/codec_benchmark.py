@@ -509,6 +509,21 @@ def _codecs(bits, ablation=False, head_dim=128):
         # opt-in allocator. Development candidates are archived with their raw
         # results and deliberately absent from the production registry.
         **(({"HQ": build_hayate_frontier(bits)}) if _kv_asym(bits) is not None else {}),
+        # Historical pre-v2 frontier recipe, retained only for a controlled
+        # apples-to-apples decision. It uses the old UB key scale and the
+        # integer K(r+1)/V(r-1) split. This row is never emitted by a default
+        # or formal run and must not be confused with the public HQ identity.
+        **(
+            {
+                "HayateQuant-frontier-candidate": HayateQuantCodec(
+                    bits=_kv_asym(bits)[0],
+                    value_bits=_kv_asym(bits)[1],
+                    key_scale_mode="ub",
+                )
+            }
+            if _kv_asym(bits) is not None
+            else {}
+        ),
         **(
             ({"AdaptiveHQ": build_hayate_adaptive_rate(bits)})
             if _kv_asym(bits) is not None

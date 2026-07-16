@@ -1,0 +1,113 @@
+{
+  "model": "llama-3.1-8b-instruct",
+  "head_dim": 128,
+  "config": {
+    "model_path": "/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct",
+    "device": "cuda:0",
+    "dtype": "bfloat16",
+    "output_dir": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-codec/results_variant_prune_20260717/llama-3.1-8b-instruct",
+    "bits": [
+      2,
+      3,
+      4
+    ],
+    "sink_tokens": 4,
+    "recent_tokens": 0,
+    "extra_skip_layers": [],
+    "capture_tokens": 128,
+    "timing_heads": 2,
+    "timing_seq": 128,
+    "timing_iters": 2,
+    "run_ppl": true,
+    "ppl_max_length": 256,
+    "ppl_stride": 128,
+    "ppl_windows": 1,
+    "methods": [
+      "HayateQuant-frontier",
+      "HayateQuant-auto",
+      "AdaptiveHQ"
+    ],
+    "skip_outliers": true,
+    "outlier_ratio": 50.0
+  },
+  "results": {
+    "2": {
+      "HayateQuant-auto": {
+        "distortion_key": 0.0972,
+        "distortion_value": 0.09451,
+        "stored_bits_per_coord": 2.125,
+        "ms_per_encode": 0.9561,
+        "throughput_Melem_s": 34.3,
+        "ppl": 11.0153
+      },
+      "HayateQuant-frontier": {
+        "distortion_key": 0.02926,
+        "distortion_value": 0.32,
+        "stored_bits_per_coord": 2.125,
+        "ms_per_encode": 0.6551,
+        "throughput_Melem_s": 50.0,
+        "ppl": 12.7602
+      },
+      "AdaptiveHQ": {
+        "distortion_key": 0.05313,
+        "distortion_value": 0.18333,
+        "stored_bits_per_coord": 2.125,
+        "ms_per_encode": 1.0537,
+        "throughput_Melem_s": 31.1,
+        "ppl": 10.74
+      }
+    },
+    "3": {
+      "HayateQuant-auto": {
+        "distortion_key": 0.02862,
+        "distortion_value": 0.02851,
+        "stored_bits_per_coord": 3.125,
+        "ms_per_encode": 0.5455,
+        "throughput_Melem_s": 60.1,
+        "ppl": 10.0542
+      },
+      "HayateQuant-frontier": {
+        "distortion_key": 0.00758,
+        "distortion_value": 0.09451,
+        "stored_bits_per_coord": 3.125,
+        "ms_per_encode": 0.8496,
+        "throughput_Melem_s": 38.6,
+        "ppl": 9.826
+      },
+      "AdaptiveHQ": {
+        "distortion_key": 0.00758,
+        "distortion_value": 0.10451,
+        "stored_bits_per_coord": 3.125,
+        "ms_per_encode": 0.8995,
+        "throughput_Melem_s": 36.4,
+        "ppl": 10.5983
+      }
+    },
+    "4": {
+      "HayateQuant-auto": {
+        "distortion_key": 0.00753,
+        "distortion_value": 0.0075,
+        "stored_bits_per_coord": 4.125,
+        "ms_per_encode": 0.8232,
+        "throughput_Melem_s": 39.8,
+        "ppl": 9.6339
+      },
+      "HayateQuant-frontier": {
+        "distortion_key": 0.00272,
+        "distortion_value": 0.02851,
+        "stored_bits_per_coord": 4.125,
+        "ms_per_encode": 0.7697,
+        "throughput_Melem_s": 42.6,
+        "ppl": 9.9193
+      },
+      "AdaptiveHQ": {
+        "distortion_key": 0.00197,
+        "distortion_value": 0.02851,
+        "stored_bits_per_coord": 4.125,
+        "ms_per_encode": 0.9659,
+        "throughput_Melem_s": 33.9,
+        "ppl": 9.6528
+      }
+    }
+  }
+}

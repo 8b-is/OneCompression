@@ -1,0 +1,14 @@
+- model_path=/lustre/home/frj/yuma-ichikawa/conference/models/Qwen3-0.6B
+- device=cuda:0
+- dtype=bfloat16
+- bits=[2,3,4]
+- methods=[TurboQuant-paper,FibQuant-paper,BlockQuant-paper,HayateQuant-frontier-candidate,HQ,AdaptiveHQ]
+- capture_tokens=128
+- timing_heads=2
+- timing_seq=128
+- timing_iters=2
+- ppl_max_length=256
+- ppl_stride=128
+- ppl_windows=1
+- run_ppl=true
+- output_dir=/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/papers/hayatequant_paper/experiments/results/development/frontier_candidate_20260717/Qwen3-0.6B
