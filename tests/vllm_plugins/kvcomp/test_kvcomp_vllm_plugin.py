@@ -130,6 +130,26 @@ def test_apply_to_engine_args_hayatequant_block_size_1_fails_closed(tmp_path):
     assert engine_args.kv_cache_dtype == "auto"
 
 
+def test_apply_to_engine_args_taperkv_policy_fails_closed_without_custom_backend(tmp_path):
+    """A serialized adaptive TaperKV policy must never become uncompressed vLLM."""
+    model_path = _write_model_config(
+        tmp_path,
+        {
+            "policy": {
+                "name": "taperkv",
+                "key_bits": 8,
+                "value_bits": 4,
+                "b_min": 4,
+                "b_min_value": 2,
+            }
+        },
+    )
+    engine_args = _FakeEngineArgs(model=model_path)
+    with pytest.raises(RuntimeError, match="cannot run through native vLLM"):
+        apply_to_engine_args(engine_args)
+    assert engine_args.kv_cache_dtype == "auto"
+
+
 @pytest.mark.parametrize("bits", [2, 3, 4])
 def test_apply_to_engine_args_hayatequant_default_auto_fails_closed(tmp_path, bits):
     """Default block-VQ cannot silently become FullKV or key-only native HQ.
