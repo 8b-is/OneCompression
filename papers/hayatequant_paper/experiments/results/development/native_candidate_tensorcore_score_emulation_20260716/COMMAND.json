@@ -1,0 +1,12 @@
+{
+  "launcher_command": [
+    "ssh",
+    "-o",
+    "BatchMode=yes",
+    "gpu11",
+    "cd /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/worktrees/native-grid-source-3da6a25 && CUDA_VISIBLE_DEVICES=0 PYTHONPATH=.:benchmark/kvcomp-codec /lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/bin/python -u benchmark/kvcomp-codec/hayatequant_exact_score_emulation.py --rows 1000000 --output /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/worktrees/native-certified-grid-a401bde/papers/hayatequant_paper/experiments/results/development/native_candidate_tensorcore_score_emulation_20260716/result.json"
+  ],
+  "cwd": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/worktrees/native-certified-grid-a401bde",
+  "exit_status": 0,
+  "source_commit": "3da6a25839ce24dc7e404187ec0a084236adabb5"
+}
