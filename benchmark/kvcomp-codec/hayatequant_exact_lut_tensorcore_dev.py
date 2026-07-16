@@ -115,17 +115,26 @@ def _canonical_lut(
 ) -> torch.Tensor:
     """Build a deterministic centre-ranked table in canonical score dtype."""
 
+    if top_t < 1:
+        raise ValueError("candidate count must be positive")
+
     axis = (torch.arange(bins, device=cb.device, dtype=torch.float32) + 0.5) / bins
     axis = axis * (2.0 * limit) - limit
     g0, g1 = torch.meshgrid(axis, axis, indexing="ij")
     centers = torch.stack((g0.reshape(-1), g1.reshape(-1)), dim=1).half()
     scores = centers @ cb.t() - 0.5 * csq.unsqueeze(0)
-    ranked = scores.argsort(dim=1, descending=True, stable=True)[:, :top_t]
+    ranked = scores.argsort(dim=1, descending=True, stable=True)[:, : min(top_t, cb.shape[0])]
     # Force the independently audited all-codeword winner into every row even
     # if a future backend changes non-winning tie order at the T-th boundary.
     winner = _quantize_exact_b2_tensorcore(centers, cb, csq)
     present = (ranked == winner.unsqueeze(1)).any(dim=1)
     ranked[~present, -1] = winner[~present]
+    if ranked.shape[1] < top_t:
+        # Small rate-2 codebooks have fewer than 16 codewords.  Repeating the
+        # best candidate keeps the fixed 16x16 MMA shape without changing the
+        # candidate set, scores, or canonical minimum-code tie break.
+        padding = ranked[:, :1].expand(-1, top_t - ranked.shape[1])
+        ranked = torch.cat((ranked, padding), dim=1)
     return ranked.sort(dim=1).values.to(torch.int16).contiguous()
 
 
@@ -335,7 +344,10 @@ def main() -> None:
             "bins": args.bins,
             "candidates": args.candidates,
             "limit": args.limit,
-            "table_build": "canonical_fp16_center_score_top16_with_forced_exact_center_winner",
+            "table_build": (
+                "canonical_fp16_center_score_top16_with_forced_exact_center_winner_"
+                "and_best_candidate_padding_for_codebooks_smaller_than_16"
+            ),
             "score": "row_specific_padded_16x16x16_tensorcore_mma",
         },
         "all_empirical_coverage_and_parity_passed": empirical_pass,
