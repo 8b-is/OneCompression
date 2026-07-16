@@ -1,0 +1,33 @@
+{
+  "schema": {
+    "name": "onecomp.hayatequant.baseline_policy_reconciliation_test_result",
+    "version": 1
+  },
+  "source_commit": "8d2c073595de29a63dda4161792fad3b82c054f0",
+  "timestamp": "2026-07-16T17:01:34.033504+09:00",
+  "environment": {
+    "host": "login01",
+    "python": "3.13.12",
+    "gpu_used": false,
+    "slurm_used": false,
+    "network_used": false
+  },
+  "pytest": {
+    "exit_code": 0,
+    "tests": 21,
+    "passed": 21,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "warnings": 16,
+    "wall_time_seconds": 29.81,
+    "junit": "pytest-junit.xml",
+    "log": "pytest.log"
+  },
+  "integrity": {
+    "historical_bundle_sha256_verified": true,
+    "supersession_sha256_verified": true,
+    "git_diff_check_exit_code": 0
+  },
+  "benchmark_results_generated_or_inspected": false
+}

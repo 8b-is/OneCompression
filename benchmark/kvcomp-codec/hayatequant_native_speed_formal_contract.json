@@ -13,6 +13,7 @@
     "candidate": "HQ",
     "candidate_implementation": "faithful_packed_fixed_HQ_native",
     "baseline": "TurboQuant",
+    "baseline_display_name": "upstream-vLLM-0.20-TurboQuant-native",
     "baseline_implementation": "unmodified_upstream_vllm_0.20_TurboQuant_native",
     "excluded": [
       "AdaptiveHQ",
@@ -23,7 +24,30 @@
       "public_payload_api"
     ]
   },
+  "comparison_scope": {
+    "candidate_identity": "HQ",
+    "baseline_identity": "upstream-vLLM-0.20-TurboQuant-native",
+    "baseline_worker_label": "TurboQuant",
+    "baseline_is_turboquant_paper_algorithm_1": false,
+    "baseline_algorithm_scope": "upstream_hadamard_lloyd_max_keys_uniform_affine_values_native_presets",
+    "rate_match_basis": "nominal_code_payload_bits_per_coordinate_only",
+    "exact_logical_stored_bits_matched": false,
+    "exact_physical_slot_bytes_matched": false,
+    "algorithm_specific_physical_packed_slot_bytes_reported": true,
+    "physical_packed_slot_bytes_head_dim_128": {
+      "3": {
+        "HQ": 100,
+        "upstream-vLLM-0.20-TurboQuant-native": 102
+      },
+      "4": {
+        "HQ": 132,
+        "upstream-vLLM-0.20-TurboQuant-native": 134
+      }
+    }
+  },
   "common_support": {
+    "vllm_version": "0.20.0",
+    "vllm_0_24_scope": "historical_plugin_mapping_compatibility_smoke_only_not_in_this_matrix",
     "average_rates": [
       3,
       4

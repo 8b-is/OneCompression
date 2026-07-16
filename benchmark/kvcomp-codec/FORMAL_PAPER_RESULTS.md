@@ -99,6 +99,17 @@ decision and are excluded from the 90% dominance denominator. Only matched
 TurboQuant/FibQuant quality scopes and the TurboQuant speed scope enter that
 gate; the renderer rejects relabeling or injecting a BlockQuant cell into it.
 
+This live policy supersedes only the obsolete BlockQuant-denominator field in
+the immutable `external_codec_math_audit_20260716` bundle; the audit's
+mathematical and accounting evidence remains unchanged. The signed,
+content-hashed repository attestation is
+`papers/hayatequant_paper/experiments/results/development/audits/`
+`external_codec_math_audit_20260716_policy_supersession/`. Integer rate labels
+2/3/4 denote code-payload slots. Exact logical stored rates additionally count
+fp16 scales and required identity fields: at head dimension 128, matched
+TQ/FibQuant/HQ rows at slot `r` store `r + 0.125` bpc, whereas BlockQuant's
+slot-3 exact rate depends on encode-update length.
+
 The public payload microbenchmark is deliberately not described as packed
 serving. Its codecs materialize code indices as unpacked `int64` tensors;
 `stored_bits` counts only fixed-width encoded-KV data-plane fields (logical

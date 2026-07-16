@@ -102,6 +102,53 @@ def _expected_points(contract: dict[str, Any]) -> set[tuple[int, str, int]]:
     }
 
 
+def _validate_comparison_scope(contract: dict[str, Any]) -> None:
+    """Reject a native contract that conflates upstream TQ with TQ-paper."""
+
+    methods = contract.get("methods")
+    if not isinstance(methods, dict) or any(
+        methods.get(key) != expected
+        for key, expected in {
+            "candidate": "HQ",
+            "candidate_implementation": "faithful_packed_fixed_HQ_native",
+            "baseline": "TurboQuant",
+            "baseline_display_name": "upstream-vLLM-0.20-TurboQuant-native",
+            "baseline_implementation": "unmodified_upstream_vllm_0.20_TurboQuant_native",
+        }.items()
+    ):
+        raise MatrixError("native formal method identities changed")
+
+    expected_scope = {
+        "candidate_identity": "HQ",
+        "baseline_identity": "upstream-vLLM-0.20-TurboQuant-native",
+        "baseline_worker_label": "TurboQuant",
+        "baseline_is_turboquant_paper_algorithm_1": False,
+        "baseline_algorithm_scope": (
+            "upstream_hadamard_lloyd_max_keys_uniform_affine_values_native_presets"
+        ),
+        "rate_match_basis": "nominal_code_payload_bits_per_coordinate_only",
+        "exact_logical_stored_bits_matched": False,
+        "exact_physical_slot_bytes_matched": False,
+        "algorithm_specific_physical_packed_slot_bytes_reported": True,
+        "physical_packed_slot_bytes_head_dim_128": {
+            "3": {"HQ": 100, "upstream-vLLM-0.20-TurboQuant-native": 102},
+            "4": {"HQ": 132, "upstream-vLLM-0.20-TurboQuant-native": 134},
+        },
+    }
+    if contract.get("comparison_scope") != expected_scope:
+        raise MatrixError("native formal comparator/rate/slot scope changed")
+
+    common = contract.get("common_support")
+    if (
+        not isinstance(common, dict)
+        or common.get("vllm_version") != "0.20.0"
+        or common.get("vllm_0_24_scope")
+        != "historical_plugin_mapping_compatibility_smoke_only_not_in_this_matrix"
+        or common.get("average_rates") != [3, 4]
+    ):
+        raise MatrixError("native formal vLLM version or nominal-rate scope changed")
+
+
 def _expected_order(trials: int) -> list[str]:
     if trials % 4:
         raise MatrixError("formal fresh-process count is not divisible by four")
@@ -417,6 +464,7 @@ def aggregate(root: Path, contract_path: Path) -> dict[str, Any]:
         "version": 1,
     }:
         raise MatrixError("wrong native formal contract schema")
+    _validate_comparison_scope(contract)
     contract_sha256 = _sha256(contract_path)
     shapes = _contract_shapes(contract)
     endpoints = _endpoint_names(contract)

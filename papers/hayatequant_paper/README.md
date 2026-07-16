@@ -192,6 +192,17 @@ KIVI-INT2 (needle 100%, local multi-key 0.6, PPL 7.42, mem 0.161) に対して�
 
 ## vLLM プラグイン
 
+> **vLLM version / comparator scope.** 以下の vLLM 0.24.0 記録は、過去の
+> plugin mapping・互換性・hybrid E2E smoke の証拠であり、現在の full packed
+> HQ formal native 比較ではない。現在の別建て native contract は vLLM 0.20.0
+> を固定し、faithful fixed HQ と unmodified upstream vLLM 0.20 TurboQuant を
+> nominal code-payload rate 3/4 で比較する。後者は公開 P-formal の
+> `TurboQuant-paper` Algorithm-1 baseline ではなく、物理 slot 幅も方式固有
+> (exact stored-bit matched ではない)。正式な scope と byte 幅は
+> `benchmark/kvcomp-codec/hayatequant_native_speed_formal_contract.json` および
+> `experiments/results/development/audits/`
+> `external_codec_math_audit_20260716_policy_supersession/` に固定する。
+
 - `vllm_plugins/kvcomp/mapping.py` が `hayatequant` を認識: `block_size=1` は vLLM
   ネイティブ `turboquant_*` プリセットへ、block-VQ(`block_size>1`/auto)はカスタム
   バックエンド要と明示(silent downgrade しない)。

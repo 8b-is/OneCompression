@@ -18,6 +18,17 @@ point with explicitly versioned deterministic completions for unpublished
 identity/top-channel lifecycle details. It is reported descriptively because
 its identity-bit-counted payload is not exactly rate matched to HQ.
 
+This is the authoritative live denominator policy. It supersedes only the
+historical BlockQuant-denominator assertion in
+`experiments/results/development/audits/external_codec_math_audit_20260716`;
+the immutable audit evidence itself is preserved. The machine-readable and
+content-hashed attestation is in the sibling
+`external_codec_math_audit_20260716_policy_supersession` directory. Labels
+2/3/4 are code-payload rate slots, not a promise that all metadata-inclusive
+stored rates are integers. At head dimension 128, matched TQ/FibQuant/HQ rows
+include the same `0.125` bpc fp16-scale overhead; BlockQuant's dynamic identity
+field makes its exact slot-3 stored rate update-length dependent.
+
 The Fib-inspired proxy changes only HayateQuant's deterministic radial-angular
 codebook warm start (Beta-companded radii plus low-discrepancy directions,
 followed by HQ's Lloyd refinement).  `codebook_init="fibquant"` retains the
