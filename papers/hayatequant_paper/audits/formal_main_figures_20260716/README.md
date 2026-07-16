@@ -17,4 +17,6 @@ partial benchmark value into the manuscript.
 
 Checks recorded in `paper_layout_check.json` use a synthetic complete fixture
 solely to test the aggregate-to-LaTeX interface; it is never copied to a paper
-result directory.
+result directory.  The full renderer suite is recorded in
+`renderer-junit.xml`; it passed all 86 tests.  Verify the tracked audit files
+from this directory with `sha256sum -c SHA256SUMS`.

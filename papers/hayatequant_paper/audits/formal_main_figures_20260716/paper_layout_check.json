@@ -17,11 +17,11 @@
       "fixture_scope": "renderer test fixture only; not an experimental result"
     },
     {
-      "name": "formal_renderer_main_figure_and_cross_include_identity",
+      "name": "formal_renderer_full_suite",
       "status": "passed",
-      "command": "pytest -q tests/onecomp/kvcomp/test_hayatequant_formal_renderer.py -k 'renderer_is_deterministic_and_emits_every_formal_axis or cross_include_identity_is_content_addressed'",
-      "passed": 2,
-      "deselected": 84
+      "command": "pytest -q tests/onecomp/kvcomp/test_hayatequant_formal_renderer.py --junitxml=renderer-junit.xml",
+      "passed": 86,
+      "duration_seconds": 424.229
     }
   ]
 }
