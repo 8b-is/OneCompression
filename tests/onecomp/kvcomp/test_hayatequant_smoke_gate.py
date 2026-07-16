@@ -487,15 +487,24 @@ def _standard_result(spec: dict, preflight: dict) -> dict:
         document["semantic_config"] = {
             key: value for key, value in arguments.items() if key not in {"output", "overwrite"}
         }
-        document["schema"] = {"name": "onecomp.hayatequant_fair_speed", "version": 3}
+        document["schema"] = {"name": "onecomp.hayatequant_fair_speed", "version": 4}
         document["protocol"] = {
             "arguments": arguments,
             "method_taxonomy": {
-                "TurboQuant-paper": {"proposal_method": False, "proposal_variant": None},
-                "HQ": {"proposal_method": True, "proposal_variant": "fixed_global"},
+                "TurboQuant-paper": {
+                    "proposal_method": False,
+                    "proposal_variant": None,
+                    "fake_quant_implementation": gate.TURBOQUANT_FAKE_QUANT_IMPLEMENTATION,
+                },
+                "HQ": {
+                    "proposal_method": True,
+                    "proposal_variant": "fixed_global",
+                    "fake_quant_implementation": gate.HQ_FAKE_QUANT_IMPLEMENTATION,
+                },
                 "AdaptiveHQ": {
                     "proposal_method": True,
                     "proposal_variant": "causal_adaptive",
+                    "fake_quant_implementation": gate.ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION,
                 },
             },
         }
@@ -552,8 +561,27 @@ def _standard_result(spec: dict, preflight: dict) -> dict:
                 "methods": {method: {} for method in gate.SPEED_METHODS},
             },
             "parity_checks": {
-                "proposal_payload_vs_fused_quality": [
-                    {"method": method, "role": role, "stored_bits_match": True}
+                "proposal_payload_vs_fake_quant_quality": [
+                    {
+                        "method": method,
+                        "role": role,
+                        "stored_bits_match": True,
+                        "effective_implementation": (
+                            {
+                                "effective_path": "hayate_fused_roundtrip",
+                                "payload_materialized": False,
+                                "hayate_override_entered": True,
+                                "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
+                            }
+                            if method == "HQ"
+                            else {
+                                "effective_path": "inherited_encode_then_decode",
+                                "payload_materialized": True,
+                                "hayate_override_entered": False,
+                                "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
+                            }
+                        ),
+                    }
                     for method in ("HQ", "AdaptiveHQ")
                     for role in ("key", "value")
                 ],
@@ -587,7 +615,29 @@ def _standard_result(spec: dict, preflight: dict) -> dict:
                         "decode_prebuilt_payload": measurement(),
                         "roundtrip_explicit_encode_then_decode": measurement(),
                     },
-                    "research_fake_quant": {"fake_quant_roundtrip": measurement()},
+                    "research_fake_quant": {
+                        "effective_implementations": {
+                            "TurboQuant-paper": {
+                                "effective_path": "inherited_encode_then_decode",
+                                "payload_materialized": True,
+                                "hayate_override_entered": False,
+                                "runtime_probe": "codec_has_no_hayate_rt_support_probe",
+                            },
+                            "HQ": {
+                                "effective_path": "hayate_fused_roundtrip",
+                                "payload_materialized": False,
+                                "hayate_override_entered": True,
+                                "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
+                            },
+                            "AdaptiveHQ": {
+                                "effective_path": "inherited_encode_then_decode",
+                                "payload_materialized": True,
+                                "hayate_override_entered": False,
+                                "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
+                            },
+                        },
+                        "fake_quant_roundtrip": measurement(),
+                    },
                 }
                 for regime in ("prefill", "decode")
             },

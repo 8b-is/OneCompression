@@ -11,9 +11,11 @@ This runner deliberately keeps three different contracts separate:
   memory footprint.  The TurboQuant row in this category is the repository's
   unmodified :class:`TurboQuantCodec`; no HayateQuant fusion is credited to it.
 * ``research_fake_quant`` times ``fake_quant_roundtrip``.  TurboQuant inherits
-  the unfused ``encode -> decode`` implementation, while HayateQuant has a
-  fused research implementation.  Results are labelled by implementation and
-  are never silently presented as the same API.
+  the unfused ``encode -> decode`` implementation.  Fixed HQ has a fused
+  research implementation, whereas AdaptiveHQ currently falls back to the
+  inherited payload chain because its selected K/V pair is update-dependent.
+  Every tensor regime persists a runtime probe; results are never silently
+  presented as the same API or as packed serving.
 * ``research_fake_quant_e2e`` measures that fake-quant path inside a real
   Transformers generation loop.  It is not a packed low-bit serving result.
 
@@ -74,7 +76,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Sequence
 
 SCHEMA_NAME = "onecomp.hayatequant_fair_speed"
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 PUBLIC_LOGICAL_PAYLOAD_SCOPE = {
     "api": "public KVCodec.encode/decode",
     "representation": "materialized_logical_payload",
@@ -105,12 +107,23 @@ _FORMAL_MODEL_EVALUATION_ROLES = {
     "llama-3.1-8b-instruct": "development_and_recipe_selection",
     "Qwen3-8B": "additional_development_evaluation_independence_not_claimed",
 }
-ADAPTIVE_HQ_POLICY_VERSION = "adaptive_hq_cache_causal_safe_two_pair_rd_v5"
+ADAPTIVE_HQ_POLICY_VERSION = "adaptive_hq_cache_causal_fixed_incumbent_hysteresis_v6"
 ADAPTIVE_HQ_DISTORTION_TABLE_VERSION = (
     "source_qmc128_exact_codebook_fp16scale_safe_two_pair_update_carrier_v4"
 )
 ADAPTIVE_HQ_OBJECTIVE = "causal_raw_power_times_qmc_base_plus_one_carrier_per_update"
 ADAPTIVE_HQ_CARRIER_AMORTIZATION = "signed_qmc_all_scales_delta_divided_by_current_update_vectors"
+ADAPTIVE_HQ_SWITCH_MARGIN_FRACTION = 1.0 / math.sqrt(128)
+ADAPTIVE_HQ_SWITCH_MARGIN_BASIS = "one_over_sqrt_fixed_qmc_vectors_128"
+ADAPTIVE_HQ_HYSTERESIS = (
+    "enter_challenger_only_beyond_margin_retain_while_strictly_better_"
+    "fallback_to_fixed_incumbent_on_tie_or_loss"
+)
+TURBOQUANT_FAKE_QUANT_IMPLEMENTATION = "inherited unfused encode_then_decode"
+HQ_FAKE_QUANT_IMPLEMENTATION = "HayateQuant fused research fake_quant_roundtrip"
+ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION = (
+    "inherited encode_then_decode fallback; AdaptiveHQ fused path unsupported"
+)
 
 
 def _model_evaluation_role(model: str) -> str:
@@ -686,7 +699,7 @@ def _method_specs(avg_bits: int) -> list[_MethodSpec]:
                 bits=r, value_bits=r, rotation_mode="dense", dist="beta"
             ),
             semantic_role="existing TurboQuant class; symmetric scalar Beta/L2 reference",
-            fake_quant_implementation="inherited unfused encode_then_decode",
+            fake_quant_implementation=TURBOQUANT_FAKE_QUANT_IMPLEMENTATION,
             proposal_method=False,
             proposal_variant=None,
         ),
@@ -694,7 +707,7 @@ def _method_specs(avg_bits: int) -> list[_MethodSpec]:
             label="HQ",
             codec_factory=lambda: build_hayate_hq(r),
             semantic_role="canonical globally fixed HQ paper proposal",
-            fake_quant_implementation="HayateQuant fused research fake_quant_roundtrip",
+            fake_quant_implementation=HQ_FAKE_QUANT_IMPLEMENTATION,
             proposal_method=True,
             proposal_variant="fixed_global",
         ),
@@ -702,7 +715,7 @@ def _method_specs(avg_bits: int) -> list[_MethodSpec]:
             label="AdaptiveHQ",
             codec_factory=lambda: build_hayate_adaptive_rate(r),
             semantic_role="causal online-rate-allocation HQ paper proposal",
-            fake_quant_implementation="HayateQuant fused research fake_quant_roundtrip",
+            fake_quant_implementation=ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION,
             proposal_method=True,
             proposal_variant="causal_adaptive",
         ),
@@ -873,6 +886,34 @@ def _method_config_record(spec: _MethodSpec, codec: Any, head_dim: int) -> dict[
     }
 
 
+def _fake_quant_effective_implementation(codec: Any, head_dim: int) -> dict[str, Any]:
+    """Describe the path that ``fake_quant_roundtrip`` will actually execute.
+
+    HayateQuant owns an override, but that override deliberately delegates to
+    the base payload chain for unsupported configurations.  In particular,
+    AdaptiveHQ is always delegated today.  Persisting this probe prevents a
+    method-level label from turning a fallback timing into a fused timing.
+    """
+
+    probe = getattr(codec, "_rt_supported", None)
+    if callable(probe):
+        fused = bool(probe(int(head_dim)))
+        return {
+            "effective_path": (
+                "hayate_fused_roundtrip" if fused else "inherited_encode_then_decode"
+            ),
+            "payload_materialized": not fused,
+            "hayate_override_entered": fused,
+            "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
+        }
+    return {
+        "effective_path": "inherited_encode_then_decode",
+        "payload_materialized": True,
+        "hayate_override_entered": False,
+        "runtime_probe": "codec_has_no_hayate_rt_support_probe",
+    }
+
+
 def _recipe_sha256(record: Mapping[str, Any]) -> str:
     serialised = json.dumps(record, sort_keys=True, separators=(",", ":"), allow_nan=False).encode(
         "utf-8"
@@ -1008,41 +1049,45 @@ def _parity_checks(
     quality_rows: Mapping[str, Mapping[str, Any]],
 ) -> dict[str, Any]:
     _ = dtype_name
-    # Verify each timed fused proposal path remains quality-equivalent to its
-    # payload API.  This is not expected to be bit-identical across Triton/
-    # eager implementations, hence MSE relative deltas are recorded.
-    fused_rows = []
+    # Verify each timed proposal fake-quant path remains quality-equivalent to
+    # its payload API. Fixed HQ is fused; AdaptiveHQ is an explicitly recorded
+    # inherited encode/decode fallback. This is not expected to be bit-identical
+    # across Triton/eager implementations, hence MSE relative deltas are kept.
+    fake_quant_rows = []
     for spec in specs:
         if not spec.proposal_method:
             continue
         khat, vhat, stored = codecs[spec.label].fake_quant_roundtrip(key, value)
         payload_stored = quality_rows[spec.label].get("stored_bits")
-        fused_stored = int(stored) if stored is not None else None
-        if fused_stored != payload_stored:
+        fake_quant_stored = int(stored) if stored is not None else None
+        if fake_quant_stored != payload_stored:
             raise AssertionError(
-                f"{spec.label} timed fused path reports {fused_stored} stored bits, "
+                f"{spec.label} timed fake-quant path reports {fake_quant_stored} stored bits, "
                 f"but its quality payload reports {payload_stored}"
             )
-        for role, source, payload_hat, fused_hat in (
+        effective = _fake_quant_effective_implementation(codecs[spec.label], int(key.shape[-1]))
+        for role, source, payload_hat, fake_quant_hat in (
             ("key", key, outputs[spec.label][0], khat),
             ("value", value, outputs[spec.label][1], vhat),
         ):
             payload_mse = float((payload_hat.float() - source.float()).pow(2).mean().item())
-            fused_mse = float((fused_hat.float() - source.float()).pow(2).mean().item())
-            fused_rows.append(
+            fake_quant_mse = float((fake_quant_hat.float() - source.float()).pow(2).mean().item())
+            fake_quant_rows.append(
                 {
                     "method": spec.label,
                     "role": role,
+                    "effective_implementation": effective,
                     "payload_mse": payload_mse,
-                    "fused_mse": fused_mse,
-                    "relative_mse_delta": abs(payload_mse - fused_mse) / max(payload_mse, 1e-12),
-                    "stored_bits_from_fused": fused_stored,
+                    "fake_quant_mse": fake_quant_mse,
+                    "relative_mse_delta": abs(payload_mse - fake_quant_mse)
+                    / max(payload_mse, 1e-12),
+                    "stored_bits_from_fake_quant": fake_quant_stored,
                     "stored_bits_from_quality_payload": payload_stored,
                     "stored_bits_match": True,
                 }
             )
     return {
-        "proposal_payload_vs_fused_quality": fused_rows,
+        "proposal_payload_vs_fake_quant_quality": fake_quant_rows,
     }
 
 
@@ -1108,7 +1153,7 @@ def _validate_proposal_contract(
             if (
                 spec.label != "AdaptiveHQ"
                 or declared.get("adaptive_bit_split") != "online_stats"
-                or declared.get("key_bit_fraction") != 0.5
+                or declared.get("key_bit_fraction") != (2 * rate + 1) / (4 * rate)
                 or declared.get("adaptive_stats_min_tokens") != 16
                 or declared.get("adaptive_bit_margin") != 4
                 or declared.get("key_error_weight") != 4.0
@@ -1123,7 +1168,16 @@ def _validate_proposal_contract(
                 or allocation.get("objective") != ADAPTIVE_HQ_OBJECTIVE
                 or allocation.get("candidate_pairs")
                 != [[2 * rate, 2 * rate], [2 * rate + 1, 2 * rate - 1]]
-                or allocation.get("prior_pair") != [2 * rate, 2 * rate]
+                or allocation.get("prior_pair") != [2 * rate + 1, 2 * rate - 1]
+                or allocation.get("incumbent_pair") != [2 * rate + 1, 2 * rate - 1]
+                or not math.isclose(
+                    float(allocation.get("switch_margin_fraction", math.nan)),
+                    ADAPTIVE_HQ_SWITCH_MARGIN_FRACTION,
+                    rel_tol=0.0,
+                    abs_tol=1e-15,
+                )
+                or allocation.get("switch_margin_basis") != ADAPTIVE_HQ_SWITCH_MARGIN_BASIS
+                or allocation.get("hysteresis") != ADAPTIVE_HQ_HYSTERESIS
                 or allocation.get("selector_bits_per_encode") != 1
                 or allocation.get("selector_carrier") != "first_value_fp16_scale_low_fraction_bits"
                 or allocation.get("selector_carrier_version") != "value_scale_fp16_fraction_lsb_v1"
@@ -1253,6 +1307,10 @@ def _run_micro(
         key = _make_gpu_tensor(torch, shape, dtype, device, tensor_seed)
         value = _make_gpu_tensor(torch, shape, dtype, device, tensor_seed + 1)
         payloads = {label: codecs[label].encode(key, value) for label in labels}
+        fake_quant_effective = {
+            label: _fake_quant_effective_implementation(codecs[label], shape[-1])
+            for label in labels
+        }
         payload_audits[regime_name] = {
             label: _audit_public_payload(torch, payloads[label]) for label in labels
         }
@@ -1307,9 +1365,11 @@ def _run_micro(
             },
             "research_fake_quant": {
                 "warning": (
-                    "TurboQuant is inherited unfused encode->decode; HayateQuant is fused. "
-                    "Do not treat this category as equal public-API kernel timing."
+                    "TurboQuant and AdaptiveHQ use inherited encode->decode; fixed HQ is "
+                    "fused when its persisted runtime probe says so. Do not treat this "
+                    "category as equal public-API or packed-native kernel timing."
                 ),
+                "effective_implementations": fake_quant_effective,
                 "fake_quant_roundtrip": measured["fake_quant_roundtrip"],
             },
         }
@@ -1352,7 +1412,10 @@ def _run_micro(
                 "public encode/decode with a materialized logical payload; low-bit "
                 "indices are unpacked int64 tensors"
             ),
-            "research_fake_quant": "dequantized research cache helper; may use Hayate-only fusion",
+            "research_fake_quant": (
+                "dequantized research cache helper; fixed HQ may fuse, AdaptiveHQ currently "
+                "uses the inherited payload fallback"
+            ),
         },
         "public_payload_scope": dict(PUBLIC_LOGICAL_PAYLOAD_SCOPE),
         "public_payload_runtime_audit": payload_audits,
@@ -1850,7 +1913,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "method_set_exact": True,
                 "do_not_compare_as_equal_api": [
                     "TurboQuant payload/unfused roundtrip",
-                    "HQ/AdaptiveHQ fused fake_quant_roundtrip",
+                    "HQ fused fake_quant_roundtrip",
+                    "AdaptiveHQ inherited encode_then_decode fake_quant_roundtrip",
                 ],
                 "packed_native_hybrid_measured": False,
                 "packed_native_hybrid_must_not_be_called_full_hayatequant": True,

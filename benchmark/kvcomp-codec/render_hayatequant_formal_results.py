@@ -83,6 +83,11 @@ ADAPTIVE_HQ_HYSTERESIS = (
     "enter_challenger_only_beyond_margin_retain_while_strictly_better_"
     "fallback_to_fixed_incumbent_on_tie_or_loss"
 )
+TURBOQUANT_FAKE_QUANT_IMPLEMENTATION = "inherited unfused encode_then_decode"
+HQ_FAKE_QUANT_IMPLEMENTATION = "HayateQuant fused research fake_quant_roundtrip"
+ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION = (
+    "inherited encode_then_decode fallback; AdaptiveHQ fused path unsupported"
+)
 HQ_CODEBOOK_BUNDLE = "fixed_hq_b2_v1"
 ADAPTIVE_HQ_CODEBOOK_BUNDLE = "adaptive_hq_b2_safe_v1"
 HQ_CODEBOOK_MANIFEST_SHA256 = "df02ba5fd41fd0cc3fd2d39474fcfe7a628c15eb9ea012e8c70b1ffb3dabecde"
@@ -2910,19 +2915,19 @@ def _validate_speed_scientific_recipe(
     expected_taxonomy = {
         "tq": {
             "semantic_role": "existing TurboQuant class; symmetric scalar Beta/L2 reference",
-            "fake_quant_implementation": "inherited unfused encode_then_decode",
+            "fake_quant_implementation": TURBOQUANT_FAKE_QUANT_IMPLEMENTATION,
             "proposal_method": False,
             "proposal_variant": None,
         },
         "hq": {
             "semantic_role": "canonical globally fixed HQ paper proposal",
-            "fake_quant_implementation": "HayateQuant fused research fake_quant_roundtrip",
+            "fake_quant_implementation": HQ_FAKE_QUANT_IMPLEMENTATION,
             "proposal_method": True,
             "proposal_variant": "fixed_global",
         },
         "adaptive": {
             "semantic_role": "causal online-rate-allocation HQ paper proposal",
-            "fake_quant_implementation": "HayateQuant fused research fake_quant_roundtrip",
+            "fake_quant_implementation": ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION,
             "proposal_method": True,
             "proposal_variant": "causal_adaptive",
         },
@@ -3274,9 +3279,9 @@ def _speed_endpoint_category(metric: str) -> str:
     if metric.startswith("micro.decode.payload_api."):
         return "public_payload_decode_step"
     if metric == "micro.prefill.research_fake_quant.fake_quant_roundtrip":
-        return "research_fused_prefill_roundtrip"
+        return "research_fake_quant_prefill_roundtrip"
     if metric == "micro.decode.research_fake_quant.fake_quant_roundtrip":
-        return "research_fused_decode_step_roundtrip"
+        return "research_fake_quant_decode_step_roundtrip"
     if metric.startswith("e2e."):
         return "research_fake_quant_e2e"
     raise RenderError(f"Unclassified speed endpoint {metric!r}")
@@ -3564,9 +3569,9 @@ def _validate_speed(axis: Mapping[str, Any], commit: str) -> dict:
                 "and dequantized research-cache E2E"
             ),
             "methods": {
-                "TurboQuant-paper": "inherited unfused encode_then_decode",
-                "HQ": "HayateQuant fused research fake_quant_roundtrip",
-                "AdaptiveHQ": "HayateQuant fused research fake_quant_roundtrip",
+                "TurboQuant-paper": TURBOQUANT_FAKE_QUANT_IMPLEMENTATION,
+                "HQ": HQ_FAKE_QUANT_IMPLEMENTATION,
+                "AdaptiveHQ": ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION,
             },
         }
     ):
@@ -5343,7 +5348,7 @@ def build_tables(data: Mapping[str, Any], aggregate_sha256: str) -> str:
             r"unadjusted across rows/comparisons; ratios and intervals are descriptive "
             r"only, and no directional or blanket/global speed claim is made. "
             r"This table measures the explicit public logical-payload API, not the "
-            r"research-fused or key-only native path.",
+            r"research fake-quant or key-only native path.",
         ),
     )
     for metric_name, label, caption in paired_specs:
@@ -5440,11 +5445,11 @@ def build_tables(data: Mapping[str, Any], aggregate_sha256: str) -> str:
     research_metrics = (
         (
             "micro.prefill.research_fake_quant.fake_quant_roundtrip",
-            "fused-prefill-roundtrip",
+            "fake-quant-prefill-roundtrip",
         ),
         (
             "micro.decode.research_fake_quant.fake_quant_roundtrip",
-            "fused-decode-roundtrip",
+            "fake-quant-decode-roundtrip",
         ),
         ("e2e.ttft", "E2E-TTFT"),
         ("e2e.decode_steady_latency", "E2E-steady-decode"),
@@ -5475,11 +5480,12 @@ def build_tables(data: Mapping[str, Any], aggregate_sha256: str) -> str:
     tables.append(
         _table(
             r"Research fake-quant endpoints, kept separate from the public payload API. "
-            r"The micro rows time fused ``fake\_quant\_roundtrip'' (TurboQuant remains "
-            r"unfused); E2E rows use the dequantized Transformers cache. Cells are paired "
+            r"The micro rows time ``fake\_quant\_roundtrip'': fixed HQ is fused, while "
+            r"TurboQuant and AdaptiveHQ use inherited encode--decode. E2E rows use the "
+            r"dequantized Transformers cache. Cells are paired "
             r"baseline/candidate latency ratios with pointwise 95\% intervals and are not "
             r"native packed-serving measurements.",
-            "tab:formal-speed-research-fused",
+            "tab:formal-speed-research-fake-quant",
             "lrrlcc",
             r"model & bits & compile & research endpoint & HQ/TQ & AdaptiveHQ/TQ",
             research_rows,

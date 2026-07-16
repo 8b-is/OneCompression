@@ -153,6 +153,11 @@ ADAPTIVE_HQ_HYSTERESIS = (
     "enter_challenger_only_beyond_margin_retain_while_strictly_better_"
     "fallback_to_fixed_incumbent_on_tie_or_loss"
 )
+TURBOQUANT_FAKE_QUANT_IMPLEMENTATION = "inherited unfused encode_then_decode"
+HQ_FAKE_QUANT_IMPLEMENTATION = "HayateQuant fused research fake_quant_roundtrip"
+ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION = (
+    "inherited encode_then_decode fallback; AdaptiveHQ fused path unsupported"
+)
 HQ_CODEBOOK_BUNDLE = "fixed_hq_b2_v1"
 ADAPTIVE_HQ_CODEBOOK_BUNDLE = "adaptive_hq_b2_safe_v1"
 HQ_CODEBOOK_MANIFEST_SHA256 = "df02ba5fd41fd0cc3fd2d39474fcfe7a628c15eb9ea012e8c70b1ffb3dabecde"
@@ -7375,10 +7380,14 @@ def _validate_speed_recipe_contract(
     if (
         taxonomy[tq].get("proposal_method") is not False
         or taxonomy[tq].get("proposal_variant") is not None
+        or taxonomy[tq].get("fake_quant_implementation") != TURBOQUANT_FAKE_QUANT_IMPLEMENTATION
         or taxonomy[fixed].get("proposal_method") is not True
         or taxonomy[fixed].get("proposal_variant") != "fixed_global"
+        or taxonomy[fixed].get("fake_quant_implementation") != HQ_FAKE_QUANT_IMPLEMENTATION
         or taxonomy[adaptive].get("proposal_method") is not True
         or taxonomy[adaptive].get("proposal_variant") != "causal_adaptive"
+        or taxonomy[adaptive].get("fake_quant_implementation")
+        != ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION
     ):
         raise AggregateError(f"Formal proposal taxonomy changed in {path}")
 
@@ -7707,26 +7716,62 @@ def _validate_speed_recipe_contract(
 
     parity_checks = micro.get("parity_checks")
     if not isinstance(parity_checks, dict) or set(parity_checks) != {
-        "proposal_payload_vs_fused_quality"
+        "proposal_payload_vs_fake_quant_quality"
     }:
         raise AggregateError(f"Unexpected fair-speed parity contract in {path}")
-    fused = parity_checks.get("proposal_payload_vs_fused_quality")
-    if not isinstance(fused, list) or {
-        (row.get("method"), row.get("role")) for row in fused if isinstance(row, dict)
+    fake_quant = parity_checks.get("proposal_payload_vs_fake_quant_quality")
+    if not isinstance(fake_quant, list) or {
+        (row.get("method"), row.get("role")) for row in fake_quant if isinstance(row, dict)
     } != {
         (fixed, "key"),
         (fixed, "value"),
         (adaptive, "key"),
         (adaptive, "value"),
     }:
-        raise AggregateError(f"Fused quality parity coverage changed in {path}")
+        raise AggregateError(f"Fake-quant quality parity coverage changed in {path}")
+    expected_effective = {
+        fixed: {
+            "effective_path": "hayate_fused_roundtrip",
+            "payload_materialized": False,
+            "hayate_override_entered": True,
+            "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
+        },
+        adaptive: {
+            "effective_path": "inherited_encode_then_decode",
+            "payload_materialized": True,
+            "hayate_override_entered": False,
+            "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
+        },
+    }
     if any(
         row.get("stored_bits_match") is not True
-        or row.get("stored_bits_from_fused") != expected_payload_bits
+        or row.get("stored_bits_from_fake_quant") != expected_payload_bits
         or row.get("stored_bits_from_quality_payload") != expected_payload_bits
-        for row in fused
+        or row.get("effective_implementation") != expected_effective.get(row.get("method"))
+        for row in fake_quant
     ):
-        raise AggregateError(f"Timed fused path rate differs from quality payload in {path}")
+        raise AggregateError(
+            f"Timed fake-quant path/rate differs from its declared implementation in {path}"
+        )
+
+    expected_regime_effective = {
+        tq: {
+            "effective_path": "inherited_encode_then_decode",
+            "payload_materialized": True,
+            "hayate_override_entered": False,
+            "runtime_probe": "codec_has_no_hayate_rt_support_probe",
+        },
+        **expected_effective,
+    }
+    for regime_name, regime in micro["regimes"].items():
+        research = regime.get("research_fake_quant") if isinstance(regime, dict) else None
+        if (
+            not isinstance(research, dict)
+            or research.get("effective_implementations") != expected_regime_effective
+        ):
+            raise AggregateError(
+                f"Effective fake-quant implementation changed in {path}/{regime_name}"
+            )
 
     context = e2e.get("model_context_contract")
     required = args["e2e_prompt_len"] + args["e2e_gen_len"]
@@ -8253,9 +8298,9 @@ def _speed_endpoint_category(metric: str) -> str:
     if metric.startswith("micro.decode.payload_api."):
         return "public_payload_decode_step"
     if metric == "micro.prefill.research_fake_quant.fake_quant_roundtrip":
-        return "research_fused_prefill_roundtrip"
+        return "research_fake_quant_prefill_roundtrip"
     if metric == "micro.decode.research_fake_quant.fake_quant_roundtrip":
-        return "research_fused_decode_step_roundtrip"
+        return "research_fake_quant_decode_step_roundtrip"
     if metric.startswith("e2e."):
         return "research_fake_quant_e2e"
     raise AggregateError(f"Unclassified formal speed endpoint {metric!r}")
@@ -8548,7 +8593,7 @@ def verify_speed(
     for path in paths:
         document = _load_object(path)
         schema = document.get("schema")
-        if schema != {"name": "onecomp.hayatequant_fair_speed", "version": 3}:
+        if schema != {"name": "onecomp.hayatequant_fair_speed", "version": 4}:
             raise AggregateError(f"Wrong fair-speed schema in {path}")
         protocol = document.get("protocol")
         provenance = document.get("provenance")
@@ -9006,9 +9051,9 @@ def verify_speed(
                 "and dequantized research-cache E2E"
             ),
             "methods": {
-                "TurboQuant-paper": "inherited unfused encode_then_decode",
-                "HQ": "HayateQuant fused research fake_quant_roundtrip",
-                "AdaptiveHQ": "HayateQuant fused research fake_quant_roundtrip",
+                "TurboQuant-paper": TURBOQUANT_FAKE_QUANT_IMPLEMENTATION,
+                "HQ": HQ_FAKE_QUANT_IMPLEMENTATION,
+                "AdaptiveHQ": ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION,
             },
         },
         "multiplicity_contract": {

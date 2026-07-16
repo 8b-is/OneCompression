@@ -1208,7 +1208,7 @@ def _speed_scientific_recipe(rate: int, names: dict[str, str]) -> dict:
         },
         "adaptive": {
             "semantic_role": "causal online-rate-allocation HQ paper proposal",
-            "fake_quant_implementation": "HayateQuant fused research fake_quant_roundtrip",
+            "fake_quant_implementation": renderer.ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION,
             "proposal_method": True,
             "proposal_variant": "causal_adaptive",
         },
@@ -1395,9 +1395,9 @@ def _speed_axis() -> dict:
                 "and dequantized research-cache E2E"
             ),
             "methods": {
-                "TurboQuant-paper": "inherited unfused encode_then_decode",
-                "HQ": "HayateQuant fused research fake_quant_roundtrip",
-                "AdaptiveHQ": "HayateQuant fused research fake_quant_roundtrip",
+                "TurboQuant-paper": renderer.TURBOQUANT_FAKE_QUANT_IMPLEMENTATION,
+                "HQ": renderer.HQ_FAKE_QUANT_IMPLEMENTATION,
+                "AdaptiveHQ": renderer.ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION,
             },
         },
         "pareto_contract": pareto,
@@ -1672,7 +1672,7 @@ def test_renderer_is_deterministic_and_emits_every_formal_axis(tmp_path):
         "formal-speed-paired-e2e",
         "formal-speed-paired-micro",
         "formal-speed-public-operations",
-        "formal-speed-research-fused",
+        "formal-speed-research-fake-quant",
         "formal-speed-memory-representations",
     }
     assert all(rf"\label{{tab:{label}}}" in tables for label in expected_labels)

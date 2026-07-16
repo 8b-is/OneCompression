@@ -326,6 +326,33 @@ def test_proposal_recipes_record_exact_rate_specific_role_resolution(
     assert {role["source_law"] for role in hq.values()} == {"gaussian"}
 
 
+def test_fake_quant_contract_does_not_label_adaptive_fallback_as_fused():
+    assert fair.SCHEMA_VERSION == 4
+    specs = fair._method_specs(3)  # pylint: disable=protected-access
+    codecs = {spec.label: spec.codec_factory() for spec in specs}
+    labels = {spec.label: spec.fake_quant_implementation for spec in specs}
+    assert labels == {
+        "TurboQuant-paper": fair.TURBOQUANT_FAKE_QUANT_IMPLEMENTATION,
+        "HQ": fair.HQ_FAKE_QUANT_IMPLEMENTATION,
+        "AdaptiveHQ": fair.ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION,
+    }
+    effective = {
+        label: fair._fake_quant_effective_implementation(codec, 128)
+        for label, codec in codecs.items()
+    }
+    assert effective["HQ"]["effective_path"] == "hayate_fused_roundtrip"
+    assert effective["HQ"]["payload_materialized"] is False
+    assert effective["AdaptiveHQ"] == {
+        "effective_path": "inherited_encode_then_decode",
+        "payload_materialized": True,
+        "hayate_override_entered": False,
+        "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
+    }
+    assert effective["TurboQuant-paper"]["runtime_probe"] == (
+        "codec_has_no_hayate_rt_support_probe"
+    )
+
+
 def test_run_fingerprint_excludes_only_output_mechanics():
     args_a = fair._build_parser().parse_args(
         [  # pylint: disable=protected-access

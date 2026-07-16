@@ -2720,7 +2720,7 @@ def _speed_doc(process_index: int) -> dict:
         },
         frontier: {
             "semantic_role": "causal online-rate-allocation HQ paper proposal",
-            "fake_quant_implementation": "HayateQuant fused research fake_quant_roundtrip",
+            "fake_quant_implementation": shards.ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION,
             "proposal_method": True,
             "proposal_variant": "causal_adaptive",
         },
@@ -3035,7 +3035,29 @@ def _speed_doc(process_index: int) -> dict:
                 "decode_prebuilt_payload": measurement,
                 "roundtrip_explicit_encode_then_decode": measurement,
             },
-            "research_fake_quant": {"fake_quant_roundtrip": measurement},
+            "research_fake_quant": {
+                "effective_implementations": {
+                    tq: {
+                        "effective_path": "inherited_encode_then_decode",
+                        "payload_materialized": True,
+                        "hayate_override_entered": False,
+                        "runtime_probe": "codec_has_no_hayate_rt_support_probe",
+                    },
+                    scalar: {
+                        "effective_path": "hayate_fused_roundtrip",
+                        "payload_materialized": False,
+                        "hayate_override_entered": True,
+                        "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
+                    },
+                    frontier: {
+                        "effective_path": "inherited_encode_then_decode",
+                        "payload_materialized": True,
+                        "hayate_override_entered": False,
+                        "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
+                    },
+                },
+                "fake_quant_roundtrip": measurement,
+            },
         }
 
     e2e_values = {"fullkv_uncompressed": 12.0, **codec_values}
@@ -3149,7 +3171,7 @@ def _speed_doc(process_index: int) -> dict:
     ).hexdigest()
     return {
         "schema_version": 2,
-        "schema": {"name": "onecomp.hayatequant_fair_speed", "version": 3},
+        "schema": {"name": "onecomp.hayatequant_fair_speed", "version": 4},
         "model": "model",
         "config": {"model_path": "/models/model"},
         "code_commit": "test-commit",
@@ -3282,11 +3304,26 @@ def _speed_doc(process_index: int) -> dict:
             },
             "quality": quality,
             "parity_checks": {
-                "proposal_payload_vs_fused_quality": [
+                "proposal_payload_vs_fake_quant_quality": [
                     {
                         "method": label,
                         "role": role,
-                        "stored_bits_from_fused": stored_bits,
+                        "effective_implementation": (
+                            {
+                                "effective_path": "hayate_fused_roundtrip",
+                                "payload_materialized": False,
+                                "hayate_override_entered": True,
+                                "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
+                            }
+                            if label == scalar
+                            else {
+                                "effective_path": "inherited_encode_then_decode",
+                                "payload_materialized": True,
+                                "hayate_override_entered": False,
+                                "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
+                            }
+                        ),
+                        "stored_bits_from_fake_quant": stored_bits,
                         "stored_bits_from_quality_payload": stored_bits,
                         "stored_bits_match": True,
                     }

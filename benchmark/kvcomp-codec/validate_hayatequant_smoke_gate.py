@@ -62,6 +62,11 @@ ADAPTIVE_HQ_HYSTERESIS = (
     "enter_challenger_only_beyond_margin_retain_while_strictly_better_"
     "fallback_to_fixed_incumbent_on_tie_or_loss"
 )
+TURBOQUANT_FAKE_QUANT_IMPLEMENTATION = "inherited unfused encode_then_decode"
+HQ_FAKE_QUANT_IMPLEMENTATION = "HayateQuant fused research fake_quant_roundtrip"
+ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION = (
+    "inherited encode_then_decode fallback; AdaptiveHQ fused path unsupported"
+)
 HQ_CODEBOOK_BUNDLE = "fixed_hq_b2_v1"
 ADAPTIVE_HQ_CODEBOOK_BUNDLE = "adaptive_hq_b2_safe_v1"
 HQ_CODEBOOK_MANIFEST_SHA256 = "df02ba5fd41fd0cc3fd2d39474fcfe7a628c15eb9ea012e8c70b1ffb3dabecde"
@@ -1159,14 +1164,32 @@ def _validate_speed_payload(micro: Any, *, label: str) -> None:
     ):
         raise SmokeGateError(f"{label} failed equal-rate/recipe linkage")
     parity = micro.get("parity_checks")
-    fused_parity = (
-        parity.get("proposal_payload_vs_fused_quality") if isinstance(parity, dict) else None
+    fake_quant_parity = (
+        parity.get("proposal_payload_vs_fake_quant_quality") if isinstance(parity, dict) else None
     )
+    expected_effective = {
+        "HQ": {
+            "effective_path": "hayate_fused_roundtrip",
+            "payload_materialized": False,
+            "hayate_override_entered": True,
+            "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
+        },
+        "AdaptiveHQ": {
+            "effective_path": "inherited_encode_then_decode",
+            "payload_materialized": True,
+            "hayate_override_entered": False,
+            "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
+        },
+    }
     if (
         not isinstance(parity, dict)
-        or set(parity) != {"proposal_payload_vs_fused_quality"}
-        or not isinstance(fused_parity, list)
-        or {(row.get("method"), row.get("role")) for row in fused_parity if isinstance(row, dict)}
+        or set(parity) != {"proposal_payload_vs_fake_quant_quality"}
+        or not isinstance(fake_quant_parity, list)
+        or {
+            (row.get("method"), row.get("role"))
+            for row in fake_quant_parity
+            if isinstance(row, dict)
+        }
         != {
             ("HQ", "key"),
             ("HQ", "value"),
@@ -1174,8 +1197,10 @@ def _validate_speed_payload(micro: Any, *, label: str) -> None:
             ("AdaptiveHQ", "value"),
         }
         or any(
-            not isinstance(row, dict) or row.get("stored_bits_match") is not True
-            for row in fused_parity
+            not isinstance(row, dict)
+            or row.get("stored_bits_match") is not True
+            or row.get("effective_implementation") != expected_effective.get(row.get("method"))
+            for row in fake_quant_parity
         )
     ):
         raise SmokeGateError(f"{label} failed codec parity checks")
@@ -1197,6 +1222,17 @@ def _validate_speed_payload(micro: Any, *, label: str) -> None:
         or rows["AdaptiveHQ"].get("exact_assignment") is not True
         or not isinstance(rows["AdaptiveHQ"].get("selector"), dict)
         or rows["AdaptiveHQ"]["selector"].get("candidate_pairs") != [[6, 6], [7, 5]]
+        or rows["AdaptiveHQ"]["selector"].get("prior_pair") != [7, 5]
+        or rows["AdaptiveHQ"]["selector"].get("incumbent_pair") != [7, 5]
+        or not math.isclose(
+            float(rows["AdaptiveHQ"]["selector"].get("switch_margin_fraction", math.nan)),
+            ADAPTIVE_HQ_SWITCH_MARGIN_FRACTION,
+            rel_tol=0.0,
+            abs_tol=1e-15,
+        )
+        or rows["AdaptiveHQ"]["selector"].get("switch_margin_basis")
+        != ADAPTIVE_HQ_SWITCH_MARGIN_BASIS
+        or rows["AdaptiveHQ"]["selector"].get("hysteresis") != ADAPTIVE_HQ_HYSTERESIS
         or rows["AdaptiveHQ"]["selector"].get("selector_bits_per_encode") != 1
         or rows["AdaptiveHQ"]["selector"].get("policy_version") != ADAPTIVE_HQ_POLICY_VERSION
         or rows["AdaptiveHQ"]["selector"].get("distortion_table_version")
@@ -1212,6 +1248,15 @@ def _validate_speed_payload(micro: Any, *, label: str) -> None:
     for regime_name, regime in regimes.items():
         payload_api = regime.get("payload_api") if isinstance(regime, dict) else None
         fake_quant = regime.get("research_fake_quant") if isinstance(regime, dict) else None
+        expected_regime_effective = {
+            "TurboQuant-paper": {
+                "effective_path": "inherited_encode_then_decode",
+                "payload_materialized": True,
+                "hayate_override_entered": False,
+                "runtime_probe": "codec_has_no_hayate_rt_support_probe",
+            },
+            **expected_effective,
+        }
         if (
             not isinstance(payload_api, dict)
             or set(payload_api)
@@ -1221,6 +1266,7 @@ def _validate_speed_payload(micro: Any, *, label: str) -> None:
                 "roundtrip_explicit_encode_then_decode",
             }
             or not isinstance(fake_quant, dict)
+            or fake_quant.get("effective_implementations") != expected_regime_effective
         ):
             raise SmokeGateError(f"{label} {regime_name} operation matrix is incomplete")
         for operation, measurement in payload_api.items():
@@ -1640,13 +1686,18 @@ def _validate_axis_results(
         arguments = protocol.get("arguments") if isinstance(protocol, dict) else None
         taxonomy = protocol.get("method_taxonomy") if isinstance(protocol, dict) else None
         if (
-            document.get("schema") != {"name": "onecomp.hayatequant_fair_speed", "version": 3}
+            document.get("schema") != {"name": "onecomp.hayatequant_fair_speed", "version": 4}
             or not isinstance(taxonomy, dict)
             or set(taxonomy) != set(SPEED_METHODS)
             or any(not isinstance(taxonomy[name], dict) for name in SPEED_METHODS)
             or taxonomy["TurboQuant-paper"].get("proposal_method") is not False
+            or taxonomy["TurboQuant-paper"].get("fake_quant_implementation")
+            != TURBOQUANT_FAKE_QUANT_IMPLEMENTATION
             or taxonomy["HQ"].get("proposal_variant") != "fixed_global"
+            or taxonomy["HQ"].get("fake_quant_implementation") != HQ_FAKE_QUANT_IMPLEMENTATION
             or taxonomy["AdaptiveHQ"].get("proposal_variant") != "causal_adaptive"
+            or taxonomy["AdaptiveHQ"].get("fake_quant_implementation")
+            != ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION
         ):
             raise SmokeGateError(f"{label} fair-speed formal method taxonomy changed")
         _expect_subset(arguments, spec["arguments"], label=f"{label} arguments")
