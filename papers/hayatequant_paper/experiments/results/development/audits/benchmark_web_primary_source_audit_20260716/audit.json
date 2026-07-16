@@ -1,0 +1,36 @@
+{
+  "access_date": "2026-07-16",
+  "audit_kind": "benchmark_primary_source_web_audit",
+  "paper_edited": false,
+  "score_data": false,
+  "sources": {
+    "lm_eval": {
+      "pinned_commit": "27988a293647d5853e48edea291640b4af54740c",
+      "task_metadata_version": "1.0",
+      "url": "https://github.com/EleutherAI/lm-evaluation-harness"
+    },
+    "longbench": {
+      "pinned_revision": "5e628be450b7e67fb7ae6e201bd6d8f7056f7672",
+      "url": "https://github.com/THUDM/LongBench"
+    },
+    "longcodebench": {
+      "dataset_revision": "989d5eff750d65a72c522e47f8f745ef2e22906b",
+      "parser_reference_commit": "91db30f5144363bb809534ec7e4a84a56ea43987",
+      "url": "https://github.com/Zteefano/long-code-bench"
+    },
+    "math500": {
+      "dataset_revision": "6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be",
+      "grader": "math-verify==0.9.0",
+      "url": "https://github.com/openai/simple-evals"
+    },
+    "ruler": {
+      "canonical_nvidia_samples_per_task": 500,
+      "nemo_skills_commit": "f4a3fd8e524acd9abd1fea4387e8f179f6d51cf3",
+      "paper_adapter_samples_per_task": 100,
+      "ruler_commit": "38da79d79519ef87aa46ae804f838e1eab7f86d7",
+      "url": "https://github.com/NVIDIA/RULER"
+    }
+  },
+  "status": "protocol_names_and_metrics_bounded",
+  "timezone": "Asia/Tokyo"
+}
