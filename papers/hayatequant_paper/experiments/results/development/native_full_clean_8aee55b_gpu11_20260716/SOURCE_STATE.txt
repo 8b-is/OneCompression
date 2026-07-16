@@ -1,0 +1,10 @@
+git_commit=8aee55bebaa6974d5ca3362697982d6892359498
+git_branch=detached
+git_status_porcelain=
+host=kagura-gpu11
+gpu=NVIDIA B200
+vllm_version=0.20.0
+torch_version=2.11.0
+triton_version=3.6.0
+record_kind=development_diagnostic
+formal_result=false
