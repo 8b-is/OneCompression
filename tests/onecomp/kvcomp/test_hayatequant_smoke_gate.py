@@ -294,15 +294,16 @@ def _populate_axis_accounting(axis: dict, *, kind: str, method: str, n: int) -> 
 def _preflight(
     *,
     run_root: Path,
+    work_root: Path,
     input_manifest: Path,
     input_sha256: str,
     spec: dict,
     commit: str,
     native: bool = False,
 ) -> dict:
-    pinned_model = json.loads(input_manifest.read_text(encoding="utf-8"))["models"][
-        spec["model_key"]
-    ]
+    pinned_inputs = json.loads(input_manifest.read_text(encoding="utf-8"))
+    pinned_model = pinned_inputs["models"][spec["model_key"]]
+    hf_home = Path(pinned_inputs["hf_datasets"]["hf_home"])
     manifest_record = {
         "path": str(input_manifest.resolve()),
         "bytes": input_manifest.stat().st_size,
@@ -327,12 +328,12 @@ def _preflight(
         },
         "pinned_input_files": gate._expected_full_hash_summary(input_manifest),
         "dataset_files": [manifest_record]
-        + [gate._file_record(run_root / value) for value in spec["dataset_files"]],
+        + gate._expected_dataset_records(input_manifest, spec["dataset_selectors"]),
         "environment": {
             "KVCOMP_CODEBOOK_DIR": None,
-            "HF_HOME": str((run_root / "data/hf_home").resolve()),
-            "HF_DATASETS_CACHE": str((run_root / "data/hf_home/datasets").resolve()),
-            "HOME": str((run_root / "runtime/home").resolve()),
+            "HF_HOME": str(hf_home.resolve()),
+            "HF_DATASETS_CACHE": str((hf_home / "datasets").resolve()),
+            "HOME": str((work_root / "runtime/home").resolve()),
             "SLURM_JOB_NAME": "hq-s-native-hybrid" if native else f"hq-s-{spec['key']}",
             **gate.SEMANTIC_ENVIRONMENT,
         },
@@ -365,7 +366,6 @@ def _standard_result(spec: dict, preflight: dict) -> dict:
     record = preflight["record"]
     commit = record["code"]["commit"]
     model_path = record["model"]["path"]
-    run_root = Path(record["environment"]["HOME"]).parents[1]
     kind = spec["kind"]
     if kind in {"ruler_v1", "longbench", "math500", "longcodeqa"}:
         config = {
@@ -384,14 +384,12 @@ def _standard_result(spec: dict, preflight: dict) -> dict:
         }[kind]
         config[active] = True
         if kind == "ruler_v1":
-            config["official_ruler_data_root"] = str(
-                (run_root / "data/ruler_v1/llama31-8b/4096").resolve()
-            )
-            config["official_ruler_manifest_path"] = str(
-                (run_root / "data/ruler_v1/llama31-8b/manifest.json").resolve()
-            )
+            ruler_manifest = Path(record["dataset_files"][1]["path"])
+            config["official_ruler_data_root"] = str(ruler_manifest.parent / "4096")
+            config["official_ruler_manifest_path"] = str(ruler_manifest)
         elif kind == "longcodeqa":
-            config["longcodeqa_data_root"] = str((run_root / "data/LongCodeQA").resolve())
+            longcode_dataset = Path(record["dataset_files"][1]["path"])
+            config["longcodeqa_data_root"] = str(longcode_dataset.parents[1])
     else:
         config = {**spec.get("config", {}), "model_path": model_path}
     document = {
@@ -734,10 +732,20 @@ def _standard_result(spec: dict, preflight: dict) -> dict:
 
 
 def _build_completed_smoke(tmp_path: Path) -> tuple[Path, Path, str, str]:
-    run_root = tmp_path / "run"
-    for spec in gate.SMOKE_PLAN:
-        for relative in spec["dataset_files"]:
-            _write(run_root / relative, {"fixture": relative})
+    run_root = (
+        tmp_path
+        / "results-worktree/papers/hayatequant_paper/experiments/results/synthetic-run"
+    )
+    work_root = tmp_path / "work"
+    data_root = tmp_path / "pinned-data"
+    (work_root / "runtime/home").mkdir(parents=True)
+    (data_root / "hf_home").mkdir(parents=True)
+    hf_manifest = data_root / "pinned_hf_datasets_manifest.json"
+    ruler_manifest = data_root / "ruler_v1/llama31-8b/manifest.json"
+    longcode_dataset = data_root / "LongCodeQA/LQA/32K.json"
+    longcode_context = data_root / "longcodeqa_context_llama31-8b.json"
+    for path in (hf_manifest, ruler_manifest, longcode_dataset, longcode_context):
+        _write(path, {"fixture": str(path.relative_to(data_root))})
     input_manifest = run_root / "manifests/paper_inputs.json"
     _write(
         input_manifest,
@@ -745,13 +753,27 @@ def _build_completed_smoke(tmp_path: Path) -> tuple[Path, Path, str, str]:
             "schema_version": 2,
             "kind": "hayatequant_paper_input_validation",
             "status": "ok",
+            "runtime_paths": {
+                "work_root": str(work_root.resolve()),
+                "home": str((work_root / "runtime/home").resolve()),
+            },
             "hf_datasets": {
                 "status": "validated",
-                "hf_home": str((run_root / "data/hf_home").resolve()),
+                "hf_home": str((data_root / "hf_home").resolve()),
+                "manifest": gate._file_record(hf_manifest),
                 "packages": {
                     "datasets": "4.2.0",
                     "huggingface-hub": "0.35.0",
                     "pyarrow": "21.0.0",
+                },
+            },
+            "ruler_v1": {
+                "llama31-8b": {"manifest": gate._file_record(ruler_manifest)}
+            },
+            "longcodeqa": {
+                "brackets": {"32K": gate._file_record(longcode_dataset)},
+                "context_fit_manifests": {
+                    "llama31-8b": {"manifest": gate._file_record(longcode_context)}
                 },
             },
             "models": {
@@ -766,9 +788,12 @@ def _build_completed_smoke(tmp_path: Path) -> tuple[Path, Path, str, str]:
                 for spec in gate.SMOKE_PLAN
             },
             "pinned_files": [
-                gate._file_record(run_root / relative)
-                for relative in sorted(
-                    {value for spec in gate.SMOKE_PLAN for value in spec["dataset_files"]}
+                gate._file_record(path)
+                for path in (
+                    hf_manifest,
+                    ruler_manifest,
+                    longcode_dataset,
+                    longcode_context,
                 )
             ],
         },
@@ -777,6 +802,7 @@ def _build_completed_smoke(tmp_path: Path) -> tuple[Path, Path, str, str]:
     commit = "a" * 40
     native_preflight = _preflight(
         run_root=run_root,
+        work_root=work_root,
         input_manifest=input_manifest,
         input_sha256=input_sha256,
         spec=gate.SMOKE_PLAN[-1],
@@ -827,6 +853,7 @@ def _build_completed_smoke(tmp_path: Path) -> tuple[Path, Path, str, str]:
         else:
             record = _preflight(
                 run_root=run_root,
+                work_root=work_root,
                 input_manifest=input_manifest,
                 input_sha256=input_sha256,
                 spec=spec,
@@ -1046,6 +1073,28 @@ def test_unpinned_or_missing_worker_dataset_is_rejected_even_with_rehashed_envel
     _write(result_path, result)
 
     with pytest.raises(gate.SmokeGateError, match="exact pinned dataset/protocol set"):
+        gate.validate_smoke_plan(
+            run_root=run_root,
+            expected_commit=commit,
+            input_manifest=input_manifest,
+            input_manifest_sha256=input_sha256,
+        )
+
+
+def test_run_root_home_is_rejected_even_with_rehashed_worker_envelope(tmp_path):
+    run_root, input_manifest, input_sha256, commit = _build_completed_smoke(tmp_path)
+    result_path = run_root / gate.SMOKE_PLAN[0]["path"]
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    envelope = result["run_provenance"][0]
+    preflight_path = Path(envelope["path"])
+    record = json.loads(preflight_path.read_text(encoding="utf-8"))
+    record["environment"]["HOME"] = str((run_root / "runtime/home").resolve())
+    _write(preflight_path, record)
+    envelope["record"] = record
+    envelope["sha256"] = hashlib.sha256(preflight_path.read_bytes()).hexdigest()
+    _write(result_path, result)
+
+    with pytest.raises(gate.SmokeGateError, match="stale/dirty model, code, or GPU provenance"):
         gate.validate_smoke_plan(
             run_root=run_root,
             expected_commit=commit,

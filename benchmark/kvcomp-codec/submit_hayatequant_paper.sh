@@ -423,6 +423,8 @@ ensure_input_manifest() {
     "pinned HF manifest is missing: $PINNED_HF_MANIFEST (run the dataset prefetch first)"
   "$PY" "$INPUT_VALIDATOR" \
     --run-root "$RUN_ROOT" \
+    --work-root "$WORK_ROOT" \
+    --runtime-home "$PAPER_HOME" \
     --models-root "$MODELS" \
     --ruler-root "$RULER_ROOT" \
     --longcodeqa-root "$LONGCODE_ROOT" \
@@ -1567,7 +1569,10 @@ case "$command" in
   preflight)
     validate_static_environment
     resolve_source_revision
-    mkdir -p "$(dirname "$INPUT_MANIFEST")"
+    [ "$DRYRUN" != 1 ] || die \
+      "preflight writes a manifest and is unavailable in DRYRUN mode"
+    validate_results_repository
+    mkdir -p "$(dirname "$INPUT_MANIFEST")" "$PAPER_HOME"
     ensure_input_manifest
     printf 'validated inputs: %s\n' "$INPUT_MANIFEST"
     ;;
@@ -1641,6 +1646,8 @@ case "$command" in
     ;;
   formal-plan)
     [ "$DRYRUN" = 1 ] || die "formal-plan is source inspection only and requires DRYRUN=1"
+    [ "$SKIP_INPUT_PREFLIGHT" = 1 ] || die \
+      "formal-plan is read-only and requires SKIP_INPUT_PREFLIGHT=1"
     prepare_submission
     # Source-only plan inspection has no approved smoke artifacts.  Fixed,
     # visibly synthetic digests keep the worker/export contract inspectable;

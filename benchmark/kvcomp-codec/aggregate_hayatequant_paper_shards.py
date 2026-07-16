@@ -715,7 +715,7 @@ QUALITY_SEMANTIC_ENVIRONMENT = {
 FORMAL_SMOKE_APPROVAL_VERIFICATION_MODE = (
     "full_sha256_submitter_binding_plus_worker_semantic_validator_check"
 )
-FORMAL_SMOKE_PLAN_VERSION = 3
+FORMAL_SMOKE_PLAN_VERSION = 4
 FORMAL_SMOKE_JOB_KEYS = (
     "ppl",
     "zeroshot",

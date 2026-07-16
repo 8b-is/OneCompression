@@ -33,6 +33,9 @@ def _write_json(path: Path, document) -> None:
 
 def _build_inputs(root: Path) -> dict:
     run_root = root / "run"
+    work_root = root / "work"
+    runtime_home = work_root / "runtime/home"
+    runtime_home.mkdir(parents=True)
     models_root = root / "models"
     model_paths = {}
     for key in validator.RULER_MODEL_KEYS:
@@ -302,6 +305,8 @@ def _build_inputs(root: Path) -> dict:
     )
     return {
         "run_root": run_root,
+        "work_root": work_root,
+        "runtime_home": runtime_home,
         "models_root": models_root,
         "model_paths": model_paths,
         "ruler_root": ruler_root,
@@ -317,6 +322,8 @@ def _build_inputs(root: Path) -> dict:
 def _validate(paths: dict) -> dict:
     return validator.validate_inputs(
         run_root=paths["run_root"],
+        work_root=paths["work_root"],
+        runtime_home=paths["runtime_home"],
         models_root=paths["models_root"],
         model_paths=paths["model_paths"],
         ruler_root=paths["ruler_root"],
@@ -337,6 +344,10 @@ def test_full_synthetic_input_set_validates_and_writes_atomically(tmp_path):
     saved = json.loads(output.read_text(encoding="utf-8"))
     assert saved["status"] == "ok"
     assert saved["schema_version"] == 2
+    assert saved["runtime_paths"] == {
+        "work_root": str(paths["work_root"].resolve()),
+        "home": str(paths["runtime_home"].resolve()),
+    }
     assert saved["hf_datasets"]["status"] == "validated"
     assert saved["longcodeqa"]["total_rows"] == 281
     assert saved["longcodeqa"]["release_revision"] == validator.LONGCODEQA_DATASET_REVISION
@@ -369,6 +380,23 @@ def test_full_synthetic_input_set_validates_and_writes_atomically(tmp_path):
     assert llama_weights["layouts"]["safetensors"]["shard_count"] == 2
     assert saved["models"]["qwen3-8b"]["weights"]["selected_kind"] == "single_file"
     assert not list(output.parent.glob(f".{output.name}.*.tmp"))
+
+
+def test_runtime_paths_reject_wrong_home_and_symlink_components(tmp_path):
+    paths = _build_inputs(tmp_path)
+    wrong_home = paths["work_root"] / "other-home"
+    wrong_home.mkdir()
+    paths["runtime_home"] = wrong_home
+    with pytest.raises(validator.ValidationError, match="must be exactly"):
+        _validate(paths)
+
+    paths = _build_inputs(tmp_path / "symlinked")
+    link = tmp_path / "work-link"
+    link.symlink_to(paths["work_root"], target_is_directory=True)
+    paths["work_root"] = link
+    paths["runtime_home"] = link / "runtime/home"
+    with pytest.raises(validator.ValidationError, match="symlink path components"):
+        _validate(paths)
 
 
 def test_atomic_manifest_preserves_bytes_when_only_validation_time_changes(tmp_path):

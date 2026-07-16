@@ -27,7 +27,7 @@ from typing import Any, Mapping, Sequence
 APPROVAL_STATEMENT = "I_APPROVE_THE_VALIDATED_HAYATEQUANT_SMOKE_PLAN"
 MARKER_KIND = "hayatequant_formal_smoke_approval"
 MARKER_SCHEMA_VERSION = 1
-SMOKE_PLAN_VERSION = 3
+SMOKE_PLAN_VERSION = 4
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LONG_METHODS = (
     "FullKV",
@@ -144,7 +144,7 @@ SMOKE_PLAN = (
         "model": "Qwen3-0.6B",
         "model_key": "qwen3-0.6b-smoke",
         "kind": "ppl",
-        "dataset_files": ["data/pinned_hf_datasets_manifest.json"],
+        "dataset_selectors": [{"kind": "hf_manifest"}],
         "config": {
             "methods": list(COMPRESSED_METHODS),
             "bits": [3],
@@ -172,7 +172,7 @@ SMOKE_PLAN = (
         "model": "Qwen3-0.6B",
         "model_key": "qwen3-0.6b-smoke",
         "kind": "zeroshot",
-        "dataset_files": ["data/pinned_hf_datasets_manifest.json"],
+        "dataset_selectors": [{"kind": "hf_manifest"}],
         "config": {
             "bits": [3],
             "device": "cuda:0",
@@ -196,7 +196,9 @@ SMOKE_PLAN = (
         "model": "llama-3.1-8b-instruct",
         "model_key": "llama31-8b",
         "kind": "ruler_v1",
-        "dataset_files": ["data/ruler_v1/llama31-8b/manifest.json"],
+        "dataset_selectors": [
+            {"kind": "ruler_manifest", "model_key": "llama31-8b"}
+        ],
         "n": 2,
         "config": {
             "run_official_ruler_v1": True,
@@ -214,7 +216,7 @@ SMOKE_PLAN = (
         "model": "llama-3.1-8b-instruct",
         "model_key": "llama31-8b",
         "kind": "longbench",
-        "dataset_files": ["data/pinned_hf_datasets_manifest.json"],
+        "dataset_selectors": [{"kind": "hf_manifest"}],
         "n": 1,
         "config": {
             "run_longbench": True,
@@ -232,7 +234,7 @@ SMOKE_PLAN = (
         "model": "Qwen3-0.6B",
         "model_key": "qwen3-0.6b-smoke",
         "kind": "math500",
-        "dataset_files": ["data/pinned_hf_datasets_manifest.json"],
+        "dataset_selectors": [{"kind": "hf_manifest"}],
         "n": 2,
         "config": {
             "run_math": True,
@@ -254,9 +256,9 @@ SMOKE_PLAN = (
         "model": "llama-3.1-8b-instruct",
         "model_key": "llama31-8b",
         "kind": "longcodeqa",
-        "dataset_files": [
-            "data/LongCodeQA/LQA/32K.json",
-            "data/longcodeqa_context_llama31-8b.json",
+        "dataset_selectors": [
+            {"kind": "longcodeqa_bracket", "bracket": "32K"},
+            {"kind": "longcodeqa_context_manifest", "model_key": "llama31-8b"},
         ],
         "n": 1,
         "config": {
@@ -277,7 +279,7 @@ SMOKE_PLAN = (
         "model": "llama-3.1-8b-instruct",
         "model_key": "llama31-8b",
         "kind": "speed",
-        "dataset_files": [],
+        "dataset_selectors": [],
         "arguments": {
             "revision": None,
             "local_files_only": True,
@@ -312,7 +314,7 @@ SMOKE_PLAN = (
         "model": "llama-3.1-8b-instruct",
         "model_key": "llama31-8b",
         "kind": "native",
-        "dataset_files": [],
+        "dataset_selectors": [],
         "arguments": {
             "bits": [3, 4],
             "head_dim": 128,
@@ -482,6 +484,111 @@ def _expected_hf_home(input_manifest: Path) -> str:
     if not isinstance(value, str) or not value:
         raise SmokeGateError("Paper input manifest has no validated HF_HOME")
     return str(Path(value).expanduser().resolve())
+
+
+def _expected_runtime_paths(input_manifest: Path, *, run_root: Path) -> dict:
+    document = _load_json(input_manifest, label="paper input manifest")
+    runtime = document.get("runtime_paths")
+    if not isinstance(runtime, dict) or set(runtime) != {"work_root", "home"}:
+        raise SmokeGateError("Paper input manifest has no exact runtime_paths contract")
+    resolved: dict[str, Path] = {}
+    for key in ("work_root", "home"):
+        value = runtime.get(key)
+        if not isinstance(value, str) or not value or not Path(value).is_absolute():
+            raise SmokeGateError(f"Paper input manifest runtime_paths.{key} is invalid")
+        lexical = Path(os.path.abspath(Path(value).expanduser()))
+        try:
+            canonical = Path(value).expanduser().resolve(strict=True)
+        except (OSError, RuntimeError) as exc:
+            raise SmokeGateError(
+                f"Paper input manifest runtime_paths.{key} is not an existing directory"
+            ) from exc
+        if canonical != lexical or not canonical.is_dir():
+            raise SmokeGateError(
+                f"Paper input manifest runtime_paths.{key} is symlinked or not a directory"
+            )
+        resolved[key] = canonical
+    if resolved["home"] != (resolved["work_root"] / "runtime/home").resolve():
+        raise SmokeGateError("Paper input manifest runtime HOME escaped WORK_ROOT/runtime/home")
+    try:
+        resolved["work_root"].relative_to(run_root)
+    except ValueError:
+        pass
+    else:
+        raise SmokeGateError("Paper input manifest WORK_ROOT is nested below RUN_ROOT")
+    try:
+        run_root.relative_to(resolved["work_root"])
+    except ValueError:
+        pass
+    else:
+        raise SmokeGateError("Paper RUN_ROOT is nested below mutable WORK_ROOT")
+    return {key: str(value) for key, value in resolved.items()}
+
+
+def _validated_manifest_file_record(value: Any, *, label: str) -> dict:
+    if not isinstance(value, Mapping):
+        raise SmokeGateError(f"Paper input manifest has no {label} file record")
+    path = value.get("path")
+    byte_count = value.get("bytes")
+    digest = value.get("sha256")
+    if (
+        not isinstance(path, str)
+        or not Path(path).is_absolute()
+        or isinstance(byte_count, bool)
+        or not isinstance(byte_count, int)
+        or byte_count < 0
+        or not isinstance(digest, str)
+        or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+    ):
+        raise SmokeGateError(f"Paper input manifest has malformed {label} file provenance")
+    expected = {"path": path, "bytes": byte_count, "sha256": digest}
+    actual = _file_record(Path(path))
+    if actual != expected:
+        raise SmokeGateError(f"Paper input manifest {label} file changed after validation")
+    return actual
+
+
+def _expected_dataset_records(input_manifest: Path, selectors: Any) -> list[dict]:
+    if not isinstance(selectors, list):
+        raise SmokeGateError("Smoke plan dataset selectors are malformed")
+    document = _load_json(input_manifest, label="paper input manifest")
+    records: list[dict] = []
+    for selector in selectors:
+        if not isinstance(selector, dict) or not isinstance(selector.get("kind"), str):
+            raise SmokeGateError("Smoke plan contains a malformed dataset selector")
+        kind = selector["kind"]
+        if kind == "hf_manifest" and set(selector) == {"kind"}:
+            hf = document.get("hf_datasets")
+            value = hf.get("manifest") if isinstance(hf, dict) else None
+            label = "pinned HF dataset manifest"
+        elif kind == "ruler_manifest" and set(selector) == {"kind", "model_key"}:
+            ruler = document.get("ruler_v1")
+            model = ruler.get(selector["model_key"]) if isinstance(ruler, dict) else None
+            value = model.get("manifest") if isinstance(model, dict) else None
+            label = f"RULER {selector['model_key']} manifest"
+        elif kind == "longcodeqa_bracket" and set(selector) == {"kind", "bracket"}:
+            longcode = document.get("longcodeqa")
+            brackets = longcode.get("brackets") if isinstance(longcode, dict) else None
+            value = brackets.get(selector["bracket"]) if isinstance(brackets, dict) else None
+            label = f"LongCodeQA {selector['bracket']} dataset"
+        elif kind == "longcodeqa_context_manifest" and set(selector) == {
+            "kind",
+            "model_key",
+        }:
+            longcode = document.get("longcodeqa")
+            contexts = (
+                longcode.get("context_fit_manifests") if isinstance(longcode, dict) else None
+            )
+            model = contexts.get(selector["model_key"]) if isinstance(contexts, dict) else None
+            value = model.get("manifest") if isinstance(model, dict) else None
+            label = f"LongCodeQA {selector['model_key']} context-fit manifest"
+        else:
+            raise SmokeGateError(f"Unsupported or malformed dataset selector: {selector!r}")
+        record = _validated_manifest_file_record(value, label=label)
+        if any(existing["path"] == record["path"] for existing in records):
+            raise SmokeGateError(f"Smoke plan repeats dataset file {record['path']}")
+        records.append(record)
+    return records
 
 
 def _expected_hf_packages(input_manifest: Path) -> dict:
@@ -680,6 +787,7 @@ def _validate_preflight_record(
     gpu = record.get("gpu")
     gpu_devices = gpu.get("devices") if isinstance(gpu, dict) else None
     expected_model = _expected_model_contract(input_manifest, spec["model_key"])
+    expected_runtime = _expected_runtime_paths(input_manifest, run_root=run_root)
     expected_model_path = expected_model["path"]
     expected_module = str((REPO_ROOT / "onecomp/__init__.py").resolve())
     if (
@@ -705,7 +813,7 @@ def _validate_preflight_record(
         or environment.get("HF_HOME") != _expected_hf_home(input_manifest)
         or environment.get("HF_DATASETS_CACHE")
         != str((Path(_expected_hf_home(input_manifest)) / "datasets").resolve())
-        or environment.get("HOME") != str((run_root / "runtime/home").resolve())
+        or environment.get("HOME") != expected_runtime["home"]
         or environment.get("SLURM_JOB_NAME") != f"hq-s-{spec['key']}"
         or not isinstance(gpu, dict)
         or gpu.get("available") is not True
@@ -752,7 +860,7 @@ def _validate_preflight_record(
     dataset_files = record.get("dataset_files")
     expected_datasets = [expected_manifest]
     expected_datasets.extend(
-        _file_record(run_root / relative) for relative in spec["dataset_files"]
+        _expected_dataset_records(input_manifest, spec["dataset_selectors"])
     )
     if dataset_files != expected_datasets:
         raise SmokeGateError(f"{label} did not preflight the exact pinned dataset/protocol set")
@@ -1541,6 +1649,7 @@ def _validate_axis_results(
     spec: Mapping[str, Any],
     *,
     run_root: Path,
+    input_manifest: Path,
     expected_commit: str,
     expected_model_path: str,
     label: str,
@@ -1713,8 +1822,11 @@ def _validate_axis_results(
     }
     _validate_long_recipe(config, active_flag=active_flags[kind], label=label)
     if kind == "ruler_v1":
-        expected_data_root = (run_root / "data/ruler_v1/llama31-8b/4096").resolve()
-        expected_manifest = (run_root / "data/ruler_v1/llama31-8b/manifest.json").resolve()
+        selected = _expected_dataset_records(input_manifest, spec["dataset_selectors"])
+        if len(selected) != 1:
+            raise SmokeGateError(f"{label} has an ambiguous RULER dataset selector")
+        expected_manifest = Path(selected[0]["path"])
+        expected_data_root = expected_manifest.parent / "4096"
         raw_data_root = config.get("official_ruler_data_root")
         raw_manifest = config.get("official_ruler_manifest_path")
         if (
@@ -1725,10 +1837,14 @@ def _validate_axis_results(
         ):
             raise SmokeGateError(f"{label} did not execute the pinned RULER smoke data")
     if kind == "longcodeqa":
+        selected = _expected_dataset_records(input_manifest, spec["dataset_selectors"])
+        if len(selected) != 2:
+            raise SmokeGateError(f"{label} has an ambiguous LongCodeQA dataset selector")
+        expected_root = Path(selected[0]["path"]).parents[1]
         raw_root = config.get("longcodeqa_data_root")
         if (
             not isinstance(raw_root, str)
-            or Path(raw_root).expanduser().resolve() != (run_root / "data/LongCodeQA").resolve()
+            or Path(raw_root).expanduser().resolve() != expected_root
         ):
             raise SmokeGateError(f"{label} did not execute the pinned LongCodeQA root")
     results = document.get("results")
@@ -1962,6 +2078,7 @@ def validate_smoke_plan(
                 document,
                 spec,
                 run_root=run_root,
+                input_manifest=input_manifest,
                 expected_commit=expected_commit,
                 expected_model_path=_expected_model_path(input_manifest, spec["model_key"]),
                 label=spec["key"],

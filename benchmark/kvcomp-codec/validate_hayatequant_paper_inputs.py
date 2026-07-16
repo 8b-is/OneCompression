@@ -276,6 +276,35 @@ def _inside(path: Path, root: Path) -> bool:
     return True
 
 
+def _existing_canonical_directory(path: str | Path, *, label: str) -> Path:
+    """Resolve a directory while rejecting symlinks in any path component."""
+    raw = Path(path).expanduser()
+    lexical = Path(os.path.abspath(raw))
+    try:
+        resolved = raw.resolve(strict=True)
+    except OSError as exc:
+        raise ValidationError(f"{label} is not an existing directory: {lexical}") from exc
+    if lexical != resolved:
+        raise ValidationError(f"{label} must not contain symlink path components: {lexical}")
+    if not resolved.is_dir():
+        raise ValidationError(f"{label} is not a directory: {resolved}")
+    return resolved
+
+
+def _validate_runtime_paths(
+    *, run_root: Path, work_root: str | Path, runtime_home: str | Path
+) -> dict:
+    """Bind mutable runtime state without allowing it inside the evidence tree."""
+    work = _existing_canonical_directory(work_root, label="WORK_ROOT")
+    home = _existing_canonical_directory(runtime_home, label="runtime HOME")
+    expected_home = (work / "runtime" / "home").resolve()
+    if home != expected_home:
+        raise ValidationError(f"runtime HOME must be exactly {expected_home}")
+    if _inside(work, run_root) or _inside(run_root, work):
+        raise ValidationError("WORK_ROOT and RUN_ROOT must be disjoint directory trees")
+    return {"work_root": str(work), "home": str(home)}
+
+
 def _state_tuple(value: os.stat_result) -> tuple[int, int, int, int, int, int]:
     return (
         value.st_dev,
@@ -1108,6 +1137,8 @@ def validate_hf_manifest(
 def validate_inputs(
     *,
     run_root: Path,
+    work_root: Path,
+    runtime_home: Path,
     models_root: Path,
     model_paths: Mapping[str, Path],
     ruler_root: Path | None = None,
@@ -1120,6 +1151,9 @@ def validate_inputs(
     expected_hf_datasets: Mapping[str, Mapping[str, Any]] = HF_DATASETS,
 ) -> dict:
     run_root = _resolved(run_root)
+    runtime_paths = _validate_runtime_paths(
+        run_root=run_root, work_root=work_root, runtime_home=runtime_home
+    )
     models_root = _resolved(models_root)
     ruler_root = _resolved(ruler_root or run_root / "data" / "ruler_v1")
     longcodeqa_root = _resolved(longcodeqa_root or run_root / "data" / "LongCodeQA")
@@ -1152,6 +1186,7 @@ def validate_inputs(
         "status": "ok",
         "validated_at_utc": datetime.now(timezone.utc).isoformat(),
         "run_root": str(run_root),
+        "runtime_paths": runtime_paths,
         "models_root": str(models_root),
         "models": models,
         "ruler_v1": ruler,
@@ -1258,6 +1293,18 @@ def _parse_context_manifest_arguments(
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-root", type=Path, default=DEFAULT_RUN_ROOT)
+    parser.add_argument(
+        "--work-root",
+        type=Path,
+        required=True,
+        help="existing external root for mutable caches and runtime state",
+    )
+    parser.add_argument(
+        "--runtime-home",
+        type=Path,
+        required=True,
+        help="must be exactly WORK_ROOT/runtime/home and contain no symlink components",
+    )
     parser.add_argument("--models-root", type=Path, default=DEFAULT_MODELS_ROOT)
     parser.add_argument(
         "--model",
@@ -1306,6 +1353,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         context_manifests = _parse_context_manifest_arguments(args.longcodeqa_context_manifest)
         document = validate_inputs(
             run_root=run_root,
+            work_root=args.work_root,
+            runtime_home=args.runtime_home,
             models_root=models_root,
             model_paths=model_paths,
             ruler_root=args.ruler_root,

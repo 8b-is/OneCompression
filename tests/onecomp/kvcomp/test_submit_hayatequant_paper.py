@@ -114,6 +114,45 @@ def test_script_is_valid_bash_and_help_documents_fixed_contract(tmp_path):
     assert "there is intentionally no" not in help_text  # comments are not CLI output
 
 
+def test_read_only_plans_and_preflight_never_write_outside_results_repo(tmp_path):
+    run_root = tmp_path / "not-a-results-worktree/run"
+    env = {
+        **os.environ,
+        "DRYRUN": "1",
+        "SKIP_INPUT_PREFLIGHT": "0",
+        "ALLOW_DIRTY_DRYRUN": "1",
+        "RUN_ROOT": str(run_root),
+        "MODELS": str(MODELS),
+        "PY": str(PY),
+        "PYVLLM": str(PYVLLM),
+    }
+    plan = subprocess.run(
+        ["bash", str(SCRIPT), "formal-plan"],
+        cwd=REPO,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert plan.returncode != 0
+    assert "requires SKIP_INPUT_PREFLIGHT=1" in plan.stderr
+    assert not run_root.exists()
+
+    preflight = subprocess.run(
+        ["bash", str(SCRIPT), "preflight"],
+        cwd=REPO,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert preflight.returncode != 0
+    assert "unavailable in DRYRUN mode" in preflight.stderr
+    assert not run_root.exists()
+
+
 def test_formal_commands_fail_closed_without_validated_smoke_approval(tmp_path):
     env = dict(os.environ)
     env.update(
