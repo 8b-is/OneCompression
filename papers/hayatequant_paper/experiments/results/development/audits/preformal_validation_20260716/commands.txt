@@ -8,3 +8,4 @@ bash -n benchmark/kvcomp-codec/run_paper_job.sh
 bash -n benchmark/kvcomp-codec/submit_hayatequant_paper.sh
 git diff --check 3d6f264363d7291c1fd07fe40d310ae041e53425 --
 xmllint --noout focused-junit.xml full-kvcomp-failed-missing-ruler-fixture-junit.xml full-kvcomp-junit.xml
+DRYRUN=1 SKIP_INPUT_PREFLIGHT=1 ALLOW_DIRTY_DRYRUN=0 SPEED_REPLICATES=5 PREFERRED_NODE= RUN_ROOT=/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715 bash benchmark/kvcomp-codec/submit_hayatequant_paper.sh formal-plan

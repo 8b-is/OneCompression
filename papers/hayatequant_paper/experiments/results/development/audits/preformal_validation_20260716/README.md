@@ -17,6 +17,8 @@ No benchmark point estimate in this bundle is a formal paper result.
   0 failed**.
 - Black, Python compilation, shell parsing, `git diff --check`, and JUnit XML
   parsing all pass.
+- The clean source plan contains exactly **969** unique formal jobs and result
+  paths: 909 quality jobs and 60 serial all-GRES speed jobs.
 - An intermediate full-suite run is preserved rather than deleted.  Its 18
   failures all came from the synthetic RULER aggregate fixture lacking the new
   mandatory eight-job smoke-approval record.  After updating only that fixture,
@@ -49,9 +51,16 @@ No benchmark point estimate in this bundle is a formal paper result.
 - `full-kvcomp-failed-missing-ruler-fixture-junit.xml`: preserved intermediate
   fixture-only failure.
 - `static-checks.log`: exact static-validation invocations and output.
+- `formal-plan.txt`: complete source-only dry-run plan from clean commit
+  `92353bc3d2c4cfe74db235d852352dd248197110`.
+- `formal-plan-counts.txt`: machine-checked plan cardinalities and resource/
+  approval-binding counts; `formal-plan.stderr.txt` records the intentional
+  source-only input-preflight warning.
+- `formal-plan-source-commit.txt`: exact plan-producing commit.  The subsequent
+  evidence-only commit changes no executable source; executable smoke workers
+  still regenerate and bind their own plan from their exact final commit.
 - `SOURCE_SHA256SUMS`: SHA-256 identities of all changed Python and shell files.
 - `SOURCE_DIFF.sha256`: SHA-256 of their binary Git diff from the starting
   commit.
 - `audit.json` and `test_results.json`: machine-readable scope and outcomes.
 - `SHA256SUMS`: integrity ledger for this evidence bundle.
-

@@ -51,6 +51,14 @@
     "bash_parse": "pass",
     "git_diff_check": "pass",
     "junit_xml_parse": "pass"
+  },
+  "formal_plan": {
+    "artifact": "formal-plan.txt",
+    "counts_artifact": "formal-plan-counts.txt",
+    "source_commit_artifact": "formal-plan-source-commit.txt",
+    "jobs": 969,
+    "quality_jobs": 909,
+    "speed_jobs": 60,
+    "status": "pass"
   }
 }
-

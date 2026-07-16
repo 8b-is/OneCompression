@@ -58,7 +58,17 @@
     "full_passed": 1071,
     "full_skipped": 40,
     "failures": 0,
-    "static_checks": "pass"
+    "static_checks": "pass",
+    "formal_plan": {
+      "source_commit": "92353bc3d2c4cfe74db235d852352dd248197110",
+      "jobs": 969,
+      "unique_job_keys": 969,
+      "unique_result_paths": 969,
+      "quality_jobs": 909,
+      "speed_jobs": 60,
+      "workers_with_approval_argv_and_env": 969,
+      "speed_afterok_dependencies": 59,
+      "status": "pass"
+    }
   }
 }
-
