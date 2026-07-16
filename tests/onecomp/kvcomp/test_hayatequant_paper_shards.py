@@ -1214,6 +1214,10 @@ def _ppl_doc(
             "ppl_nll_accumulation": shards.PPL_NLL_ACCUMULATION,
             "ppl_n_tokens": 100,
             "ppl_n_windows": 3,
+            "ppl_traversed_tokens": 101,
+            "ppl_scored_target_index_set": "[1,101)",
+            "ppl_scored_target_ranges": [[1, 34], [34, 67], [67, 101]],
+            "ppl_scored_target_coverage": "contiguous_exact_once",
             "ppl_n_skipped_nonfinite": 0,
             "ppl_complete_text_eval": True,
             "ppl_window_cache_lifetime": shards.PPL_WINDOW_CACHE_LIFETIME,
@@ -1385,10 +1389,22 @@ def _ppl_doc(
     }
 
 
+def _verify_ppl(root: Path, *, expected_models: tuple[str, ...]) -> dict:
+    """Run the formal verifier with an explicit synthetic denominator ledger."""
+    return shards.verify_ppl(
+        root,
+        expected_models=expected_models,
+        _expected_denominators={
+            model: {"n_tokens": 100, "traversed_tokens": 101}
+            for model in expected_models
+        },
+    )
+
+
 def test_ppl_primary_is_within_model_geometric_mean_ratio(tmp_path):
     _write(tmp_path / "a/results_model-a.json", _ppl_doc("model-a", turbo_ppl=10, hq_ppl=9))
     _write(tmp_path / "b/results_model-b.json", _ppl_doc("model-b", turbo_ppl=20, hq_ppl=22))
-    result = shards.verify_ppl(tmp_path, expected_models=("model-a", "model-b"))
+    result = _verify_ppl(tmp_path, expected_models=("model-a", "model-b"))
     primary = result["secondary_interval_robustness_vs_turboquant"]["HQ"]["3"]
     assert primary["geometric_mean_ppl_ratio"] == pytest.approx((0.9 * 1.1) ** 0.5)
     assert primary["per_model_ratio"] == {"model-a": 0.9, "model-b": 1.1}
@@ -1407,20 +1423,20 @@ def test_ppl_rejects_text_hash_drift_across_models(tmp_path):
         _ppl_doc("model-b", turbo_ppl=10, hq_ppl=9, text_hash="d" * 64),
     )
     with pytest.raises(shards.AggregateError, match="text hash changed"):
-        shards.verify_ppl(tmp_path, expected_models=("model-a", "model-b"))
+        _verify_ppl(tmp_path, expected_models=("model-a", "model-b"))
 
 
 def test_ppl_rejects_unpinned_joined_text_and_window_config(tmp_path):
     document = _ppl_doc("model", turbo_ppl=10, hq_ppl=9, text_hash="d" * 64)
     _write(tmp_path / "wrong-text/results_model.json", document)
     with pytest.raises(shards.AggregateError, match="not the pinned 4358-row"):
-        shards.verify_ppl(tmp_path / "wrong-text", expected_models=("model",))
+        _verify_ppl(tmp_path / "wrong-text", expected_models=("model",))
 
     document = _ppl_doc("model", turbo_ppl=10, hq_ppl=9)
     document["config"]["ppl_stride"] = 512
     _write(tmp_path / "wrong-window/results_model.json", document)
     with pytest.raises(shards.AggregateError, match="formal config contract"):
-        shards.verify_ppl(tmp_path / "wrong-window", expected_models=("model",))
+        _verify_ppl(tmp_path / "wrong-window", expected_models=("model",))
 
 
 def test_ppl_rejects_rounded_or_tampered_nll_numerator(tmp_path):
@@ -1428,7 +1444,7 @@ def test_ppl_rejects_rounded_or_tampered_nll_numerator(tmp_path):
     document["results"]["3"]["HQ"]["ppl_nll_sum"] += 0.1
     _write(tmp_path / "results_model.json", document)
     with pytest.raises(shards.AggregateError, match="numerator/denominator"):
-        shards.verify_ppl(tmp_path, expected_models=("model",))
+        _verify_ppl(tmp_path, expected_models=("model",))
 
 
 @pytest.mark.parametrize(
@@ -1458,7 +1474,7 @@ def test_ppl_rejects_stale_window_ratio_or_scoring_protocol(tmp_path, mutation, 
     mutation(document["results"]["3"]["HQ"])
     _write(tmp_path / "results_model.json", document)
     with pytest.raises(shards.AggregateError, match=message):
-        shards.verify_ppl(tmp_path, expected_models=("model",))
+        _verify_ppl(tmp_path, expected_models=("model",))
 
 
 def test_ppl_rejects_non_iso_rate_primary_comparison(tmp_path):
@@ -1468,7 +1484,7 @@ def test_ppl_rejects_non_iso_rate_primary_comparison(tmp_path):
     row["stored_bits_per_coord"] = row["stored_bits"] / row["stored_coordinates"]
     _write(tmp_path / "results_model.json", document)
     with pytest.raises(shards.AggregateError, match="exact matched bit counters"):
-        shards.verify_ppl(tmp_path, expected_models=("model",))
+        _verify_ppl(tmp_path, expected_models=("model",))
 
 
 def test_ppl_rejects_stored_rate_not_derived_from_exact_integers(tmp_path):
@@ -1476,7 +1492,7 @@ def test_ppl_rejects_stored_rate_not_derived_from_exact_integers(tmp_path):
     document["results"]["3"]["HQ"]["stored_bits_per_coord"] += 0.0001
     _write(tmp_path / "results_model.json", document)
     with pytest.raises(shards.AggregateError, match="numerator/denominator"):
-        shards.verify_ppl(tmp_path, expected_models=("model",))
+        _verify_ppl(tmp_path, expected_models=("model",))
 
 
 def test_ppl_rejects_role_resolved_rotation_or_cache_policy_drift(tmp_path):
@@ -1486,14 +1502,14 @@ def test_ppl_rejects_role_resolved_rotation_or_cache_policy_drift(tmp_path):
     hq["resolved_codec_config"]["roles"]["key"]["rotation_mode"] = "dense"
     _write(tmp_path / "results_model.json", document)
     with pytest.raises(shards.AggregateError, match="Role-resolved codec recipe changed"):
-        shards.verify_ppl(tmp_path, expected_models=("model",))
+        _verify_ppl(tmp_path, expected_models=("model",))
 
     document = _ppl_doc("model", turbo_ppl=10.0, hq_ppl=9.0)
     _add_formal_recipe_fixture(document)
     document["results"]["3"]["TurboQuant-paper"]["cache_policy"]["recent_tokens"] = 1
     _write(tmp_path / "other" / "results_model.json", document)
     with pytest.raises(shards.AggregateError, match="formal cache policy"):
-        shards.verify_ppl(tmp_path / "other", expected_models=("model",))
+        _verify_ppl(tmp_path / "other", expected_models=("model",))
 
 
 def _mechanism_doc(
@@ -1512,6 +1528,10 @@ def _mechanism_doc(
             "ppl_nll_accumulation": shards.PPL_NLL_ACCUMULATION,
             "ppl_n_tokens": 100,
             "ppl_n_windows": 3,
+            "ppl_traversed_tokens": 101,
+            "ppl_scored_target_index_set": "[1,101)",
+            "ppl_scored_target_ranges": [[1, 34], [34, 67], [67, 101]],
+            "ppl_scored_target_coverage": "contiguous_exact_once",
             "ppl_n_skipped_nonfinite": 0,
             "ppl_complete_text_eval": True,
             "ppl_window_cache_lifetime": shards.PPL_WINDOW_CACHE_LIFETIME,
@@ -1585,6 +1605,10 @@ def _mechanism_doc(
             "ppl_nll_accumulation": shards.PPL_NLL_ACCUMULATION,
             "ppl_n_tokens": 100,
             "ppl_n_windows": 3,
+            "ppl_traversed_tokens": 101,
+            "ppl_scored_target_index_set": "[1,101)",
+            "ppl_scored_target_ranges": [[1, 34], [34, 67], [67, 101]],
+            "ppl_scored_target_coverage": "contiguous_exact_once",
             "ppl_n_skipped_nonfinite": 0,
             "ppl_complete_text_eval": True,
             "ppl_window_cache_lifetime": shards.PPL_WINDOW_CACHE_LIFETIME,
@@ -1610,7 +1634,7 @@ def test_mechanism_control_joins_primary_curve_and_isolates_block_size(tmp_path)
     ppl_root = tmp_path / "ppl"
     mechanism_root = tmp_path / "mechanism"
     _write(ppl_root / "results_model.json", _ppl_doc("model", turbo_ppl=10, hq_ppl=9))
-    reference = shards.verify_ppl(ppl_root, expected_models=("model",))
+    reference = _verify_ppl(ppl_root, expected_models=("model",))
     _write(
         mechanism_root / "results_model.json",
         _mechanism_doc("model", scalar_ppl=10.0, block_ppl=9.5),
@@ -1637,7 +1661,7 @@ def test_mechanism_control_rejects_non_block_codec_difference(tmp_path):
     ppl_root = tmp_path / "ppl"
     mechanism_root = tmp_path / "mechanism"
     _write(ppl_root / "results_model.json", _ppl_doc("model", turbo_ppl=10, hq_ppl=9))
-    reference = shards.verify_ppl(ppl_root, expected_models=("model",))
+    reference = _verify_ppl(ppl_root, expected_models=("model",))
     document = _mechanism_doc("model", scalar_ppl=10.0, block_ppl=9.5)
     document["results"]["3"]["HayateQuant-blockvq-matched"]["codec_config"][
         "max_codebook_bits"
@@ -1659,7 +1683,7 @@ def test_mechanism_control_rejects_rate_mismatch_to_turboquant(tmp_path):
     ppl_root = tmp_path / "ppl"
     mechanism_root = tmp_path / "mechanism"
     _write(ppl_root / "results_model.json", _ppl_doc("model", turbo_ppl=10, hq_ppl=9))
-    reference = shards.verify_ppl(ppl_root, expected_models=("model",))
+    reference = _verify_ppl(ppl_root, expected_models=("model",))
     document = _mechanism_doc("model", scalar_ppl=10.0, block_ppl=9.5)
     for method in (
         "HayateQuant-scalar-matched",
@@ -2425,6 +2449,10 @@ def _math_doc(start: int, stop: int, correct_indexes: set[int]) -> dict:
         "complete_dataset_eval": False,
         "compression_ratio": 1.0,
         "compression_ratio_aggregation": "fullkv_no_cache",
+        "example_cache_lifetime": shards.PER_EXAMPLE_CACHE_LIFETIME,
+        "cross_iteration_tensor_retention": (
+            shards.PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
+        ),
         "eviction_applicable": False,
         "eviction_fired": None,
         "grader": "math_verify",

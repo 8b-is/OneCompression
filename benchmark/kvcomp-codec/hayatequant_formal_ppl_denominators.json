@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "kind": "hayatequant_formal_wikitext2_denominator_contract",
+  "tokenization": {
+    "call": "tokenizer(text, return_tensors='pt')",
+    "add_special_tokens": "tokenizer_default",
+    "joined_row_separator": "\\n\\n",
+    "scored_target_index_set": "[1,traversed_tokens)",
+    "coverage": "contiguous_exact_once"
+  },
+  "source": {
+    "repo": "Salesforce/wikitext",
+    "config": "wikitext-2-raw-v1",
+    "split": "test",
+    "revision": "b08601e04326c79dfdd32d625aee71d232d685c3",
+    "rows": 4358,
+    "cache_file_bytes": 1306200,
+    "cache_file_sha256": "2b8a3efac7b468cbe6432edba5f55c21e435d93873acc6727431f08d5ed328ea",
+    "joined_text_sha256": "696cca6b65a171b0a358a4be6732cdfdf2dd6164a32e20fd70e3c13fc4dfae83"
+  },
+  "models": {
+    "Llama-2-7b-hf": {
+      "model_manifest_key": "llama2-7b",
+      "traversed_tokens": 341469,
+      "n_tokens": 341468,
+      "tokenizer_files": {
+        "special_tokens_map.json": "6fa06efa2785e450051989a6f8fb4416b10149ded485ddd3f127a40734f5cfd0",
+        "tokenizer.json": "bcd04f0eadf90287bd26e1a183ac487d8a141b09b06aecb7725bbdd343640f2e",
+        "tokenizer.model": "9e556afd44213b6bd1be2b850ebbbd98f5481437a8021afaf58ee7fb1818d347",
+        "tokenizer_config.json": "f514e7c3008881b6ba7e6a0cdb44c71ce47dc335920dac143ae7bc788197e53a"
+      }
+    },
+    "llama-3.1-8b-instruct": {
+      "model_manifest_key": "llama31-8b",
+      "traversed_tokens": 289077,
+      "n_tokens": 289076,
+      "tokenizer_files": {
+        "special_tokens_map.json": "94e708c3f5e64acf85bbe5ad01467a1248faadb73e83b41793087ecced586e8f",
+        "tokenizer.json": "6b9e4e7fb171f92fd137b777cc2714bf87d11576700a1dcd7a399e7bbe39537b",
+        "tokenizer_config.json": "671ecdff1a4241f7d3e0ad21d347ada7d90f673810906727c124972e3ce03465"
+      }
+    },
+    "Qwen3-4B": {
+      "model_manifest_key": "qwen3-4b",
+      "traversed_tokens": 299078,
+      "n_tokens": 299077,
+      "tokenizer_files": {
+        "tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+        "tokenizer_config.json": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
+      }
+    },
+    "Qwen3-8B": {
+      "model_manifest_key": "qwen3-8b",
+      "traversed_tokens": 299078,
+      "n_tokens": 299077,
+      "tokenizer_files": {
+        "tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+        "tokenizer_config.json": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
+      }
+    },
+    "DeepSeek-R1-Distill-Llama-8B": {
+      "model_manifest_key": "r1-llama-8b",
+      "traversed_tokens": 316944,
+      "n_tokens": 316943,
+      "tokenizer_files": {
+        "tokenizer.json": "b9c9eb63a8e03059914880f918cd28a880dec8b6e15e4461e1ff677e3743dbb8",
+        "tokenizer_config.json": "8ac8c85fb242563c2260baec0909debd69d718af6a0b3d90e6cab62b4d341cd5"
+      }
+    },
+    "DeepSeek-R1-Distill-Qwen-7B": {
+      "model_manifest_key": "r1-qwen-7b",
+      "traversed_tokens": 327418,
+      "n_tokens": 327417,
+      "tokenizer_files": {
+        "tokenizer.json": "88145e3c3249adc2546ede277e9819d6e405e19072456e4b521cbc724bd60773",
+        "tokenizer_config.json": "8ac8c85fb242563c2260baec0909debd69d718af6a0b3d90e6cab62b4d341cd5"
+      }
+    },
+    "DeepSeek-R1-Distill-Qwen-1.5B": {
+      "model_manifest_key": "r1-qwen-1.5b",
+      "traversed_tokens": 327418,
+      "n_tokens": 327417,
+      "tokenizer_files": {
+        "tokenizer.json": "88145e3c3249adc2546ede277e9819d6e405e19072456e4b521cbc724bd60773",
+        "tokenizer_config.json": "8ac8c85fb242563c2260baec0909debd69d718af6a0b3d90e6cab62b4d341cd5"
+      }
+    }
+  }
+}

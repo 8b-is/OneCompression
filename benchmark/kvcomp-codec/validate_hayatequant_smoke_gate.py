@@ -45,6 +45,24 @@ COMPRESSED_METHODS = (
     "AdaptiveHQ",
 )
 PPL_TEACHER_FORCED_PROTOCOL = "single_forward_causal_mask_token_local_cache"
+PPL_NLL_ACCUMULATION = (
+    "fp32_token_cross_entropy_per_window_fp64_sum_host_binary64_math_fsum"
+)
+PPL_WINDOW_CACHE_LIFETIME = "released_before_next_cache_factory"
+PPL_CROSS_WINDOW_TENSOR_RETENTION = (
+    "tokenized_input_ids_only; window_cache_logits_targets_losses_released; "
+    "nll_host_binary64_scalars"
+)
+PER_EXAMPLE_CACHE_LIFETIME = "released_after_scalar_accounting_before_next_cache_factory"
+PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION = (
+    "none; retained_records_are_host_scalar_text_and_mappings_only"
+)
+ZEROSHOT_PROTOCOL_PROBE_CACHE_LIFETIME = (
+    "released_after_protocol_dependency_snapshot_before_first_choice_factory"
+)
+LM_EVAL_TASK_METADATA_VERSION = "1.0"
+WIKITEXT2_REVISION = "b08601e04326c79dfdd32d625aee71d232d685c3"
+WIKITEXT2_TEXT_SHA256 = "696cca6b65a171b0a358a4be6732cdfdf2dd6164a32e20fd70e3c13fc4dfae83"
 BLOCKQUANT_TEACHER_FORCED_PROTOCOL = "causal_prefix_prefill_then_token_step_targets"
 BLOCKQUANT_TEMPORAL_DEPENDENCY = "dynamic_outlier_channels_over_update_tokens"
 ADAPTIVE_HQ_TEACHER_FORCED_PROTOCOL = "causal_prefix_prefill_then_token_step_targets"
@@ -1390,6 +1408,12 @@ def _validate_long_axis_payload(
 ) -> list[dict[str, Any]]:
     if not isinstance(axis, dict) or axis.get("n") != n:
         raise SmokeGateError(f"{label} omitted exact {kind} output")
+    if (
+        axis.get("example_cache_lifetime") != PER_EXAMPLE_CACHE_LIFETIME
+        or axis.get("cross_iteration_tensor_retention")
+        != PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
+    ):
+        raise SmokeGateError(f"{label} cache lifetime provenance changed")
     accounting_records: list[tuple[Mapping[str, Any], int, int, int]] = []
     if kind == "ruler_v1":
         per_task = axis.get("per_task")
@@ -1644,6 +1668,52 @@ def _validate_long_axis_payload(
     return ledger
 
 
+def _validate_smoke_ppl_contract(row: Any, *, label: str) -> dict[str, Any]:
+    """Require the exact two-window target set and cache-lifetime contract."""
+    if not isinstance(row, dict):
+        raise SmokeGateError(f"{label} PPL row is missing")
+    expected = {
+        "ppl_nll_accumulation": PPL_NLL_ACCUMULATION,
+        "ppl_n_tokens": 767,
+        "ppl_n_windows": 2,
+        "ppl_traversed_tokens": 768,
+        "ppl_scored_target_index_set": "[1,768)",
+        "ppl_scored_target_ranges": [[1, 512], [512, 768]],
+        "ppl_scored_target_coverage": "contiguous_exact_once",
+        "ppl_n_skipped_nonfinite": 0,
+        "ppl_complete_text_eval": False,
+        "ppl_window_cache_lifetime": PPL_WINDOW_CACHE_LIFETIME,
+        "ppl_cross_window_tensor_retention": PPL_CROSS_WINDOW_TENSOR_RETENTION,
+        "ppl_max_windows": 2,
+        "ppl_source": "wikitext-2-raw-v1/test",
+        "ppl_dataset_revision": WIKITEXT2_REVISION,
+        "ppl_text_sha256": WIKITEXT2_TEXT_SHA256,
+    }
+    if any(row.get(key) != value for key, value in expected.items()):
+        raise SmokeGateError(f"{label} PPL denominator/cache-lifetime contract changed")
+    if row["ppl_traversed_tokens"] != row["ppl_n_tokens"] + 1:
+        raise SmokeGateError(f"{label} PPL traversed/scored off-by-one contract changed")
+    ppl = row.get("ppl")
+    mean_nll = row.get("ppl_nll")
+    nll_sum = row.get("ppl_nll_sum")
+    if not all(_finite_number(value) for value in (ppl, mean_nll, nll_sum)):
+        raise SmokeGateError(f"{label} PPL numerator/denominator is missing")
+    if (
+        float(ppl) <= 0.0
+        or not math.isclose(
+            float(nll_sum) / expected["ppl_n_tokens"],
+            float(mean_nll),
+            rel_tol=0.0,
+            abs_tol=1e-10,
+        )
+        or not math.isclose(
+            math.log(float(ppl)), float(mean_nll), rel_tol=0.0, abs_tol=1e-10
+        )
+    ):
+        raise SmokeGateError(f"{label} PPL numerator/denominator does not replay")
+    return expected
+
+
 def _validate_axis_results(
     document: dict,
     spec: Mapping[str, Any],
@@ -1686,6 +1756,9 @@ def _validate_axis_results(
             or set(rate) != set(COMPRESSED_METHODS)
         ):
             raise SmokeGateError(f"{label} omitted FullKV or 3-bit PPL results")
+        denominator_contract = _validate_smoke_ppl_contract(
+            fullkv, label=f"{label}/FullKV"
+        )
         for method in COMPRESSED_METHODS:
             row = rate.get(method)
             expected_protocol = (
@@ -1709,6 +1782,10 @@ def _validate_axis_results(
                 or row.get("ppl_teacher_forced_temporal_dependency") != expected_dependency
             ):
                 raise SmokeGateError(f"{label} omitted {method} PPL output")
+            if _validate_smoke_ppl_contract(
+                row, label=f"{label}/{method}"
+            ) != denominator_contract:
+                raise SmokeGateError(f"{label}/{method} PPL denominator differs from FullKV")
             if method == "BlockQuant-paper":
                 _validate_blockquant_identity(row, label=f"{label}/{method}")
                 _validate_blockquant_stored_bits(row, label=f"{label}/{method}")
@@ -1768,6 +1845,13 @@ def _validate_axis_results(
                 or len(task["per_example"]) != 4
                 or task.get("teacher_forced_scoring_protocol") != expected_protocol
                 or task.get("teacher_forced_temporal_dependency") != expected_dependency
+                or task.get("lm_eval_task_metadata_version")
+                != LM_EVAL_TASK_METADATA_VERSION
+                or task.get("protocol_probe_cache_lifetime")
+                != ZEROSHOT_PROTOCOL_PROBE_CACHE_LIFETIME
+                or task.get("choice_cache_lifetime") != PER_EXAMPLE_CACHE_LIFETIME
+                or task.get("cross_iteration_tensor_retention")
+                != PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
             ):
                 raise SmokeGateError(f"{label} omitted exact four-row piqa output for {method}")
             if method == "BlockQuant-paper":

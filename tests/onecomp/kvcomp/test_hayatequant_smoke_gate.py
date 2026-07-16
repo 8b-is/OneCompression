@@ -6,6 +6,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import math
 from pathlib import Path
 
 import pytest
@@ -249,6 +250,10 @@ def test_adaptive_runtime_summary_rejects_noncurrent_or_inconsistent_ledger(path
 
 def _populate_axis_accounting(axis: dict, *, kind: str, method: str, n: int) -> dict:
     axis = copy.deepcopy(axis)
+    axis["example_cache_lifetime"] = gate.PER_EXAMPLE_CACHE_LIFETIME
+    axis["cross_iteration_tensor_retention"] = (
+        gate.PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
+    )
     if kind == "ruler_v1":
         records = axis["per_example"]["niah_single_1"]
         for record in records:
@@ -405,15 +410,40 @@ def _standard_result(spec: dict, preflight: dict) -> dict:
             for key, value in config.items()
             if key not in {"bits", "methods", "output_dir"}
         }
+        def ppl_fields(ppl: float) -> dict:
+            mean_nll = math.log(ppl)
+            return {
+                "ppl": ppl,
+                "ppl_nll": mean_nll,
+                "ppl_nll_sum": mean_nll * 767,
+                "ppl_nll_accumulation": gate.PPL_NLL_ACCUMULATION,
+                "ppl_n_tokens": 767,
+                "ppl_n_windows": 2,
+                "ppl_traversed_tokens": 768,
+                "ppl_scored_target_index_set": "[1,768)",
+                "ppl_scored_target_ranges": [[1, 512], [512, 768]],
+                "ppl_scored_target_coverage": "contiguous_exact_once",
+                "ppl_n_skipped_nonfinite": 0,
+                "ppl_complete_text_eval": False,
+                "ppl_window_cache_lifetime": gate.PPL_WINDOW_CACHE_LIFETIME,
+                "ppl_cross_window_tensor_retention": (
+                    gate.PPL_CROSS_WINDOW_TENSOR_RETENTION
+                ),
+                "ppl_max_windows": 2,
+                "ppl_source": "wikitext-2-raw-v1/test",
+                "ppl_dataset_revision": gate.WIKITEXT2_REVISION,
+                "ppl_text_sha256": gate.WIKITEXT2_TEXT_SHA256,
+            }
+
         document["fullkv_ppl"] = {
-            "ppl": 10.0,
+            **ppl_fields(10.0),
             "ppl_teacher_forced_scoring_protocol": gate.PPL_TEACHER_FORCED_PROTOCOL,
             "ppl_teacher_forced_temporal_dependency": None,
         }
         rate = {}
         for method in gate.COMPRESSED_METHODS:
             rate[method] = {
-                "ppl": 10.1,
+                **ppl_fields(10.1),
                 "ppl_compression_fp16_bits": 16000,
                 "ppl_compression_stored_bits": 4000,
                 "ppl_teacher_forced_scoring_protocol": (
@@ -461,6 +491,14 @@ def _standard_result(spec: dict, preflight: dict) -> dict:
                     gate.BLOCKQUANT_TEMPORAL_DEPENDENCY
                     if method == "BlockQuant-paper"
                     else (gate.ADAPTIVE_HQ_TEMPORAL_DEPENDENCY if method == "AdaptiveHQ" else None)
+                ),
+                "lm_eval_task_metadata_version": gate.LM_EVAL_TASK_METADATA_VERSION,
+                "protocol_probe_cache_lifetime": (
+                    gate.ZEROSHOT_PROTOCOL_PROBE_CACHE_LIFETIME
+                ),
+                "choice_cache_lifetime": gate.PER_EXAMPLE_CACHE_LIFETIME,
+                "cross_iteration_tensor_retention": (
+                    gate.PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
                 ),
             }
             row = {"tasks": {"piqa": task}}
@@ -910,7 +948,9 @@ def test_marker_is_invalid_after_any_smoke_result_changes(tmp_path):
     )
     result_path = run_root / gate.SMOKE_PLAN[0]["path"]
     document = json.loads(result_path.read_text(encoding="utf-8"))
-    document["fullkv_ppl"]["ppl"] = 999.0
+    # Change a non-scientific extension field so the smoke remains valid but
+    # its byte identity no longer matches the approved marker.
+    document["audit_note"] = "post-approval byte change"
     _write(result_path, document)
     changed = gate.validate_smoke_plan(
         run_root=run_root,

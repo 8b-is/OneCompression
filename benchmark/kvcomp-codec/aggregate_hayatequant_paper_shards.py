@@ -520,6 +520,9 @@ PPL_CROSS_WINDOW_TENSOR_RETENTION = (
     "tokenized_input_ids_only; window_cache_logits_targets_losses_released; "
     "nll_host_binary64_scalars"
 )
+PPL_DENOMINATOR_CONTRACT_PATH = Path(__file__).with_name(
+    "hayatequant_formal_ppl_denominators.json"
+)
 PER_EXAMPLE_CACHE_LIFETIME = "released_after_scalar_accounting_before_next_cache_factory"
 PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION = (
     "none; retained_records_are_host_scalar_text_and_mappings_only"
@@ -1257,6 +1260,166 @@ def _number(value: Any, *, label: str, minimum: float = 0.0) -> float:
     return result
 
 
+def _ppl_target_coverage_contract(
+    row: Mapping[str, Any], *, label: str, expected_tokens: int | None = None
+) -> tuple[int, int]:
+    """Validate the exact global next-token set, not just its scalar size."""
+    n_tokens = _integer(row.get("ppl_n_tokens"), label=f"{label} n_tokens", minimum=1)
+    traversed = _integer(
+        row.get("ppl_traversed_tokens"), label=f"{label} traversed_tokens", minimum=2
+    )
+    if traversed != n_tokens + 1:
+        raise AggregateError(
+            f"PPL traversed/scored off-by-one contract changed for {label}: "
+            f"traversed={traversed}, scored={n_tokens}"
+        )
+    if expected_tokens is not None and n_tokens != expected_tokens:
+        raise AggregateError(f"PPL frozen denominator changed for {label}")
+    if row.get("ppl_scored_target_index_set") != f"[1,{traversed})":
+        raise AggregateError(f"PPL scored target-index set changed for {label}")
+    if row.get("ppl_scored_target_coverage") != "contiguous_exact_once":
+        raise AggregateError(f"PPL target coverage is not contiguous_exact_once for {label}")
+    if row.get("ppl_n_skipped_nonfinite") != 0:
+        raise AggregateError(f"PPL skipped a non-finite window for {label}")
+    n_windows = _integer(
+        row.get("ppl_n_windows"), label=f"{label} n_windows", minimum=1
+    )
+    ranges = row.get("ppl_scored_target_ranges")
+    if not isinstance(ranges, list) or len(ranges) != n_windows:
+        raise AggregateError(f"PPL target-range ledger/window count changed for {label}")
+    expected_start = 1
+    for index, target_range in enumerate(ranges):
+        if not isinstance(target_range, list) or len(target_range) != 2:
+            raise AggregateError(f"PPL target range {index} is malformed for {label}")
+        start = _integer(target_range[0], label=f"{label} range {index} start", minimum=1)
+        stop = _integer(target_range[1], label=f"{label} range {index} stop", minimum=2)
+        if start != expected_start or stop <= start:
+            raise AggregateError(
+                f"PPL target ranges are gapped, overlapping, or empty for {label}"
+            )
+        expected_start = stop
+    if expected_start != traversed:
+        raise AggregateError(f"PPL target ranges do not reach traversed_tokens for {label}")
+    return n_tokens, traversed
+
+
+def _load_frozen_ppl_denominator_contract() -> dict:
+    """Load and validate the repo-pinned tokenizer-specific WikiText contract."""
+    document = _load_object(PPL_DENOMINATOR_CONTRACT_PATH)
+    source = document.get("source")
+    models = document.get("models")
+    tokenization = document.get("tokenization")
+    if (
+        document.get("schema_version") != 1
+        or document.get("kind") != "hayatequant_formal_wikitext2_denominator_contract"
+        or not isinstance(source, dict)
+        or source.get("repo") != "Salesforce/wikitext"
+        or source.get("config") != "wikitext-2-raw-v1"
+        or source.get("split") != "test"
+        or source.get("revision") != WIKITEXT2_REVISION
+        or source.get("rows") != 4358
+        or source.get("joined_text_sha256") != WIKITEXT2_TEXT_SHA256
+        or not _sha256_string(source.get("cache_file_sha256"))
+        or not isinstance(source.get("cache_file_bytes"), int)
+        or source["cache_file_bytes"] <= 0
+        or not isinstance(tokenization, dict)
+        or tokenization.get("call") != "tokenizer(text, return_tensors='pt')"
+        or tokenization.get("add_special_tokens") != "tokenizer_default"
+        or tokenization.get("joined_row_separator") != "\\n\\n"
+        or tokenization.get("scored_target_index_set") != "[1,traversed_tokens)"
+        or tokenization.get("coverage") != "contiguous_exact_once"
+        or not isinstance(models, dict)
+        or set(models) != set(PAPER_MODELS)
+    ):
+        raise AggregateError(
+            f"Frozen formal PPL denominator contract is malformed: "
+            f"{PPL_DENOMINATOR_CONTRACT_PATH}"
+        )
+    for model, record in models.items():
+        if (
+            not isinstance(record, dict)
+            or record.get("model_manifest_key") != MODEL_MANIFEST_KEYS[model]
+            or not isinstance(record.get("tokenizer_files"), dict)
+            or not record["tokenizer_files"]
+            or any(
+                not isinstance(name, str) or not _sha256_string(digest)
+                for name, digest in record["tokenizer_files"].items()
+            )
+        ):
+            raise AggregateError(f"Frozen formal PPL model contract is malformed for {model}")
+        n_tokens = _integer(
+            record.get("n_tokens"), label=f"frozen {model} n_tokens", minimum=1
+        )
+        traversed = _integer(
+            record.get("traversed_tokens"),
+            label=f"frozen {model} traversed_tokens",
+            minimum=2,
+        )
+        if traversed != n_tokens + 1:
+            raise AggregateError(f"Frozen formal PPL off-by-one contract changed for {model}")
+    return document
+
+
+def _validated_frozen_ppl_denominator(
+    model: str, *, input_manifest_path: str, input_manifest_sha256: str
+) -> dict:
+    """Bind one frozen denominator to the exact audited dataset and tokenizer."""
+    contract = _load_frozen_ppl_denominator_contract()
+    expected = contract["models"].get(model)
+    if not isinstance(expected, dict):
+        raise AggregateError(f"No frozen formal PPL denominator exists for {model}")
+    manifest_path = Path(input_manifest_path).expanduser().resolve()
+    if not manifest_path.is_file() or _sha256(manifest_path) != input_manifest_sha256:
+        raise AggregateError(f"PPL input manifest is missing or changed for {model}")
+    manifest = _load_object(manifest_path)
+    models = manifest.get("models")
+    hf = manifest.get("hf_datasets")
+    datasets = hf.get("datasets") if isinstance(hf, dict) else None
+    if (
+        manifest.get("schema_version") != 2
+        or manifest.get("kind") != "hayatequant_paper_input_validation"
+        or manifest.get("status") != "ok"
+        or not isinstance(models, dict)
+        or not isinstance(datasets, dict)
+        or hf.get("status") != "validated"
+    ):
+        raise AggregateError(f"PPL input manifest is not a validated paper manifest for {model}")
+    model_record = models.get(expected["model_manifest_key"])
+    metadata = model_record.get("metadata_files") if isinstance(model_record, dict) else None
+    if not isinstance(metadata, dict):
+        raise AggregateError(f"PPL input manifest has no tokenizer ledger for {model}")
+    for filename, digest in expected["tokenizer_files"].items():
+        file_record = metadata.get(filename)
+        _validated_declared_file(file_record, label=f"{model} frozen tokenizer {filename}")
+        if file_record.get("sha256") != digest:
+            raise AggregateError(f"Frozen tokenizer digest changed for {model}/{filename}")
+    source = contract["source"]
+    dataset = datasets.get("wikitext2_test")
+    cache_files = dataset.get("cache_files") if isinstance(dataset, dict) else None
+    if (
+        not isinstance(dataset, dict)
+        or dataset.get("repo") != source["repo"]
+        or dataset.get("config") != source["config"]
+        or dataset.get("split") != source["split"]
+        or dataset.get("revision") != source["revision"]
+        or dataset.get("rows") != source["rows"]
+        or not isinstance(cache_files, list)
+        or len(cache_files) != 1
+    ):
+        raise AggregateError(f"Frozen WikiText-2 source ledger changed for {model}")
+    cache_record = cache_files[0]
+    _validated_declared_file(cache_record, label=f"{model} frozen WikiText-2 Arrow")
+    if (
+        cache_record.get("bytes") != source["cache_file_bytes"]
+        or cache_record.get("sha256") != source["cache_file_sha256"]
+    ):
+        raise AggregateError(f"Frozen WikiText-2 Arrow identity changed for {model}")
+    return {
+        "n_tokens": int(expected["n_tokens"]),
+        "traversed_tokens": int(expected["traversed_tokens"]),
+    }
+
+
 def _validated_ppl_numbers(
     row: Mapping[str, Any], *, label: str, expected_tokens: int | None = None
 ) -> tuple[float, float, float, int]:
@@ -1268,9 +1431,9 @@ def _validated_ppl_numbers(
         != PPL_CROSS_WINDOW_TENSOR_RETENTION
     ):
         raise AggregateError(f"PPL accumulation/cache-lifetime provenance changed for {label}")
-    n_tokens = _integer(row.get("ppl_n_tokens"), label=f"{label} n_tokens", minimum=1)
-    if expected_tokens is not None and n_tokens != expected_tokens:
-        raise AggregateError(f"PPL denominator changed for {label}")
+    n_tokens, _ = _ppl_target_coverage_contract(
+        row, label=label, expected_tokens=expected_tokens
+    )
     ppl = _number(row.get("ppl"), label=f"{label} ppl")
     mean_nll = _number(row.get("ppl_nll"), label=f"{label} mean NLL")
     nll_sum = _number(row.get("ppl_nll_sum"), label=f"{label} NLL numerator")
@@ -4713,9 +4876,30 @@ def _require_run_provenance(document: dict, *, path: Path, return_identity: bool
     return commit
 
 
-def verify_ppl(root: Path, *, expected_models: Sequence[str] = PAPER_MODELS) -> dict:
+def verify_ppl(
+    root: Path,
+    *,
+    expected_models: Sequence[str] = PAPER_MODELS,
+    _expected_denominators: Mapping[str, Mapping[str, int]] | None = None,
+) -> dict:
     """Verify the seven-model complete WikiText-2 matrix."""
     root = root.expanduser().resolve()
+    if _expected_denominators is not None:
+        if set(_expected_denominators) != set(expected_models):
+            raise AggregateError("Custom PPL denominator fixture does not cover every model")
+        for model, denominator in _expected_denominators.items():
+            if not isinstance(denominator, Mapping):
+                raise AggregateError(f"Custom PPL denominator is malformed for {model}")
+            n_tokens = _integer(
+                denominator.get("n_tokens"), label=f"custom {model} n_tokens", minimum=1
+            )
+            traversed = _integer(
+                denominator.get("traversed_tokens"),
+                label=f"custom {model} traversed_tokens",
+                minimum=2,
+            )
+            if traversed != n_tokens + 1:
+                raise AggregateError(f"Custom PPL off-by-one contract changed for {model}")
     paths = sorted(root.rglob("results_*.json")) if root.is_dir() else []
     by_model: dict[str, dict] = {}
     sources = []
@@ -4732,6 +4916,14 @@ def verify_ppl(root: Path, *, expected_models: Sequence[str] = PAPER_MODELS) -> 
         if document.get("schema_version") != 2 or not document.get("run_fingerprint"):
             raise AggregateError(f"Legacy/unidentified PPL result: {path}")
         provenance = _require_run_provenance(document, path=path, return_identity=True)
+        if _expected_denominators is None:
+            expected_denominator = _validated_frozen_ppl_denominator(
+                str(model),
+                input_manifest_path=provenance["input_manifest_path"],
+                input_manifest_sha256=provenance["input_manifest_sha256"],
+            )
+        else:
+            expected_denominator = dict(_expected_denominators[str(model)])
         code_commits.add(provenance["commit"])
         input_manifests.add(
             (provenance["input_manifest_path"], provenance["input_manifest_sha256"])
@@ -4770,8 +4962,12 @@ def verify_ppl(root: Path, *, expected_models: Sequence[str] = PAPER_MODELS) -> 
         ):
             raise AggregateError(f"Missing complete FullKV PPL in {path}")
         full_ppl, full_nll, full_nll_sum, full_n_tokens = _validated_ppl_numbers(
-            full, label=f"{path} FullKV"
+            full,
+            label=f"{path} FullKV",
+            expected_tokens=expected_denominator["n_tokens"],
         )
+        if full.get("ppl_traversed_tokens") != expected_denominator["traversed_tokens"]:
+            raise AggregateError(f"PPL frozen traversed-token count changed for {model}")
         full_accounting = _validated_ppl_protocol_and_compression(
             full, label=f"{path} FullKV", compressed=False
         )
@@ -4795,6 +4991,7 @@ def verify_ppl(root: Path, *, expected_models: Sequence[str] = PAPER_MODELS) -> 
                 "ppl_nll": full_nll,
                 "ppl_nll_sum": full_nll_sum,
                 "ppl_n_tokens": full_n_tokens,
+                "ppl_traversed_tokens": full.get("ppl_traversed_tokens"),
             },
             "rates": {},
         }
@@ -4934,6 +5131,12 @@ def verify_ppl(root: Path, *, expected_models: Sequence[str] = PAPER_MODELS) -> 
                     "ppl_nll_sum": nll_sum,
                     "ppl_n_tokens": n_tokens,
                     "ppl_n_windows": row.get("ppl_n_windows"),
+                    "ppl_traversed_tokens": row.get("ppl_traversed_tokens"),
+                    "ppl_scored_target_index_set": row.get(
+                        "ppl_scored_target_index_set"
+                    ),
+                    "ppl_scored_target_ranges": row.get("ppl_scored_target_ranges"),
+                    "ppl_scored_target_coverage": row.get("ppl_scored_target_coverage"),
                     **accounting,
                     "dataset_revision": row.get("ppl_dataset_revision"),
                     "text_sha256": row.get("ppl_text_sha256"),
@@ -5132,6 +5335,28 @@ def verify_ppl(root: Path, *, expected_models: Sequence[str] = PAPER_MODELS) -> 
         },
         "dataset_revision": WIKITEXT2_REVISION,
         "text_sha256": next(iter(text_hashes)),
+        "frozen_denominator_contract": {
+            "kind": "repo_pinned_tokenizer_specific_wikitext2_contract",
+            "path": (
+                str(PPL_DENOMINATOR_CONTRACT_PATH)
+                if _expected_denominators is None
+                else None
+            ),
+            "sha256": (
+                _sha256(PPL_DENOMINATOR_CONTRACT_PATH)
+                if _expected_denominators is None
+                else None
+            ),
+            "models": {
+                model: {
+                    "n_tokens": by_model[model]["fullkv"]["ppl_n_tokens"],
+                    "traversed_tokens": by_model[model]["fullkv"][
+                        "ppl_traversed_tokens"
+                    ],
+                }
+                for model in expected_models
+            },
+        },
         "official_complete": True,
         "sources": sources,
     }
@@ -6915,8 +7140,13 @@ def verify_math500(
         if (
             value.get("eviction_applicable") is not False
             or value.get("eviction_fired") is not None
+            or value.get("example_cache_lifetime") != PER_EXAMPLE_CACHE_LIFETIME
+            or value.get("cross_iteration_tensor_retention")
+            != PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
         ):
-            raise AggregateError(f"MATH-500 non-eviction cache provenance is malformed in {path}")
+            raise AggregateError(
+                f"MATH-500 non-eviction cache provenance/cache lifetime is malformed in {path}"
+            )
         prompt_config = value.get("prompt_config")
         generation_config = value.get("generation_config")
         if (

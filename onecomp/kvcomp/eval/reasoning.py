@@ -27,6 +27,8 @@ from typing import Callable, List, Optional
 import torch
 
 from .compression_accounting import (
+    PER_EXAMPLE_CACHE_LIFETIME,
+    PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION,
     aggregate_compression_sufficient_statistics,
     cache_compression_sufficient_statistics,
 )
@@ -171,6 +173,10 @@ class ReasoningResult:
             "avg_gen_len": round(self.avg_gen_len, 1),
             "compression_ratio": round(self.compression_ratio, 3),
             "compression_ratio_aggregation": self.compression_ratio_aggregation,
+            "example_cache_lifetime": PER_EXAMPLE_CACHE_LIFETIME,
+            "cross_iteration_tensor_retention": (
+                PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
+            ),
             "eviction_applicable": self.eviction_applicable,
             "eviction_fired": self.eviction_fired,
             "pass@1_sum": pass_at_1_sum,
