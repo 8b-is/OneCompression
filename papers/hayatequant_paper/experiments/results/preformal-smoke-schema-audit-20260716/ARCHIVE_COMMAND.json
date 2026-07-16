@@ -1,0 +1,56 @@
+{
+  "allowed_scopes": [
+    "results/smoke",
+    "results/formal",
+    "results/dev",
+    "summaries",
+    "manifests",
+    "provenance",
+    "logs"
+  ],
+  "archiver_commit": "c2677000d5dee10f7a15df4d8b6cdb51988400b5",
+  "command": [
+    "/lustre/home/frj/yuma-ichikawa/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/bin/python3.12",
+    "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/benchmark/kvcomp-codec/archive_hayatequant_run.py",
+    "--run-root",
+    "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715",
+    "--run-id",
+    "preformal-smoke-schema-audit-20260716",
+    "--source-commit",
+    "3d6f264363d7291c1fd07fe40d310ae041e53425",
+    "--repo-root",
+    "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness",
+    "--require-scope",
+    "results/smoke",
+    "--require-scope",
+    "summaries",
+    "--require-scope",
+    "manifests",
+    "--require-scope",
+    "provenance",
+    "--require-scope",
+    "logs"
+  ],
+  "kind": "hayatequant_run_archive_command",
+  "missing_scopes": [],
+  "present_scopes": [
+    "results/smoke",
+    "results/formal",
+    "results/dev",
+    "summaries",
+    "manifests",
+    "provenance",
+    "logs"
+  ],
+  "required_scopes": [
+    "results/smoke",
+    "summaries",
+    "manifests",
+    "provenance",
+    "logs"
+  ],
+  "run_id": "preformal-smoke-schema-audit-20260716",
+  "schema_version": 1,
+  "source_commit": "3d6f264363d7291c1fd07fe40d310ae041e53425",
+  "source_run_root": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715"
+}

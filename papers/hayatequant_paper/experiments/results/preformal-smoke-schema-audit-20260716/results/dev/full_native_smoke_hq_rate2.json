@@ -1,0 +1,105 @@
+{
+  "cross_method_speed_claim_allowed": false,
+  "diagnostic_timing": {
+    "decode_ms": 0.1044154167175293,
+    "store_ms": 0.720732007175684
+  },
+  "formal_quality_benchmark": false,
+  "implementation_contract": {
+    "key_path": "data-free rotation + exact short block-VQ + NC",
+    "main_story": "paper HayateQuant fixed role-aware recipe",
+    "payload_parity_with_public_codec": true,
+    "proposal_name": "HQ",
+    "scale_storage": "one signed fp16 scale per role vector",
+    "value_inverse_rotation": "one fp32 GEMM after rotated-space attention accumulation",
+    "value_path": "data-free rotation + exact block-VQ + LS-reassign-LS"
+  },
+  "ok": true,
+  "parity": {
+    "attention_tolerance": {
+      "atol": 0.004,
+      "rtol": 0.002
+    },
+    "full_dequant_exact_at_output_dtype": true,
+    "key_codes_exact": true,
+    "key_fp16_scales_exact": true,
+    "packed_stream_exact": true,
+    "rotated_value_linearity_tolerance": {
+      "atol": 0.0003,
+      "rtol": 0.0002
+    },
+    "value_codes_exact": true,
+    "value_fp16_scales_exact": true
+  },
+  "provenance": {
+    "arguments": {
+      "allow_canonical_k10v6_b4": false,
+      "avg_bits": 2,
+      "codebook_init": "auto",
+      "dist": "gaussian",
+      "dtype": "float16",
+      "head_dim": 128,
+      "iters": 5,
+      "key_block_size": null,
+      "key_code_bits": null,
+      "kv_heads": 2,
+      "output": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/results/dev/full_native_smoke_hq_rate2.json",
+      "query_heads": 4,
+      "recipe": "hq",
+      "rotation_mode": "auto",
+      "seed": 0,
+      "tokens": 32,
+      "value_block_size": null,
+      "value_code_bits": null,
+      "warmups": 3
+    },
+    "cuda_version": "13.0",
+    "cuda_visible_devices": "0",
+    "finished_at_utc": "2026-07-15T19:10:15.444154+00:00",
+    "git_commit": "e50379c225259b3e5d5df1facafa7133b36915d5",
+    "git_status_porcelain": "M README.md\n M benchmark/kvcomp-codec/README.md\n M benchmark/kvcomp-codec/codec_benchmark.py\n M benchmark/kvcomp-codec/conf/paper_halo.yaml\n M benchmark/kvcomp-codec/conf/paper_hayatequant.yaml\n M benchmark/kvcomp-codec/hayatequant_aw_calibrate.py\n M benchmark/kvcomp-codec/hayatequant_cayley_calibrate.py\n M benchmark/kvcomp-codec/hayatequant_cross_model.py\n M benchmark/kvcomp-codec/hayatequant_pair_calibrate.py\n M benchmark/kvcomp-codec/hayatequant_sbr_calibrate.py\n M benchmark/kvcomp-codec/hayatequant_value_calibrate.py\n M benchmark/kvcomp-codec/hayatequant_vllm_native_generate.py\n M benchmark/kvcomp-codec/hayatequant_vllm_native_smoke.py\n M benchmark/kvcomp-codec/hayatequant_zeroshot.py\n M benchmark/kvcomp-codec/reproduce_hayatequant_paper.py\n M benchmark/kvcomp-codec/submit_hayatequant_paper.sh\n M benchmark/kvcomp-codec/zeroshot_benchmark.py\n M benchmark/kvcomp-longcontext/README.md\n M benchmark/kvcomp-longcontext/codec_speed.py\n M benchmark/kvcomp-longcontext/conf/azalea_reasoning.yaml\n M benchmark/kvcomp-longcontext/conf/benchmark_longcontext.yaml\n M benchmark/kvcomp-longcontext/conf/hayatequant_exhaustive_grid.yaml\n M benchmark/kvcomp-longcontext/conf/hayatequant_fib_blockquant.yaml\n M benchmark/kvcomp-longcontext/conf/hayatequant_paper.yaml\n M benchmark/kvcomp-longcontext/conf/paper_ablation.yaml\n M benchmark/kvcomp-longcontext/conf/paper_aime.yaml\n M benchmark/kvcomp-longcontext/conf/paper_run.yaml\n M benchmark/kvcomp-longcontext/conf/paper_taperkv.yaml\n M benchmark/kvcomp-longcontext/conf/turboquant_paper.yaml\n M benchmark/kvcomp-longcontext/e2e_speed.py\n M benchmark/kvcomp-longcontext/kv_benchmark.py\n M benchmark/kvcomp-longcontext/paper/HALO_ENHANCED_REPORT.md\n M benchmark/kvcomp-longcontext/paper/README.md\n M benchmark/kvcomp-longcontext/paper/tests/verify_hayatequant_vq_gain.py\n M docs/design/kvcomp-architecture.md\n M onecomp/kvcomp/_base.py\n M onecomp/kvcomp/cache/_graded_base.py\n M onecomp/kvcomp/cache/builders.py\n M onecomp/kvcomp/cache/compressed_cache.py\n M onecomp/kvcomp/cache/streaming_evict.py\n M onecomp/kvcomp/cache/thinkv_cache.py\n M onecomp/kvcomp/codec/__init__.py\n M onecomp/kvcomp/codec/_scale.py\n M onecomp/kvcomp/codec/halo.py\n M onecomp/kvcomp/codec/hayate/__init__.py\n M onecomp/kvcomp/codec/hayate/codec.py\n M onecomp/kvcomp/codec/hayate/recipes.py\n M onecomp/kvcomp/codec/hayate/triton_step.py\n M onecomp/kvcomp/codec/hayate/vq.py\n M onecomp/kvcomp/codec/rotation.py\n M onecomp/kvcomp/codec/turboquant.py\n M onecomp/kvcomp/eval/__init__.py\n M onecomp/kvcomp/eval/longbench.py\n M onecomp/kvcomp/eval/longcontext.py\n M onecomp/kvcomp/eval/metrics.py\n M onecomp/kvcomp/eval/ppl.py\n M onecomp/kvcomp/eval/reasoning.py\n M onecomp/kvcomp/eval/zeroshot.py\n M onecomp/kvcomp/recipe/turbotaper.py\n M papers/README.md\n M papers/hayatequant_paper/FIBQUANT_BLOCKQUANT_DIFF.md\n M papers/hayatequant_paper/MATH_REVIEW.md\n M papers/hayatequant_paper/README.md\n M papers/hayatequant_paper/TURBOQUANT_COMPARISON.md\n M papers/hayatequant_paper/experiments/README.md\n M pyproject.toml\n M tests/onecomp/kvcomp/test_eval_correctness.py\n M tests/onecomp/kvcomp/test_kvcomp.py\n M tests/vllm_plugins/kvcomp/test_kvcomp_vllm_plugin.py\n M tests/vllm_plugins/kvcomp/test_rolekv_mapping.py\n M uv.lock\n M vllm_plugins/kvcomp/hayate_native.py\n M vllm_plugins/kvcomp/hayate_triton.py\n M vllm_plugins/kvcomp/mapping.py\n M vllm_plugins/kvcomp/vllm_plugin.py\n?? benchmark/kvcomp-codec/FORMAL_PAPER_RESULTS.md\n?? benchmark/kvcomp-codec/aggregate_hayatequant_paper_shards.py\n?? benchmark/kvcomp-codec/hayatequant_fair_speed.py\n?? benchmark/kvcomp-codec/hayatequant_vllm_full_native_fair_speed.py\n?? benchmark/kvcomp-codec/hayatequant_vllm_full_native_smoke.py\n?? benchmark/kvcomp-codec/model_weight_manifest.py\n?? benchmark/kvcomp-codec/paper_preflight.py\n?? benchmark/kvcomp-codec/prepare_paper_datasets.py\n?? benchmark/kvcomp-codec/render_hayatequant_formal_results.py\n?? benchmark/kvcomp-codec/run_paper_job.sh\n?? benchmark/kvcomp-codec/validate_hayatequant_paper_inputs.py\n?? benchmark/kvcomp-codec/validate_hayatequant_smoke_gate.py\n?? benchmark/kvcomp-longcontext/LONGCODEQA_PROTOCOL_AUDIT.md\n?? benchmark/kvcomp-longcontext/prepare_official_ruler.py\n?? benchmark/kvcomp-longcontext/validate_longcodeqa_context.py\n?? onecomp/kvcomp/codec/blockquant.py\n?? onecomp/kvcomp/codec/fibquant.py\n?? onecomp/kvcomp/codec/quality_baselines.py\n?? onecomp/kvcomp/eval/_teacher_forcing.py\n?? onecomp/kvcomp/eval/longcodeqa.py\n?? onecomp/kvcomp/eval/provenance.py\n?? onecomp/kvcomp/eval/ruler.py\n?? papers/hayatequant_paper/experiments/results/development/\n?? tests/onecomp/kvcomp/test_blockquant.py\n?? tests/onecomp/kvcomp/test_compressed_cache_lifecycle.py\n?? tests/onecomp/kvcomp/test_fibquant.py\n?? tests/onecomp/kvcomp/test_hayate_full_native_contract.py\n?? tests/onecomp/kvcomp/test_hayatequant_fair_speed.py\n?? tests/onecomp/kvcomp/test_hayatequant_formal_renderer.py\n?? tests/onecomp/kvcomp/test_hayatequant_native_speed_contract.py\n?? tests/onecomp/kvcomp/test_hayatequant_paper_inputs.py\n?? tests/onecomp/kvcomp/test_hayatequant_paper_shards.py\n?? tests/onecomp/kvcomp/test_hayatequant_public_encode.py\n?? tests/onecomp/kvcomp/test_hayatequant_ruler_aggregate.py\n?? tests/onecomp/kvcomp/test_hayatequant_smoke_gate.py\n?? tests/onecomp/kvcomp/test_longcontext_protocol.py\n?? tests/onecomp/kvcomp/test_model_weight_manifest.py\n?? tests/onecomp/kvcomp/test_paper_provenance.py\n?? tests/onecomp/kvcomp/test_ruler_eval.py\n?? tests/onecomp/kvcomp/test_submit_hayatequant_paper.py\n?? tests/onecomp/kvcomp/test_zeroshot_sharding.py\n?? tests/vllm_plugins/kvcomp/test_hayate_full_config.py\n?? vllm_plugins/kvcomp/hayate_full_config.py\n?? vllm_plugins/kvcomp/hayate_full_native.py\n?? vllm_plugins/kvcomp/hayate_full_triton.py",
+    "gpu": "NVIDIA B200",
+    "hostname": "kagura-gpu14",
+    "source_sha256": {
+      "benchmark/kvcomp-codec/hayatequant_vllm_full_native_smoke.py": "88cdfbcb28ff12ceba312ab336763582432a81e287bf251380127bbe7eb58d7c",
+      "vllm_plugins/kvcomp/hayate_full_config.py": "5d3d578524ea083a699e365010e2f8bda8168cd22902a464d414c47ad791f538",
+      "vllm_plugins/kvcomp/hayate_full_native.py": "38ae724fa40612fd8cdd82b0058b53e5e8d4e4bb028285580b99b7087c00e836",
+      "vllm_plugins/kvcomp/hayate_full_triton.py": "1cdc56901424f1e05364a20c8a6ee9d0ed233fe9b1e63284ff1f3fe77f2ced9d"
+    },
+    "torch_version": "2.11.0+cu130"
+  },
+  "recipe": {
+    "allow_canonical_k10v6_b4": false,
+    "assignment": "exact_nearest_codeword_then_value_ls_refit",
+    "average_kv_rate_bits_per_coordinate": 2.0,
+    "codebook_init": "auto",
+    "dist": "gaussian",
+    "key_block_size": 2,
+    "key_code_bits_per_block": 5,
+    "key_rate_bits_per_coordinate": 2.5,
+    "key_scale_mode": "nc",
+    "layout": {
+      "key_code_bytes": 40,
+      "key_scale_offset": 40,
+      "slot_padding_bytes": 0,
+      "slot_size": 68,
+      "slot_size_aligned": 68,
+      "value_code_bytes": 24,
+      "value_codes_offset": 42,
+      "value_scale_offset": 66
+    },
+    "max_codebook_bits": 9,
+    "rotation_mode": "auto",
+    "scale_contract": "one_signed_fp16_scale_per_role_vector",
+    "seed": 0,
+    "value_block_size": 2,
+    "value_code_bits_per_block": 3,
+    "value_rate_bits_per_coordinate": 1.5,
+    "value_scale_mode": "ls_iter",
+    "zero_points": 0
+  },
+  "schema": {
+    "name": "onecomp.hq_full_native_correctness_smoke",
+    "version": 1
+  }
+}

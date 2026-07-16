@@ -1,0 +1,436 @@
+{
+  "attribution": {
+    "estimated_exact_search_fraction_of_store": 0.909878749512903,
+    "estimated_exact_search_ms_key_plus_two_value_passes": 4.3054879903793335,
+    "key_codebook_size": 128,
+    "sum_full_role_encode_plus_pack_ms": 4.741344066336751,
+    "value_codebook_size": 32
+  },
+  "cross_method_speed_claim_allowed": false,
+  "development_only": true,
+  "operator_profiles": {
+    "decode_top_cuda_operators": [
+      {
+        "calls": 1,
+        "device_total_ms": 0.06748599999999988,
+        "operator": "_full_hq_decode_stage1_b2",
+        "self_device_ms": 0.06748599999999988
+      },
+      {
+        "calls": 1,
+        "device_total_ms": 0.01251200000000017,
+        "operator": "_fwd_kernel_stage2",
+        "self_device_ms": 0.01251200000000017
+      },
+      {
+        "calls": 2,
+        "device_total_ms": 0.009759999999999764,
+        "operator": "aten::mm",
+        "self_device_ms": 0.009759999999999764
+      },
+      {
+        "calls": 1,
+        "device_total_ms": 0.00489599999999973,
+        "operator": "cutlass3x_sm100_simt_sgemm_f32_f32_f32_f32_f32_32x32x16_1x1x1_3_tnn_align1_bias_f32_relu",
+        "self_device_ms": 0.00489599999999973
+      },
+      {
+        "calls": 1,
+        "device_total_ms": 0.004864000000000032,
+        "operator": "cutlass3x_sm100_simt_sgemm_f32_f32_f32_f32_f32_32x32x16_1x1x1_3_nnn_align1_bias_f32_relu",
+        "self_device_ms": 0.004864000000000032
+      },
+      {
+        "calls": 2,
+        "device_total_ms": 0.0071680000000001205,
+        "operator": "aten::copy_",
+        "self_device_ms": 0.004384000000000015
+      },
+      {
+        "calls": 1,
+        "device_total_ms": 0.0027840000000001054,
+        "operator": "Activity Buffer Request",
+        "self_device_ms": 0.0027840000000001054
+      },
+      {
+        "calls": 1,
+        "device_total_ms": 0.0027840000000001054,
+        "operator": "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>, 4, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1> >(int, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1>)",
+        "self_device_ms": 0.0027840000000001054
+      },
+      {
+        "calls": 1,
+        "device_total_ms": 0.001599999999999909,
+        "operator": "void at::native::vectorized_elementwise_kernel<8, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul>)",
+        "self_device_ms": 0.001599999999999909
+      }
+    ],
+    "store_top_cuda_operators": [
+      {
+        "calls": 9,
+        "device_total_ms": 2.4374500000000006,
+        "operator": "aten::argmax",
+        "self_device_ms": 2.4374500000000006
+      },
+      {
+        "calls": 9,
+        "device_total_ms": 2.4374500000000006,
+        "operator": "void at::native::reduce_kernel<512, 1, at::native::ReduceOp<c10::Half, at::native::ArgMaxOps<float>, unsigned int, long, 4, 4> >(at::native::ReduceOp<c10::Half, at::native::ArgMaxOps<float>, unsigned int, long, 4, 4>)",
+        "self_device_ms": 2.4374500000000006
+      },
+      {
+        "calls": 9,
+        "device_total_ms": 0.9598189999999959,
+        "operator": "aten::sub",
+        "self_device_ms": 0.9598189999999959
+      },
+      {
+        "calls": 9,
+        "device_total_ms": 0.9598189999999959,
+        "operator": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::Half> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<c10::Half> const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::Half> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<c10::Half> const&)::{lambda(int)#1})",
+        "self_device_ms": 0.9598189999999959
+      },
+      {
+        "calls": 11,
+        "device_total_ms": 0.956939999999995,
+        "operator": "aten::mm",
+        "self_device_ms": 0.956939999999995
+      },
+      {
+        "calls": 4,
+        "device_total_ms": 0.592466999999997,
+        "operator": "void cutlass::Kernel2<cutlass_80_tensorop_f16_s16816gemm_f16_64x256_64x4_tn_align2>(cutlass_80_tensorop_f16_s16816gemm_f16_64x256_64x4_tn_align2::Params)",
+        "self_device_ms": 0.592466999999997
+      },
+      {
+        "calls": 7,
+        "device_total_ms": 0.3015299999999952,
+        "operator": "void cutlass::Kernel2<cutlass_80_tensorop_f16_s16816gemm_f16_128x256_32x3_tn_align2>(cutlass_80_tensorop_f16_s16816gemm_f16_128x256_32x3_tn_align2::Params)",
+        "self_device_ms": 0.3015299999999952
+      },
+      {
+        "calls": 18,
+        "device_total_ms": 0.11481199999999808,
+        "operator": "aten::copy_",
+        "self_device_ms": 0.10098899999999776
+      },
+      {
+        "calls": 2,
+        "device_total_ms": 0.06294300000000294,
+        "operator": "cutlass3x_sm100_simt_sgemm_f32_f32_f32_f32_f32_64x32x16_1x1x1_3_nnn_align1_bias_f32_relu",
+        "self_device_ms": 0.06294300000000294
+      },
+      {
+        "calls": 9,
+        "device_total_ms": 0.046942999999999305,
+        "operator": "Memcpy DtoD (Device -> Device)",
+        "self_device_ms": 0.046942999999999305
+      },
+      {
+        "calls": 3,
+        "device_total_ms": 0.040703000000001335,
+        "operator": "aten::gather",
+        "self_device_ms": 0.040703000000001335
+      },
+      {
+        "calls": 3,
+        "device_total_ms": 0.040703000000001335,
+        "operator": "void at::native::_scatter_gather_elementwise_kernel<128, 8, at::native::_cuda_scatter_gather_internal_kernel<false, at::native::OpaqueType<4>, long>::operator()<at::native::TensorAssign>(at::TensorIterator&, long, long, long, at::native::TensorAssign const&)::{lambda(int)#1}>(int, at::native::_cuda_scatter_gather_internal_kernel<false, at::native::OpaqueType<4>, long>::operator()<at::native::TensorAssign>(at::TensorIterator&, long, long, long, at::native::TensorAssign const&)::{lambda(int)#1})",
+        "self_device_ms": 0.040703000000001335
+      },
+      {
+        "calls": 6,
+        "device_total_ms": 0.040127000000000405,
+        "operator": "aten::div",
+        "self_device_ms": 0.040127000000000405
+      },
+      {
+        "calls": 13,
+        "device_total_ms": 0.038208000000005994,
+        "operator": "aten::mul",
+        "self_device_ms": 0.038208000000005994
+      },
+      {
+        "calls": 3,
+        "device_total_ms": 0.03408000000000175,
+        "operator": "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<float, float, float, at::native::binary_internal::DivFunctor<float> > >(at::TensorIteratorBase&, at::native::BinaryFunctor<float, float, float, at::native::binary_internal::DivFunctor<float> > const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<float, float, float, at::native::binary_internal::DivFunctor<float> > >(at::TensorIteratorBase&, at::native::BinaryFunctor<float, float, float, at::native::binary_internal::DivFunctor<float> > const&)::{lambda(int)#1})",
+        "self_device_ms": 0.03408000000000175
+      },
+      {
+        "calls": 4,
+        "device_total_ms": 0.0337280000000028,
+        "operator": "aten::sum",
+        "self_device_ms": 0.0337280000000028
+      },
+      {
+        "calls": 4,
+        "device_total_ms": 0.0337280000000028,
+        "operator": "void at::native::reduce_kernel<512, 1, at::native::ReduceOp<float, at::native::func_wrapper_t<float, at::native::sum_functor<float, float, float>::operator()(at::TensorIterator&)::{lambda(float, float)#1}>, unsigned int, float, 4, 4> >(at::native::ReduceOp<float, at::native::func_wrapper_t<float, at::native::sum_functor<float, float, float>::operator()(at::TensorIterator&)::{lambda(float, float)#1}>, unsigned int, float, 4, 4>)",
+        "self_device_ms": 0.0337280000000028
+      },
+      {
+        "calls": 1,
+        "device_total_ms": 0.0327029999999977,
+        "operator": "_full_hq_pack_store",
+        "self_device_ms": 0.0327029999999977
+      },
+      {
+        "calls": 2,
+        "device_total_ms": 0.028445999999999912,
+        "operator": "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>, 4, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1> >(int, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1>)",
+        "self_device_ms": 0.028445999999999912
+      },
+      {
+        "calls": 4,
+        "device_total_ms": 0.021087000000003173,
+        "operator": "void at::native::vectorized_elementwise_kernel<4, at::native::BinaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> >, std::array<char*, 3ul> >(int, at::native::BinaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> >, std::array<char*, 3ul>)",
+        "self_device_ms": 0.021087000000003173
+      },
+      {
+        "calls": 2,
+        "device_total_ms": 0.01887999999999738,
+        "operator": "aten::linalg_vector_norm",
+        "self_device_ms": 0.01887999999999738
+      },
+      {
+        "calls": 2,
+        "device_total_ms": 0.01887999999999738,
+        "operator": "void at::native::reduce_kernel<512, 1, at::native::ReduceOp<float, at::native::NormTwoOps<float, float, float, true>, unsigned int, float, 4, 4> >(at::native::ReduceOp<float, at::native::NormTwoOps<float, float, float, true>, unsigned int, float, 4, 4>)",
+        "self_device_ms": 0.01887999999999738
+      },
+      {
+        "calls": 2,
+        "device_total_ms": 0.017662999999996827,
+        "operator": "aten::mean",
+        "self_device_ms": 0.017662999999996827
+      },
+      {
+        "calls": 2,
+        "device_total_ms": 0.017662999999996827,
+        "operator": "void at::native::reduce_kernel<512, 1, at::native::ReduceOp<float, at::native::MeanOps<float, float, float, float>, unsigned int, float, 4, 4> >(at::native::ReduceOp<float, at::native::MeanOps<float, float, float, float>, unsigned int, float, 4, 4>)",
+        "self_device_ms": 0.017662999999996827
+      },
+      {
+        "calls": 9,
+        "device_total_ms": 0.01712100000000282,
+        "operator": "void at::native::vectorized_elementwise_kernel<8, at::native::AUnaryFunctor<c10::Half, c10::Half, c10::Half, at::native::binary_internal::MulFunctor<float> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<c10::Half, c10::Half, c10::Half, at::native::binary_internal::MulFunctor<float> >, std::array<char*, 2ul>)",
+        "self_device_ms": 0.01712100000000282
+      },
+      {
+        "calls": 5,
+        "device_total_ms": 0.01510399999999936,
+        "operator": "void at::native::vectorized_elementwise_kernel<8, at::native::float16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::float16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul>)",
+        "self_device_ms": 0.01510399999999936
+      },
+      {
+        "calls": 1,
+        "device_total_ms": 0.01382300000000032,
+        "operator": "Activity Buffer Request",
+        "self_device_ms": 0.01382300000000032
+      },
+      {
+        "calls": 2,
+        "device_total_ms": 0.010495999999999185,
+        "operator": "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1}, std::array<char*, 2ul>, 4, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1> >(int, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1}, std::array<char*, 2ul>, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1>)",
+        "self_device_ms": 0.010495999999999185
+      },
+      {
+        "calls": 6,
+        "device_total_ms": 0.010145999999993365,
+        "operator": "aten::clamp_min",
+        "self_device_ms": 0.010145999999993365
+      },
+      {
+        "calls": 6,
+        "device_total_ms": 0.010145999999993365,
+        "operator": "void at::native::vectorized_elementwise_kernel<4, at::native::(anonymous namespace)::launch_clamp_scalar(at::TensorIteratorBase&, c10::Scalar, c10::Scalar, at::native::detail::ClampLimits)::{lambda()#1}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::(anonymous namespace)::launch_clamp_scalar(at::TensorIteratorBase&, c10::Scalar, c10::Scalar, at::native::detail::ClampLimits)::{lambda()#1}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>)",
+        "self_device_ms": 0.010145999999993365
+      }
+    ]
+  },
+  "provenance": {
+    "arguments": {
+      "allow_canonical_k10v6_b4": false,
+      "assignment_mode": "exact",
+      "avg_bits": 3,
+      "codebook_init": "auto",
+      "dist": "gaussian",
+      "dtype": "bfloat16",
+      "head_dim": 128,
+      "iters": 20,
+      "key_block_size": null,
+      "key_code_bits": null,
+      "kv_heads": 8,
+      "lut_bins": null,
+      "lut_candidates": null,
+      "max_splits": 32,
+      "output": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/results/dev/full_native_exact_stage_profile_rate3_ctx4096.json",
+      "page_size": 16,
+      "query_heads": 32,
+      "recipe": "hq",
+      "rotation_mode": "auto",
+      "seed": 0,
+      "tokens": 4096,
+      "value_block_size": null,
+      "value_code_bits": null,
+      "warmups": 5
+    },
+    "cuda_version": "13.0",
+    "finished_at_utc": "2026-07-15T20:05:11.838607+00:00",
+    "git_commit": "e50379c225259b3e5d5df1facafa7133b36915d5",
+    "git_status_porcelain": "M README.md\n M benchmark/kvcomp-codec/README.md\n M benchmark/kvcomp-codec/codec_benchmark.py\n M benchmark/kvcomp-codec/conf/paper_halo.yaml\n M benchmark/kvcomp-codec/conf/paper_hayatequant.yaml\n M benchmark/kvcomp-codec/hayatequant_aw_calibrate.py\n M benchmark/kvcomp-codec/hayatequant_cayley_calibrate.py\n M benchmark/kvcomp-codec/hayatequant_cross_model.py\n M benchmark/kvcomp-codec/hayatequant_pair_calibrate.py\n M benchmark/kvcomp-codec/hayatequant_sbr_calibrate.py\n M benchmark/kvcomp-codec/hayatequant_value_calibrate.py\n M benchmark/kvcomp-codec/hayatequant_vllm_native_generate.py\n M benchmark/kvcomp-codec/hayatequant_vllm_native_smoke.py\n M benchmark/kvcomp-codec/hayatequant_zeroshot.py\n M benchmark/kvcomp-codec/reproduce_hayatequant_paper.py\n M benchmark/kvcomp-codec/submit_hayatequant_paper.sh\n M benchmark/kvcomp-codec/zeroshot_benchmark.py\n M benchmark/kvcomp-longcontext/README.md\n M benchmark/kvcomp-longcontext/codec_speed.py\n M benchmark/kvcomp-longcontext/conf/azalea_reasoning.yaml\n M benchmark/kvcomp-longcontext/conf/benchmark_longcontext.yaml\n M benchmark/kvcomp-longcontext/conf/hayatequant_exhaustive_grid.yaml\n M benchmark/kvcomp-longcontext/conf/hayatequant_fib_blockquant.yaml\n M benchmark/kvcomp-longcontext/conf/hayatequant_paper.yaml\n M benchmark/kvcomp-longcontext/conf/paper_ablation.yaml\n M benchmark/kvcomp-longcontext/conf/paper_aime.yaml\n M benchmark/kvcomp-longcontext/conf/paper_run.yaml\n M benchmark/kvcomp-longcontext/conf/paper_taperkv.yaml\n M benchmark/kvcomp-longcontext/conf/turboquant_paper.yaml\n M benchmark/kvcomp-longcontext/e2e_speed.py\n M benchmark/kvcomp-longcontext/kv_benchmark.py\n M benchmark/kvcomp-longcontext/paper/HALO_ENHANCED_REPORT.md\n M benchmark/kvcomp-longcontext/paper/README.md\n M benchmark/kvcomp-longcontext/paper/tests/verify_hayatequant_vq_gain.py\n M docs/design/kvcomp-architecture.md\n M onecomp/kvcomp/_base.py\n M onecomp/kvcomp/cache/_graded_base.py\n M onecomp/kvcomp/cache/builders.py\n M onecomp/kvcomp/cache/compressed_cache.py\n M onecomp/kvcomp/cache/streaming_evict.py\n M onecomp/kvcomp/cache/thinkv_cache.py\n M onecomp/kvcomp/codec/__init__.py\n M onecomp/kvcomp/codec/_scale.py\n M onecomp/kvcomp/codec/halo.py\n M onecomp/kvcomp/codec/hayate/__init__.py\n M onecomp/kvcomp/codec/hayate/codec.py\n M onecomp/kvcomp/codec/hayate/recipes.py\n M onecomp/kvcomp/codec/hayate/triton_step.py\n M onecomp/kvcomp/codec/hayate/vq.py\n M onecomp/kvcomp/codec/rotation.py\n M onecomp/kvcomp/codec/turboquant.py\n M onecomp/kvcomp/eval/__init__.py\n M onecomp/kvcomp/eval/longbench.py\n M onecomp/kvcomp/eval/longcontext.py\n M onecomp/kvcomp/eval/metrics.py\n M onecomp/kvcomp/eval/ppl.py\n M onecomp/kvcomp/eval/reasoning.py\n M onecomp/kvcomp/eval/zeroshot.py\n M onecomp/kvcomp/recipe/turbotaper.py\n M papers/README.md\n M papers/hayatequant_paper/FIBQUANT_BLOCKQUANT_DIFF.md\n M papers/hayatequant_paper/MATH_REVIEW.md\n M papers/hayatequant_paper/README.md\n M papers/hayatequant_paper/TURBOQUANT_COMPARISON.md\n M papers/hayatequant_paper/experiments/README.md\n M pyproject.toml\n M tests/onecomp/kvcomp/test_eval_correctness.py\n M tests/onecomp/kvcomp/test_kvcomp.py\n M tests/vllm_plugins/kvcomp/test_kvcomp_vllm_plugin.py\n M tests/vllm_plugins/kvcomp/test_rolekv_mapping.py\n M uv.lock\n M vllm_plugins/kvcomp/hayate_native.py\n M vllm_plugins/kvcomp/hayate_triton.py\n M vllm_plugins/kvcomp/mapping.py\n M vllm_plugins/kvcomp/vllm_plugin.py\n?? benchmark/kvcomp-codec/FORMAL_PAPER_RESULTS.md\n?? benchmark/kvcomp-codec/aggregate_hayatequant_paper_shards.py\n?? benchmark/kvcomp-codec/archive_hayatequant_run.py\n?? benchmark/kvcomp-codec/hayatequant_fair_speed.py\n?? benchmark/kvcomp-codec/hayatequant_lut_quality_gate.py\n?? benchmark/kvcomp-codec/hayatequant_vllm_full_native_fair_speed.py\n?? benchmark/kvcomp-codec/hayatequant_vllm_full_native_profile.py\n?? benchmark/kvcomp-codec/hayatequant_vllm_full_native_smoke.py\n?? benchmark/kvcomp-codec/model_weight_manifest.py\n?? benchmark/kvcomp-codec/paper_preflight.py\n?? benchmark/kvcomp-codec/prepare_paper_datasets.py\n?? benchmark/kvcomp-codec/render_hayatequant_formal_results.py\n?? benchmark/kvcomp-codec/run_paper_job.sh\n?? benchmark/kvcomp-codec/validate_hayatequant_paper_inputs.py\n?? benchmark/kvcomp-codec/validate_hayatequant_smoke_gate.py\n?? benchmark/kvcomp-longcontext/LONGCODEQA_PROTOCOL_AUDIT.md\n?? benchmark/kvcomp-longcontext/prepare_official_ruler.py\n?? benchmark/kvcomp-longcontext/validate_longcodeqa_context.py\n?? onecomp/kvcomp/codec/blockquant.py\n?? onecomp/kvcomp/codec/fibquant.py\n?? onecomp/kvcomp/codec/hayate/formal.py\n?? onecomp/kvcomp/codec/quality_baselines.py\n?? onecomp/kvcomp/eval/_teacher_forcing.py\n?? onecomp/kvcomp/eval/longcodeqa.py\n?? onecomp/kvcomp/eval/provenance.py\n?? onecomp/kvcomp/eval/ruler.py\n?? papers/hayatequant_paper/experiments/results/development/\n?? tests/onecomp/kvcomp/test_blockquant.py\n?? tests/onecomp/kvcomp/test_compressed_cache_lifecycle.py\n?? tests/onecomp/kvcomp/test_fibquant.py\n?? tests/onecomp/kvcomp/test_hayate_full_native_contract.py\n?? tests/onecomp/kvcomp/test_hayatequant_fair_speed.py\n?? tests/onecomp/kvcomp/test_hayatequant_formal_renderer.py\n?? tests/onecomp/kvcomp/test_hayatequant_native_speed_contract.py\n?? tests/onecomp/kvcomp/test_hayatequant_paper_inputs.py\n?? tests/onecomp/kvcomp/test_hayatequant_paper_shards.py\n?? tests/onecomp/kvcomp/test_hayatequant_public_encode.py\n?? tests/onecomp/kvcomp/test_hayatequant_ruler_aggregate.py\n?? tests/onecomp/kvcomp/test_hayatequant_run_archive.py\n?? tests/onecomp/kvcomp/test_hayatequant_smoke_gate.py\n?? tests/onecomp/kvcomp/test_longcontext_protocol.py\n?? tests/onecomp/kvcomp/test_model_weight_manifest.py\n?? tests/onecomp/kvcomp/test_paper_provenance.py\n?? tests/onecomp/kvcomp/test_ruler_eval.py\n?? tests/onecomp/kvcomp/test_submit_hayatequant_paper.py\n?? tests/onecomp/kvcomp/test_zeroshot_sharding.py\n?? tests/vllm_plugins/kvcomp/test_hayate_full_config.py\n?? tests/vllm_plugins/kvcomp/test_hayate_full_spawn_registration.py\n?? vllm_plugins/kvcomp/hayate_full_config.py\n?? vllm_plugins/kvcomp/hayate_full_native.py\n?? vllm_plugins/kvcomp/hayate_full_triton.py",
+    "gpu": "NVIDIA B200",
+    "hostname": "kagura-gpu13",
+    "source_sha256": {
+      "benchmark/kvcomp-codec/hayatequant_vllm_full_native_profile.py": "8a84230562a856759ea286cf177905b7169a0a306156d8e00d71bb3912747c5d",
+      "onecomp/kvcomp/codec/hayate/vq.py": "c8762570ceafae20383fbf04e5e20addb7938ca619bdb101502275cac085e742",
+      "vllm_plugins/kvcomp/hayate_full_config.py": "4e34762a1c3aea05868c2b9574daac1ae866b8c5779062f044f54c12049f40b5",
+      "vllm_plugins/kvcomp/hayate_full_triton.py": "37cb6e4e1390f5b633b6adf246c3b0a9937d182616a7f690de983e34f04dec76"
+    },
+    "torch_version": "2.11.0+cu130"
+  },
+  "recipe": {
+    "allow_canonical_k10v6_b4": false,
+    "assignment": "exact_nearest_codeword_then_value_ls_refit",
+    "assignment_contract": {
+      "search": "all_codewords",
+      "tie_break": "smallest_index"
+    },
+    "assignment_mode": "exact",
+    "average_kv_rate_bits_per_coordinate": 3.0,
+    "codebook_init": "auto",
+    "dist": "gaussian",
+    "key_block_size": 2,
+    "key_code_bits_per_block": 7,
+    "key_rate_bits_per_coordinate": 3.5,
+    "key_scale_mode": "nc",
+    "layout": {
+      "key_code_bytes": 56,
+      "key_scale_offset": 56,
+      "slot_padding_bytes": 0,
+      "slot_size": 100,
+      "slot_size_aligned": 100,
+      "value_code_bytes": 40,
+      "value_codes_offset": 58,
+      "value_scale_offset": 98
+    },
+    "lut_bins": 256,
+    "lut_candidates": 2,
+    "lut_limit": 5.0,
+    "max_codebook_bits": 9,
+    "rotation_mode": "auto",
+    "scale_contract": "one_signed_fp16_scale_per_role_vector",
+    "seed": 0,
+    "value_block_size": 2,
+    "value_code_bits_per_block": 5,
+    "value_rate_bits_per_coordinate": 2.5,
+    "value_scale_mode": "ls_iter",
+    "zero_points": 0
+  },
+  "schema": {
+    "name": "onecomp.hq_full_native_stage_profile",
+    "version": 1
+  },
+  "shape": {
+    "dtype": "bfloat16",
+    "head_dim": 128,
+    "kv_heads": 8,
+    "max_splits": 32,
+    "page_size": 16,
+    "query_heads": 32,
+    "tokens": 4096
+  },
+  "stages": {
+    "decode_query_rotation": {
+      "max_ms": 0.03017600066959858,
+      "mean_ms": 0.02879359982907772,
+      "median_ms": 0.02913600020110607,
+      "min_ms": 0.02659199945628643,
+      "n": 20
+    },
+    "decode_total": {
+      "max_ms": 0.17180800437927246,
+      "mean_ms": 0.1169551994651556,
+      "median_ms": 0.11401599645614624,
+      "min_ms": 0.10367999970912933,
+      "n": 20
+    },
+    "decode_value_inverse_rotation": {
+      "max_ms": 0.022784000262618065,
+      "mean_ms": 0.021115200221538545,
+      "median_ms": 0.021263999864459038,
+      "min_ms": 0.018848000094294548,
+      "n": 20
+    },
+    "store_key_codeword_lookup": {
+      "max_ms": 0.026016000658273697,
+      "mean_ms": 0.02492800010368228,
+      "median_ms": 0.024992000311613083,
+      "min_ms": 0.023455999791622162,
+      "n": 20
+    },
+    "store_key_exact_assignment": {
+      "max_ms": 1.8764480352401733,
+      "mean_ms": 1.8600976049900055,
+      "median_ms": 1.8597279787063599,
+      "min_ms": 1.8506879806518555,
+      "n": 20
+    },
+    "store_key_full_encode": {
+      "max_ms": 2.0542399883270264,
+      "mean_ms": 2.008660817146301,
+      "median_ms": 2.0063040256500244,
+      "min_ms": 2.001408100128174,
+      "n": 20
+    },
+    "store_key_rotation": {
+      "max_ms": 0.05363199859857559,
+      "mean_ms": 0.04578719977289438,
+      "median_ms": 0.04519999958574772,
+      "min_ms": 0.04230400174856186,
+      "n": 20
+    },
+    "store_pack_only": {
+      "max_ms": 0.057760000228881836,
+      "mean_ms": 0.036985600180923936,
+      "median_ms": 0.03606400080025196,
+      "min_ms": 0.034432001411914825,
+      "n": 20
+    },
+    "store_total": {
+      "max_ms": 4.9213762283325195,
+      "mean_ms": 4.7417072534561155,
+      "median_ms": 4.731935977935791,
+      "min_ms": 4.724607944488525,
+      "n": 20
+    },
+    "store_value_codeword_lookup_one_pass": {
+      "max_ms": 0.025728000327944756,
+      "mean_ms": 0.023268799856305124,
+      "median_ms": 0.02372800000011921,
+      "min_ms": 0.02067199908196926,
+      "n": 20
+    },
+    "store_value_exact_assignment_one_pass": {
+      "max_ms": 1.2363519668579102,
+      "mean_ms": 1.2229744136333465,
+      "median_ms": 1.2228800058364868,
+      "min_ms": 1.2186880111694336,
+      "n": 20
+    },
+    "store_value_full_encode_two_assignments": {
+      "max_ms": 2.7751359939575195,
+      "mean_ms": 2.7027056217193604,
+      "median_ms": 2.6989760398864746,
+      "min_ms": 2.6924800872802734,
+      "n": 20
+    },
+    "store_value_rotation": {
+      "max_ms": 0.05145600065588951,
+      "mean_ms": 0.045737600140273574,
+      "median_ms": 0.0464479997754097,
+      "min_ms": 0.04230400174856186,
+      "n": 20
+    }
+  }
+}

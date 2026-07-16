@@ -1,0 +1,80 @@
+{
+  "code": {
+    "commit": "e50379c225259b3e5d5df1facafa7133b36915d5",
+    "onecomp_module": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/__init__.py",
+    "repo": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness",
+    "tracked_dirty": true
+  },
+  "created_at_utc": "2026-07-15T10:51:53.673086+00:00",
+  "dataset_files": [
+    {
+      "bytes": 2906,
+      "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/benchmark/kvcomp-longcontext/conf/hayatequant_fib_blockquant.yaml",
+      "sha256": "54b0743f63bfdb13c9e95c32f911acd521e9fd4082a9ee57ace35adc7da00a3b"
+    }
+  ],
+  "environment": {
+    "CUDA_VISIBLE_DEVICES": null,
+    "HF_DATASETS_OFFLINE": null,
+    "ONECOMP_COMPILE_CODEC": null,
+    "ONECOMP_COMPILE_DECODE_ONLY": null,
+    "ONECOMP_TRITON_CODEC": null,
+    "ONECOMP_TRITON_PREFILL": null,
+    "PYTHONHASHSEED": null,
+    "SLURM_ARRAY_JOB_ID": null,
+    "SLURM_ARRAY_TASK_ID": null,
+    "SLURM_JOB_ID": null,
+    "SLURM_JOB_NAME": null,
+    "SLURM_JOB_NODELIST": null,
+    "TOKENIZERS_PARALLELISM": null
+  },
+  "gpu": {
+    "available": false,
+    "cudnn": null,
+    "devices": [],
+    "nvidia_smi_query": [],
+    "torch_cuda": "13.0"
+  },
+  "host": {
+    "hostname": "login01",
+    "platform": "Linux-5.14.0-611.36.1.el9_7.x86_64-x86_64-with-glibc2.39",
+    "python": "3.13.12 (main, Mar 10 2026, 18:17:38) [Clang 21.1.4 ]",
+    "python_executable": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/bin/python"
+  },
+  "model": {
+    "metadata_files": {
+      "config.json": {
+        "bytes": 896,
+        "sha256": "ad98082c6bc4ea7078915219241814762be259de16d6ca5f170ba02820b3928b"
+      },
+      "generation_config.json": {
+        "bytes": 239,
+        "sha256": "6d4f979915331212d7672c68b22a4ddad9e21ed8126cf2bd1ea6b2b88f595c1c"
+      },
+      "special_tokens_map.json": {
+        "bytes": 454,
+        "sha256": "94e708c3f5e64acf85bbe5ad01467a1248faadb73e83b41793087ecced586e8f"
+      },
+      "tokenizer.json": {
+        "bytes": 17209920,
+        "sha256": "6b9e4e7fb171f92fd137b777cc2714bf87d11576700a1dcd7a399e7bbe39537b"
+      },
+      "tokenizer_config.json": {
+        "bytes": 55492,
+        "sha256": "671ecdff1a4241f7d3e0ad21d347ada7d90f673810906727c124972e3ce03465"
+      }
+    },
+    "path": "/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct",
+    "revision": null
+  },
+  "packages": {
+    "datasets": "4.8.5",
+    "lm-eval": "0.4.11",
+    "math-verify": "0.9.0",
+    "torch": "2.11.0",
+    "transformers": "5.6.2",
+    "triton": "3.6.0",
+    "vllm": "0.20.0"
+  },
+  "schema_version": 1
+}
