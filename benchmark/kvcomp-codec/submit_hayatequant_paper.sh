@@ -43,6 +43,8 @@ INPUT_MANIFEST=${INPUT_MANIFEST:-$RUN_ROOT/manifests/hayatequant_paper_inputs.js
 INPUT_MANIFEST_SHA256=
 SMOKE_APPROVAL_MARKER=${SMOKE_APPROVAL_MARKER:-$RUN_ROOT/manifests/formal_smoke_approval.json}
 FORMAL_SMOKE_APPROVAL=${FORMAL_SMOKE_APPROVAL:-}
+SMOKE_APPROVAL_MARKER_SHA256=
+SMOKE_VALIDATED_PLAN_SHA256=
 
 PARTITIONS=${PARTITIONS:-batch-1gpu}
 GPU_GRES=${GPU_GRES:-gpu:nvidia_b200:1}
@@ -57,6 +59,7 @@ SPEED_MEM=2400G
 PREFERRED_NODE=${PREFERRED_NODE:-}
 SPEED_NODE=${SPEED_NODE:-}
 SPEED_NODE_RESOLVED=0
+SPEED_NODE_IDLE_VALIDATED=0
 SPEED_PREVIOUS_JOB_ID=
 SPEED_PLAN_SEQUENCE=0
 GPU11_SSH_HOST=${GPU11_SSH_HOST:-kagura-gpu11}
@@ -66,6 +69,7 @@ ALLOW_DIRTY_DRYRUN=${ALLOW_DIRTY_DRYRUN:-1}
 SKIP_INPUT_PREFLIGHT=${SKIP_INPUT_PREFLIGHT:-0}
 SPEED_REPLICATES=${SPEED_REPLICATES:-5}
 EXISTING_RESULT_POLICY=${EXISTING_RESULT_POLICY:-skip}
+REQUIRE_SPEED_NODE_IDLE=${REQUIRE_SPEED_NODE_IDLE:-0}
 PAPER_HOME="$RUN_ROOT/runtime/home"
 
 declare -A PLANNED_JOB_KEYS=()
@@ -191,10 +195,15 @@ validate_static_environment() {
   case "$GPU11_SSH_HOST" in
     ''|-*|*[!A-Za-z0-9._-]*) die "GPU11_SSH_HOST is not a safe host name" ;;
   esac
+  case "$SPEED_NODE" in
+    -*|*[!A-Za-z0-9._-]*) die "SPEED_NODE is not a safe Slurm node name" ;;
+  esac
   case "$EXISTING_RESULT_POLICY" in
     skip|fail) ;;
     *) die "EXISTING_RESULT_POLICY must be skip or fail" ;;
   esac
+  case "$REQUIRE_SPEED_NODE_IDLE" in 0|1) ;; *) die \
+    "REQUIRE_SPEED_NODE_IDLE must be 0 or 1" ;; esac
   canonical_manifest_root=$(realpath -m -- "$RUN_ROOT/manifests")
   canonical_input_manifest=$(realpath -m -- "$INPUT_MANIFEST")
   canonical_approval_marker=$(realpath -m -- "$SMOKE_APPROVAL_MARKER")
@@ -212,6 +221,7 @@ validate_static_environment() {
   require_export_value HF_HOME "$HF_HOME"
   require_export_value HOME "$PAPER_HOME"
   require_export_value PATH "$PATH"
+  require_export_value PAPER_SMOKE_APPROVAL_MARKER "$SMOKE_APPROVAL_MARKER"
   [ -z "${LD_LIBRARY_PATH:-}" ] || require_export_value LD_LIBRARY_PATH "$LD_LIBRARY_PATH"
   [ -z "${CUDA_HOME:-}" ] || require_export_value CUDA_HOME "$CUDA_HOME"
   [ -z "${LANG:-}" ] || require_export_value LANG "$LANG"
@@ -236,36 +246,87 @@ resolve_preferred_node() {
   fi
 }
 
-resolve_speed_node() {
-  # Timing rows may not be pooled across B200/driver strata.  Pin every formal
-  # speed process to one explicitly selected idle Slurm node.  Every process
-  # reserves all eight B200 GRES plus 160 CPUs/2400G, uses --exclusive=user,
-  # and is afterok-chained. Formal quality jobs exclude the node. The worker
-  # exposes one assigned GPU to torch while recording the complete allocation.
+validate_speed_node_identity() {
+  # Quality retry slices must exclude the timing stratum even while that node
+  # is MIXED/ALLOCATED.  Validate immutable hardware/partition identity here;
+  # the stronger idle/all-resources-free check belongs only to a new timing
+  # chain in resolve_speed_node().
   [ "$SPEED_NODE_RESOLVED" = 0 ] || return 0
   if [ "$DRYRUN" = 1 ]; then
     [ -n "$SPEED_NODE" ] || SPEED_NODE=DRYRUN-SAME-B200-NODE
     SPEED_NODE_RESOLVED=1
+    printf 'SPEED_NODE_IDENTITY dryrun_node=%s partition=%s gres=%s cpus=192\n' \
+      "$SPEED_NODE" "$SPEED_PARTITION" "$SPEED_GPU_GRES"
+    return
+  fi
+  [ -n "$SPEED_NODE" ] || die \
+    "formal quality/speed submission requires the explicit SPEED_NODE stratum"
+  command -v scontrol >/dev/null 2>&1 || die \
+    "scontrol is required to validate the explicit SPEED_NODE identity"
+  local identity
+  identity=$(
+    scontrol show node "$SPEED_NODE" --json | "$PY" -c '
+import json, sys
+expected_name, expected_partition = sys.argv[1:]
+doc = json.load(sys.stdin)
+nodes = doc.get("nodes") if isinstance(doc, dict) else None
+if doc.get("errors") or not isinstance(nodes, list) or len(nodes) != 1:
+    raise SystemExit("Slurm returned no unique speed-node identity")
+node = nodes[0]
+states = node.get("state")
+if (
+    node.get("name") != expected_name
+    or expected_partition not in (node.get("partitions") or [])
+    or node.get("gres") != "gpu:nvidia_b200:8"
+    or node.get("cpus") != 192
+):
+    raise SystemExit("Speed-node name/partition/8xB200/CPU identity mismatch")
+state_text = "+".join(states) if isinstance(states, list) and states else "UNREPORTED"
+print(
+    "state=" + state_text
+    + " alloc_cpus=" + str(node.get("alloc_cpus"))
+    + " gres_used=" + str(node.get("gres_used"))
+)
+' "$SPEED_NODE" "$SPEED_PARTITION"
+  )
+  SPEED_NODE_RESOLVED=1
+  printf 'SPEED_NODE_IDENTITY node=%s partition=%s gres=%s cpus=192 %s\n' \
+    "$SPEED_NODE" "$SPEED_PARTITION" "$SPEED_GPU_GRES" "$identity"
+}
+
+resolve_speed_node() {
+  # A fresh timing chain additionally requires a completely idle, unallocated
+  # node. Every process then reserves all eight B200 GRES plus 160 CPUs/2400G,
+  # uses --exclusive=user, and is afterok-chained.
+  validate_speed_node_identity
+  [ "$SPEED_NODE_IDLE_VALIDATED" = 0 ] || return 0
+  if [ "$DRYRUN" = 1 ]; then
+    SPEED_NODE_IDLE_VALIDATED=1
     printf 'SPEED_STRATUM dryrun_node=%s policy=full_8gpu_allocation_afterok_serial quality_jobs=excluded\n' \
       "$SPEED_NODE"
     return
   fi
-  [ -n "$SPEED_NODE" ] || die \
-    "formal speed submission requires an explicit currently idle SPEED_NODE"
-  command -v sinfo >/dev/null 2>&1 || die \
-    "formal speed submission requires sinfo to validate the explicit idle SPEED_NODE"
-  local selected="" name state gres
-  while IFS='|' read -r name state gres; do
-    [ "$name" = "$SPEED_NODE" ] || continue
-    # Slurm may append a one-character flag to an otherwise idle state.
-    [[ "${state,,}" =~ ^idle[\*\~\#\!\%\@\$\^\-]?$ ]] || continue
-    printf '%s\n' "$gres" | grep -Eq 'gpu:nvidia_b200:8([,(]|$)' || continue
-    selected=$name
-    break
-  done < <(sinfo -N -h -p "$SPEED_PARTITION" -n "$SPEED_NODE" -o '%N|%T|%G')
-  [ -n "$selected" ] || die \
-    "SPEED_NODE=$SPEED_NODE is not an idle eight-B200 node in $SPEED_PARTITION"
-  SPEED_NODE_RESOLVED=1
+  scontrol show node "$SPEED_NODE" --json | "$PY" -c '
+import json, sys
+expected_name = sys.argv[1]
+doc = json.load(sys.stdin)
+nodes = doc.get("nodes") if isinstance(doc, dict) else None
+if doc.get("errors") or not isinstance(nodes, list) or len(nodes) != 1:
+    raise SystemExit("Slurm returned no unique speed node for idle validation")
+node = nodes[0]
+states = node.get("state")
+if (
+    node.get("name") != expected_name
+    or states != ["IDLE"]
+    or node.get("alloc_cpus") != 0
+    or node.get("alloc_memory") != 0
+    or node.get("gres_used")
+    not in ("", "N/A", None, "gpu:nvidia_b200:0(IDX:N/A)")
+    or node.get("tres_used") not in ("", None)
+):
+    raise SystemExit("SPEED_NODE is not completely idle and unallocated")
+' "$SPEED_NODE"
+  SPEED_NODE_IDLE_VALIDATED=1
   printf 'SPEED_STRATUM node=%s policy=full_8gpu_allocation_afterok_serial quality_jobs=excluded runtime_driver_check=aggregate\n' \
     "$SPEED_NODE"
 }
@@ -331,21 +392,62 @@ validate_smoke_and_approve() {
     --approval-statement "$FORMAL_SMOKE_APPROVAL"
 }
 
-require_formal_smoke_approval() {
-  [ -f "$SMOKE_GATE_VALIDATOR" ] || die "missing smoke gate validator: $SMOKE_GATE_VALIDATOR"
-  [ -f "$SMOKE_APPROVAL_MARKER" ] || die \
-    "formal submission requires approve-smoke after the exact eight-job smoke plan completes"
+emit_formal_smoke_binding() {
+  "$PY" "$HERE/paper_preflight.py" \
+    --repo "$REPO" \
+    --expected-commit "$CODE_REPO_COMMIT" \
+    --run-root "$RUN_ROOT" \
+    --input-manifest "$INPUT_MANIFEST" \
+    --expected-input-manifest-sha256 "$INPUT_MANIFEST_SHA256" \
+    --smoke-approval-marker "$SMOKE_APPROVAL_MARKER" \
+    --emit-smoke-approval-binding
+}
+
+set_formal_smoke_binding() {
+  local before after extra digest
+  # Capture the exact immutable identity before and after the semantic check.
+  # This closes the interval in which a marker could otherwise be replaced
+  # after validation but before sbatch serialises the formal worker argv.
+  before=$(emit_formal_smoke_binding)
   "$PY" "$SMOKE_GATE_VALIDATOR" check \
     --run-root "$RUN_ROOT" \
     --expected-commit "$CODE_REPO_COMMIT" \
     --input-manifest "$INPUT_MANIFEST" \
     --input-manifest-sha256 "$INPUT_MANIFEST_SHA256" \
     --approval-marker "$SMOKE_APPROVAL_MARKER"
+  after=$(emit_formal_smoke_binding)
+  [ "$before" = "$after" ] || die \
+    "smoke approval marker or validated plan changed during submission-side check"
+  IFS=' ' read -r SMOKE_APPROVAL_MARKER_SHA256 \
+    SMOKE_VALIDATED_PLAN_SHA256 extra <<< "$after"
+  [ -z "${extra:-}" ] || die "malformed smoke approval binding output"
+  for digest in "$SMOKE_APPROVAL_MARKER_SHA256" "$SMOKE_VALIDATED_PLAN_SHA256"; do
+    case "$digest" in
+      ''|*[!0-9a-f]*) die "malformed smoke approval binding digest" ;;
+    esac
+    [ "${#digest}" -eq 64 ] || die "malformed smoke approval binding digest length"
+  done
+  require_export_value PAPER_SMOKE_APPROVAL_MARKER_SHA256 \
+    "$SMOKE_APPROVAL_MARKER_SHA256"
+  require_export_value PAPER_SMOKE_VALIDATED_PLAN_SHA256 \
+    "$SMOKE_VALIDATED_PLAN_SHA256"
+}
+
+require_formal_smoke_approval() {
+  [ -f "$SMOKE_GATE_VALIDATOR" ] || die "missing smoke gate validator: $SMOKE_GATE_VALIDATOR"
+  [ -f "$SMOKE_APPROVAL_MARKER" ] || die \
+    "formal submission requires approve-smoke after the exact eight-job smoke plan completes"
+  set_formal_smoke_binding
 }
 
 prepare_formal_submission() {
   prepare_submission
   require_formal_smoke_approval
+}
+
+prepare_formal_quality_submission() {
+  prepare_formal_submission
+  validate_speed_node_identity
 }
 
 # submit_job PHASE KEY WALL MEM CPUS NODE MODEL RESULT N_DATASET DATASET... -- CMD...
@@ -399,6 +501,16 @@ submit_job() {
     --input-manifest-sha256 "$INPUT_MANIFEST_SHA256"
     --expected-result "$result"
   )
+  if [ "$phase" = formal ]; then
+    [ -n "$SMOKE_APPROVAL_MARKER_SHA256" ] && \
+      [ -n "$SMOKE_VALIDATED_PLAN_SHA256" ] || die \
+      "internal error: formal job has no submitter-bound smoke identity"
+    worker+=(
+      --smoke-approval-marker "$SMOKE_APPROVAL_MARKER"
+      --smoke-approval-marker-sha256 "$SMOKE_APPROVAL_MARKER_SHA256"
+      --smoke-validated-plan-sha256 "$SMOKE_VALIDATED_PLAN_SHA256"
+    )
+  fi
   [ -z "$model" ] || worker+=(--model "$model")
   local dataset
   for dataset in "${datasets[@]}"; do
@@ -422,6 +534,11 @@ submit_job() {
   export_spec+=",TOKENIZERS_PARALLELISM=false,OMP_NUM_THREADS=$cpus"
   export_spec+=",ONECOMP_COMPILE_CODEC=0,ONECOMP_COMPILE_DECODE_ONLY=0"
   export_spec+=",ONECOMP_TRITON_CODEC=0,ONECOMP_TRITON_PREFILL=0"
+  if [ "$phase" = formal ]; then
+    export_spec+=",PAPER_SMOKE_APPROVAL_MARKER=$SMOKE_APPROVAL_MARKER"
+    export_spec+=",PAPER_SMOKE_APPROVAL_MARKER_SHA256=$SMOKE_APPROVAL_MARKER_SHA256"
+    export_spec+=",PAPER_SMOKE_VALIDATED_PLAN_SHA256=$SMOKE_VALIDATED_PLAN_SHA256"
+  fi
   [ -z "${LD_LIBRARY_PATH:-}" ] || export_spec+=",LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
   [ -z "${CUDA_HOME:-}" ] || export_spec+=",CUDA_HOME=$CUDA_HOME"
   [ -z "${LANG:-}" ] || export_spec+=",LANG=$LANG"
@@ -451,6 +568,8 @@ submit_job() {
   if [ "$phase" = formal ] && [[ "$key" = speed-* ]]; then
     [ "$SPEED_NODE_RESOLVED" = 1 ] || die \
       "internal error: formal speed job was planned before SPEED_NODE validation"
+    [ "$SPEED_NODE_IDLE_VALIDATED" = 1 ] || die \
+      "internal error: formal speed job was planned without idle-node validation"
     [ -n "$node" ] && [ "$node" = "$SPEED_NODE" ] || die \
       "internal error: formal speed job must use the validated SPEED_NODE"
     # All eight GRES prevent any GPU workload from sharing the timing node;
@@ -458,10 +577,13 @@ submit_job() {
     # fail-closed execution even though batch-8gpu caps allocations at 160 of
     # the physical node's 192 CPUs and cannot accept bare --exclusive.
     sbatch_cmd+=(--exclusive=user)
+    sbatch_cmd+=(--kill-on-invalid-dep=yes)
     if [ -n "$SPEED_PREVIOUS_JOB_ID" ]; then
       sbatch_cmd+=(--dependency "afterok:$SPEED_PREVIOUS_JOB_ID")
     fi
-  elif [ "$phase" = formal ] && [ "$SPEED_NODE_RESOLVED" = 1 ]; then
+  elif [ "$phase" = formal ]; then
+    [ "$SPEED_NODE_RESOLVED" = 1 ] || die \
+      "internal error: formal quality job has no validated SPEED_NODE exclusion"
     [ "$node" != "$SPEED_NODE" ] || die \
       "internal error: formal quality job cannot use the reserved SPEED_NODE"
     sbatch_cmd+=(--exclude "$SPEED_NODE")
@@ -1232,6 +1354,7 @@ usage() {
     '' \
     'Local commands:' \
     '  preflight    Validate all model/dataset manifests; submit nothing' \
+    '  speed-node-preflight Validate SPEED_NODE identity; set REQUIRE_SPEED_NODE_IDLE=1 for timing readiness' \
     '  summarize    Coverage-check and aggregate every completed formal axis' \
     '  formal-plan  DRYRUN-only source plan; cannot submit and does not approve smoke' \
     '  help         Show this message' \
@@ -1260,6 +1383,14 @@ case "$command" in
     ensure_input_manifest
     printf 'validated inputs: %s\n' "$INPUT_MANIFEST"
     ;;
+  speed-node-preflight)
+    validate_static_environment
+    if [ "$REQUIRE_SPEED_NODE_IDLE" = 1 ]; then
+      resolve_speed_node
+    else
+      validate_speed_node_identity
+    fi
+    ;;
   summarize) summarize_results ;;
   smoke)
     prepare_submission
@@ -1285,31 +1416,31 @@ case "$command" in
     submit_longcodeqa_formal
     ;;
   ppl)
-    prepare_formal_submission
+    prepare_formal_quality_submission
     submit_ppl_formal
     ;;
   mechanism)
-    prepare_formal_submission
+    prepare_formal_quality_submission
     submit_mechanism_formal
     ;;
   zeroshot)
-    prepare_formal_submission
+    prepare_formal_quality_submission
     submit_zeroshot_formal
     ;;
   ruler)
-    prepare_formal_submission
+    prepare_formal_quality_submission
     submit_ruler_formal
     ;;
   longbench)
-    prepare_formal_submission
+    prepare_formal_quality_submission
     submit_longbench_formal
     ;;
   math)
-    prepare_formal_submission
+    prepare_formal_quality_submission
     submit_math_formal
     ;;
   longcodeqa)
-    prepare_formal_submission
+    prepare_formal_quality_submission
     submit_longcodeqa_formal
     ;;
   speed)
@@ -1323,6 +1454,12 @@ case "$command" in
   formal-plan)
     [ "$DRYRUN" = 1 ] || die "formal-plan is source inspection only and requires DRYRUN=1"
     prepare_submission
+    # Source-only plan inspection has no approved smoke artifacts.  Fixed,
+    # visibly synthetic digests keep the worker/export contract inspectable;
+    # every executable formal command obtains real digests from the validated
+    # marker instead.
+    SMOKE_APPROVAL_MARKER_SHA256=$(printf '0%.0s' {1..64})
+    SMOKE_VALIDATED_PLAN_SHA256=$(printf '1%.0s' {1..64})
     resolve_speed_node
     submit_speed_formal
     submit_ppl_formal

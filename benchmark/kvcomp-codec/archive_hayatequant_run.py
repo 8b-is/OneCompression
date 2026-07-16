@@ -105,10 +105,42 @@ PLACEHOLDER_VALUES = frozenset(
         "unset",
     }
 )
+CREDENTIAL_FIELD_NAMES = frozenset(
+    {
+        "accesstoken",
+        "apikey",
+        "authorization",
+        "clientsecret",
+        "githubtoken",
+        "gitlabtoken",
+        "hftoken",
+        "password",
+        "passwd",
+        "privatekey",
+    }
+)
+MODEL_GENERATION_TEXT_KEYS = frozenset(
+    {
+        "generated_text",
+        "prediction",
+        "raw_generated_text",
+        "raw_prediction",
+    }
+)
+STRUCTURED_PLATFORM_RE = re.compile(
+    rb"^Linux-[0-9][A-Za-z0-9.+~_-]{0,127}"
+    rb"-(?:x86_64|aarch64|ppc64le|s390x|riscv64)"
+    rb"-with-(?:glibc|musl)[0-9][0-9.]{0,31}$"
+)
+STRUCTURED_JSON_SUFFIXES = frozenset({".json", ".jsonl", ".ndjson"})
 
 
 class ArchiveError(RuntimeError):
     """Raised when an archive cannot be produced without ambiguity or risk."""
+
+
+class _DuplicateJsonKeyError(ValueError):
+    """Raised internally when structured JSON contains an ambiguous object."""
 
 
 StateTuple = tuple[int, int, int, int, int, int]
@@ -281,7 +313,7 @@ def _generic_token_looks_secret(value: bytes) -> bool:
     return all(categories) and _shannon_entropy(value) >= 4.35
 
 
-def _secret_reason(payload: bytes) -> str | None:
+def _explicit_secret_reason(payload: bytes) -> str | None:
     for label, pattern in KNOWN_SECRET_PATTERNS:
         if pattern.search(payload):
             return label
@@ -289,9 +321,80 @@ def _secret_reason(payload: bytes) -> str | None:
         candidate = match.group(1).decode("ascii", errors="ignore").strip().lower()
         if candidate not in PLACEHOLDER_VALUES and not candidate.startswith(("${", "$")):
             return "credential assignment"
+    return None
+
+
+def _generic_secret_reason(payload: bytes) -> str | None:
     for match in GENERIC_TOKEN_RE.finditer(payload):
-        if _generic_token_looks_secret(match.group(0)):
+        candidate = match.group(0)
+        if STRUCTURED_PLATFORM_RE.fullmatch(candidate):
+            continue
+        if _generic_token_looks_secret(candidate):
             return "high-entropy token"
+    return None
+
+
+def _secret_reason(payload: bytes) -> str | None:
+    return _explicit_secret_reason(payload) or _generic_secret_reason(payload)
+
+
+def _json_object_without_duplicates(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    document: dict[str, object] = {}
+    for key, value in pairs:
+        if key in document:
+            raise _DuplicateJsonKeyError
+        document[key] = value
+    return document
+
+
+def _structured_json_secret_reason(document: object) -> str | None:
+    """Scan decoded JSON while treating only model-output text as untrusted prose.
+
+    Known token prefixes, private-key markers, Bearer tokens, and credential
+    assignments remain forbidden in every string.  The generic entropy
+    heuristic is omitted only for the four lossless model-output fields.  All
+    keys and all other metadata remain subject to the generic heuristic, apart
+    from a narrowly validated Linux ``platform.platform()`` identifier.
+    """
+
+    pending: list[tuple[object, str | None]] = [(document, None)]
+    while pending:
+        value, field_name = pending.pop()
+        normalized_field_name = (
+            re.sub(r"[^a-z0-9]", "", field_name.lower()) if isinstance(field_name, str) else None
+        )
+        if normalized_field_name in CREDENTIAL_FIELD_NAMES:
+            if not isinstance(value, str):
+                return "credential field"
+            candidate = value.strip().lower()
+            if candidate not in PLACEHOLDER_VALUES and not candidate.startswith(("${", "$")):
+                return "credential field"
+        if isinstance(value, dict):
+            for key, child in value.items():
+                key_payload = key.encode("utf-8")
+                reason = _secret_reason(key_payload)
+                if reason is not None:
+                    return reason
+                pending.append((child, key))
+            continue
+        if isinstance(value, list):
+            # A model-output exemption applies only to the direct string value
+            # of the named field.  Do not let a misleading list/object under a
+            # generation key turn arbitrary nested metadata into exempt prose.
+            pending.extend((child, None) for child in value)
+            continue
+        if not isinstance(value, str):
+            continue
+
+        payload = value.encode("utf-8")
+        reason = _explicit_secret_reason(payload)
+        if reason is not None:
+            return reason
+        if field_name in MODEL_GENERATION_TEXT_KEYS:
+            continue
+        reason = _generic_secret_reason(payload)
+        if reason is not None:
+            return reason
     return None
 
 
@@ -299,15 +402,56 @@ class _SecretScanner:
     def __init__(self, *, relative_path: str) -> None:
         self.relative_path = relative_path
         self._tail = b""
+        self._structured_json = (
+            PurePosixPath(relative_path).suffix.lower() in STRUCTURED_JSON_SUFFIXES
+        )
+        self._json_payload = bytearray()
 
     def feed(self, chunk: bytes) -> None:
         window = self._tail + chunk
-        reason = _secret_reason(window)
+        reason = (
+            _explicit_secret_reason(window) if self._structured_json else _secret_reason(window)
+        )
         if reason is not None:
             raise ArchiveError(
                 f"refusing to archive secret-like content ({reason}) in {self.relative_path}"
             )
+        if self._structured_json:
+            self._json_payload.extend(chunk)
         self._tail = window[-SECRET_SCAN_OVERLAP:]
+
+    def finish(self) -> None:
+        if not self._structured_json:
+            return
+        try:
+            if PurePosixPath(self.relative_path).suffix.lower() == ".json":
+                documents = (
+                    json.loads(
+                        self._json_payload,
+                        object_pairs_hook=_json_object_without_duplicates,
+                    ),
+                )
+            else:
+                documents = tuple(
+                    json.loads(line, object_pairs_hook=_json_object_without_duplicates)
+                    for line in self._json_payload.splitlines()
+                    if line.strip()
+                )
+        except (
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            RecursionError,
+            _DuplicateJsonKeyError,
+        ) as exc:
+            raise ArchiveError(
+                f"refusing malformed structured JSON content in {self.relative_path}"
+            ) from exc
+        for document in documents:
+            reason = _structured_json_secret_reason(document)
+            if reason is not None:
+                raise ArchiveError(
+                    f"refusing to archive secret-like content ({reason}) in {self.relative_path}"
+                )
 
 
 def _path_policy_reason(relative_path: str, *, is_directory: bool) -> str | None:
@@ -374,6 +518,7 @@ def _read_stable_file(
                     if written <= 0:
                         raise ArchiveError(f"short write while copying {relative_path}")
                     view = view[written:]
+        scanner.finish()
         after_open_state = _state_tuple(os.fstat(source_fd))
     finally:
         os.close(source_fd)

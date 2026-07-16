@@ -7,6 +7,8 @@ usage() {
   printf '%s\n' \
     'Usage: run_paper_job.sh --repo DIR --python PY --run-root DIR --job-key KEY' \
     '       --model DIR --input-manifest FILE --input-manifest-sha256 HEX' \
+    '       [--smoke-approval-marker FILE --smoke-approval-marker-sha256 HEX' \
+    '        --smoke-validated-plan-sha256 HEX]' \
     '       --expected-result FILE' \
     '       [--dataset-file FILE ...]' \
     '       -- COMMAND [ARGS ...]'
@@ -19,6 +21,9 @@ JOB_KEY=
 MODEL=
 INPUT_MANIFEST=
 INPUT_MANIFEST_SHA256=
+SMOKE_APPROVAL_MARKER=
+SMOKE_APPROVAL_MARKER_SHA256=
+SMOKE_VALIDATED_PLAN_SHA256=
 EXPECTED_RESULT=
 DATASET_FILES=()
 while [ "$#" -gt 0 ]; do
@@ -30,6 +35,9 @@ while [ "$#" -gt 0 ]; do
     --model) MODEL=$2; shift 2 ;;
     --input-manifest) INPUT_MANIFEST=$2; shift 2 ;;
     --input-manifest-sha256) INPUT_MANIFEST_SHA256=$2; shift 2 ;;
+    --smoke-approval-marker) SMOKE_APPROVAL_MARKER=$2; shift 2 ;;
+    --smoke-approval-marker-sha256) SMOKE_APPROVAL_MARKER_SHA256=$2; shift 2 ;;
+    --smoke-validated-plan-sha256) SMOKE_VALIDATED_PLAN_SHA256=$2; shift 2 ;;
     --expected-result) EXPECTED_RESULT=$2; shift 2 ;;
     --dataset-file) DATASET_FILES+=("$2"); shift 2 ;;
     --) shift; break ;;
@@ -69,6 +77,50 @@ if [ "${#INPUT_MANIFEST_SHA256}" -ne 64 ]; then
 fi
 case "$JOB_KEY" in
   *[!A-Za-z0-9._-]*) printf 'Unsafe job key: %s\n' "$JOB_KEY" >&2; exit 2 ;;
+esac
+case "$JOB_KEY" in
+  formal-*)
+    if [ -z "$SMOKE_APPROVAL_MARKER" ] || \
+       [ -z "$SMOKE_APPROVAL_MARKER_SHA256" ] || \
+       [ -z "$SMOKE_VALIDATED_PLAN_SHA256" ]; then
+      printf '%s\n' \
+        'Formal jobs require the submitter-bound smoke marker and validated-plan digests' >&2
+      exit 2
+    fi
+    for SMOKE_DIGEST in "$SMOKE_APPROVAL_MARKER_SHA256" \
+      "$SMOKE_VALIDATED_PLAN_SHA256"; do
+      case "$SMOKE_DIGEST" in
+        *[!0-9a-f]*|'')
+          printf '%s\n' 'Formal smoke binding digests must be lowercase SHA-256' >&2
+          exit 2
+          ;;
+      esac
+      [ "${#SMOKE_DIGEST}" -eq 64 ] || {
+        printf '%s\n' 'Formal smoke binding digests must contain 64 hexadecimal digits' >&2
+        exit 2
+      }
+    done
+    if [ -z "${PAPER_SMOKE_APPROVAL_MARKER:-}" ] || \
+       [ -z "${PAPER_SMOKE_APPROVAL_MARKER_SHA256:-}" ] || \
+       [ -z "${PAPER_SMOKE_VALIDATED_PLAN_SHA256:-}" ]; then
+      printf '%s\n' 'Formal job environment omitted its submitter-bound smoke identity' >&2
+      exit 2
+    fi
+    if [ "$PAPER_SMOKE_APPROVAL_MARKER" != "$SMOKE_APPROVAL_MARKER" ] || \
+       [ "$PAPER_SMOKE_APPROVAL_MARKER_SHA256" != "$SMOKE_APPROVAL_MARKER_SHA256" ] || \
+       [ "$PAPER_SMOKE_VALIDATED_PLAN_SHA256" != "$SMOKE_VALIDATED_PLAN_SHA256" ]; then
+      printf '%s\n' 'Formal job argv/environment smoke identities disagree' >&2
+      exit 2
+    fi
+    ;;
+  *)
+    if [ -n "$SMOKE_APPROVAL_MARKER" ] || \
+       [ -n "$SMOKE_APPROVAL_MARKER_SHA256" ] || \
+       [ -n "$SMOKE_VALIDATED_PLAN_SHA256" ]; then
+      printf '%s\n' 'Smoke approval bindings are valid only for formal jobs' >&2
+      exit 2
+    fi
+    ;;
 esac
 
 REPO=$(cd "$REPO" && pwd)
@@ -253,6 +305,29 @@ case "$JOB_KEY" in
     ;;
 esac
 
+# Re-run the full semantic smoke validator inside every formal allocation.
+# The fixed marker/plan digests are also checked independently by
+# paper_preflight.py below, which records their exact file identities in the
+# immutable provenance envelope.  Clear the completion sentinel first so a
+# direct invocation cannot inherit a false success claim from its caller.
+unset PAPER_SMOKE_VALIDATOR_CHECK_COMPLETED
+case "$JOB_KEY" in
+  formal-*)
+    SMOKE_GATE_VALIDATOR="$REPO/benchmark/kvcomp-codec/validate_hayatequant_smoke_gate.py"
+    [ -f "$SMOKE_GATE_VALIDATOR" ] || {
+      printf 'Formal smoke gate validator is missing: %s\n' "$SMOKE_GATE_VALIDATOR" >&2
+      exit 2
+    }
+    "$PYTHON" "$SMOKE_GATE_VALIDATOR" check \
+      --run-root "$RUN_ROOT" \
+      --expected-commit "$CODE_REPO_COMMIT" \
+      --input-manifest "$INPUT_MANIFEST" \
+      --input-manifest-sha256 "$INPUT_MANIFEST_SHA256" \
+      --approval-marker "$SMOKE_APPROVAL_MARKER"
+    export PAPER_SMOKE_VALIDATOR_CHECK_COMPLETED="${SMOKE_APPROVAL_MARKER_SHA256}:${SMOKE_VALIDATED_PLAN_SHA256}"
+    ;;
+esac
+
 PREFLIGHT=(
   "$PYTHON" "$REPO/benchmark/kvcomp-codec/paper_preflight.py"
   --repo "$REPO"
@@ -264,6 +339,16 @@ PREFLIGHT+=(
   --input-manifest "$INPUT_MANIFEST"
   --expected-input-manifest-sha256 "$INPUT_MANIFEST_SHA256"
 )
+case "$JOB_KEY" in
+  formal-*)
+    PREFLIGHT+=(
+      --run-root "$RUN_ROOT"
+      --smoke-approval-marker "$SMOKE_APPROVAL_MARKER"
+      --expected-smoke-approval-marker-sha256 "$SMOKE_APPROVAL_MARKER_SHA256"
+      --expected-smoke-validated-plan-sha256 "$SMOKE_VALIDATED_PLAN_SHA256"
+    )
+    ;;
+esac
 for file in "${DATASET_FILES[@]}"; do
   PREFLIGHT+=(--dataset-file "$file")
 done

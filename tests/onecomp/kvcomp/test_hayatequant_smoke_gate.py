@@ -256,8 +256,17 @@ def _populate_axis_accounting(axis: dict, *, kind: str, method: str, n: int) -> 
     elif kind == "math500":
         records = []
         axis["per_question"] = []
-        for _ in range(n):
+        for index in range(n):
             sample = _compression_record(method, input_tokens=100, max_new=256, generated=4)
+            sample.update(
+                {
+                    "generated_text": f"reasoning {index} final answer {index}",
+                    "raw_generated_text": f"reasoning {index} final answer {index}",
+                    "grading_input": "generated_text",
+                    "legacy_regex_extracted_answer_non_grading": str(index),
+                    "correct": index == 0,
+                }
+            )
             records.append(sample)
             axis["per_question"].append({"input_tokens": 100, "samples": [sample]})
     else:
@@ -268,6 +277,13 @@ def _populate_axis_accounting(axis: dict, *, kind: str, method: str, n: int) -> 
             method, n
         )
     axis["compression_sufficient_statistics"] = _compression_statistics(method, n)
+    if kind == "math500":
+        axis["eviction_applicable"] = False
+        axis["eviction_fired"] = None
+        axis["compression_ratio"] = 1.0 if method == "FullKV" else 4.0
+        axis["compression_ratio_aggregation"] = (
+            "fullkv_no_cache" if method == "FullKV" else "exact_sum_fp16_bits_over_sum_stored_bits"
+        )
     return axis
 
 
@@ -848,6 +864,24 @@ def test_tampered_scientific_smoke_config_is_rejected(tmp_path):
         )
 
 
+def test_zeroshot_device_tamper_is_rejected_even_with_rehashed_config(tmp_path):
+    run_root, input_manifest, input_sha256, commit = _build_completed_smoke(tmp_path)
+    spec = next(spec for spec in gate.SMOKE_PLAN if spec["key"] == "zeroshot")
+    result_path = run_root / spec["path"]
+    document = json.loads(result_path.read_text(encoding="utf-8"))
+    document["config"]["device"] = "cuda:1"
+    document["run_fingerprint"] = gate._canonical_sha256(document["config"])
+    _write(result_path, document)
+
+    with pytest.raises(gate.SmokeGateError, match="exact smoke plan"):
+        gate.validate_smoke_plan(
+            run_root=run_root,
+            expected_commit=commit,
+            input_manifest=input_manifest,
+            input_manifest_sha256=input_sha256,
+        )
+
+
 def test_ruler_smoke_rejects_canonical_protocol_relabel(tmp_path):
     run_root, input_manifest, input_sha256, commit = _build_completed_smoke(tmp_path)
     result_path = run_root / gate.SMOKE_PLAN[2]["path"]
@@ -858,6 +892,45 @@ def test_ruler_smoke_rejects_canonical_protocol_relabel(tmp_path):
     _write(result_path, document)
 
     with pytest.raises(gate.SmokeGateError, match="RULER smoke metric/protocol"):
+        gate.validate_smoke_plan(
+            run_root=run_root,
+            expected_commit=commit,
+            input_manifest=input_manifest,
+            input_manifest_sha256=input_sha256,
+        )
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("ambiguous_extraction", "grading audit is ambiguous"),
+        ("missing_legacy_extraction", "grading audit is ambiguous"),
+        ("wrong_grading_input", "grading audit is ambiguous"),
+        ("fake_eviction", "non-eviction provenance"),
+        ("stale_fullkv_display", "FullKV displayed accounting"),
+    ],
+)
+def test_math_smoke_rejects_misleading_raw_schema(tmp_path, mutation, message):
+    run_root, input_manifest, input_sha256, commit = _build_completed_smoke(tmp_path)
+    result_path = run_root / gate.SMOKE_PLAN[4]["path"]
+    document = json.loads(result_path.read_text(encoding="utf-8"))
+    full = document["results"]["FullKV"]["math500"]
+    sample = full["per_question"][0]["samples"][0]
+    if mutation == "ambiguous_extraction":
+        sample["extracted_answer"] = "0"
+    elif mutation == "missing_legacy_extraction":
+        sample.pop("legacy_regex_extracted_answer_non_grading")
+    elif mutation == "wrong_grading_input":
+        sample["grading_input"] = "legacy_regex"
+    elif mutation == "fake_eviction":
+        full["eviction_applicable"] = True
+        full["eviction_fired"] = True
+    else:
+        full["compression_ratio_aggregation"] = (
+            "legacy_arithmetic_mean_per_generation_ratio_no_exact_counters"
+        )
+    _write(result_path, document)
+    with pytest.raises(gate.SmokeGateError, match=message):
         gate.validate_smoke_plan(
             run_root=run_root,
             expected_commit=commit,

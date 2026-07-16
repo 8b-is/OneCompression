@@ -165,9 +165,80 @@ def test_reasoning_full_generation_scorer_receives_untruncated_text(monkeypatch)
     assert seen == [(generated_text, r"\frac{1}{2}")]
     assert result.pass_at_1 == 1.0
     sample = result.per_question[0]["samples"][0]
-    assert sample["extracted_answer"] == r"\frac{1}{2}"
+    assert "extracted_answer" not in sample
+    assert sample["grading_input"] == "generated_text"
+    assert sample["legacy_regex_extracted_answer_non_grading"] == r"\frac{1}{2}"
     assert sample["generated_text"] == generated_text
-    assert result.as_dict()["generation_config"]["max_new_tokens"] == 8
+    document = result.as_dict()
+    assert document["generation_config"]["max_new_tokens"] == 8
+    assert document["eviction_applicable"] is False
+    assert document["eviction_fired"] is None
+
+
+def test_math_verify_polar_answer_never_confuses_legacy_regex_with_grading_input(monkeypatch):
+    pytest.importorskip("math_verify")
+    generated_text = (
+        r"Therefore the polar coordinates are $(3, \frac{\pi}{2})$. "
+        r"The final answer is $(3, \frac{\pi}{2})$."
+    )
+
+    class Model:
+        device = torch.device("cpu")
+
+    class Tokenizer:
+        def decode(self, _tokens, **_kwargs):
+            return generated_text
+
+    monkeypatch.setattr(
+        reasoning_eval, "_build_prompt", lambda *_args, **_kwargs: torch.tensor([[1]])
+    )
+    monkeypatch.setattr(
+        reasoning_eval,
+        "_generate",
+        lambda *_args, **_kwargs: (
+            torch.tensor([2]),
+            1.0,
+            None,
+            {
+                "compression_fp16_bits": None,
+                "compression_stored_bits": None,
+                "compression_aggregation": "fullkv_no_cache",
+                "adaptive_hq_runtime": None,
+            },
+        ),
+    )
+    scorer, _ = reasoning_eval._build_math_verify_scorer()
+    result = reasoning_eval._eval_dataset(
+        Model(),
+        Tokenizer(),
+        [("question", r"\left( 3, \frac{\pi}{2} \right)")],
+        str,
+        "math500",
+        lambda: object(),
+        1,
+        8,
+        False,
+        0.6,
+        0.95,
+        None,
+        False,
+        answer_eq=scorer,
+        score_full_generation=True,
+    )
+    sample = result.per_question[0]["samples"][0]
+    assert sample["correct"] is True
+    assert sample["legacy_regex_extracted_answer_non_grading"] == "2"
+    assert sample["grading_input"] == "generated_text"
+    assert "extracted_answer" not in sample
+    assert result.compression_ratio_aggregation == "fullkv_no_cache"
+    assert result.eviction_applicable is False
+    assert result.eviction_fired is None
+
+
+def test_reasoning_result_rejects_nonapplicable_eviction_event():
+    result = ReasoningResult("math500", 1, 1, 1.0, 1.0, eviction_fired=True)
+    with pytest.raises(ValueError, match="Non-applicable eviction"):
+        result.as_dict()
 
 
 def test_reasoning_compression_ratio_uses_summed_exact_bit_counters(monkeypatch):

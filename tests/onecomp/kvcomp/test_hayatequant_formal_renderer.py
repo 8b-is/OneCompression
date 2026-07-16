@@ -863,6 +863,8 @@ def _math_axis() -> dict:
                 "n": 500,
                 "coverage": [0, 500],
                 "audit_records_validated": 500,
+                "eviction_applicable": False,
+                "eviction_fired": None,
                 "shards": ["/formal/math.json"],
             }
             methods[method].update(
@@ -874,6 +876,7 @@ def _math_axis() -> dict:
         "commit": COMMIT,
         "grader": "Math-Verify 0.9.0",
         "protocol_scope": renderer.MATH500_PROTOCOL_SCOPE,
+        "grading_input": "generated_text",
         "official_reference_gold_serialization_exact": False,
         "gold_serialization": renderer.MATH500_GOLD_SERIALIZATION,
         "aggregation": "exact",
@@ -1424,6 +1427,19 @@ def _formal_metadata(document: dict) -> tuple[dict, dict]:
         axis: {source["path"] for source in document[axis]["sources"]}
         for axis in renderer.REQUIRED_AXES
     }
+    smoke_keys = list(renderer.FORMAL_SMOKE_JOB_KEYS)
+
+    def smoke_records(root: str) -> list[dict]:
+        return [
+            {
+                "key": key,
+                "path": f"/formal/{root}/{index:02d}-{key}.json",
+                "bytes": index + 1,
+                "sha256": f"{index + 1:064x}",
+            }
+            for index, key in enumerate(smoke_keys)
+        ]
+
     formal_provenance = {
         "input_manifest": {"path": input_path, "sha256": input_sha256},
         "models": {
@@ -1443,6 +1459,28 @@ def _formal_metadata(document: dict) -> tuple[dict, dict]:
         ],
         "axis_source_counts": {axis: len(paths) for axis, paths in source_paths.items()},
         "validated_source_files": len(set().union(*source_paths.values())),
+        "formal_smoke_approval": {
+            "verification_mode": renderer.FORMAL_SMOKE_APPROVAL_VERIFICATION_MODE,
+            "marker": {
+                "path": "/formal/manifests/formal_smoke_approval.json",
+                "bytes": 4096,
+                "sha256": "d" * 64,
+            },
+            "validated_plan_sha256": "e" * 64,
+            "smoke_plan_identity": {
+                "version": renderer.FORMAL_SMOKE_PLAN_VERSION,
+                "sha256": "f" * 64,
+            },
+            "code_commit": COMMIT,
+            "input_manifest": {
+                "path": input_path,
+                "bytes": 1,
+                "sha256": input_sha256,
+            },
+            "completed_job_keys": smoke_keys,
+            "results": smoke_records("results/smoke"),
+            "worker_preflights": smoke_records("provenance"),
+        },
         "quality_runtime": {
             "fingerprint_sha256": runtime_fingerprint,
             "normalized": normalized_runtime,
@@ -1782,6 +1820,16 @@ def test_cross_include_identity_is_content_addressed(tmp_path):
             ),
             "complete pinned Math-Verify",
         ),
+        (
+            lambda doc: doc["math500"].__setitem__("grading_input", "extracted_answer"),
+            "complete pinned Math-Verify",
+        ),
+        (
+            lambda doc: doc["math500"]["models"][renderer.LONG_MODELS[0]]["FullKV"].__setitem__(
+                "eviction_fired", True
+            ),
+            "non-eviction provenance",
+        ),
     ],
 )
 def test_renderer_rejects_new_protocol_contract_drift(tmp_path, mutation, message):
@@ -1896,6 +1944,48 @@ def test_renderer_rejects_incomplete_or_legacy_matrix_before_write(tmp_path, mut
                 "model_path", "relative/model"
             ),
             "model identity is malformed",
+        ),
+        (
+            lambda doc: doc["formal_provenance"].pop("formal_smoke_approval"),
+            "keys differ",
+        ),
+        (
+            lambda doc: doc["formal_provenance"]["formal_smoke_approval"].__setitem__(
+                "validated_plan_sha256", "0"
+            ),
+            "smoke approval binding identity",
+        ),
+        (
+            lambda doc: doc["formal_provenance"]["formal_smoke_approval"]["results"].reverse(),
+            "order/key identity",
+        ),
+        (
+            lambda doc: doc["formal_provenance"]["formal_smoke_approval"]["worker_preflights"][
+                0
+            ].__setitem__("path", "/outside/preflight.json"),
+            "escapes",
+        ),
+        (
+            lambda doc: doc["formal_provenance"]["formal_smoke_approval"]["results"].__setitem__(
+                1,
+                dict(
+                    doc["formal_provenance"]["formal_smoke_approval"]["results"][0],
+                    key=doc["formal_provenance"]["formal_smoke_approval"]["results"][1]["key"],
+                ),
+            ),
+            "duplicate path",
+        ),
+        (
+            lambda doc: doc["formal_provenance"]["formal_smoke_approval"][
+                "input_manifest"
+            ].__setitem__("bytes", 999999),
+            "differs from the dataset ledger",
+        ),
+        (
+            lambda doc: doc["formal_provenance"]["formal_smoke_approval"].__setitem__(
+                "validated_plan_sha256", "A" * 64
+            ),
+            "smoke approval binding identity",
         ),
     ],
 )

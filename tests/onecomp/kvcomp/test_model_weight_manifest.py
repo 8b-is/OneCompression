@@ -34,6 +34,80 @@ def _write_json(path: Path, document) -> None:
     path.write_text(json.dumps(document, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _file_record(path: Path) -> dict:
+    return {
+        "path": str(path.resolve()),
+        "bytes": path.stat().st_size,
+        "sha256": _digest(path),
+    }
+
+
+def _approved_smoke(tmp_path: Path, *, commit: str = "a" * 40) -> dict:
+    run_root = tmp_path / "run"
+    input_manifest = run_root / "manifests/inputs.json"
+    _write_json(input_manifest, {"schema_version": 2, "status": "ok"})
+    result_records = []
+    preflight_paths = {}
+    for key in preflight.SMOKE_JOB_KEYS:
+        result = run_root / "results/smoke" / f"{key}.json"
+        if key == "native-hybrid":
+            document = {"kind": "native-smoke", "status": "ok"}
+        else:
+            worker = run_root / "provenance" / f"smoke-{key}_123.json"
+            worker_document = {
+                "schema_version": 1,
+                "code": {"commit": commit, "tracked_dirty": False},
+                "job_key": key,
+            }
+            _write_json(worker, worker_document)
+            preflight_paths[key] = worker
+            document = {
+                "run_provenance": [
+                    {
+                        "path": str(worker.resolve()),
+                        "sha256": _digest(worker),
+                        "record": worker_document,
+                    }
+                ]
+            }
+        _write_json(result, document)
+        result_records.append({"key": key, **_file_record(result)})
+    native_worker = run_root / "provenance/smoke-native-hybrid_123.json"
+    _write_json(native_worker, {"schema_version": 1, "job_key": "native-hybrid"})
+    preflight_paths["native-hybrid"] = native_worker
+    plan = {
+        "smoke_plan_version": preflight.SMOKE_PLAN_VERSION,
+        "smoke_plan_sha256": "b" * 64,
+        "code_commit": commit,
+        "input_manifest": _file_record(input_manifest),
+        "results": result_records,
+        "native_worker_preflights": [_file_record(native_worker)],
+        "completed_job_keys": list(preflight.SMOKE_JOB_KEYS),
+    }
+    marker = run_root / "manifests/formal_smoke_approval.json"
+    _write_json(
+        marker,
+        {
+            "schema_version": preflight.SMOKE_APPROVAL_SCHEMA_VERSION,
+            "kind": preflight.SMOKE_APPROVAL_KIND,
+            "approval_statement": preflight.SMOKE_APPROVAL_STATEMENT,
+            "approved_at_utc": "2026-07-16T00:00:00+00:00",
+            "approved_by": {"user": "pytest", "host": "localhost"},
+            "validated_plan": plan,
+        },
+    )
+    return {
+        "run_root": run_root,
+        "input_manifest": input_manifest,
+        "commit": commit,
+        "marker": marker,
+        "marker_sha256": _digest(marker),
+        "plan_sha256": preflight._canonical_sha256(plan),
+        "results": {record["key"]: Path(record["path"]) for record in result_records},
+        "preflights": preflight_paths,
+    }
+
+
 def _model(root: Path) -> Path:
     model = root / "model"
     _write_json(model / "config.json", {"model_type": "synthetic"})
@@ -208,3 +282,60 @@ def test_worker_rehashes_every_absolute_manifest_file_and_rejects_unpinned_datas
         preflight._verify_pinned_input_files(
             str(manifest), expected_input_manifest_sha256=_digest(manifest)
         )
+
+
+def _verify_approved_smoke(campaign: dict) -> dict:
+    return preflight._verify_smoke_approval_binding(
+        marker=campaign["marker"],
+        run_root=campaign["run_root"],
+        expected_commit=campaign["commit"],
+        input_manifest=campaign["input_manifest"],
+        expected_input_manifest_sha256=_digest(campaign["input_manifest"]),
+        expected_marker_sha256=campaign["marker_sha256"],
+        expected_validated_plan_sha256=campaign["plan_sha256"],
+    )
+
+
+def test_formal_worker_preflight_records_exact_smoke_approval_binding(tmp_path):
+    campaign = _approved_smoke(tmp_path)
+    binding = _verify_approved_smoke(campaign)
+    assert binding["marker"] == _file_record(campaign["marker"])
+    assert binding["validated_plan_sha256"] == campaign["plan_sha256"]
+    assert binding["code_commit"] == campaign["commit"]
+    assert binding["input_manifest"] == _file_record(campaign["input_manifest"])
+    assert [row["key"] for row in binding["results"]] == list(preflight.SMOKE_JOB_KEYS)
+    assert [row["key"] for row in binding["worker_preflights"]] == list(preflight.SMOKE_JOB_KEYS)
+
+
+@pytest.mark.parametrize("kind", ["result", "preflight"])
+@pytest.mark.parametrize("action", ["delete", "change"])
+def test_formal_worker_rejects_changed_or_deleted_approved_smoke_file(tmp_path, kind, action):
+    campaign = _approved_smoke(tmp_path)
+    target = campaign["results"]["ppl"] if kind == "result" else campaign["preflights"]["ppl"]
+    if action == "delete":
+        target.unlink()
+    else:
+        _write_json(target, {"tampered": True})
+    with pytest.raises(RuntimeError, match="missing|changed"):
+        _verify_approved_smoke(campaign)
+
+
+def test_formal_worker_rejects_deleted_or_replaced_approval_marker(tmp_path):
+    campaign = _approved_smoke(tmp_path / "deleted")
+    campaign["marker"].unlink()
+    with pytest.raises(RuntimeError, match="missing"):
+        _verify_approved_smoke(campaign)
+
+    campaign = _approved_smoke(tmp_path / "replaced")
+    replacement = json.loads(campaign["marker"].read_text(encoding="utf-8"))
+    replacement["approved_at_utc"] = "2026-07-16T00:00:01+00:00"
+    _write_json(campaign["marker"], replacement)
+    with pytest.raises(RuntimeError, match="submit-time SHA-256"):
+        _verify_approved_smoke(campaign)
+
+
+def test_formal_worker_rejects_different_validated_plan_binding(tmp_path):
+    campaign = _approved_smoke(tmp_path)
+    campaign["plan_sha256"] = "0" * 64
+    with pytest.raises(RuntimeError, match="validated plan differs"):
+        _verify_approved_smoke(campaign)

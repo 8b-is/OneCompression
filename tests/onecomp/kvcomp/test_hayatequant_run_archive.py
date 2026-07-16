@@ -345,6 +345,130 @@ def test_redacted_credentials_token_metrics_and_hashes_are_not_false_positives(t
     assert (destination / "logs/safe.json").exists()
 
 
+@pytest.mark.parametrize(
+    ("field_name", "secret"),
+    (
+        ("access_token", "abc12345"),
+        ("api-key", "shortkey"),
+        ("apiKey", "shortkey"),
+        ("password", "hunter2x"),
+        ("Authorization", "basic123"),
+    ),
+)
+def test_structured_credential_fields_are_rejected_even_for_short_values(
+    tmp_path, field_name, secret
+):
+    run = _minimal_run(tmp_path)
+    _json(run / "logs/credential.json", {field_name: secret})
+    archive_root = tmp_path / "archives"
+
+    with pytest.raises(archiver.ArchiveError, match="credential field") as raised:
+        _archive(run, archive_root)
+    assert secret not in str(raised.value)
+    assert not (archive_root / "formal-20260716").exists()
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    ("generated_text", "prediction", "raw_generated_text", "raw_prediction"),
+)
+def test_benign_high_entropy_model_output_text_is_archived(tmp_path, field_name):
+    run = _minimal_run(tmp_path)
+    benign_generated_text = (
+        "A model may legitimately emit an opaque identifier: "
+        + "Ab9Qx_2Lm7.Pv4Rk8_"
+        + "Ns5Tw1.Yc6Hd3Fj0ZgKu8Ee"
+    )
+    assert archiver._generic_secret_reason(benign_generated_text.encode()) == "high-entropy token"
+    _json(
+        run / "results/formal/longbench.json",
+        {"per_example": [{field_name: benign_generated_text}]},
+    )
+
+    destination = _archive(run, tmp_path / "archives")
+    assert (destination / "results/formal/longbench.json").exists()
+
+
+@pytest.mark.parametrize(
+    "secret",
+    (
+        "hf_abcdef" + "ghijklmnopqrstuvwxyz012345",
+        "Authorization: " + "Bearer abcdef" + "ghijklmnopqrstuvwxyz0123456789",
+        "-----BEGIN OPENSSH " + "PRIVATE KEY-----",
+        "access_token=" + "Ab9Qx_2Lm7.Pv4Rk8_" + "Ns5Tw1Yc6Hd3Fj0ZgKu8Ee",
+    ),
+)
+def test_known_secret_inside_model_output_is_still_rejected_without_echo(tmp_path, secret):
+    run = _minimal_run(tmp_path)
+    _json(
+        run / "results/formal/longbench.json",
+        {"per_example": [{"generated_text": secret}]},
+    )
+    archive_root = tmp_path / "archives"
+
+    with pytest.raises(archiver.ArchiveError, match="secret-like content") as raised:
+        _archive(run, archive_root)
+    assert secret not in str(raised.value)
+    assert not (archive_root / "formal-20260716").exists()
+
+
+def test_high_entropy_json_metadata_remains_rejected(tmp_path):
+    run = _minimal_run(tmp_path)
+    suspicious_metadata = "Ab9Qx_2Lm7.Pv4Rk8_" + "Ns5Tw1.Yc6Hd3Fj0ZgKu8Ee"
+    _json(
+        run / "results/formal/metadata.json",
+        {"run_identifier": suspicious_metadata},
+    )
+
+    with pytest.raises(archiver.ArchiveError, match="high-entropy token") as raised:
+        _archive(run, tmp_path / "archives")
+    assert suspicious_metadata not in str(raised.value)
+
+
+@pytest.mark.parametrize("nested_value", (["TOKEN"], {"metadata": "TOKEN"}))
+def test_generation_field_exemption_does_not_propagate_to_nested_values(tmp_path, nested_value):
+    run = _minimal_run(tmp_path)
+    suspicious_metadata = "Ab9Qx_2Lm7.Pv4Rk8_" + "Ns5Tw1.Yc6Hd3Fj0ZgKu8Ee"
+    if isinstance(nested_value, list):
+        nested_value[0] = suspicious_metadata
+    else:
+        nested_value["metadata"] = suspicious_metadata
+    _json(
+        run / "results/formal/malformed-generation-field.json",
+        {"generated_text": nested_value},
+    )
+
+    with pytest.raises(archiver.ArchiveError, match="high-entropy token") as raised:
+        _archive(run, tmp_path / "archives")
+    assert suspicious_metadata not in str(raised.value)
+
+
+def test_structured_linux_platform_metadata_is_not_a_generic_entropy_false_positive(tmp_path):
+    run = _minimal_run(tmp_path)
+    platform = "Linux-5.15.0-139-generic-x86_64-with-glibc2.35"
+    assert archiver._generic_token_looks_secret(platform.encode())
+    assert archiver._generic_secret_reason(platform.encode()) is None
+    _json(run / "results/formal/provenance.json", {"host": {"platform": platform}})
+    _write(run / "logs/platform.out", f"host platform: {platform}\n".encode())
+
+    destination = _archive(run, tmp_path / "archives")
+    assert (destination / "results/formal/provenance.json").exists()
+    assert (destination / "logs/platform.out").exists()
+
+
+def test_duplicate_json_keys_are_rejected_before_contextual_secret_exemptions(tmp_path):
+    run = _minimal_run(tmp_path)
+    suspicious_metadata = "Ab9Qx_2Lm7.Pv4Rk8_" + "Ns5Tw1.Yc6Hd3Fj0ZgKu8Ee"
+    payload = (
+        b'{"run_identifier":"' + suspicious_metadata.encode() + b'","run_identifier":"safe"}\n'
+    )
+    _write(run / "results/formal/duplicate.json", payload)
+
+    with pytest.raises(archiver.ArchiveError, match="malformed structured JSON") as raised:
+        _archive(run, tmp_path / "archives")
+    assert suspicious_metadata not in str(raised.value)
+
+
 def test_secret_like_archive_command_is_rejected_without_echoing_secret(tmp_path):
     run = _minimal_run(tmp_path)
     secret = "Ab9Qx_2Lm7.Pv4Rk8_Ns5Tw1.Yc6Hd3Fj0ZgKu8Ee"

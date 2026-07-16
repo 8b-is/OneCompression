@@ -124,7 +124,12 @@ class ReasoningResult:
     per_question: List[dict] = field(default_factory=list)
     pass_at_1_stderr: float = 0.0  # SE of the mean over questions
     pass_at_1_ci95: tuple = (0.0, 0.0)  # normal 95% interval
-    eviction_fired: bool = True  # False if an eviction cache never trimmed
+    # Eviction is a distinct cache policy, not a synonym for quantization or
+    # ``use_cache``.  Keep applicability explicit so FullKV/static quantizers do
+    # not serialize the false statement ``eviction_fired=true`` merely as an
+    # N/A sentinel.
+    eviction_applicable: bool = False
+    eviction_fired: Optional[bool] = None
     observed_pass_at_k: Optional[float] = None
     dataset_size: Optional[int] = None
     grader: Optional[str] = None
@@ -144,6 +149,13 @@ class ReasoningResult:
         # ThinKV reports pass@1 as the mean correctness of k independent samples.
         # "At least one of k" is a different metric and is exposed under an
         # explicit diagnostic key so it cannot silently replace pass@1 again.
+        if not isinstance(self.eviction_applicable, bool):
+            raise TypeError("eviction_applicable must be a bool")
+        if self.eviction_applicable:
+            if not isinstance(self.eviction_fired, bool):
+                raise ValueError("Applicable eviction requires a boolean eviction_fired value")
+        elif self.eviction_fired is not None:
+            raise ValueError("Non-applicable eviction requires eviction_fired=None")
         pass_at_1_sum = (
             float(self.pass_at_1_sum)
             if self.pass_at_1_sum is not None
@@ -159,6 +171,7 @@ class ReasoningResult:
             "avg_gen_len": round(self.avg_gen_len, 1),
             "compression_ratio": round(self.compression_ratio, 3),
             "compression_ratio_aggregation": self.compression_ratio_aggregation,
+            "eviction_applicable": self.eviction_applicable,
             "eviction_fired": self.eviction_fired,
             "pass@1_sum": pass_at_1_sum,
             "selection": {
@@ -783,7 +796,10 @@ def _generate(
         if (past is not None and hasattr(past, "compression_ratio"))
         else 1.0
     )
-    return gen, float(ratio), True, cache_compression_sufficient_statistics(past)
+    # This path covers FullKV and length-preserving/static quantization.  It
+    # never invokes an eviction policy, so the event is not applicable rather
+    # than true or false.
+    return gen, float(ratio), None, cache_compression_sufficient_statistics(past)
 
 
 def _truncate_at_stop(text: str, stop_sequences) -> tuple[str, Optional[str]]:
@@ -890,7 +906,7 @@ def _eval_dataset(
     per_q: List[dict] = []
     fired_all = True
     saw_eviction = False
-    fired_values: List[bool] = []
+    fired_values: List[Optional[bool]] = []
     pass_k_values: List[float] = []
     answer_eq = answer_eq or (
         lambda pred, gold: _normalize_number(pred) == _normalize_number(gold)
@@ -933,8 +949,8 @@ def _eval_dataset(
                 or float(ratio) <= 0.0
             ):
                 raise RuntimeError(f"Reasoning cache returned invalid compression ratio {ratio!r}")
-            if not isinstance(fired, bool):
-                raise TypeError("Reasoning generator eviction flag must be a bool")
+            if fired is not None and not isinstance(fired, bool):
+                raise TypeError("Reasoning generator eviction flag must be a bool or None")
             if (
                 not isinstance(gen, torch.Tensor)
                 or gen.ndim != 1
@@ -956,18 +972,35 @@ def _eval_dataset(
             )
             correct += int(is_correct)
             any_correct = any_correct or is_correct
-            sample_records.append(
-                {
-                    "seed": seed,
-                    "generated_text": text,
-                    "raw_generated_text": raw_text,
-                    "extracted_answer": pred,
-                    "generated_tokens": int(gen.shape[0]),
-                    "matched_stop_sequence": matched_stop,
-                    "correct": is_correct,
-                    **compression,
-                }
-            )
+            sample_record = {
+                "seed": seed,
+                "generated_text": text,
+                "raw_generated_text": raw_text,
+                "generated_tokens": int(gen.shape[0]),
+                "matched_stop_sequence": matched_stop,
+                "correct": is_correct,
+                **compression,
+            }
+            if score_full_generation:
+                # Math-Verify parses the complete response using its own
+                # LaTeX/expression extractors.  ``extract_answer`` is retained
+                # only as a clearly named human-debugging diagnostic: for
+                # example, it returns ``2`` for the correct pair
+                # ``(3, pi/2)`` and must never look like the grading input.
+                sample_record.update(
+                    {
+                        "grading_input": "generated_text",
+                        "legacy_regex_extracted_answer_non_grading": pred,
+                    }
+                )
+            else:
+                sample_record.update(
+                    {
+                        "grading_input": "extracted_answer",
+                        "extracted_answer": pred,
+                    }
+                )
+            sample_records.append(sample_record)
         # ThinKV's reported pass@1 is the average correctness across k independent
         # responses. Keep observed any-correct only as a separately named diagnostic.
         p1 = correct / k
@@ -993,7 +1026,9 @@ def _eval_dataset(
     probe = cache_factory() if cache_factory is not None else None
     if probe is not None and hasattr(probe, "evict_now"):
         saw_eviction = True
-        fired_all = bool(fired_values) and any(fired_values)
+        if any(value is None for value in fired_values):
+            raise RuntimeError("Eviction cache generation omitted its eviction event record")
+        fired_all = bool(fired_values) and any(bool(value) for value in fired_values)
         if not fired_all:
             logger.warning(
                 "[%s] eviction cache did not trim (compression_ratio~1): the "
@@ -1012,7 +1047,7 @@ def _eval_dataset(
             float("inf") if exact_stored_bits == 0 else exact_fp16_bits / exact_stored_bits
         )
         compression_ratio_aggregation = "exact_sum_fp16_bits_over_sum_stored_bits"
-    elif cache_factory is None:
+    elif compression_statistics["compression_aggregation"] == "fullkv_no_cache":
         displayed_compression_ratio = 1.0
         compression_ratio_aggregation = "fullkv_no_cache"
     else:
@@ -1035,7 +1070,8 @@ def _eval_dataset(
         per_question=per_q,
         pass_at_1_stderr=se,
         pass_at_1_ci95=ci,
-        eviction_fired=(fired_all if saw_eviction else True),
+        eviction_applicable=saw_eviction,
+        eviction_fired=(fired_all if saw_eviction else None),
         observed_pass_at_k=(sum(pass_k_values) / len(pass_k_values) if pass_k_values else None),
         dataset_size=dataset_size,
         grader=grader,

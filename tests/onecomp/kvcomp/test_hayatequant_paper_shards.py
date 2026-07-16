@@ -314,6 +314,40 @@ def _model_path(model: str) -> str:
     return f"/models/{model}"
 
 
+def _formal_smoke_approval_fixture(input_manifest: dict) -> dict:
+    keys = list(shards.FORMAL_SMOKE_JOB_KEYS)
+
+    def records(root: str) -> list[dict]:
+        return [
+            {
+                "key": key,
+                "path": f"/run/{root}/{index:02d}-{key}.json",
+                "bytes": index + 1,
+                "sha256": f"{index + 1:064x}",
+            }
+            for index, key in enumerate(keys)
+        ]
+
+    return {
+        "verification_mode": shards.FORMAL_SMOKE_APPROVAL_VERIFICATION_MODE,
+        "marker": {
+            "path": "/run/manifests/formal_smoke_approval.json",
+            "bytes": 4096,
+            "sha256": "d" * 64,
+        },
+        "validated_plan_sha256": "e" * 64,
+        "smoke_plan_identity": {
+            "version": shards.FORMAL_SMOKE_PLAN_VERSION,
+            "sha256": "f" * 64,
+        },
+        "code_commit": "test-commit",
+        "input_manifest": dict(input_manifest),
+        "completed_job_keys": keys,
+        "results": records("results/smoke"),
+        "worker_preflights": records("provenance"),
+    }
+
+
 def _run_provenance(
     model: str,
     *,
@@ -323,7 +357,7 @@ def _run_provenance(
 ) -> list[dict]:
     if input_manifest is None:
         input_manifest = {
-            "path": "/manifests/paper-inputs.json",
+            "path": "/run/manifests/paper-inputs.json",
             "bytes": 123,
             "sha256": "b" * 64,
         }
@@ -420,6 +454,7 @@ def _run_provenance(
                 },
                 "dataset_files": dataset_files,
                 "environment": environment,
+                "formal_smoke_approval": _formal_smoke_approval_fixture(input_manifest),
             },
         }
     ]
@@ -468,6 +503,26 @@ def test_formal_provenance_requires_declared_commit_and_reproducible_fingerprint
     shards._require_run_provenance(document, path=tmp_path / "result.json")
 
 
+def test_formal_provenance_accepts_config_fingerprint_without_semantic_config(tmp_path):
+    config = {
+        "schema_version": 2,
+        "model_path": _model_path("model"),
+        "device": "cuda:0",
+        "code_commit": "test-commit",
+    }
+    document = {
+        "schema_version": 2,
+        "model": "model",
+        "config": config,
+        "run_fingerprint": hashlib.sha256(
+            json.dumps(config, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest(),
+        "run_provenance": _run_provenance("model"),
+    }
+
+    shards._require_run_provenance(document, path=tmp_path / "result.json")
+
+
 def test_preflight_rejects_model_and_external_codebook_identity_drift(tmp_path):
     document = {
         "model": "model",
@@ -481,6 +536,52 @@ def test_preflight_rejects_model_and_external_codebook_identity_drift(tmp_path):
     document["run_provenance"] = _run_provenance("model")
     document["run_provenance"][0]["record"]["environment"]["KVCOMP_CODEBOOK_DIR"] = "/external"
     with pytest.raises(shards.AggregateError, match="external KV codebook"):
+        shards._require_run_provenance(document, path=tmp_path / "result.json")
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        (lambda approval: approval.clear(), "smoke-approval binding"),
+        (
+            lambda approval: approval.__setitem__("validated_plan_sha256", "0"),
+            "approval identity",
+        ),
+        (
+            lambda approval: approval.__setitem__("validated_plan_sha256", "A" * 64),
+            "approval identity",
+        ),
+        (
+            lambda approval: approval["results"].reverse(),
+            "order/key identity",
+        ),
+        (
+            lambda approval: approval["worker_preflights"][0].__setitem__(
+                "path", "/outside/ppl.json"
+            ),
+            "escapes",
+        ),
+        (
+            lambda approval: approval["results"].__setitem__(
+                1, dict(approval["results"][0], key=approval["results"][1]["key"])
+            ),
+            "duplicate path",
+        ),
+        (
+            lambda approval: approval.__setitem__("code_commit", "other-commit"),
+            "approval identity",
+        ),
+    ],
+)
+def test_preflight_rejects_missing_or_malformed_worker_smoke_binding(mutation, message, tmp_path):
+    document = {
+        "model": "model",
+        "config": {"model_path": _model_path("model")},
+        "run_provenance": _run_provenance("model"),
+    }
+    approval = document["run_provenance"][0]["record"]["formal_smoke_approval"]
+    mutation(approval)
+    with pytest.raises(shards.AggregateError, match=message):
         shards._require_run_provenance(document, path=tmp_path / "result.json")
 
 
@@ -515,16 +616,20 @@ def _cross_axis_source(
     weight_sha256: str = "c" * 64,
     torch_version: str = "2.8.0",
     fuzzy_backend: str = "python-difflib",
+    smoke_validated_plan_sha256: str = "e" * 64,
 ) -> dict:
-    provenance = _run_provenance("model")
     manifest_record = {
         "path": str(input_manifest.resolve()),
         "bytes": input_manifest.stat().st_size,
         "sha256": hashlib.sha256(input_manifest.read_bytes()).hexdigest(),
     }
+    provenance = _run_provenance("model", input_manifest=manifest_record)
     model = provenance[0]["record"]["model"]
     provenance[0]["record"]["packages"]["torch"] = torch_version
     provenance[0]["record"]["packages"]["fuzzywuzzy-backend"] = fuzzy_backend
+    provenance[0]["record"]["formal_smoke_approval"][
+        "validated_plan_sha256"
+    ] = smoke_validated_plan_sha256
     model["input_manifest"] = manifest_record
     model["weights"]["layouts"]["safetensors"]["shards"][0]["sha256"] = weight_sha256
     provenance[0]["record"]["dataset_files"] = [manifest_record]
@@ -632,6 +737,22 @@ def test_formal_matrix_rejects_mixed_quality_runtime_strata(tmp_path):
         shards._finalize_formal_document(document)
 
 
+def test_formal_matrix_rejects_mixed_worker_validated_smoke_approvals(tmp_path):
+    manifest = tmp_path / "paper-inputs.json"
+    manifest.write_text('{"schema_version":1}\n', encoding="utf-8")
+    first = _cross_axis_source(tmp_path, "one", input_manifest=manifest)
+    second = _cross_axis_source(
+        tmp_path,
+        "two",
+        input_manifest=manifest,
+        smoke_validated_plan_sha256="9" * 64,
+    )
+    document = {axis: _axis_document(first) for axis in shards.FORMAL_AXIS_KEYS}
+    document["speed"] = _axis_document(second)
+    with pytest.raises(shards.AggregateError, match="one worker-validated smoke approval"):
+        shards._finalize_formal_document(document)
+
+
 def test_formal_matrix_rejects_longbench_fuzzy_backend_version_drift(tmp_path):
     manifest = tmp_path / "paper-inputs.json"
     manifest.write_text('{"schema_version":1}\n', encoding="utf-8")
@@ -702,6 +823,7 @@ def _zero_doc(start: int, stop: int, *, correct: int, overlap_seed: int = 2027) 
         "sample_seed": 2027,
         "config": {
             "model_path": _model_path("model"),
+            "device": "cuda:0",
             "dtype": "bfloat16",
             "bits": [3],
             "tasks": ["task"],
@@ -873,6 +995,27 @@ def test_zero_shot_rejects_teacher_forcing_protocol_drift(tmp_path):
         )
 
 
+def test_zero_shot_rejects_device_drift_even_with_rehashed_envelope(tmp_path):
+    document = _zero_doc(0, 4, correct=2)
+    document["config"]["device"] = "cuda:1"
+    _write(tmp_path / "zeroshot_device_drift.json", document)
+
+    with pytest.raises(shards.AggregateError, match="Zero-shot device is not cuda:0"):
+        shards.aggregate_zeroshot(
+            tmp_path,
+            expected_models=("model",),
+            task_specs={
+                "task": {
+                    "size": 4,
+                    "split": "test",
+                    "revision": "rev",
+                    "primary": "acc_norm",
+                }
+            },
+            rate_methods={"full": ("FullKV",)},
+        )
+
+
 def _zero_pair_doc(start: int, stop: int, tq_correct: set[int], hq_correct: set[int]) -> dict:
     def method_result(correct_indexes: set[int]) -> dict:
         examples = []
@@ -933,6 +1076,7 @@ def _zero_pair_doc(start: int, stop: int, tq_correct: set[int], hq_correct: set[
         "sample_seed": 2027,
         "config": {
             "model_path": _model_path("model"),
+            "device": "cuda:0",
             "dtype": "bfloat16",
             "bits": [3],
             "tasks": ["task"],
@@ -2196,7 +2340,8 @@ def _math_doc(start: int, stop: int, correct_indexes: set[int]) -> dict:
                             f"reasoning trace {index}\\n\\boxed{{{predicted_answer}}}"
                         ),
                         "matched_stop_sequence": None,
-                        "extracted_answer": str(index),
+                        "grading_input": "generated_text",
+                        "legacy_regex_extracted_answer_non_grading": str(predicted_answer),
                         "generated_tokens": 12,
                         "correct": correct,
                     }
@@ -2217,6 +2362,10 @@ def _math_doc(start: int, stop: int, correct_indexes: set[int]) -> dict:
         "per_question": questions,
         "dataset_size": 4,
         "complete_dataset_eval": False,
+        "compression_ratio": 1.0,
+        "compression_ratio_aggregation": "fullkv_no_cache",
+        "eviction_applicable": False,
+        "eviction_fired": None,
         "grader": "math_verify",
         "grader_version": "0.9.0",
         "grader_config": {
@@ -2341,6 +2490,9 @@ def test_math500_exact_coverage_sums_integer_correct_and_preserves_audit(tmp_pat
     assert row["pass@1"] == 0.75
     assert row["coverage"] == [0, 4]
     assert row["audit_records_validated"] == 4
+    assert row["eviction_applicable"] is False
+    assert row["eviction_fired"] is None
+    assert result["grading_input"] == "generated_text"
 
 
 def test_math500_rejects_missing_full_generation(tmp_path):
@@ -2349,6 +2501,62 @@ def test_math500_rejects_missing_full_generation(tmp_path):
     del document["results"]["FullKV"]["math500"]["per_question"][0]["samples"][0]["generated_text"]
     _write(tmp_path / "results_model.json", document)
     with pytest.raises(shards.AggregateError, match="full generation"):
+        shards.verify_math500(
+            tmp_path,
+            expected_models=("model",),
+            methods=("FullKV",),
+            dataset_size=4,
+            shard_size=2,
+            dataset_revision="math-revision",
+            _dataset_path_override=dataset,
+            _dataset_sha256_override=digest,
+        )
+
+
+def test_math500_rejects_ambiguous_legacy_extracted_answer(tmp_path):
+    dataset, digest = _math500_dataset(tmp_path)
+    document = _math_doc(0, 2, {0})
+    sample = document["results"]["FullKV"]["math500"]["per_question"][0]["samples"][0]
+    sample["extracted_answer"] = "0"
+    _write(tmp_path / "results_model.json", document)
+    with pytest.raises(shards.AggregateError, match="ambiguous extracted_answer"):
+        shards.verify_math500(
+            tmp_path,
+            expected_models=("model",),
+            methods=("FullKV",),
+            dataset_size=4,
+            shard_size=2,
+            dataset_revision="math-revision",
+            _dataset_path_override=dataset,
+            _dataset_sha256_override=digest,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("grading_input", "legacy_regex", "grading input"),
+        ("missing_legacy_extraction", None, "non-grading legacy extraction"),
+        ("eviction_applicable", True, "non-eviction cache provenance"),
+        (
+            "compression_ratio_aggregation",
+            "legacy_arithmetic_mean_per_generation_ratio_no_exact_counters",
+            "FullKV displayed accounting",
+        ),
+    ],
+)
+def test_math500_rejects_misleading_raw_schema(tmp_path, field, value, message):
+    dataset, digest = _math500_dataset(tmp_path)
+    document = _math_doc(0, 2, {0})
+    axis = document["results"]["FullKV"]["math500"]
+    if field == "missing_legacy_extraction":
+        axis["per_question"][0]["samples"][0].pop("legacy_regex_extracted_answer_non_grading")
+    elif field == "grading_input":
+        axis["per_question"][0]["samples"][0][field] = value
+    else:
+        axis[field] = value
+    _write(tmp_path / "results_model.json", document)
+    with pytest.raises(shards.AggregateError, match=message):
         shards.verify_math500(
             tmp_path,
             expected_models=("model",),

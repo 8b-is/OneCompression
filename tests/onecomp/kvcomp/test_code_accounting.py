@@ -84,6 +84,8 @@ def test_code_pass_at_1_uses_exact_summed_compression_counters(monkeypatch):
 
     assert result.compression_ratio == pytest.approx(200 / 75)
     assert result.compression_ratio_aggregation == ("exact_sum_fp16_bits_over_sum_stored_bits")
+    assert result.eviction_applicable is False
+    assert result.eviction_fired is None
     assert result.compression_sufficient_statistics == {
         "compression_fp16_bits": 200,
         "compression_stored_bits": 75,
@@ -118,3 +120,34 @@ def test_code_zero_bit_payload_reports_infinite_compression(monkeypatch):
         max_new_tokens=1,
     )
     assert math.isinf(result.compression_ratio)
+
+
+def test_code_fullkv_factory_uses_non_eviction_fullkv_schema(monkeypatch):
+    monkeypatch.setattr(
+        code_module,
+        "_generate",
+        lambda *_args, **_kwargs: (
+            torch.tensor([1]),
+            1.0,
+            None,
+            {
+                "compression_fp16_bits": None,
+                "compression_stored_bits": None,
+                "compression_aggregation": "fullkv_no_cache",
+                "adaptive_hq_runtime": None,
+            },
+        ),
+    )
+    monkeypatch.setattr(code_module, "run_code", lambda *_args, **_kwargs: (True, "ok"))
+    result = code_module.code_pass_at_1(
+        _Model(),
+        _Tokenizer(),
+        [{"prompt": "p", "entry_point": "answer", "test": "def check(c): pass"}],
+        cache_factory=object,
+        max_new_tokens=1,
+    )
+    document = result.as_dict()
+    assert document["compression_ratio"] == 1.0
+    assert document["compression_ratio_aggregation"] == "fullkv_no_cache"
+    assert document["eviction_applicable"] is False
+    assert document["eviction_fired"] is None

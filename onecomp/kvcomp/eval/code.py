@@ -159,6 +159,7 @@ def code_pass_at_1(
     per_q: List[dict] = []
     pass_k_values: List[float] = []
     fired_all, saw_eviction = True, False
+    eviction_events: List[Optional[bool]] = []
     for problem_idx, prob in enumerate(problems):
         prompt = prob["prompt"]
         entry = prob["entry_point"]
@@ -172,7 +173,7 @@ def code_pass_at_1(
                 else int(sample_seed) + problem_idx * 100_003 + sample_idx
             )
             with _seeded_rng(seed, model.device):
-                gen, ratio, _fired, compression = _generate(
+                gen, ratio, fired, compression = _generate(
                     model,
                     tokenizer,
                     ids,
@@ -185,6 +186,9 @@ def code_pass_at_1(
                 )
             gen_lens.append(int(gen.shape[0]))
             ratios.append(ratio)
+            if fired is not None and not isinstance(fired, bool):
+                raise TypeError("Code generator eviction flag must be a bool or None")
+            eviction_events.append(fired)
             compression_records.append(compression)
             text = tokenizer.decode(gen, skip_special_tokens=True)
             code = extract_code(text, entry)
@@ -200,7 +204,9 @@ def code_pass_at_1(
     probe = cache_factory() if cache_factory is not None else None
     if probe is not None and hasattr(probe, "evict_now"):
         saw_eviction = True
-        fired_all = bool(ratios) and (sum(ratios) / len(ratios)) > 1.0 + 1e-6
+        if any(value is None for value in eviction_events):
+            raise RuntimeError("Eviction cache generation omitted its eviction event record")
+        fired_all = bool(eviction_events) and any(bool(value) for value in eviction_events)
     mean_p1, se, ci = _mean_stderr_ci(p1_values)
     compression_statistics = aggregate_compression_sufficient_statistics(compression_records)
     if compression_statistics["compression_aggregation"] == (
@@ -212,7 +218,7 @@ def code_pass_at_1(
             float("inf") if exact_stored_bits == 0 else exact_fp16_bits / exact_stored_bits
         )
         compression_ratio_aggregation = "exact_sum_fp16_bits_over_sum_stored_bits"
-    elif cache_factory is None:
+    elif compression_statistics["compression_aggregation"] == "fullkv_no_cache":
         displayed_compression_ratio = 1.0
         compression_ratio_aggregation = "fullkv_no_cache"
     else:
@@ -231,7 +237,8 @@ def code_pass_at_1(
         per_question=per_q,
         pass_at_1_stderr=se,
         pass_at_1_ci95=ci,
-        eviction_fired=(fired_all if saw_eviction else True),
+        eviction_applicable=saw_eviction,
+        eviction_fired=(fired_all if saw_eviction else None),
         observed_pass_at_k=(sum(pass_k_values) / len(pass_k_values) if pass_k_values else None),
         dataset_size=dataset_size,
         grader="resource_limited_python_check",

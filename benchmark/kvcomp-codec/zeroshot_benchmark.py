@@ -74,10 +74,16 @@ def _parse_bits(values: Iterable[str]) -> list[int]:
     return [int(v) for v in values]
 
 
-def _method_list(args: argparse.Namespace, bits: int) -> list[str]:
-    for name in args.methods:
+def _canonical_methods(methods: Iterable[str]) -> list[str]:
+    """Validate, canonicalize, and de-duplicate requested method labels."""
+    methods = list(methods)
+    for name in methods:
         reject_legacy_hayate_result_label(str(name))
-    methods = list(dict.fromkeys(canonical_hayate_method_name(name) for name in args.methods))
+    return list(dict.fromkeys(canonical_hayate_method_name(name) for name in methods))
+
+
+def _method_list(args: argparse.Namespace, bits: int) -> list[str]:
+    methods = _canonical_methods(args.methods)
     return [method for method in methods if method != BLOCKQUANT_PAPER_METHOD or int(bits) == 3]
 
 
@@ -104,10 +110,11 @@ def _output_json(args: argparse.Namespace) -> Path:
 
 
 def _benchmark_config(args: argparse.Namespace) -> dict:
-    """Scientific run identity; output location and device are not results."""
+    """Scientific run identity; only the output location is excluded."""
     return {
         "schema_version": 2,
         "model_path": str(args.model_path.resolve()),
+        "device": args.device,
         "dtype": args.dtype,
         "bits": list(args.bits),
         "tasks": list(args.tasks),
@@ -410,7 +417,10 @@ def parse_args() -> argparse.Namespace:
     if args.limit is not None and args.limit <= 0:
         ap.error("--limit must be positive")
     args.bits = _parse_bits(args.bits)
-    args.methods = _method_list(args, bits=0)
+    # Preserve the canonical requested method set here.  Applicability is
+    # rate-dependent (BlockQuant-paper is defined only at 3 bit) and is applied
+    # inside the per-rate execution loop by ``_method_list``.
+    args.methods = _canonical_methods(args.methods)
     return args
 
 

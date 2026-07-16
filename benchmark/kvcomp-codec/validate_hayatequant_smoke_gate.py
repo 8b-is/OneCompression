@@ -1314,6 +1314,16 @@ def _validate_long_axis_payload(
             ):
                 raise SmokeGateError(f"{label} MATH-500 sample audit is malformed")
             sample = samples[0]
+            legacy_extracted = sample.get("legacy_regex_extracted_answer_non_grading")
+            if (
+                "extracted_answer" in sample
+                or sample.get("grading_input") != "generated_text"
+                or not isinstance(sample.get("generated_text"), str)
+                or not isinstance(sample.get("correct"), bool)
+                or "legacy_regex_extracted_answer_non_grading" not in sample
+                or (legacy_extracted is not None and not isinstance(legacy_extracted, str))
+            ):
+                raise SmokeGateError(f"{label} MATH-500 grading audit is ambiguous")
             accounting_records.append(
                 (
                     sample,
@@ -1362,6 +1372,10 @@ def _validate_long_axis_payload(
     statistics = axis.get("compression_sufficient_statistics")
     if not isinstance(statistics, Mapping) or len(accounting_records) != n:
         raise SmokeGateError(f"{label} compression sufficient statistics are missing")
+    if kind == "math500" and (
+        axis.get("eviction_applicable") is not False or axis.get("eviction_fired") is not None
+    ):
+        raise SmokeGateError(f"{label} MATH-500 non-eviction provenance is malformed")
     ledger = []
     if method == "FullKV":
         if (
@@ -1371,6 +1385,11 @@ def _validate_long_axis_payload(
             or statistics.get("adaptive_hq_runtime") is not None
         ):
             raise SmokeGateError(f"{label} FullKV compression accounting changed")
+        if kind == "math500" and (
+            axis.get("compression_ratio") != 1.0
+            or axis.get("compression_ratio_aggregation") != "fullkv_no_cache"
+        ):
+            raise SmokeGateError(f"{label} FullKV displayed accounting changed")
     else:
         fp16_total = 0
         stored_total = 0
@@ -1421,6 +1440,11 @@ def _validate_long_axis_payload(
             or statistics.get("compression_stored_bits") != stored_total
         ):
             raise SmokeGateError(f"{label} compression totals do not replay")
+        if kind == "math500" and (
+            axis.get("compression_ratio_aggregation") != "exact_sum_fp16_bits_over_sum_stored_bits"
+            or axis.get("compression_ratio") != round(fp16_total / stored_total, 3)
+        ):
+            raise SmokeGateError(f"{label} displayed exact accounting does not replay")
         if method == "AdaptiveHQ":
             runtime = _validate_adaptive_runtime_summary(
                 statistics.get("adaptive_hq_runtime"), label=f"{label} aggregate"

@@ -293,6 +293,37 @@ def _build_formal_ruler_fixture(tmp_path: Path) -> tuple[Path, Path, Path, dict]
         "bytes": input_manifest_path.stat().st_size,
         "sha256": _digest(input_manifest_path),
     }
+    smoke_keys = list(shards.FORMAL_SMOKE_JOB_KEYS)
+
+    def smoke_records(root: str) -> list[dict]:
+        return [
+            {
+                "key": key,
+                "path": str((tmp_path / root / f"{index:02d}-{key}.json").resolve()),
+                "bytes": index + 1,
+                "sha256": f"{index + 1:064x}",
+            }
+            for index, key in enumerate(smoke_keys)
+        ]
+
+    formal_smoke_approval = {
+        "verification_mode": shards.FORMAL_SMOKE_APPROVAL_VERIFICATION_MODE,
+        "marker": {
+            "path": str((tmp_path / "manifests/formal_smoke_approval.json").resolve()),
+            "bytes": 4096,
+            "sha256": "d" * 64,
+        },
+        "validated_plan_sha256": "e" * 64,
+        "smoke_plan_identity": {
+            "version": shards.FORMAL_SMOKE_PLAN_VERSION,
+            "sha256": "f" * 64,
+        },
+        "code_commit": "test-commit",
+        "input_manifest": dict(input_manifest_record),
+        "completed_job_keys": smoke_keys,
+        "results": smoke_records("results/smoke"),
+        "worker_preflights": smoke_records("provenance"),
+    }
     weight_path = model_path / "model.safetensors"
     weight_path.write_bytes(b"synthetic-weight-shard")
     preflight_record = {
@@ -335,6 +366,7 @@ def _build_formal_ruler_fixture(tmp_path: Path) -> tuple[Path, Path, Path, dict]
             "input_manifest": input_manifest_record,
         },
         "dataset_files": [input_manifest_record],
+        "formal_smoke_approval": formal_smoke_approval,
         "environment": {
             **shards.QUALITY_SEMANTIC_ENVIRONMENT,
             "KVCOMP_CODEBOOK_DIR": None,

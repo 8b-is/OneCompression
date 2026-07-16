@@ -502,6 +502,7 @@ WIKITEXT2_TEXT_SHA256 = "696cca6b65a171b0a358a4be6732cdfdf2dd6164a32e20fd70e3c13
 PPL_MAX_LENGTH = 2048
 PPL_STRIDE = 1024
 QUALITY_DTYPE = "bfloat16"
+QUALITY_DEVICE = "cuda:0"
 LM_EVAL_PROTOCOL_COMMIT = "27988a293647d5853e48edea291640b4af54740c"
 ZEROSHOT_PROTOCOL_INPUT_HASH_SCHEMA = "lm_eval_multiple_choice_prompt_v1"
 PPL_TEACHER_FORCED_PROTOCOL = "single_forward_causal_mask_token_local_cache"
@@ -684,6 +685,20 @@ QUALITY_SEMANTIC_ENVIRONMENT = {
     "ONECOMP_COMPILE_CODEC": "0",
     "ONECOMP_COMPILE_DECODE_ONLY": "0",
 }
+FORMAL_SMOKE_APPROVAL_VERIFICATION_MODE = (
+    "full_sha256_submitter_binding_plus_worker_semantic_validator_check"
+)
+FORMAL_SMOKE_PLAN_VERSION = 3
+FORMAL_SMOKE_JOB_KEYS = (
+    "ppl",
+    "zeroshot",
+    "ruler",
+    "longbench",
+    "math500",
+    "longcode",
+    "speed",
+    "native-hybrid",
+)
 
 
 def _load_object(path: Path) -> dict:
@@ -2244,6 +2259,8 @@ def aggregate_zeroshot(
         config = document.get("config")
         if not isinstance(config, dict):
             raise AggregateError(f"Missing zero-shot scientific config in {path}")
+        if config.get("device") != QUALITY_DEVICE:
+            raise AggregateError(f"Zero-shot device is not {QUALITY_DEVICE} in {path}")
         if config.get("dtype") != QUALITY_DTYPE:
             raise AggregateError(f"Zero-shot dtype is not {QUALITY_DTYPE} in {path}")
         if config.get("sample_seed") != 2027:
@@ -3572,6 +3589,14 @@ def _sha256_string(value: Any) -> bool:
     )
 
 
+def _lower_sha256_string(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
 def _validated_weight_record(weights: Any, *, label: str) -> None:
     """Require a complete full-file SHA-256 checkpoint fingerprint."""
     if not isinstance(weights, dict) or weights.get("schema_version") != 1:
@@ -4298,6 +4323,135 @@ def _normalized_quality_runtime(record: Any, *, path: Path) -> dict:
     }
 
 
+def _formal_smoke_file_record(
+    value: Any,
+    *,
+    label: str,
+    root: Path,
+    path: Path,
+) -> dict:
+    if not isinstance(value, dict) or set(value) != {"path", "bytes", "sha256"}:
+        raise AggregateError(f"{label} is not an exact file record in {path}")
+    raw_path = value.get("path")
+    byte_count = value.get("bytes")
+    digest = value.get("sha256")
+    if (
+        not isinstance(raw_path, str)
+        or not raw_path
+        or not Path(raw_path).is_absolute()
+        or Path(raw_path).resolve(strict=False) != Path(raw_path)
+        or isinstance(byte_count, bool)
+        or not isinstance(byte_count, int)
+        or byte_count <= 0
+        or not _lower_sha256_string(digest)
+    ):
+        raise AggregateError(f"{label} file identity is malformed in {path}")
+    try:
+        Path(raw_path).relative_to(root)
+    except ValueError as exc:
+        raise AggregateError(f"{label} escapes its approved run-root scope in {path}") from exc
+    return {"path": raw_path, "bytes": byte_count, "sha256": digest}
+
+
+def _validated_formal_smoke_approval(
+    record: Any,
+    *,
+    commit: str,
+    input_manifest: Mapping[str, Any],
+    path: Path,
+) -> dict:
+    """Validate the worker-time binding to the exact approved eight-job smoke."""
+
+    approval = record.get("formal_smoke_approval") if isinstance(record, dict) else None
+    required_keys = {
+        "verification_mode",
+        "marker",
+        "validated_plan_sha256",
+        "smoke_plan_identity",
+        "code_commit",
+        "input_manifest",
+        "completed_job_keys",
+        "results",
+        "worker_preflights",
+    }
+    if not isinstance(approval, dict) or set(approval) != required_keys:
+        raise AggregateError(f"Formal preflight has no exact smoke-approval binding in {path}")
+    marker = approval.get("marker")
+    if not isinstance(marker, dict) or not isinstance(marker.get("path"), str):
+        raise AggregateError(f"Formal smoke marker identity is malformed in {path}")
+    marker_path = Path(marker["path"])
+    if marker_path.parent.name != "manifests":
+        raise AggregateError(f"Formal smoke marker is outside a manifests directory in {path}")
+    run_root = marker_path.parent.parent
+    if not run_root.is_absolute() or run_root == marker_path.parent:
+        raise AggregateError(f"Formal smoke marker has no absolute run-root identity in {path}")
+    normalized_marker = _formal_smoke_file_record(
+        marker,
+        label="formal smoke approval marker",
+        root=run_root / "manifests",
+        path=path,
+    )
+    plan_sha256 = approval.get("validated_plan_sha256")
+    smoke_plan = approval.get("smoke_plan_identity")
+    if (
+        approval.get("verification_mode") != FORMAL_SMOKE_APPROVAL_VERIFICATION_MODE
+        or approval.get("code_commit") != commit
+        or not _lower_sha256_string(plan_sha256)
+        or not isinstance(smoke_plan, dict)
+        or set(smoke_plan) != {"version", "sha256"}
+        or smoke_plan.get("version") != FORMAL_SMOKE_PLAN_VERSION
+        or not _lower_sha256_string(smoke_plan.get("sha256"))
+        or approval.get("input_manifest") != dict(input_manifest)
+        or approval.get("completed_job_keys") != list(FORMAL_SMOKE_JOB_KEYS)
+    ):
+        raise AggregateError(f"Formal smoke approval identity changed in {path}")
+
+    def keyed_records(value: Any, *, label: str, root: Path) -> list[dict]:
+        if not isinstance(value, list) or len(value) != len(FORMAL_SMOKE_JOB_KEYS):
+            raise AggregateError(f"{label} does not cover the exact smoke plan in {path}")
+        normalized = []
+        seen_paths: set[str] = set()
+        for index, raw in enumerate(value):
+            if not isinstance(raw, dict) or set(raw) != {"key", "path", "bytes", "sha256"}:
+                raise AggregateError(f"{label} record {index} is malformed in {path}")
+            key = raw.get("key")
+            if key != FORMAL_SMOKE_JOB_KEYS[index]:
+                raise AggregateError(f"{label} order/key identity changed in {path}")
+            file_record = _formal_smoke_file_record(
+                {name: raw.get(name) for name in ("path", "bytes", "sha256")},
+                label=f"{label} {key}",
+                root=root,
+                path=path,
+            )
+            if file_record["path"] in seen_paths:
+                raise AggregateError(f"{label} contains a duplicate path in {path}")
+            seen_paths.add(file_record["path"])
+            normalized.append({"key": key, **file_record})
+        return normalized
+
+    results = keyed_records(
+        approval.get("results"),
+        label="approved smoke result",
+        root=run_root / "results/smoke",
+    )
+    worker_preflights = keyed_records(
+        approval.get("worker_preflights"),
+        label="approved smoke worker preflight",
+        root=run_root / "provenance",
+    )
+    return {
+        "verification_mode": FORMAL_SMOKE_APPROVAL_VERIFICATION_MODE,
+        "marker": normalized_marker,
+        "validated_plan_sha256": plan_sha256,
+        "smoke_plan_identity": dict(smoke_plan),
+        "code_commit": commit,
+        "input_manifest": dict(input_manifest),
+        "completed_job_keys": list(FORMAL_SMOKE_JOB_KEYS),
+        "results": results,
+        "worker_preflights": worker_preflights,
+    }
+
+
 def _require_run_provenance(document: dict, *, path: Path, return_identity: bool = False):
     """Validate clean code, exact model, full weights, and input manifest.
 
@@ -4322,6 +4476,8 @@ def _require_run_provenance(document: dict, *, path: Path, return_identity: bool
     identities = set()
     runtime_fingerprints = set()
     normalized_runtimes = {}
+    smoke_approval_fingerprints = set()
+    smoke_approval_records = {}
     for item in provenance:
         if not isinstance(item, dict) or "record" not in item:
             raise AggregateError(f"Malformed run provenance in {path}")
@@ -4417,6 +4573,22 @@ def _require_run_provenance(document: dict, *, path: Path, return_identity: bool
             raise AggregateError(
                 f"Preflight dataset files do not contain the exact input manifest in {path}"
             )
+        smoke_approval = _validated_formal_smoke_approval(
+            record,
+            commit=code["commit"],
+            input_manifest=input_manifest,
+            path=path,
+        )
+        smoke_approval_fingerprint = hashlib.sha256(
+            json.dumps(
+                smoke_approval,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            ).encode()
+        ).hexdigest()
+        smoke_approval_fingerprints.add(smoke_approval_fingerprint)
+        smoke_approval_records[smoke_approval_fingerprint] = smoke_approval
         identities.add(
             (
                 str(resolved_config_model),
@@ -4435,6 +4607,8 @@ def _require_run_provenance(document: dict, *, path: Path, return_identity: bool
         raise AggregateError(
             f"One result merged different software/GPU/environment strata in {path}"
         )
+    if len(smoke_approval_fingerprints) != 1:
+        raise AggregateError(f"One result merged different formal smoke approvals in {path}")
     identity = next(iter(identities))
     commit = next(iter(commits))
     declared_commits = [
@@ -4465,16 +4639,16 @@ def _require_run_provenance(document: dict, *, path: Path, return_identity: bool
         ).hexdigest()
         if run_fingerprint != expected_fingerprint:
             raise AggregateError(f"Result fingerprint/preflight commit mismatch in {path}")
-    elif formal_schema:
-        raise AggregateError(
-            f"Formal result fingerprint has no reproducible scientific config in {path}"
-        )
     elif config.get("schema_version") == 2 and isinstance(run_fingerprint, str):
         expected_fingerprint = hashlib.sha256(
             json.dumps(config, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
         if run_fingerprint != expected_fingerprint:
             raise AggregateError(f"Result fingerprint/preflight commit mismatch in {path}")
+    elif formal_schema:
+        raise AggregateError(
+            f"Formal result fingerprint has no reproducible scientific config in {path}"
+        )
     if return_identity:
         return {
             "commit": commit,
@@ -4484,6 +4658,9 @@ def _require_run_provenance(document: dict, *, path: Path, return_identity: bool
             "input_manifest_sha256": identity[3],
             "quality_runtime_fingerprint": next(iter(runtime_fingerprints)),
             "quality_runtime": normalized_runtimes[next(iter(runtime_fingerprints))],
+            "formal_smoke_approval": smoke_approval_records[
+                next(iter(smoke_approval_fingerprints))
+            ],
         }
     return commit
 
@@ -6681,6 +6858,11 @@ def verify_math500(
             raise AggregateError(f"Wrong MATH-500 dataset revision in {path}")
         if value.get("protocol") != ("hf_math500_test_adapted_composite_four_shot"):
             raise AggregateError(f"Wrong MATH-500 generation/grading protocol in {path}")
+        if (
+            value.get("eviction_applicable") is not False
+            or value.get("eviction_fired") is not None
+        ):
+            raise AggregateError(f"MATH-500 non-eviction cache provenance is malformed in {path}")
         prompt_config = value.get("prompt_config")
         generation_config = value.get("generation_config")
         if (
@@ -6830,9 +7012,17 @@ def verify_math500(
                 expected_text = raw_generated
             if sample["generated_text"] != expected_text or matched_stop != expected_stop:
                 raise AggregateError(f"MATH-500 stop-string processing mismatch in {path}")
-            extracted = sample.get("extracted_answer")
-            if extracted is not None and not isinstance(extracted, str):
-                raise AggregateError(f"MATH-500 extracted answer is malformed in {path}")
+            if "extracted_answer" in sample:
+                raise AggregateError(f"MATH-500 ambiguous extracted_answer is forbidden in {path}")
+            legacy_extracted = sample.get("legacy_regex_extracted_answer_non_grading")
+            if "legacy_regex_extracted_answer_non_grading" not in sample or (
+                legacy_extracted is not None and not isinstance(legacy_extracted, str)
+            ):
+                raise AggregateError(
+                    f"MATH-500 non-grading legacy extraction is malformed in {path}"
+                )
+            if sample.get("grading_input") != "generated_text":
+                raise AggregateError(f"MATH-500 grading input is not generated_text in {path}")
             generated_tokens = _integer(
                 sample.get("generated_tokens"),
                 label=f"{path} MATH generated token count row {global_index}",
@@ -6871,12 +7061,40 @@ def verify_math500(
             method=method,
             label=f"{path} MATH-500",
         )
+        displayed_compression_ratio = _number(
+            value.get("compression_ratio"), label=f"{path} MATH compression ratio"
+        )
+        if method == "FullKV":
+            if (
+                value.get("compression_ratio_aggregation") != "fullkv_no_cache"
+                or displayed_compression_ratio != 1.0
+            ):
+                raise AggregateError(f"MATH-500 FullKV displayed accounting changed in {path}")
+        else:
+            fp16_bits = _integer(
+                compression.get("compression_fp16_bits"),
+                label=f"{path} MATH fp16 bits",
+                minimum=1,
+            )
+            stored_bits = _integer(
+                compression.get("compression_stored_bits"),
+                label=f"{path} MATH stored bits",
+                minimum=1,
+            )
+            if value.get(
+                "compression_ratio_aggregation"
+            ) != "exact_sum_fp16_bits_over_sum_stored_bits" or displayed_compression_ratio != round(
+                fp16_bits / stored_bits, 3
+            ):
+                raise AggregateError(f"MATH-500 displayed exact accounting changed in {path}")
         groups.setdefault((str(model), method), []).append(
             {
                 "start": start,
                 "stop": stop,
                 "n": n,
                 "correct": correct,
+                "eviction_applicable": False,
+                "eviction_fired": None,
                 **compression,
                 "compression_ledger": compression_ledger,
                 "source": str(path.resolve()),
@@ -6914,6 +7132,8 @@ def verify_math500(
             "n": dataset_size,
             "coverage": [0, dataset_size],
             "audit_records_validated": dataset_size,
+            "eviction_applicable": False,
+            "eviction_fired": None,
             **_sum_long_compression_statistics(
                 ordered,
                 method=method,
@@ -6963,6 +7183,7 @@ def verify_math500(
             "Math-Verify 0.9.0 rerun from stored generated_text against the exact "
             "pinned dataset gold; stored correctness is a cross-check only"
         ),
+        "grading_input": "generated_text",
         "aggregation": "sum_integer_correct_after_exact_interval_and_audit_validation",
         "models": nested,
         "official_complete": True,
@@ -8816,6 +9037,8 @@ def _cross_axis_provenance(document: Mapping[str, Any], *, axes: Sequence[str]) 
     source_runtimes: dict[str, tuple[str, dict]] = {}
     quality_runtime_fingerprints = set()
     quality_runtime_records = {}
+    smoke_approval_fingerprints = set()
+    smoke_approval_records = {}
     for axis in axes:
         value = document.get(axis)
         if not isinstance(value, dict):
@@ -8851,6 +9074,17 @@ def _cross_axis_provenance(document: Mapping[str, Any], *, axes: Sequence[str]) 
                 identity["quality_runtime_fingerprint"],
                 identity["quality_runtime"],
             )
+            smoke_approval = identity["formal_smoke_approval"]
+            smoke_approval_fingerprint = hashlib.sha256(
+                json.dumps(
+                    smoke_approval,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                ).encode()
+            ).hexdigest()
+            smoke_approval_fingerprints.add(smoke_approval_fingerprint)
+            smoke_approval_records[smoke_approval_fingerprint] = smoke_approval
             if axis in QUALITY_AXIS_KEYS:
                 quality_runtime_fingerprints.add(identity["quality_runtime_fingerprint"])
                 quality_runtime_records[identity["quality_runtime_fingerprint"]] = identity[
@@ -8911,6 +9145,11 @@ def _cross_axis_provenance(document: Mapping[str, Any], *, axes: Sequence[str]) 
             "Formal quality axes span multiple software/GPU/ONECOMP semantic strata: "
             f"{sorted(quality_runtime_fingerprints)}"
         )
+    if len(smoke_approval_fingerprints) != 1:
+        raise AggregateError(
+            "Formal benchmark axes do not share one worker-validated smoke approval: "
+            f"{sorted(smoke_approval_fingerprints)}"
+        )
     input_manifest_path, input_manifest_sha256 = next(iter(input_manifests))
     input_path = Path(input_manifest_path).expanduser().resolve()
     if not input_path.is_file() or _sha256(input_path) != input_manifest_sha256:
@@ -8935,6 +9174,7 @@ def _cross_axis_provenance(document: Mapping[str, Any], *, axes: Sequence[str]) 
         ],
         "axis_source_counts": axis_source_counts,
         "validated_source_files": len(validated_sources),
+        "formal_smoke_approval": smoke_approval_records[next(iter(smoke_approval_fingerprints))],
     }
     if quality_runtime_fingerprints:
         fingerprint = next(iter(quality_runtime_fingerprints))

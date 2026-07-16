@@ -409,6 +409,20 @@ QUALITY_SEMANTIC_ENVIRONMENT = {
     "ONECOMP_COMPILE_CODEC": "0",
     "ONECOMP_COMPILE_DECODE_ONLY": "0",
 }
+FORMAL_SMOKE_APPROVAL_VERIFICATION_MODE = (
+    "full_sha256_submitter_binding_plus_worker_semantic_validator_check"
+)
+FORMAL_SMOKE_PLAN_VERSION = 3
+FORMAL_SMOKE_JOB_KEYS = (
+    "ppl",
+    "zeroshot",
+    "ruler",
+    "longbench",
+    "math500",
+    "longcode",
+    "speed",
+    "native-hybrid",
+)
 DISPLAY_MODELS = {
     "Llama-2-7b-hf": "Llama-2-7B",
     "llama-3.1-8b-instruct": "Llama-3.1-8B-Instruct",
@@ -2440,6 +2454,7 @@ def _validate_math500(axis: Mapping[str, Any], commit: str) -> Mapping[str, Any]
         axis.get("benchmark") != "MATH-500"
         or axis.get("grader") != "Math-Verify 0.9.0"
         or axis.get("protocol_scope") != MATH500_PROTOCOL_SCOPE
+        or axis.get("grading_input") != "generated_text"
         or axis.get("official_reference_gold_serialization_exact") is not False
         or axis.get("gold_serialization") != MATH500_GOLD_SERIALIZATION
         or axis.get("official_complete") is not True
@@ -2476,6 +2491,11 @@ def _validate_math500(axis: Mapping[str, Any], commit: str) -> Mapping[str, Any]
                 raise RenderError(f"MATH-500 row incomplete for {model}/{method}")
             if row.get("audit_records_validated") != 500:
                 raise RenderError(f"MATH-500 audit coverage is incomplete for {model}/{method}")
+            if (
+                row.get("eviction_applicable") is not False
+                or row.get("eviction_fired") is not None
+            ):
+                raise RenderError(f"MATH-500 non-eviction provenance changed for {model}/{method}")
             correct = _integer(row.get("correct"), f"MATH correct {model}/{method}")
             if correct > 500 or row.get("pass@1_sum") != correct:
                 raise RenderError(f"MATH-500 numerator is stale for {model}/{method}")
@@ -3841,6 +3861,142 @@ def _validate_formal_matrix_status(value: Any, *, point_gate_passed: bool) -> di
     return expected
 
 
+def _validate_formal_smoke_approval(
+    value: Any,
+    *,
+    input_manifest: Mapping[str, Any],
+    top_commit: str,
+) -> dict:
+    approval = _mapping(value, "formal_provenance.formal_smoke_approval")
+    _exact_keys(
+        approval,
+        {
+            "verification_mode",
+            "marker",
+            "validated_plan_sha256",
+            "smoke_plan_identity",
+            "code_commit",
+            "input_manifest",
+            "completed_job_keys",
+            "results",
+            "worker_preflights",
+        },
+        "formal_provenance.formal_smoke_approval",
+    )
+
+    def file_record(raw: Any, *, label: str, root: Path | None = None) -> dict:
+        record = _mapping(raw, label)
+        _exact_keys(record, {"path", "bytes", "sha256"}, label)
+        raw_path = record.get("path")
+        digest = record.get("sha256")
+        if (
+            not isinstance(raw_path, str)
+            or not raw_path
+            or not Path(raw_path).is_absolute()
+            or Path(raw_path).resolve(strict=False) != Path(raw_path)
+            or not isinstance(digest, str)
+            or not SHA64.fullmatch(digest)
+        ):
+            raise RenderError(f"{label} is malformed")
+        _integer(record.get("bytes"), f"{label}.bytes", minimum=1)
+        if root is not None:
+            try:
+                Path(raw_path).relative_to(root)
+            except ValueError as exc:
+                raise RenderError(f"{label} escapes its approved run-root scope") from exc
+        return dict(record)
+
+    marker_raw = _mapping(approval.get("marker"), "formal_provenance.formal_smoke_approval.marker")
+    marker_path_raw = marker_raw.get("path")
+    if not isinstance(marker_path_raw, str) or Path(marker_path_raw).parent.name != "manifests":
+        raise RenderError("formal smoke approval marker is outside a manifests directory")
+    run_root = Path(marker_path_raw).parent.parent
+    marker = file_record(
+        marker_raw,
+        label="formal_provenance.formal_smoke_approval.marker",
+        root=run_root / "manifests",
+    )
+    plan_sha256 = approval.get("validated_plan_sha256")
+    plan_identity = _mapping(
+        approval.get("smoke_plan_identity"),
+        "formal_provenance.formal_smoke_approval.smoke_plan_identity",
+    )
+    _exact_keys(
+        plan_identity,
+        {"version", "sha256"},
+        "formal_provenance.formal_smoke_approval.smoke_plan_identity",
+    )
+    approved_input = file_record(
+        approval.get("input_manifest"),
+        label="formal_provenance.formal_smoke_approval.input_manifest",
+    )
+    if (
+        approval.get("verification_mode") != FORMAL_SMOKE_APPROVAL_VERIFICATION_MODE
+        or approval.get("code_commit") != top_commit
+        or not isinstance(plan_sha256, str)
+        or not SHA64.fullmatch(plan_sha256)
+        or plan_identity.get("version") != FORMAL_SMOKE_PLAN_VERSION
+        or not isinstance(plan_identity.get("sha256"), str)
+        or not SHA64.fullmatch(plan_identity["sha256"])
+        or approved_input.get("path") != input_manifest.get("path")
+        or approved_input.get("sha256") != input_manifest.get("sha256")
+        or approval.get("completed_job_keys") != list(FORMAL_SMOKE_JOB_KEYS)
+    ):
+        raise RenderError("formal smoke approval binding identity changed")
+
+    def keyed_records(raw: Any, *, label: str, root: Path) -> list[dict]:
+        records = _sequence(raw, label)
+        if len(records) != len(FORMAL_SMOKE_JOB_KEYS):
+            raise RenderError(f"{label} does not cover the exact smoke plan")
+        normalized = []
+        seen_paths: set[str] = set()
+        for index, value in enumerate(records):
+            record = _mapping(value, f"{label}[{index}]")
+            _exact_keys(
+                record,
+                {"key", "path", "bytes", "sha256"},
+                f"{label}[{index}]",
+            )
+            key = record.get("key")
+            if key != FORMAL_SMOKE_JOB_KEYS[index]:
+                raise RenderError(f"{label} order/key identity changed")
+            normalized_record = {
+                "key": key,
+                **file_record(
+                    {name: record.get(name) for name in ("path", "bytes", "sha256")},
+                    label=f"{label}[{index}]",
+                    root=root,
+                ),
+            }
+            if normalized_record["path"] in seen_paths:
+                raise RenderError(f"{label} contains a duplicate path")
+            seen_paths.add(normalized_record["path"])
+            normalized.append(normalized_record)
+        return normalized
+
+    results = keyed_records(
+        approval.get("results"),
+        label="formal_provenance.formal_smoke_approval.results",
+        root=run_root / "results/smoke",
+    )
+    preflights = keyed_records(
+        approval.get("worker_preflights"),
+        label="formal_provenance.formal_smoke_approval.worker_preflights",
+        root=run_root / "provenance",
+    )
+    return {
+        "verification_mode": FORMAL_SMOKE_APPROVAL_VERIFICATION_MODE,
+        "marker": marker,
+        "validated_plan_sha256": plan_sha256,
+        "smoke_plan_identity": dict(plan_identity),
+        "code_commit": top_commit,
+        "input_manifest": approved_input,
+        "completed_job_keys": list(FORMAL_SMOKE_JOB_KEYS),
+        "results": results,
+        "worker_preflights": preflights,
+    }
+
+
 def _validate_formal_provenance(
     value: Any, *, document: Mapping[str, Any], top_commit: str
 ) -> dict:
@@ -3855,6 +4011,7 @@ def _validate_formal_provenance(
             "axis_source_counts",
             "validated_source_files",
             "quality_runtime",
+            "formal_smoke_approval",
         },
         "formal_provenance",
     )
@@ -3875,6 +4032,11 @@ def _validate_formal_provenance(
         or not SHA64.fullmatch(input_sha256.lower())
     ):
         raise RenderError("formal_provenance.input_manifest is malformed")
+    formal_smoke_approval = _validate_formal_smoke_approval(
+        provenance.get("formal_smoke_approval"),
+        input_manifest=input_manifest,
+        top_commit=top_commit,
+    )
 
     models_raw = _mapping(provenance.get("models"), "formal_provenance.models")
     _exact_keys(models_raw, set(PAPER_MODELS), "formal_provenance.models")
@@ -3944,6 +4106,8 @@ def _validate_formal_provenance(
         raise RenderError(
             "formal_provenance dataset ledger does not contain the exact input manifest"
         )
+    if formal_smoke_approval["input_manifest"] != matching_input_files[0]:
+        raise RenderError("formal smoke approval input manifest differs from the dataset ledger")
 
     source_counts = _mapping(
         provenance.get("axis_source_counts"),
@@ -4106,6 +4270,7 @@ def _validate_formal_provenance(
         "dataset_files": dataset_files,
         "axis_source_counts": normalized_source_counts,
         "validated_source_files": validated_source_files,
+        "formal_smoke_approval": formal_smoke_approval,
         "quality_runtime": {
             "fingerprint_sha256": fingerprint,
             "normalized": dict(normalized),

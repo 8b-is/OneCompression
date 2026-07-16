@@ -134,6 +134,7 @@ def test_fixed_five_replicate_formal_plan_has_exactly_969_unique_jobs(tmp_path):
     assert plan.count("--cpus-per-task 160") == 60
     assert plan.count("--mem 2400G") == 60
     assert plan.count("--dependency afterok:") == 59
+    assert plan.count("--kill-on-invalid-dep=yes") == 60
     assert plan.count("--exclude DRYRUN-SAME-B200-NODE") == 909
 
 
@@ -247,6 +248,7 @@ def test_default_formal_plan_pins_only_speed_to_one_b200_stratum_and_exports_no_
     assert formal_plan.count("--nodelist DRYRUN-SAME-B200-NODE") == 12
     assert formal_plan.count("--exclusive=user") == 12
     assert formal_plan.count("--dependency afterok:") == 11
+    assert formal_plan.count("--kill-on-invalid-dep=yes") == 12
     assert formal_plan.count("--exclude DRYRUN-SAME-B200-NODE") == 909
     assert (
         formal_plan.count("policy=full_8gpu_allocation_afterok_serial quality_jobs=excluded") == 1
@@ -357,6 +359,108 @@ def test_multi_gpu_override_and_unsafe_export_encoding_are_rejected(tmp_path):
     assert "must stay below RUN_ROOT/manifests" in rejected.stderr
 
 
+def test_individual_quality_commands_require_validated_speed_node_exclusion():
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert re.search(
+        r"prepare_formal_quality_submission\(\).*?validate_speed_node_identity",
+        source,
+        re.S,
+    )
+    for command in (
+        "ppl",
+        "mechanism",
+        "zeroshot",
+        "ruler",
+        "longbench",
+        "math",
+        "longcodeqa",
+    ):
+        block = re.search(rf"\n  {command}\)\n(.*?)\n    ;;", source, re.S)
+        assert block is not None
+        assert "prepare_formal_quality_submission" in block.group(1)
+    assert "formal quality job has no validated SPEED_NODE exclusion" in source
+
+
+def _write_fake_scontrol(path: Path, node: dict) -> Path:
+    executable = path / "scontrol"
+    executable.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"nodes": [node], "errors": []}
+    executable.write_text(
+        "#!/usr/bin/env python3\n" "import json\n" f"print(json.dumps({payload!r}))\n",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+    return executable
+
+
+def _speed_node_preflight(tmp_path: Path, node: dict, *, require_idle: bool):
+    fake_bin = tmp_path / "bin"
+    _write_fake_scontrol(fake_bin, node)
+    env = dict(os.environ)
+    env.update(
+        {
+            "PATH": f"{fake_bin}:{env['PATH']}",
+            "MODELS": str(MODELS),
+            "PY": str(PY),
+            "PYVLLM": str(PYVLLM),
+            "SPEED_NODE": "kagura-gpu07",
+            "REQUIRE_SPEED_NODE_IDLE": "1" if require_idle else "0",
+        }
+    )
+    return subprocess.run(
+        ["bash", str(SCRIPT), "speed-node-preflight"],
+        cwd=REPO,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+
+def _speed_node_fixture(*, state: str, gres_used: str, gres: str = "gpu:nvidia_b200:8"):
+    allocated = state != "IDLE"
+    return {
+        "name": "kagura-gpu07",
+        "partitions": ["batch-1gpu", "batch-8gpu"],
+        "gres": gres,
+        "cpus": 192,
+        "state": [state],
+        "alloc_cpus": 16 if allocated else 0,
+        "alloc_memory": 98304 if allocated else 0,
+        "gres_used": gres_used,
+        "tres_used": "cpu=16,mem=96G,gres/gpu=1" if allocated else "",
+    }
+
+
+def test_quality_exclusion_accepts_mixed_identity_but_timing_requires_live_idle_schema(
+    tmp_path,
+):
+    mixed = _speed_node_fixture(state="MIXED", gres_used="gpu:nvidia_b200:1(IDX:0)")
+    identity = _speed_node_preflight(tmp_path / "mixed-id", mixed, require_idle=False)
+    assert identity.returncode == 0, identity.stderr
+    assert "state=MIXED" in identity.stdout
+    timing = _speed_node_preflight(tmp_path / "mixed-timing", mixed, require_idle=True)
+    assert timing.returncode != 0
+    assert "not completely idle" in timing.stderr
+
+    idle = _speed_node_fixture(state="IDLE", gres_used="gpu:nvidia_b200:0(IDX:N/A)")
+    ready = _speed_node_preflight(tmp_path / "idle", idle, require_idle=True)
+    assert ready.returncode == 0, ready.stderr
+    assert "SPEED_STRATUM node=kagura-gpu07" in ready.stdout
+
+
+def test_speed_node_identity_rejects_wrong_b200_gres(tmp_path):
+    wrong = _speed_node_fixture(
+        state="MIXED",
+        gres_used="gpu:nvidia_h100:1(IDX:0)",
+        gres="gpu:nvidia_h100:8",
+    )
+    completed = _speed_node_preflight(tmp_path, wrong, require_idle=False)
+    assert completed.returncode != 0
+    assert "identity mismatch" in completed.stderr
+
+
 def test_worker_requires_full_pinned_identity_and_scrubs_named_credentials(tmp_path):
     subprocess.run(["bash", "-n", str(WRAPPER)], check=True)
     source = WRAPPER.read_text(encoding="utf-8")
@@ -416,7 +520,7 @@ def test_worker_requires_full_pinned_identity_and_scrubs_named_credentials(tmp_p
 
 def test_worker_rejects_result_that_appeared_while_pending(tmp_path):
     run_root = tmp_path / "run"
-    result = run_root / "results/formal/already-there.json"
+    result = run_root / "results/smoke/already-there.json"
     result.parent.mkdir(parents=True)
     result.write_text("{}\n", encoding="utf-8")
     manifest = run_root / "manifests/inputs.json"
@@ -433,7 +537,7 @@ def test_worker_rejects_result_that_appeared_while_pending(tmp_path):
             "--run-root",
             str(run_root),
             "--job-key",
-            "formal-race",
+            "smoke-race",
             "--model",
             str(MODELS / "Qwen3-0.6B"),
             "--input-manifest",
@@ -460,7 +564,7 @@ def test_worker_rejects_result_that_appeared_while_pending(tmp_path):
 
 def test_worker_result_lock_rejects_concurrent_writer(tmp_path):
     run_root = (tmp_path / "run").resolve()
-    result = (run_root / "results/formal/concurrent.json").resolve()
+    result = (run_root / "results/smoke/concurrent.json").resolve()
     manifest = run_root / "manifests/inputs.json"
     manifest.parent.mkdir(parents=True)
     manifest.write_text("{}\n", encoding="utf-8")
@@ -480,7 +584,7 @@ def test_worker_result_lock_rejects_concurrent_writer(tmp_path):
                 "--run-root",
                 str(run_root),
                 "--job-key",
-                "formal-concurrent",
+                "smoke-concurrent",
                 "--model",
                 str(MODELS / "Qwen3-0.6B"),
                 "--input-manifest",
@@ -503,3 +607,79 @@ def test_worker_result_lock_rejects_concurrent_writer(tmp_path):
         )
     assert completed.returncode == 2
     assert "already owns the result lock" in completed.stderr
+
+
+def test_formal_worker_rejects_missing_or_disagreeing_smoke_binding_environment(tmp_path):
+    run_root = tmp_path / "run"
+    manifest = run_root / "manifests/inputs.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text("{}\n", encoding="utf-8")
+    marker = run_root / "manifests/formal_smoke_approval.json"
+    marker.write_text("{}\n", encoding="utf-8")
+    result = run_root / "results/formal/result.json"
+    argv = [
+        "bash",
+        str(WRAPPER),
+        "--repo",
+        str(REPO),
+        "--python",
+        str(PY),
+        "--run-root",
+        str(run_root),
+        "--job-key",
+        "formal-binding-test",
+        "--model",
+        str(MODELS / "Qwen3-0.6B"),
+        "--input-manifest",
+        str(manifest),
+        "--input-manifest-sha256",
+        "0" * 64,
+        "--smoke-approval-marker",
+        str(marker),
+        "--smoke-approval-marker-sha256",
+        "1" * 64,
+        "--smoke-validated-plan-sha256",
+        "2" * 64,
+        "--expected-result",
+        str(result),
+        "--dataset-file",
+        str(manifest),
+        "--",
+        "/bin/true",
+    ]
+    base_env = {**os.environ, "CODE_REPO_COMMIT": "a" * 40}
+    for variable in (
+        "PAPER_SMOKE_APPROVAL_MARKER",
+        "PAPER_SMOKE_APPROVAL_MARKER_SHA256",
+        "PAPER_SMOKE_VALIDATED_PLAN_SHA256",
+    ):
+        base_env.pop(variable, None)
+    missing = subprocess.run(
+        argv,
+        cwd=REPO,
+        env=base_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert missing.returncode == 2
+    assert "environment omitted" in missing.stderr
+
+    disagreeing_env = {
+        **base_env,
+        "PAPER_SMOKE_APPROVAL_MARKER": str(marker),
+        "PAPER_SMOKE_APPROVAL_MARKER_SHA256": "f" * 64,
+        "PAPER_SMOKE_VALIDATED_PLAN_SHA256": "2" * 64,
+    }
+    disagreeing = subprocess.run(
+        argv,
+        cwd=REPO,
+        env=disagreeing_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert disagreeing.returncode == 2
+    assert "argv/environment smoke identities disagree" in disagreeing.stderr

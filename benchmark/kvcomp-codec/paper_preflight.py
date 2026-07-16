@@ -79,6 +79,10 @@ ENV_ALLOWLIST = (
     "HOME",
     "TOKENIZERS_PARALLELISM",
     "PYTHONHASHSEED",
+    "PAPER_SMOKE_APPROVAL_MARKER",
+    "PAPER_SMOKE_APPROVAL_MARKER_SHA256",
+    "PAPER_SMOKE_VALIDATED_PLAN_SHA256",
+    "PAPER_SMOKE_VALIDATOR_CHECK_COMPLETED",
 )
 MODEL_METADATA_FILES = (
     "config.json",
@@ -93,6 +97,20 @@ MODEL_METADATA_FILES = (
     "spiece.model",
     "vocab.json",
     "merges.txt",
+)
+SMOKE_APPROVAL_KIND = "hayatequant_formal_smoke_approval"
+SMOKE_APPROVAL_STATEMENT = "I_APPROVE_THE_VALIDATED_HAYATEQUANT_SMOKE_PLAN"
+SMOKE_APPROVAL_SCHEMA_VERSION = 1
+SMOKE_PLAN_VERSION = 3
+SMOKE_JOB_KEYS = (
+    "ppl",
+    "zeroshot",
+    "ruler",
+    "longbench",
+    "math500",
+    "longcode",
+    "speed",
+    "native-hybrid",
 )
 
 
@@ -180,6 +198,242 @@ def _stable_file_record(path: Path, *, label: str) -> dict:
     if _state_tuple(before) != _state_tuple(after):
         raise RuntimeError(f"{label} changed while hashing: {resolved}")
     return {"path": str(resolved), "bytes": after.st_size, "sha256": digest}
+
+
+def _canonical_sha256(value: Any) -> str:
+    try:
+        payload = json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("value cannot be canonically serialized as finite JSON") from exc
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _lower_sha256(value: Any, *, label: str) -> str:
+    if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None:
+        raise RuntimeError(f"{label} must be a lowercase SHA-256 digest")
+    return value
+
+
+def _record_below(
+    declared: Any,
+    *,
+    root: Path,
+    label: str,
+) -> dict:
+    if not isinstance(declared, dict):
+        raise RuntimeError(f"{label} is not a file record")
+    raw_path = declared.get("path")
+    byte_count = declared.get("bytes")
+    digest = declared.get("sha256")
+    if (
+        not isinstance(raw_path, str)
+        or not raw_path
+        or not Path(raw_path).is_absolute()
+        or isinstance(byte_count, bool)
+        or not isinstance(byte_count, int)
+        or byte_count <= 0
+    ):
+        raise RuntimeError(f"{label} has a malformed path/byte count")
+    _lower_sha256(digest, label=f"{label} sha256")
+    actual = _stable_file_record(Path(raw_path), label=label)
+    try:
+        Path(actual["path"]).relative_to(root.resolve(strict=True))
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise RuntimeError(f"{label} escapes its approved run-root scope") from exc
+    expected = {"path": raw_path, "bytes": byte_count, "sha256": digest}
+    if actual != expected:
+        raise RuntimeError(f"{label} changed after formal smoke approval")
+    return actual
+
+
+def _verify_smoke_approval_binding(
+    *,
+    marker: Path,
+    run_root: Path,
+    expected_commit: str,
+    input_manifest: Path,
+    expected_input_manifest_sha256: str,
+    expected_marker_sha256: str | None = None,
+    expected_validated_plan_sha256: str | None = None,
+) -> dict:
+    """Re-hash the submitter-bound smoke marker, results, and worker preflights.
+
+    The semantic smoke validator runs both before submission and in every
+    formal worker.  This independent integrity check binds the exact marker
+    bytes and canonical validated-plan identity into the formal preflight, so
+    a pending job cannot accept a replacement marker or changed smoke file.
+    """
+
+    if re.fullmatch(r"[0-9a-f]{40}", expected_commit) is None:
+        raise RuntimeError("Expected smoke code commit must be lowercase 40-hex")
+    _lower_sha256(
+        expected_input_manifest_sha256,
+        label="expected input-manifest sha256",
+    )
+    if expected_marker_sha256 is not None:
+        _lower_sha256(expected_marker_sha256, label="expected smoke marker sha256")
+    if expected_validated_plan_sha256 is not None:
+        _lower_sha256(
+            expected_validated_plan_sha256,
+            label="expected validated-plan sha256",
+        )
+
+    run_root = run_root.expanduser().resolve(strict=True)
+    marker_argument = marker.expanduser()
+    if marker_argument.is_symlink():
+        raise RuntimeError("Formal smoke approval marker may not be a symlink")
+    marker_record_before = _stable_file_record(
+        marker_argument,
+        label="formal smoke approval marker",
+    )
+    marker_path = Path(marker_record_before["path"])
+    try:
+        marker_path.relative_to((run_root / "manifests").resolve(strict=True))
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise RuntimeError("Formal smoke approval marker escapes RUN_ROOT/manifests") from exc
+    if (
+        expected_marker_sha256 is not None
+        and marker_record_before["sha256"] != expected_marker_sha256
+    ):
+        raise RuntimeError("Formal smoke approval marker differs from its submit-time SHA-256")
+
+    document = _load_json(marker_path, label="formal smoke approval marker")
+    if (
+        not isinstance(document, dict)
+        or document.get("schema_version") != SMOKE_APPROVAL_SCHEMA_VERSION
+        or document.get("kind") != SMOKE_APPROVAL_KIND
+        or document.get("approval_statement") != SMOKE_APPROVAL_STATEMENT
+        or not isinstance(document.get("approved_at_utc"), str)
+        or not isinstance(document.get("approved_by"), dict)
+    ):
+        raise RuntimeError("Formal smoke approval marker has an invalid identity")
+    plan = document.get("validated_plan")
+    if not isinstance(plan, dict):
+        raise RuntimeError("Formal smoke approval marker has no validated plan")
+    validated_plan_sha256 = _canonical_sha256(plan)
+    if (
+        expected_validated_plan_sha256 is not None
+        and validated_plan_sha256 != expected_validated_plan_sha256
+    ):
+        raise RuntimeError("Formal smoke validated plan differs from its submit-time SHA-256")
+
+    input_record = _stable_file_record(input_manifest, label="paper input manifest")
+    if input_record["sha256"] != expected_input_manifest_sha256:
+        raise RuntimeError("Paper input manifest differs from its submission SHA-256")
+    completed = plan.get("completed_job_keys")
+    results = plan.get("results")
+    smoke_plan_sha256 = _lower_sha256(plan.get("smoke_plan_sha256"), label="smoke plan sha256")
+    if (
+        plan.get("smoke_plan_version") != SMOKE_PLAN_VERSION
+        or plan.get("code_commit") != expected_commit
+        or plan.get("input_manifest") != input_record
+        or completed != list(SMOKE_JOB_KEYS)
+        or not isinstance(results, list)
+        or len(results) != len(SMOKE_JOB_KEYS)
+    ):
+        raise RuntimeError("Formal smoke validated-plan identity changed")
+
+    result_records = []
+    result_documents: dict[str, dict] = {}
+    observed_keys = []
+    for index, declared in enumerate(results):
+        if not isinstance(declared, dict):
+            raise RuntimeError("Formal smoke validated plan has a malformed result record")
+        key = declared.get("key")
+        observed_keys.append(key)
+        actual = _record_below(
+            {name: declared.get(name) for name in ("path", "bytes", "sha256")},
+            root=run_root / "results/smoke",
+            label=f"approved smoke result {key!r}",
+        )
+        expected_key = SMOKE_JOB_KEYS[index]
+        if key != expected_key:
+            raise RuntimeError("Formal smoke result order/key identity changed")
+        result_records.append({"key": key, **actual})
+        loaded = _load_json(Path(actual["path"]), label=f"approved smoke result {key!r}")
+        if not isinstance(loaded, dict):
+            raise RuntimeError(f"Approved smoke result {key!r} is not a JSON object")
+        result_documents[str(key)] = loaded
+    if observed_keys != list(SMOKE_JOB_KEYS) or len(set(observed_keys)) != len(observed_keys):
+        raise RuntimeError("Formal smoke result set is not the exact eight-job plan")
+
+    provenance_root = run_root / "provenance"
+    preflight_records = []
+    preflight_paths: set[str] = set()
+    for key in SMOKE_JOB_KEYS:
+        if key == "native-hybrid":
+            continue
+        envelopes = result_documents[key].get("run_provenance")
+        if not isinstance(envelopes, list) or len(envelopes) != 1:
+            raise RuntimeError(f"Approved smoke result {key!r} lost its worker preflight")
+        envelope = envelopes[0]
+        if not isinstance(envelope, dict) or not isinstance(envelope.get("record"), dict):
+            raise RuntimeError(f"Approved smoke result {key!r} has malformed provenance")
+        raw_path = envelope.get("path")
+        digest = envelope.get("sha256")
+        if not isinstance(raw_path, str) or not Path(raw_path).is_absolute():
+            raise RuntimeError(f"Approved smoke result {key!r} has no preflight path")
+        _lower_sha256(digest, label=f"approved smoke result {key!r} preflight sha256")
+        actual = _stable_file_record(
+            Path(raw_path),
+            label=f"approved smoke result {key!r} worker preflight",
+        )
+        try:
+            Path(actual["path"]).relative_to(provenance_root.resolve(strict=True))
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise RuntimeError(f"Approved smoke preflight for {key!r} escapes run root") from exc
+        if actual["sha256"] != digest:
+            raise RuntimeError(f"Approved smoke preflight for {key!r} changed")
+        on_disk = _load_json(
+            Path(actual["path"]),
+            label=f"approved smoke result {key!r} worker preflight",
+        )
+        if on_disk != envelope["record"]:
+            raise RuntimeError(f"Approved smoke preflight for {key!r} differs from its envelope")
+        if actual["path"] in preflight_paths:
+            raise RuntimeError("Approved smoke results reuse one worker preflight")
+        preflight_paths.add(actual["path"])
+        preflight_records.append({"key": key, **actual})
+
+    native_preflights = plan.get("native_worker_preflights")
+    if not isinstance(native_preflights, list) or len(native_preflights) != 1:
+        raise RuntimeError("Approved native smoke must bind exactly one worker preflight")
+    native = _record_below(
+        native_preflights[0],
+        root=provenance_root,
+        label="approved native smoke worker preflight",
+    )
+    if native["path"] in preflight_paths:
+        raise RuntimeError("Approved native smoke reused another worker preflight")
+    preflight_records.append({"key": "native-hybrid", **native})
+
+    marker_record_after = _stable_file_record(
+        marker_path,
+        label="formal smoke approval marker",
+    )
+    if marker_record_after != marker_record_before:
+        raise RuntimeError("Formal smoke approval marker changed during binding verification")
+    return {
+        "verification_mode": (
+            "full_sha256_submitter_binding_plus_worker_semantic_validator_check"
+        ),
+        "marker": marker_record_after,
+        "validated_plan_sha256": validated_plan_sha256,
+        "smoke_plan_identity": {
+            "version": plan["smoke_plan_version"],
+            "sha256": smoke_plan_sha256,
+        },
+        "code_commit": plan["code_commit"],
+        "input_manifest": input_record,
+        "completed_job_keys": list(completed),
+        "results": result_records,
+        "worker_preflights": preflight_records,
+    }
 
 
 def _pinned_absolute_file_records(document: Any) -> dict[str, dict]:
@@ -476,11 +730,16 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", required=True)
     parser.add_argument("--expected-commit", default=os.environ.get("CODE_REPO_COMMIT"))
+    parser.add_argument("--run-root")
     parser.add_argument("--model")
     parser.add_argument("--input-manifest")
     parser.add_argument("--expected-input-manifest-sha256")
+    parser.add_argument("--smoke-approval-marker")
+    parser.add_argument("--expected-smoke-approval-marker-sha256")
+    parser.add_argument("--expected-smoke-validated-plan-sha256")
+    parser.add_argument("--emit-smoke-approval-binding", action="store_true")
     parser.add_argument("--dataset-file", action="append", default=[])
-    parser.add_argument("--output", required=True)
+    parser.add_argument("--output")
     parser.add_argument("--allow-dirty", action="store_true")
     parser.add_argument("--no-cuda", action="store_true")
     args = parser.parse_args()
@@ -504,6 +763,43 @@ def main() -> None:
     dirty = _run("git", "status", "--porcelain", "--untracked-files=all", cwd=repo)
     if dirty and not args.allow_dirty:
         raise RuntimeError("Tracked worktree changes are present; commit them before a paper run")
+
+    smoke_arguments = (
+        args.run_root,
+        args.smoke_approval_marker,
+        args.expected_input_manifest_sha256,
+    )
+    if args.emit_smoke_approval_binding:
+        if any(value is None for value in smoke_arguments) or args.input_manifest is None:
+            raise RuntimeError(
+                "Smoke binding emission requires --run-root, --smoke-approval-marker, "
+                "--input-manifest, and --expected-input-manifest-sha256"
+            )
+        binding = _verify_smoke_approval_binding(
+            marker=Path(args.smoke_approval_marker),
+            run_root=Path(args.run_root),
+            expected_commit=args.expected_commit,
+            input_manifest=Path(args.input_manifest),
+            expected_input_manifest_sha256=args.expected_input_manifest_sha256,
+        )
+        print(
+            f"{binding['marker']['sha256']} {binding['validated_plan_sha256']}",
+            flush=True,
+        )
+        return
+    if args.output is None:
+        raise RuntimeError("--output is required for a paper worker preflight")
+
+    supplied_smoke_arguments = (
+        args.run_root,
+        args.smoke_approval_marker,
+        args.expected_smoke_approval_marker_sha256,
+        args.expected_smoke_validated_plan_sha256,
+    )
+    if any(value is not None for value in supplied_smoke_arguments) and any(
+        value is None for value in supplied_smoke_arguments
+    ):
+        raise RuntimeError("Formal smoke approval preflight arguments must be supplied together")
 
     # Import only after the caller has installed PYTHONPATH=$REPO.  Resolve both
     # paths to defeat symlink-based false positives.
@@ -529,6 +825,25 @@ def main() -> None:
         args.input_manifest,
         expected_input_manifest_sha256=args.expected_input_manifest_sha256,
     )
+    formal_smoke_approval = None
+    if all(value is not None for value in supplied_smoke_arguments):
+        expected_validator_sentinel = (
+            f"{args.expected_smoke_approval_marker_sha256}:"
+            f"{args.expected_smoke_validated_plan_sha256}"
+        )
+        if os.environ.get("PAPER_SMOKE_VALIDATOR_CHECK_COMPLETED") != (
+            expected_validator_sentinel
+        ):
+            raise RuntimeError("Formal worker has no matching completed smoke-validator check")
+        formal_smoke_approval = _verify_smoke_approval_binding(
+            marker=Path(args.smoke_approval_marker),
+            run_root=Path(args.run_root),
+            expected_commit=args.expected_commit,
+            input_manifest=Path(args.input_manifest),
+            expected_input_manifest_sha256=args.expected_input_manifest_sha256,
+            expected_marker_sha256=args.expected_smoke_approval_marker_sha256,
+            expected_validated_plan_sha256=args.expected_smoke_validated_plan_sha256,
+        )
     model_record = _model_provenance(
         args.model,
         input_manifest=args.input_manifest,
@@ -569,6 +884,8 @@ def main() -> None:
         "dataset_files": dataset_records,
         "environment": {key: os.environ.get(key) for key in ENV_ALLOWLIST},
     }
+    if formal_smoke_approval is not None:
+        document["formal_smoke_approval"] = formal_smoke_approval
     output = Path(args.output).expanduser().resolve()
     _atomic_json(output, document)
     print(json.dumps(document, indent=2, sort_keys=True), flush=True)
