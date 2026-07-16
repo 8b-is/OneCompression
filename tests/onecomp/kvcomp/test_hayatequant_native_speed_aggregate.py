@@ -58,6 +58,7 @@ def test_native_formal_contract_is_exactly_48_predeclared_cells():
     assert contract["matrix_gate"]["minimum_overall_wins"] == 44
     assert contract["matrix_gate"]["minimum_wins_per_endpoint"] == 11
     assert contract["matrix_gate"]["minimum_wins_per_rate"] == 22
+    assert contract["timing_protocol"]["synthetic_input_seed"] == 0
     assert contract["known_development_evidence"]["blind_preregistration_claimed"] is False
 
 

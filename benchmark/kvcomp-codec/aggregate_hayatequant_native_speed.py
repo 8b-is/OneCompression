@@ -242,6 +242,10 @@ def _validate_result(
         "max_splits": contract["common_support"]["max_kv_splits"],
         "measure_cudagraph": True,
         "recipe": "hq",
+        "seed": timing["synthetic_input_seed"],
+        "dist": "gaussian",
+        "codebook_init": "auto",
+        "rotation_mode": "auto",
     }
     for name, expected in expected_arguments.items():
         if arguments.get(name) != expected:

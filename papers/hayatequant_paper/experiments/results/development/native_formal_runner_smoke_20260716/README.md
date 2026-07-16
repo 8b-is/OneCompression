@@ -37,9 +37,14 @@ Ratios are TurboQuant latency divided by HQ latency, so values greater than one
 would favor HQ. These tiny workloads and repeat counts are runner diagnostics,
 not evidence for a speed claim.
 
-The preregistered formal contract is
-`benchmark/kvcomp-codec/hayatequant_native_speed_formal_contract.json` (SHA-256
-`fe655abd53948b3db840a4747ce5b58b5ebaea30fb32d6466a79af321001d16c`).
+These smokes exercised the draft contract whose SHA-256, recorded in every raw
+result, is
+`fe655abd53948b3db840a4747ce5b58b5ebaea30fb32d6466a79af321001d16c`.
+Before any formal result was run, the contract was tightened to pin synthetic
+input seed zero plus the Gaussian generator and all HQ source-law/rotation
+arguments. The final contract at
+`benchmark/kvcomp-codec/hayatequant_native_speed_formal_contract.json` has
+SHA-256 `0e35a5df5fb99f06163165f1155c0916522f324c8758c5d55c46f9f28620bb9a`.
 It freezes 48 cells (two common native rates, two model-derived GQA shapes,
 three contexts, four endpoints), twenty fresh processes per cell, strict ties
 as losses, at least 44/48 overall wins, at least 11/12 wins per endpoint, and

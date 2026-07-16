@@ -78,6 +78,8 @@
   ],
   "timing_protocol": {
     "counterbalance": "five alternating ABBA/BAAB quartets",
+    "synthetic_input_seed": 0,
+    "synthetic_input_distribution": "independent torch.randn key/value/query tensors",
     "fresh_processes_total_per_cell": 20,
     "fresh_processes_per_method_per_cell": 10,
     "warmups_per_process": 10,
