@@ -11,9 +11,9 @@ partial benchmark value into the manuscript.
 - Only a complete coverage-checked aggregate can generate numerical content.
   The complete table ledger stays alongside the aggregate in the repository;
   it is not inflated into the paper appendix.
-- The current formal aggregate contains HQ and Adaptive HQ.  Rotation HQ is
-  defined as a separately pre-registered opt-in learned-rotation control and
-  cannot inherit either method's values.
+- The current formal-result schema contains HQ and Adaptive HQ.  Rotation HQ
+  is defined as a separately pre-registered opt-in learned-rotation control
+  and cannot inherit either method's values.
 
 Checks recorded in `paper_layout_check.json` use a synthetic complete fixture
 solely to test the aggregate-to-LaTeX interface; it is never copied to a paper
