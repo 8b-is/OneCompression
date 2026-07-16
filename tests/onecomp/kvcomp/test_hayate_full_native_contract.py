@@ -60,7 +60,40 @@ def test_gpu_smoke_requires_payload_and_attention_parity():
     assert '"key_fp16_scales_exact": True' in source
     assert '"value_fp16_scales_exact": True' in source
     assert "rotated_value_linearity_tolerance" in source
+    assert "0xA5" in source
+    assert 'cache[..., layout["slot_size"] :]' in source
     assert 'cross_method_speed_claim_allowed": False' in source
+
+
+def test_b2_two_byte_decode_is_guarded_for_every_supported_shift():
+    # A b=2 stream code begins at any residue in 0..7.  At <=9 code bits the
+    # inclusive terminal bit is at most 15, so byte0+byte1 is sufficient; the
+    # the first width with a shift-7 case extending past bit15 is 11 and must
+    # use generic three-byte extraction.  The runtime guard is deliberately
+    # conservative at the canonical fixed-recipe maximum of 9.
+    for code_bits in range(1, 10):
+        shifts = {(block * code_bits) % 8 for block in range(16)}
+        assert max(shift + code_bits for shift in shifts) <= 16
+    shifts_11 = {(block * 11) % 8 for block in range(16)}
+    assert max(shift + 11 for shift in shifts_11) > 16
+
+    source = KERNEL.read_text(encoding="utf-8")
+    b2 = source.split("def _full_hq_decode_stage1_b2", 1)[1].split(
+        "def _full_hq_decode_stage1", 1
+    )[0]
+    assert "kr2" not in b2
+    assert "vr2" not in b2
+    assert "recipe.key_code_bits_per_block <= 9" in source
+    assert "recipe.value_code_bits_per_block <= 9" in source
+
+
+def test_decode_launch_tuning_is_scoped_to_the_b2_fast_path():
+    source = KERNEL.read_text(encoding="utf-8")
+    assert "use_b2_fast_path = (" in source
+    assert "stage1 = _full_hq_decode_stage1_b2 if use_b2_fast_path else" in source
+    assert "block_kv = 8 if use_b2_fast_path else 16" in source
+    assert "stage1_num_warps = 2 if use_b2_fast_path else 4" in source
+    assert "num_warps=stage1_num_warps" in source
 
 
 def test_generation_harness_labels_full_hq_separately_from_hybrid():

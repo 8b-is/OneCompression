@@ -10,11 +10,12 @@ implementation candidates and may replace that search only after passing the
 pinned all-rate quality and payload gates.  Each role stores one signed
 fp16 scale and no zero point.
 
-The encoder intentionally calls the audited tensor assignment primitives used
-by the public codec.  This preserves code/scale payload parity, including its
-CUDA fp16 scoring boundary.  The packed-cache decode and attention path is
-native Triton.  A future fused encoder may replace the tensor front-end only
-after proving byte-identical payloads over the formal parity fixtures.
+For the fixed b=2 recipes, native Triton evaluates every codeword with the
+same fp16 tensor-core score as the audited public codec and fuses the argmax
+without materialising an ``N x K`` score matrix.  Other block sizes keep the
+public tensor primitive.  Code indices, scales, and packed bytes remain under
+the public-payload parity gate.  Packed-cache decode and attention are native
+Triton.
 """
 
 from __future__ import annotations
@@ -67,6 +68,84 @@ def _assignment_lut(
     )
 
 
+@triton.jit
+def _full_hq_exact_b2_tensorcore(
+    Z_ptr,
+    CB_ptr,
+    CSQ_ptr,
+    Codes_ptr,
+    N_BLOCKS: tl.constexpr,
+    NUM_CODEWORDS: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+):
+    """All-codeword b=2 score and argmax without a materialized score matrix."""
+
+    blocks = tl.program_id(0) * BLOCK_M + tl.arange(0, BLOCK_M)
+    bmask = blocks < N_BLOCKS
+    inner = tl.arange(0, 16)
+    z0 = tl.load(Z_ptr + blocks * 2, mask=bmask, other=0.0).to(tl.float16)
+    z1 = tl.load(Z_ptr + blocks * 2 + 1, mask=bmask, other=0.0).to(tl.float16)
+    lhs = tl.where(
+        inner[None, :] == 0,
+        z0[:, None],
+        tl.where(inner[None, :] == 1, z1[:, None], 0.0),
+    ).to(tl.float16)
+    best = tl.full([BLOCK_M], -float("inf"), tl.float32)
+    winner = tl.full([BLOCK_M], NUM_CODEWORDS, tl.int32)
+    for start in range(0, NUM_CODEWORDS, BLOCK_K):
+        code = start + tl.arange(0, BLOCK_K)
+        kmask = code < NUM_CODEWORDS
+        rhs = tl.load(
+            CB_ptr + code[None, :] * 2 + inner[:, None],
+            mask=kmask[None, :] & (inner[:, None] < 2),
+            other=0.0,
+        ).to(tl.float16)
+        dot = tl.dot(lhs, rhs, out_dtype=tl.float32).to(tl.float16)
+        csq = tl.load(CSQ_ptr + code, mask=kmask, other=0.0).to(tl.float16)
+        correction = (0.5 * csq.to(tl.float32)).to(tl.float16)
+        score = (dot.to(tl.float32) - correction[None, :].to(tl.float32)).to(tl.float16)
+        scoref = tl.where(bmask[:, None] & kmask[None, :], score, -float("inf")).to(tl.float32)
+        tile_best = tl.max(scoref, axis=1)
+        tile_winner = tl.min(
+            tl.where(scoref == tile_best[:, None], code[None, :], NUM_CODEWORDS),
+            axis=1,
+        )
+        replace = (tile_best > best) | ((tile_best == best) & (tile_winner < winner))
+        best = tl.where(replace, tile_best, best)
+        winner = tl.where(replace, tile_winner, winner)
+    tl.store(Codes_ptr + blocks, winner.to(tl.int64), mask=bmask)
+
+
+def _quantize_exact_b2_tensorcore(
+    z: torch.Tensor,
+    scoring_codebook: torch.Tensor,
+    scoring_csq: torch.Tensor,
+) -> torch.Tensor:
+    """Canonical public-GEMM parity with fused tiled all-codeword argmax."""
+
+    flat = z.reshape(-1, 2).contiguous()
+    num_codewords = int(scoring_codebook.shape[0])
+    if num_codewords < 1 or num_codewords > 512 or num_codewords & (num_codewords - 1):
+        raise ValueError("native b=2 tensor-core assignment requires power-of-two K <= 512")
+    codes = torch.empty(flat.shape[0], device=flat.device, dtype=torch.int64)
+    block_m = 32
+    block_k = max(16, num_codewords)
+    _full_hq_exact_b2_tensorcore[(triton.cdiv(flat.shape[0], block_m),)](
+        flat,
+        scoring_codebook,
+        scoring_csq,
+        codes,
+        N_BLOCKS=flat.shape[0],
+        NUM_CODEWORDS=scoring_codebook.shape[0],
+        BLOCK_M=block_m,
+        BLOCK_K=block_k,
+        num_warps=4,
+        num_stages=1,
+    )
+    return codes.reshape(z.shape[:-1])
+
+
 def _encode_role(
     x: torch.Tensor,
     rotation: torch.Tensor,
@@ -97,11 +176,18 @@ def _encode_role(
                 score_blocks = (
                     blocks.half() if blocks.is_cuda and blocks.dtype == torch.float32 else blocks
                 )
-                codes = quantize_exact_pre(
-                    score_blocks,
-                    scoring_codebook,
-                    scoring_csq,
-                )
+                if block_size == 2 and score_blocks.is_cuda and scoring_codebook.shape[0] <= 512:
+                    codes = _quantize_exact_b2_tensorcore(
+                        score_blocks,
+                        scoring_codebook,
+                        scoring_csq,
+                    )
+                else:
+                    codes = quantize_exact_pre(
+                        score_blocks,
+                        scoring_codebook,
+                        scoring_csq,
+                    )
                 chat_blocks = lookup_codewords(codebook, codes)
         else:
             codes = quantize_via_lut(
@@ -445,12 +531,7 @@ def _full_hq_decode_stage1_b2(
             mask=pmask[:, None] & bmask[None, :] & ((kbyte[None, :] + 1) < K_CODE_BYTES),
             other=0,
         ).to(tl.int32)
-        kr2 = tl.load(
-            KV_cache_ptr + bases[:, None] + kbyte[None, :] + 2,
-            mask=pmask[:, None] & bmask[None, :] & ((kbyte[None, :] + 2) < K_CODE_BYTES),
-            other=0,
-        ).to(tl.int32)
-        kcode = ((kr0 | (kr1 << 8) | (kr2 << 16)) >> kshift[None, :]) & ((1 << K_CODE_BITS) - 1)
+        kcode = ((kr0 | (kr1 << 8)) >> kshift[None, :]) & ((1 << K_CODE_BITS) - 1)
         kc0 = tl.load(
             K_codebook_ptr + kcode * 2,
             mask=pmask[:, None] & bmask[None, :],
@@ -480,12 +561,7 @@ def _full_hq_decode_stage1_b2(
             mask=pmask[:, None] & bmask[None, :] & ((vbyte[None, :] + 1) < V_CODE_BYTES),
             other=0,
         ).to(tl.int32)
-        vr2 = tl.load(
-            KV_cache_ptr + bases[:, None] + V_CODES_OFFSET + vbyte[None, :] + 2,
-            mask=pmask[:, None] & bmask[None, :] & ((vbyte[None, :] + 2) < V_CODE_BYTES),
-            other=0,
-        ).to(tl.int32)
-        vcode = ((vr0 | (vr1 << 8) | (vr2 << 16)) >> vshift[None, :]) & ((1 << V_CODE_BITS) - 1)
+        vcode = ((vr0 | (vr1 << 8)) >> vshift[None, :]) & ((1 << V_CODE_BITS) - 1)
         vc0 = tl.load(
             V_codebook_ptr + vcode * 2,
             mask=pmask[:, None] & bmask[None, :],
@@ -820,12 +896,15 @@ def triton_full_hayatequant_decode_attention(
         if buf_holder is not None:
             buf_holder._hq_full_mid_o = mid_o
     block_d = triton.next_power_of_2(d)
-    block_kv = 16
-    stage1 = (
-        _full_hq_decode_stage1_b2
-        if recipe.key_block_size == 2 and recipe.value_block_size == 2
-        else _full_hq_decode_stage1
+    use_b2_fast_path = (
+        recipe.key_block_size == 2
+        and recipe.value_block_size == 2
+        and recipe.key_code_bits_per_block <= 9
+        and recipe.value_code_bits_per_block <= 9
     )
+    stage1 = _full_hq_decode_stage1_b2 if use_b2_fast_path else _full_hq_decode_stage1
+    block_kv = 8 if use_b2_fast_path else 16
+    stage1_num_warps = 2 if use_b2_fast_path else 4
     common = dict(
         NUM_KV_HEADS=hk,
         HEAD_DIM=d,
@@ -842,7 +921,7 @@ def triton_full_hayatequant_decode_attention(
         ATTN_SCALE=scale,
         BLOCK_D=block_d,
         BLOCK_KV=block_kv,
-        num_warps=4,
+        num_warps=stage1_num_warps,
         num_stages=1,
     )
     if stage1 is _full_hq_decode_stage1_b2:

@@ -194,6 +194,10 @@ def _worker(args: argparse.Namespace) -> dict:
             "implementation": "faithful_packed_fixed_HQ_native",
             "recipe": recipe.provenance(d),
             "slot_size_aligned": layout["slot_size_aligned"],
+            "exact_assignment_implementation": ("all_codewords_tensorcore_score_fused_argmax"),
+            "approximate_lut": False,
+            "persistent_encoder_acceleration_bytes": 0,
+            "physical_cache_bytes_includes_encoder_acceleration": False,
             "upstream_turboquant_modified": False,
         }
     elif args.worker_variant == "TurboQuant":

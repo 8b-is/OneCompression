@@ -1,0 +1,131 @@
+{
+  "cross_method_speed_claim_allowed": false,
+  "diagnostic_timing": {
+    "decode_ms": 0.08176339324563742,
+    "store_ms": 0.463837047573179
+  },
+  "formal_quality_benchmark": false,
+  "implementation_contract": {
+    "approximate_lut": false,
+    "exact_assignment_implementation": "all_codewords_tensorcore_score_fused_argmax",
+    "key_path": "data-free rotation + exact short block-VQ + NC",
+    "main_story": "paper HayateQuant fixed role-aware recipe",
+    "payload_parity_with_public_codec": true,
+    "persistent_encoder_acceleration_bytes": 0,
+    "proposal_name": "HQ",
+    "public_encoder": "exact",
+    "scale_storage": "one signed fp16 scale per role vector",
+    "value_inverse_rotation": "one fp32 GEMM after rotated-space attention accumulation",
+    "value_path": "data-free rotation + exact block-VQ + LS-reassign-LS"
+  },
+  "ok": true,
+  "parity": {
+    "attention_tolerance": {
+      "atol": 0.004,
+      "rtol": 0.002
+    },
+    "full_dequant_exact_at_output_dtype": true,
+    "key_codes_exact": true,
+    "key_fp16_scales_exact": true,
+    "packed_stream_exact": true,
+    "rotated_value_linearity_tolerance": {
+      "atol": 0.0003,
+      "rtol": 0.0002
+    },
+    "store1_matches_prefill_payload_and_bytes": true,
+    "value_codes_exact": true,
+    "value_fp16_scales_exact": true
+  },
+  "provenance": {
+    "arguments": {
+      "allow_canonical_k10v6_b4": false,
+      "assignment_mode": "exact",
+      "avg_bits": 3,
+      "codebook_init": "auto",
+      "dist": "gaussian",
+      "dtype": "float16",
+      "head_dim": 128,
+      "iters": 20,
+      "key_block_size": null,
+      "key_code_bits": null,
+      "kv_heads": 2,
+      "lut_bins": null,
+      "lut_candidates": null,
+      "max_excess_distortion_pct": 0.5,
+      "output": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/results/dev/native_exact_speed_opt_20260716/tensorcore_exact_v3/smoke_rate3_seq1.json",
+      "query_heads": 4,
+      "recipe": "hq",
+      "rotation_mode": "auto",
+      "seed": 0,
+      "tokens": 1,
+      "value_block_size": null,
+      "value_code_bits": null,
+      "warmups": 3
+    },
+    "cuda_version": "13.0",
+    "cuda_visible_devices": "0",
+    "finished_at_utc": "2026-07-16T05:21:59.239765+00:00",
+    "git_commit": "e13ee5477f7755907b2c9c003990157839a6214a",
+    "git_status_porcelain": "M benchmark/kvcomp-codec/hayatequant_vllm_full_native_fair_speed.py\n M benchmark/kvcomp-codec/hayatequant_vllm_full_native_profile.py\n M benchmark/kvcomp-codec/hayatequant_vllm_full_native_smoke.py\n M tests/onecomp/kvcomp/test_hayate_full_native_contract.py\n M vllm_plugins/kvcomp/hayate_full_triton.py\n?? benchmark/kvcomp-codec/hayatequant_vllm_full_native_exact_parity.py\n?? papers/hayatequant_paper/experiments/results/development/native_exact_grid_rejected_20260716/\n?? papers/hayatequant_paper/experiments/results/development/native_tensorcore_exact_accepted_20260716/",
+    "gpu": "NVIDIA B200",
+    "hostname": "kagura-gpu11",
+    "source_sha256": {
+      "benchmark/kvcomp-codec/hayatequant_vllm_full_native_smoke.py": "5b125aaaa13fec3c83894b70f21ccf2fd84c0f87916606408cd489fad52dcb5a",
+      "vllm_plugins/kvcomp/hayate_full_config.py": "1c42cd4a09b33c771ba25e3a713b8a0f37f9a7077b9f6d204589997188e1b993",
+      "vllm_plugins/kvcomp/hayate_full_native.py": "34ab6fca260af3520ead86cd4f61b92bcb204845c02194c83697a7e1e1a1bb4e",
+      "vllm_plugins/kvcomp/hayate_full_triton.py": "d7a81483628629a96e3a2b0546d571208b528c08c97dea9908b10140ffad3049"
+    },
+    "torch_version": "2.11.0+cu130"
+  },
+  "quality_gate_against_exact_assignment": {
+    "distortion": {
+      "reason": "paper-original/exact development assignment",
+      "reference_only": true
+    },
+    "max_role_excess_mse_pct": 0.5,
+    "passed": true,
+    "ppl_required_separately": false
+  },
+  "recipe": {
+    "allow_canonical_k10v6_b4": false,
+    "assignment": "exact_nearest_codeword_then_value_ls_refit",
+    "assignment_contract": {
+      "search": "all_codewords",
+      "tie_break": "smallest_index"
+    },
+    "assignment_mode": "exact",
+    "average_kv_rate_bits_per_coordinate": 3.0,
+    "codebook_init": "auto",
+    "dist": "gaussian",
+    "key_block_size": 2,
+    "key_code_bits_per_block": 7,
+    "key_rate_bits_per_coordinate": 3.5,
+    "key_scale_mode": "nc",
+    "layout": {
+      "key_code_bytes": 56,
+      "key_scale_offset": 56,
+      "slot_padding_bytes": 0,
+      "slot_size": 100,
+      "slot_size_aligned": 100,
+      "value_code_bytes": 40,
+      "value_codes_offset": 58,
+      "value_scale_offset": 98
+    },
+    "lut_bins": 256,
+    "lut_candidates": 2,
+    "lut_limit": 5.0,
+    "max_codebook_bits": 9,
+    "rotation_mode": "auto",
+    "scale_contract": "one_signed_fp16_scale_per_role_vector",
+    "seed": 0,
+    "value_block_size": 2,
+    "value_code_bits_per_block": 5,
+    "value_rate_bits_per_coordinate": 2.5,
+    "value_scale_mode": "ls_iter",
+    "zero_points": 0
+  },
+  "schema": {
+    "name": "onecomp.hq_full_native_correctness_smoke",
+    "version": 2
+  }
+}

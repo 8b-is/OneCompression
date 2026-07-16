@@ -252,6 +252,27 @@ def _materialize(codes, scales, cb, block, rotation, shape, dtype):
     return (rotated @ rotation.t()).to(dtype)
 
 
+def _materialize_paged_dequant_reference(
+    codes, scales, cb, rotation, *, tokens, heads, alloc_len, head_dim, dtype
+):
+    """Match the native bulk-dequant GEMM batch/row shape before comparison.
+
+    CUDA fp16/bf16 output rounding can differ by one ulp when the same fp32
+    operands are sent through different GEMM row/batch shapes.  The old smoke
+    compared native ``[1,H,alloc,D]`` rotation against a compact ``[N,H,D]``
+    rotation, so ``tokens=1`` failed even on the unmodified baseline.  This
+    reference pads in rotated space and uses the native batch shape; it still
+    compares the requested token payload at zero tolerance.
+    """
+
+    rotated = lookup_codewords(cb, codes.long()).reshape(tokens, heads, head_dim)
+    rotated = rotated * scales.reshape(tokens, heads, 1).float()
+    padded = torch.zeros(1, heads, alloc_len, head_dim, device=codes.device)
+    padded[0, :, :tokens].copy_(rotated.transpose(0, 1))
+    materialized = (padded @ rotation.t()).to(dtype)
+    return materialized[0, :, :tokens].transpose(0, 1)
+
+
 def run(args: argparse.Namespace) -> dict:
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required")
@@ -368,8 +389,29 @@ def run(args: argparse.Namespace) -> dict:
     v_out = torch.empty_like(k_out)
     triton_full_hayatequant_dequant_kv(cache, bt, kcb, vcb, kr, vr, recipe, k_out, v_out)
     torch.cuda.synchronize()
-    k_ref = _materialize(packed_k, packed_ks, kcb, recipe.key_block_size, kr, key.shape, dtype)
-    v_ref = _materialize(packed_v, packed_vs, vcb, recipe.value_block_size, vr, value.shape, dtype)
+    alloc_len = pages * page_size
+    k_ref = _materialize_paged_dequant_reference(
+        packed_k,
+        packed_ks,
+        kcb,
+        kr,
+        tokens=n,
+        heads=hk,
+        alloc_len=alloc_len,
+        head_dim=d,
+        dtype=dtype,
+    )
+    v_ref = _materialize_paged_dequant_reference(
+        packed_v,
+        packed_vs,
+        vcb,
+        vr,
+        tokens=n,
+        heads=hk,
+        alloc_len=alloc_len,
+        head_dim=d,
+        dtype=dtype,
+    )
     torch.testing.assert_close(k_out[0, :, :n].transpose(0, 1), k_ref, rtol=0, atol=0)
     torch.testing.assert_close(v_out[0, :, :n].transpose(0, 1), v_ref, rtol=0, atol=0)
 
@@ -562,6 +604,15 @@ def run(args: argparse.Namespace) -> dict:
                 else "data-free rotation + exact block-VQ + LS-reassign-LS"
             ),
             "public_encoder": recipe.assignment_mode,
+            "exact_assignment_implementation": (
+                "all_codewords_tensorcore_score_fused_argmax"
+                if recipe.assignment_mode == "exact"
+                and recipe.key_block_size == 2
+                and recipe.value_block_size == 2
+                else "public_tensor_primitive"
+            ),
+            "approximate_lut": recipe.assignment_mode == "lut",
+            "persistent_encoder_acceleration_bytes": 0,
             "scale_storage": "one signed fp16 scale per role vector",
             "value_inverse_rotation": "one fp32 GEMM after rotated-space attention accumulation",
             "payload_parity_with_public_codec": True,

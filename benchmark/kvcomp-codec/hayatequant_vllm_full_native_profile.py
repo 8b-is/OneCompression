@@ -29,6 +29,7 @@ from onecomp.kvcomp.codec.hayate.vq import (
 from vllm_plugins.kvcomp.hayate_full_triton import (
     _encode_role,
     _pack_encoded_hq,
+    _quantize_exact_b2_tensorcore,
     triton_full_hayatequant_decode_attention,
     triton_full_hayatequant_store,
 )
@@ -225,8 +226,18 @@ def run(args: argparse.Namespace) -> dict:
         "store_total": store_all,
         "store_key_rotation": lambda: key.float() @ kr,
         "store_value_rotation": lambda: value.float() @ vr,
-        "store_key_exact_assignment": lambda: quantize_exact_pre(kblocks, kscore, kcsq),
-        "store_value_exact_assignment_one_pass": lambda: quantize_exact_pre(vblocks, vscore, vcsq),
+        "store_key_public_exact_assignment_reference": lambda: quantize_exact_pre(
+            kblocks, kscore, kcsq
+        ),
+        "store_value_public_exact_assignment_one_pass_reference": lambda: quantize_exact_pre(
+            vblocks, vscore, vcsq
+        ),
+        "store_key_native_fused_exact_assignment": lambda: _quantize_exact_b2_tensorcore(
+            kblocks, kscore, kcsq
+        ),
+        "store_value_native_fused_exact_assignment_one_pass": lambda: (
+            _quantize_exact_b2_tensorcore(vblocks, vscore, vcsq)
+        ),
         "store_key_codeword_lookup": lambda: lookup_codewords(kcb, kcodes),
         "store_value_codeword_lookup_one_pass": lambda: lookup_codewords(vcb, vcodes),
         "store_key_full_encode": key_encode,
@@ -241,12 +252,15 @@ def run(args: argparse.Namespace) -> dict:
         for name, fn in stage_fns.items()
     }
     total_store = float(stages["store_total"]["median_ms"])
-    estimated_search = float(stages["store_key_exact_assignment"]["median_ms"]) + 2.0 * float(
-        stages["store_value_exact_assignment_one_pass"]["median_ms"]
-    )
+    estimated_search = float(
+        stages["store_key_native_fused_exact_assignment"]["median_ms"]
+    ) + 2.0 * float(stages["store_value_native_fused_exact_assignment_one_pass"]["median_ms"])
     attribution = {
         "estimated_exact_search_ms_key_plus_two_value_passes": estimated_search,
         "estimated_exact_search_fraction_of_store": estimated_search / total_store,
+        "assignment_implementation": "all_codewords_tensorcore_score_fused_argmax",
+        "approximate_lut": False,
+        "persistent_acceleration_table_bytes": 0,
         "sum_full_role_encode_plus_pack_ms": (
             float(stages["store_key_full_encode"]["median_ms"])
             + float(stages["store_value_full_encode_two_assignments"]["median_ms"])

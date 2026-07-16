@@ -1,0 +1,173 @@
+{
+  "algorithm": "all_codewords_tensorcore_score_fused_argmax",
+  "approximate_lut": false,
+  "cross_method_speed_claim_allowed": false,
+  "development_only": true,
+  "formal_quality_benchmark": false,
+  "ok": true,
+  "persistent_acceleration_table_bytes": 0,
+  "provenance": {
+    "arguments": {
+      "allow_canonical_k10v6_b4": false,
+      "assignment_mode": "exact",
+      "avg_bits": 3,
+      "codebook_init": "auto",
+      "dist": "gaussian",
+      "head_dim": 128,
+      "key_block_size": null,
+      "key_code_bits": null,
+      "kv_heads": 8,
+      "lut_bins": null,
+      "lut_candidates": null,
+      "output": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/results/dev/native_exact_speed_opt_20260716/tensorcore_exact_v3/exact_parity_rate3.json",
+      "recipe": "hq",
+      "rotation_mode": "auto",
+      "seed": 20260716,
+      "seq1_tokens": 1,
+      "seq4096_tokens": 4096,
+      "value_block_size": null,
+      "value_code_bits": null,
+      "wide_rows": 250000
+    },
+    "cuda_version": "13.0",
+    "cuda_visible_devices": "0",
+    "finished_at_utc": "2026-07-16T05:21:38.213232+00:00",
+    "git_commit": "e13ee5477f7755907b2c9c003990157839a6214a",
+    "git_status_porcelain": "M benchmark/kvcomp-codec/hayatequant_vllm_full_native_fair_speed.py\n M benchmark/kvcomp-codec/hayatequant_vllm_full_native_profile.py\n M benchmark/kvcomp-codec/hayatequant_vllm_full_native_smoke.py\n M tests/onecomp/kvcomp/test_hayate_full_native_contract.py\n M vllm_plugins/kvcomp/hayate_full_triton.py\n?? benchmark/kvcomp-codec/hayatequant_vllm_full_native_exact_parity.py\n?? papers/hayatequant_paper/experiments/results/development/native_exact_grid_rejected_20260716/\n?? papers/hayatequant_paper/experiments/results/development/native_tensorcore_exact_accepted_20260716/",
+    "gpu": "NVIDIA B200",
+    "hostname": "kagura-gpu11",
+    "source_sha256": {
+      "benchmark/kvcomp-codec/hayatequant_vllm_full_native_exact_parity.py": "5ca8249b69263af04771e173df1344bcd8db1046228b5ec6a89d48fb7dd026bd",
+      "benchmark/kvcomp-codec/hayatequant_vllm_full_native_smoke.py": "5b125aaaa13fec3c83894b70f21ccf2fd84c0f87916606408cd489fad52dcb5a",
+      "onecomp/kvcomp/codec/hayate/vq.py": "55ac248254422fd6f2eee62e32f9b6794ee294608b6b70ba7a1c0a2c510e0ca8",
+      "vllm_plugins/kvcomp/hayate_full_triton.py": "d7a81483628629a96e3a2b0546d571208b528c08c97dea9908b10140ffad3049"
+    },
+    "torch_version": "2.11.0+cu130"
+  },
+  "recipe": {
+    "allow_canonical_k10v6_b4": false,
+    "assignment": "exact_nearest_codeword_then_value_ls_refit",
+    "assignment_contract": {
+      "search": "all_codewords",
+      "tie_break": "smallest_index"
+    },
+    "assignment_mode": "exact",
+    "average_kv_rate_bits_per_coordinate": 3.0,
+    "codebook_init": "auto",
+    "dist": "gaussian",
+    "key_block_size": 2,
+    "key_code_bits_per_block": 7,
+    "key_rate_bits_per_coordinate": 3.5,
+    "key_scale_mode": "nc",
+    "layout": {
+      "key_code_bytes": 56,
+      "key_scale_offset": 56,
+      "slot_padding_bytes": 0,
+      "slot_size": 100,
+      "slot_size_aligned": 100,
+      "value_code_bytes": 40,
+      "value_codes_offset": 58,
+      "value_scale_offset": 98
+    },
+    "lut_bins": 256,
+    "lut_candidates": 2,
+    "lut_limit": 5.0,
+    "max_codebook_bits": 9,
+    "rotation_mode": "auto",
+    "scale_contract": "one_signed_fp16_scale_per_role_vector",
+    "seed": 20260716,
+    "value_block_size": 2,
+    "value_code_bits_per_block": 5,
+    "value_rate_bits_per_coordinate": 2.5,
+    "value_scale_mode": "ls_iter",
+    "zero_points": 0
+  },
+  "roles": {
+    "key": {
+      "codebook_size": 128,
+      "fixtures": [
+        {
+          "exact": true,
+          "first_mismatches": [],
+          "mismatch_count": 0,
+          "name": "seq1_standard_normal",
+          "rows": 512
+        },
+        {
+          "exact": true,
+          "first_mismatches": [],
+          "mismatch_count": 0,
+          "name": "seq4096_standard_normal",
+          "rows": 2097152
+        },
+        {
+          "exact": true,
+          "first_mismatches": [],
+          "mismatch_count": 0,
+          "name": "uniform_grid_boundaries_and_adjacent_fp16",
+          "rows": 198147
+        },
+        {
+          "exact": true,
+          "first_mismatches": [],
+          "mismatch_count": 0,
+          "name": "wide_and_explicit_outside",
+          "rows": 250008
+        },
+        {
+          "exact": true,
+          "first_mismatches": [],
+          "mismatch_count": 0,
+          "name": "fp16_top_score_ties",
+          "rows": 740
+        }
+      ],
+      "top_score_tie_rows_observed_in_boundary_grid": 740
+    },
+    "value": {
+      "codebook_size": 32,
+      "fixtures": [
+        {
+          "exact": true,
+          "first_mismatches": [],
+          "mismatch_count": 0,
+          "name": "seq1_standard_normal",
+          "rows": 512
+        },
+        {
+          "exact": true,
+          "first_mismatches": [],
+          "mismatch_count": 0,
+          "name": "seq4096_standard_normal",
+          "rows": 2097152
+        },
+        {
+          "exact": true,
+          "first_mismatches": [],
+          "mismatch_count": 0,
+          "name": "uniform_grid_boundaries_and_adjacent_fp16",
+          "rows": 198147
+        },
+        {
+          "exact": true,
+          "first_mismatches": [],
+          "mismatch_count": 0,
+          "name": "wide_and_explicit_outside",
+          "rows": 250008
+        },
+        {
+          "exact": true,
+          "first_mismatches": [],
+          "mismatch_count": 0,
+          "name": "fp16_top_score_ties",
+          "rows": 387
+        }
+      ],
+      "top_score_tie_rows_observed_in_boundary_grid": 387
+    }
+  },
+  "schema": {
+    "name": "onecomp.hq_full_native_exact_assignment_parity",
+    "version": 1
+  }
+}
