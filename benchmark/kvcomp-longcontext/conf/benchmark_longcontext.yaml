@@ -26,6 +26,17 @@ uniform_bits: [4, 2]        # uniform-quant baselines (per-token INT)
 # is a codec kwargs dict; "2.5-bit"/"3.5-bit" use the paper's 32/96 outlier
 # split at head_dim=128 (2.25/3.25 payload + 0.25 for two fp16 norms).
 turboquant_variants: []
+
+# FibQuant v1 exact spherical-Beta block-VQ quality baseline.  Entries are
+# restricted to {label: FibQuant-paper, bits: 2|3|4}; this research path is
+# intentionally excluded from decode/inference-speed comparisons.
+fibquant_variants: []
+
+# BlockQuant v1 exact-search fixed-seed quality baseline.  The only accepted
+# entry is {label: BlockQuant-paper, bits: 3}; the builder additionally requires
+# head_dim=128 and records/counts the versioned dynamic top-32 identity field.
+# It is deliberately absent from every speed harness.
+blockquant_variants: []
 # KIVI baseline (arXiv:2402.02750): per-channel key, per-token value. Empty=skip.
 kivi_bits: []
 
@@ -64,7 +75,7 @@ thinkv:
   precision: {R: 4, E: 4, T: 2}   # static per-thought bits (paper)
   auto_configure: true            # outlier-layer skip + L*/threshold calibration for TBQ
   calib_max_new: 200              # CoT length per calibration prompt
-  capture_long: false             # attn capture on needle/RULER (output_attentions OOMs at long ctx; K25)
+  capture_long: false             # attn capture on needle/local multi-key (long-context OOM risk; K25)
 
 pmkvq:
   key_bits: 8               # high precision for recent keys (K>V, MKLV)
@@ -103,10 +114,23 @@ seeds: 3
 sample_seed: 0              # common random numbers across compression methods
 max_new_needle: 64          # raise to ~256 for long-CoT reasoning models
 
-# --- synthetic multi-key retrieval (not the official NVIDIA RULER suite) ---
+# --- local synthetic multi-key retrieval (not a RULER benchmark) ---
 run_ruler: false            # historical config name retained for compatibility
 ruler_keys: 4
 ruler_seeds: 5
+
+# --- NeMo-Skills RULER v1 adapter (13 tasks x 100 tokenizer-specific samples) ---
+# Canonical NVIDIA/RULER v1 uses 500 samples/task; this protocol is named separately.
+# `data_root` must directly contain <task>/test.jsonl for all selected tasks.
+# Finite limits or task subsets are recorded as incomplete protocol smoke results.
+# The `official_ruler_*` key names below are retained for config compatibility only.
+run_official_ruler_v1: false
+official_ruler_data_root: null
+official_ruler_manifest_path: null  # null = data_root/../manifest.json auto-discovery
+official_ruler_tasks: []     # empty = all 13 RULER v1 tasks
+official_ruler_max_context: null
+official_ruler_start: 0
+official_ruler_limit: null   # null = complete pinned 100-sample/task adapter protocol
 
 # --- needle toggle (disable on reasoning models where FullKV retrieval fails) ---
 run_needle: true
@@ -118,8 +142,12 @@ max_new_reason: 1024
 
 # --- reasoning (MATH-500 pass@1) ---
 run_math: false
+math_start: 0              # global row offset for exact [0,500) shard coverage
 math_limit: 50              # finite value = smoke; null = complete MATH-500
-max_new_math: 3072
+max_new_math: 1024 # Math-Verify math_500 task generation_size
+math_grader: math_verify    # official full-generation extraction/equivalence
+math_verify_version: "0.9.0"
+math500_revision: 6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be
 
 # --- LongBench-E end-to-end generation (TurboQuant Table 1 downstream metric) ---
 run_longbench: false

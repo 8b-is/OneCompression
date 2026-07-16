@@ -75,7 +75,7 @@ taperkv:
 # Headline iso-memory ~3-bit point (K=4/V=3, KEY floor 3, value floor 2). Sized to
 # mem_fraction 0.197 -- identical to Uniform-INT3 / TurboQuant-3bit / HALO-3bit --
 # so the comparison is truly iso-memory. Verified (job 45990): needle 0.978,
-# RULER 0.933, PPL 6.96, i.e. it BEATS Uniform-INT3 (PPL 7.89) on perplexity,
+# legacy local multi-key 0.933, PPL 6.96, i.e. it BEATS Uniform-INT3 (PPL 7.89) on perplexity,
 # matches it on retrieval, and crushes the eviction baselines (StreamingLLM 0.20).
 # recent_tokens inherits the config default (128).
 taperkv_sweep:
@@ -108,7 +108,8 @@ turbotaper:
 turbotaper_sweep:
   - {label: "TurboTaper-3bit", key_bits: 4, value_bits: 3, b_min: 3, b_min_value: 3}
 
-# Single TurboQuant variant at 3-bit (paper-faithful Beta + Gaussian-QR rotation).
+# Single TurboQuant Algorithm-1-MSE component baseline at 3-bit (finite-Beta +
+# Gaussian-QR); this label does not claim a mixed-precision Table-1 reproduction.
 turboquant_variants:
   - {label: "TurboQuant-3bit", bits: 3, dist: beta, rotation_mode: dense}
 
@@ -136,7 +137,7 @@ depths: [0.1, 0.25, 0.5, 0.75, 0.9]
 seeds: 3
 max_new_needle: 256     # R1-Distill models always emit <think> prefix; 32 is too short
 
-run_ruler: false            # local multi-key diagnostic is not official RULER
+run_ruler: false            # local multi-key diagnostic is not a RULER benchmark
 ruler_keys: 4
 ruler_seeds: 5
 
@@ -152,6 +153,8 @@ max_new_reason: 4096
 run_math: true
 math_limit: null            # complete MATH-500 test split
 max_new_math: 4096
+math_grader: math_verify    # required; no silent local fallback
+math_verify_version: "0.9.0"
 
 # --- WikiText-2 PPL sanity ---
 run_ppl: true

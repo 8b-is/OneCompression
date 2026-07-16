@@ -1,5 +1,12 @@
 # KV-cache compression: long-context retrieval + reasoning
 
+> **Protocol boundary.** Much of this directory is a historical, multi-method
+> development harness.  Presets labelled `hayatequant_paper` and the local
+> `codec_speed.py` matrix are not the refreshed HayateQuant formal protocol.
+> Formal HQ/AdaptiveHQ claims are produced only by the fail-closed launcher,
+> validators, and renderer under `benchmark/kvcomp-codec/`; old numeric tables
+> below remain provenance-labelled development evidence and are not citable.
+
 Main experiment for the KV-cache compression methods, the analogue of the
 weight-side `benchmark/<model>-<recipe>/` runs (GPTQ / JointQ). It compares,
 **at a matched memory budget**, the two compression *families* the design memo
@@ -26,6 +33,20 @@ length-proportional ladder spends bits where retrieval needs them.
 The model grid mirrors the competing papers. Only official harnesses are directly
 comparable; the local synthetic multi-key and functional-code axes below are
 diagnostics and are deliberately not reported as RULER or LiveCodeBench scores:
+
+The dedicated `ruler_v1` evaluator is a separately named **NeMo-Skills RULER
+v1 100-sample/task protocol**. It consumes all 13 tokenizer-specific task files
+from the pinned adapter and must not be relabelled as the canonical
+NVIDIA/RULER v1 configuration, which uses 500 samples per task. Historical
+`run_ruler=true` rows below remain only the local synthetic multi-key diagnostic.
+
+LongCodeQA uses the final-filtered `Steefano/LCB` release, its verbatim raw
+prompt and released parser, and primary per-bracket accuracy.  Its fixed
+16-token greedy decoding is a deterministic paired-cache adaptation because
+the upstream wrappers do not publish one uniform decoding configuration; it is
+not labelled as exact reproduction of the original model-table decoding.  See
+[LONGCODEQA_PROTOCOL_AUDIT.md](LONGCODEQA_PROTOCOL_AUDIT.md) for the pins,
+known upstream evaluator bug, hashes, and feasible-bracket limits.
 
 | Proposed method | Competitor | Models | Benchmarks |
 |---|---|---|---|
@@ -114,13 +135,14 @@ python codec_speed.py --device cuda --heads 32 --seq 4096 --dim 128 \
 python codec_speed.py --device cuda --model /lustre/.../llama-3.1-8b-instruct
 ```
 
-Rows: `HayateQuant-auto` (**proposed**: block-VQ + folded hybrid rotation +
-grid-LUT encoder) · `HayateQuant-bs1` (superset guard) · `HayateQuant-exact` /
+Historical rows: `HayateQuant-auto` (old auto block-VQ + folded hybrid rotation +
+grid-LUT development recipe) · `HayateQuant-bs1` (scalar-path compatibility control) · `HayateQuant-exact` /
 `HayateQuant-K12` / `HayateQuant-dense-LS` (encoder/codebook/rotation
-ablations) · `TurboQuant-paper` (exact dense-QR reference) ·
-`TurboQuant-hadamard` (fast deployment approximation) · `HALO-*` (prior-best
-scale/rotation levers).  This substantiates "HayateQuant is more accurate than
-TurboQuant/HALO with an honestly measured latency trade-off".
+ablations) · `TurboQuant-paper` (Algorithm-1 MSE dense-QR reference, not a
+Table-1 mixed-precision reproduction) ·
+`TurboQuant-hadamard` (fast deployment approximation) · `HALO-*` (historical
+scale/rotation levers).  These are exploratory diagnostics only; the current
+fixed HQ recipe and its formal claim gates are not defined by this matrix.
 
 **2. End-task lever ablation** (`conf/paper_ablation.yaml`).  Does each codec lever
 / TaperKV design choice carry through to needle retrieval + PPL on a real model?
@@ -136,9 +158,11 @@ srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py --config-name paper_ablati
   `TaperKV-revsym` (K3V6, reversed — expected to regress since keys are more
   sensitive).
 
-All accuracy/pass@1 results now carry a **95% CI** (Wilson for retrieval, normal
-for reasoning) in both the JSON and the Markdown table (`value±half-width`), so a
-claimed win is backed by an error bar rather than a single point.
+This historical harness also reports **95% CIs** (Wilson for retrieval, normal
+for reasoning) in its JSON and Markdown table.  In the refreshed HayateQuant
+paper, predeclared point estimates are primary, while a separate simultaneous
+global gate governs any aggregate superiority statement; per-endpoint intervals
+remain descriptive and are not used to hide or discard point-estimate losses.
 
 Config: `conf/benchmark_longcontext.yaml`. Knobs are kept identical across
 methods (`sink_tokens`, `recent_tokens`, `target_mem`) for a fair iso-memory
@@ -146,12 +170,14 @@ comparison; the eviction window is sized to `target_mem * ctx` so eviction gets
 the **same** memory budget as the quant methods. Results (JSON + Markdown
 table) are written to `output_dir`.
 
-**Outlier-layer handling (applied uniformly).** A small set of layers carry
+**Historical outlier-layer handling (applied uniformly in these presets).** A small set of layers carry
 massive activations whose keys span orders of magnitude; quantizing them at low
 bit-width destroys generation on reasoning models. The harness detects these
 layers once and keeps them in FP16 for **every** quantization method, which is
 the standard StreamingLLM/KIVI robustness trick. Keeping it uniform is what makes
-the comparison fair — it is not a privilege granted only to the proposed method.
+the comparison fair within these legacy presets.  The refreshed formal HQ/TQ/
+FibQ/BlockQ quality grid does not silently skip FP16 layers: every stored bit
+and every included/excluded endpoint is fixed and validated by its manifest.
 
 **Faithful ThinKV.** With `thinkv.auto_configure=true` (default) the harness runs
 `auto_configure_thinkv(model, tok)`: it reuses the shared outlier set, then
@@ -174,6 +200,17 @@ compression ratio (stored bits / fp16 bits, including outlier-skip and sink laye
 ---
 
 ## Results
+
+> **Historical PPL invalidation.** The tables below predate the causal
+> cache-state scorer. Their PPL columns for KIVI/ThinKV, PM-KVQ/TaperKV/
+> TurboTaper, and StreamingLLM are not valid conditional likelihoods: a
+> full-window update could use future-token group statistics or final-window
+> age schedules, while the eviction row did not evict between targets. Those
+> PPL values and every conclusion/Pareto claim that depends on them must not be
+> cited. The current evaluator uses causal prefix + token-step scoring for
+> these caches and explicit eviction with absolute positions; fresh results
+> are required. Retrieval/generation columns have separate autoregressive
+> harnesses and are not invalidated by this specific teacher-forcing bug.
 
 Four architectures were evaluated on hardware (B200 GPU, batch-1gpu partition).
 All runs use the same config knobs (`sink_tokens=4`, `recent_tokens=64`,

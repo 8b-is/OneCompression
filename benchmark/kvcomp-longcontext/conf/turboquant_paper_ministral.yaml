@@ -1,12 +1,13 @@
-# HayateQuant-vs-TurboQuant retrieval benchmark on the *second* TurboQuant paper model.
+# LEGACY PRE-FORMAL RETRIEVAL PRESET -- NOT REFRESHED PAPER EVIDENCE.
+# HayateQuant-vs-TurboQuant development benchmark on the second TurboQuant model.
 #
 # The TurboQuant paper (arXiv:2504.19874) evaluates KV-cache quantization on TWO
 # models: Llama-3.1-8B-Instruct (see turboquant_paper.yaml) and
 # **Ministral-8B-Instruct-2410**.  This config runs the identical method/metric
-# grid (HayateQuant + TurboQuant full bit-grids + HALO baseline + KIVI/
-# StreamingLLM/FP8/NVFP4 + TaperKV/TurboTaper) on the Ministral model, so the
-# proposed HayateQuant codec is shown to beat TurboQuant on both of the paper's
-# models, not just one.
+# grid (historical HayateQuant variants + TurboQuant full bit-grids + HALO,
+# KIVI/StreamingLLM/FP8/NVFP4 + TaperKV/TurboTaper) on Ministral.  It does not
+# establish a win.  Current claims require the coverage-checked formal launcher
+# and renderer under benchmark/kvcomp-codec/.
 #
 # Download once (if absent) into /home/frj/yuma-ichikwa1/models, then run:
 #   srun --gres=gpu:1 .../python -u kv_benchmark.py \

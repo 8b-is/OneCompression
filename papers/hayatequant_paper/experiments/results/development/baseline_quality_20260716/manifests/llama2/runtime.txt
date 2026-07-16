@@ -1,0 +1,14 @@
+job_id=69322
+array_job_id=69320
+array_task_id=1
+node=kagura-gpu14
+model=Llama-2-7b-hf
+model_path=/lustre/home/frj/yuma-ichikawa/conference/models/Llama-2-7b-hf
+start_utc=2026-07-15T20:14:23Z
+git_head=e50379c225259b3e5d5df1facafa7133b36915d5
+git_dirty=true
+cuda_visible_devices=0
+Python 3.13.12
+NVIDIA B200, GPU-6f0580cd-27fe-1922-7806-2fe51b173900, 580.126.20
+end_utc=2026-07-15T20:23:24Z
+exit_status=0

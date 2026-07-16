@@ -26,6 +26,10 @@ import torch
 from vllm.triton_utils import tl, triton
 from vllm.v1.attention.ops.triton_decode_attention import _fwd_kernel_stage2
 from vllm.v1.attention.ops.triton_turboquant_store import _store_quantized_value
+from vllm_plugins.kvcomp.hayate_triton_config import (
+    _direct_key_scale,
+    _store_group_codes,
+)
 
 
 @triton.jit
@@ -34,7 +38,7 @@ def _hq_store_key_block_vq(
     Y_ptr,  # [NH, D] float32, rotated normalized keys
     Norms_ptr,  # [NH] float32, original key L2 norms
     Scale_scratch_ptr,  # [NH] float32, optional accumulated code-vector norm
-    Value_ptr,  # [NH, D] float32, raw values
+    Value_ptr,  # [NH, D], raw values (the kernel promotes loads to float32)
     Codebook_ptr,  # [K, B] float32
     # Cache and indexing
     KV_cache_ptr,
@@ -61,7 +65,9 @@ def _hq_store_key_block_vq(
     NUM_KEY_BLOCKS: tl.constexpr,
     GROUP_CODES: tl.constexpr,
     PRECOMPUTE_KEY_SCALE: tl.constexpr = 0,
+    DIRECT_KEY_SCALE: tl.constexpr = 0,
     KEY_SCALE_MODE: tl.constexpr = 0,  # 0: NC, 1: IP/UB
+    SQRT_D: tl.constexpr = 1.0,
     BLOCK_GRP: tl.constexpr = 16,
 ):
     """Quantize key blocks to Hayate code indices and store values uniformly."""
@@ -78,9 +84,7 @@ def _hq_store_key_block_vq(
     off = (slot % BLOCK_SIZE).to(tl.int64)
     head_idx_i64 = tl.cast(head_idx, tl.int64)
     slot_base = (
-        blk * stride_cache_block
-        + off * stride_cache_pos
-        + head_idx_i64 * stride_cache_head
+        blk * stride_cache_block + off * stride_cache_pos + head_idx_i64 * stride_cache_head
     )
 
     block_ids = group_pid * GROUP_CODES + tl.arange(0, GROUP_CODES)
@@ -125,9 +129,7 @@ def _hq_store_key_block_vq(
             chunk_start = chunk * 4
             chunk_mask = (local >= chunk_start) & (local < chunk_start + 4)
             shifts = (local - chunk_start) * HAYATE_CODE_BITS
-            packed = tl.sum(
-                tl.where(chunk_mask, (best_idx & 0x3F) << shifts, 0), axis=0
-            )
+            packed = tl.sum(tl.where(chunk_mask, (best_idx & 0x3F) << shifts, 0), axis=0)
             chunk_base = byte_base + chunk * 3
             tl.store(
                 KV_cache_ptr + slot_base + chunk_base,
@@ -142,25 +144,41 @@ def _hq_store_key_block_vq(
                 ((packed >> 16) & 0xFF).to(tl.uint8),
             )
 
-    if PRECOMPUTE_KEY_SCALE:
+    if PRECOMPUTE_KEY_SCALE and not DIRECT_KEY_SCALE:
         if KEY_SCALE_MODE == 1:
             # ``best_score`` is <y, c> - 0.5 ||c||^2. Recover <y, c> so the
             # writeback kernel can store the BlockQuant UB/IP scale.
-            group_stat = tl.sum(
-                tl.where(group_mask, best_score + 0.5 * best_norm, 0.0), axis=0
-            )
+            group_stat = tl.sum(tl.where(group_mask, best_score + 0.5 * best_norm, 0.0), axis=0)
         else:
             group_stat = tl.sum(tl.where(group_mask, best_norm, 0.0), axis=0)
         tl.atomic_add(Scale_scratch_ptr + vec_pid, group_stat, sem="relaxed")
 
     # Norm + values are per vector, so one group owns them.
     if group_pid == 0:
-        vn_f16 = tl.load(Norms_ptr + vec_pid).to(tl.float16)
-        vn_u16 = vn_f16.to(tl.uint16, bitcast=True)
-        tl.store(KV_cache_ptr + slot_base + MSE_BYTES, (vn_u16 & 0xFF).to(tl.uint8))
+        norm = tl.load(Norms_ptr + vec_pid).to(tl.float32)
+        if DIRECT_KEY_SCALE:
+            # With one code group, the complete statistic is already in this
+            # program.  Store the final scale here, avoiding a scratch tensor,
+            # atomic add, and the follow-up writeback launch.
+            if KEY_SCALE_MODE == 1:
+                stat = tl.sum(
+                    tl.where(group_mask, best_score + 0.5 * best_norm, 0.0),
+                    axis=0,
+                )
+                abs_stat = tl.maximum(tl.abs(stat), 1e-8)
+                denom = tl.where(stat < 0.0, -abs_stat, abs_stat)
+                key_scale = norm * SQRT_D / denom
+            else:
+                stat = tl.sum(tl.where(group_mask, best_norm, 0.0), axis=0)
+                key_scale = norm * (1.0 / tl.sqrt(stat + 1e-16))
+            scale_f16 = key_scale.to(tl.float16)
+        else:
+            scale_f16 = norm.to(tl.float16)
+        scale_u16 = scale_f16.to(tl.uint16, bitcast=True)
+        tl.store(KV_cache_ptr + slot_base + MSE_BYTES, (scale_u16 & 0xFF).to(tl.uint8))
         tl.store(
             KV_cache_ptr + slot_base + MSE_BYTES + 1,
-            ((vn_u16 >> 8) & 0xFF).to(tl.uint8),
+            ((scale_u16 >> 8) & 0xFF).to(tl.uint8),
         )
 
         d_offs = tl.arange(0, BLOCK_D)
@@ -284,9 +302,7 @@ def _hq_decode_stage1(
     kv_range = tl.arange(0, BLOCK_KV)
 
     q_base = bid * stride_qb + hid * stride_qh
-    q_rot = tl.load(Q_rot_ptr + q_base + d_offs, mask=d_mask, other=0.0).to(
-        tl.float32
-    )
+    q_rot = tl.load(Q_rot_ptr + q_base + d_offs, mask=d_mask, other=0.0).to(tl.float32)
 
     key_block_offs = tl.arange(0, BLOCK_D // HAYATE_BLOCK_SIZE)
     key_block_mask = key_block_offs < (HEAD_DIM // HAYATE_BLOCK_SIZE)
@@ -385,9 +401,7 @@ def _hq_decode_stage1(
 
         norm_bases = slot_bases + MSE_BYTES
         n_lo = tl.load(KV_cache_ptr + norm_bases, mask=kv_mask, other=0).to(tl.uint16)
-        n_hi = tl.load(KV_cache_ptr + norm_bases + 1, mask=kv_mask, other=0).to(
-            tl.uint16
-        )
+        n_hi = tl.load(KV_cache_ptr + norm_bases + 1, mask=kv_mask, other=0).to(tl.uint16)
         key_scales = (n_lo | (n_hi << 8)).to(tl.float16, bitcast=True).to(tl.float32)
         scores = key_scales * term1 * ATTN_SCALE
         scores = tl.where(kv_mask, scores, -float("inf"))
@@ -412,24 +426,12 @@ def _hq_decode_stage1(
             raw16 = val_raw0 | (val_raw1 << 8)
             v_idx = ((raw16 >> val_bit_shift[None, :]) & 0x7).to(tl.float32)
             sc_bases = val_bases + VAL_DATA_BYTES
-            sc_lo = tl.load(KV_cache_ptr + sc_bases, mask=kv_mask, other=0).to(
-                tl.uint16
-            )
-            sc_hi = tl.load(KV_cache_ptr + sc_bases + 1, mask=kv_mask, other=0).to(
-                tl.uint16
-            )
-            v_scales = (sc_lo | (sc_hi << 8)).to(tl.float16, bitcast=True).to(
-                tl.float32
-            )
-            zr_lo = tl.load(KV_cache_ptr + sc_bases + 2, mask=kv_mask, other=0).to(
-                tl.uint16
-            )
-            zr_hi = tl.load(KV_cache_ptr + sc_bases + 3, mask=kv_mask, other=0).to(
-                tl.uint16
-            )
-            v_zeros = (zr_lo | (zr_hi << 8)).to(tl.float16, bitcast=True).to(
-                tl.float32
-            )
+            sc_lo = tl.load(KV_cache_ptr + sc_bases, mask=kv_mask, other=0).to(tl.uint16)
+            sc_hi = tl.load(KV_cache_ptr + sc_bases + 1, mask=kv_mask, other=0).to(tl.uint16)
+            v_scales = (sc_lo | (sc_hi << 8)).to(tl.float16, bitcast=True).to(tl.float32)
+            zr_lo = tl.load(KV_cache_ptr + sc_bases + 2, mask=kv_mask, other=0).to(tl.uint16)
+            zr_hi = tl.load(KV_cache_ptr + sc_bases + 3, mask=kv_mask, other=0).to(tl.uint16)
+            v_zeros = (zr_lo | (zr_hi << 8)).to(tl.float16, bitcast=True).to(tl.float32)
             values = v_idx * v_scales[:, None] + v_zeros[:, None]
         else:
             vb_idx = d_offs // 2
@@ -441,24 +443,12 @@ def _hq_decode_stage1(
             ).to(tl.int32)
             v_idx = ((val_raw >> vb_shift[None, :]) & 0xF).to(tl.float32)
             sc_bases = val_bases + VAL_DATA_BYTES
-            sc_lo = tl.load(KV_cache_ptr + sc_bases, mask=kv_mask, other=0).to(
-                tl.uint16
-            )
-            sc_hi = tl.load(KV_cache_ptr + sc_bases + 1, mask=kv_mask, other=0).to(
-                tl.uint16
-            )
-            v_scales = (sc_lo | (sc_hi << 8)).to(tl.float16, bitcast=True).to(
-                tl.float32
-            )
-            zr_lo = tl.load(KV_cache_ptr + sc_bases + 2, mask=kv_mask, other=0).to(
-                tl.uint16
-            )
-            zr_hi = tl.load(KV_cache_ptr + sc_bases + 3, mask=kv_mask, other=0).to(
-                tl.uint16
-            )
-            v_zeros = (zr_lo | (zr_hi << 8)).to(tl.float16, bitcast=True).to(
-                tl.float32
-            )
+            sc_lo = tl.load(KV_cache_ptr + sc_bases, mask=kv_mask, other=0).to(tl.uint16)
+            sc_hi = tl.load(KV_cache_ptr + sc_bases + 1, mask=kv_mask, other=0).to(tl.uint16)
+            v_scales = (sc_lo | (sc_hi << 8)).to(tl.float16, bitcast=True).to(tl.float32)
+            zr_lo = tl.load(KV_cache_ptr + sc_bases + 2, mask=kv_mask, other=0).to(tl.uint16)
+            zr_hi = tl.load(KV_cache_ptr + sc_bases + 3, mask=kv_mask, other=0).to(tl.uint16)
+            v_zeros = (zr_lo | (zr_hi << 8)).to(tl.float16, bitcast=True).to(tl.float32)
             values = v_idx * v_scales[:, None] + v_zeros[:, None]
 
         acc = acc * re_scale + tl.sum(p[:, None] * values, 0)
@@ -531,15 +521,13 @@ def _hq_full_dequant_kv(
         code_group_idx = block_idx // 4
         code_shift = (block_idx - code_group_idx * 4) * 6
         code_byte_idx = code_group_idx * 3
-        raw0 = tl.load(KV_cache_ptr + slot_base + code_byte_idx, mask=d_mask, other=0).to(
+        raw0 = tl.load(KV_cache_ptr + slot_base + code_byte_idx, mask=d_mask, other=0).to(tl.int32)
+        raw1 = tl.load(KV_cache_ptr + slot_base + code_byte_idx + 1, mask=d_mask, other=0).to(
             tl.int32
         )
-        raw1 = tl.load(
-            KV_cache_ptr + slot_base + code_byte_idx + 1, mask=d_mask, other=0
-        ).to(tl.int32)
-        raw2 = tl.load(
-            KV_cache_ptr + slot_base + code_byte_idx + 2, mask=d_mask, other=0
-        ).to(tl.int32)
+        raw2 = tl.load(KV_cache_ptr + slot_base + code_byte_idx + 2, mask=d_mask, other=0).to(
+            tl.int32
+        )
         raw24 = raw0 | (raw1 << 8) | (raw2 << 16)
         code_idx = (raw24 >> code_shift) & 0x3F
 
@@ -562,20 +550,16 @@ def _hq_full_dequant_kv(
     if VQB == 4:
         vb_idx = d_offs // 2
         vb_shift = (d_offs % 2) * 4
-        val_raw = tl.load(KV_cache_ptr + val_base + vb_idx, mask=d_mask, other=0).to(
-            tl.int32
-        )
+        val_raw = tl.load(KV_cache_ptr + val_base + vb_idx, mask=d_mask, other=0).to(tl.int32)
         v_idx = ((val_raw >> vb_shift) & 0xF).to(tl.float32)
     else:
         val_bit_off = d_offs * 3
         val_byte_idx = val_bit_off // 8
         val_bit_shift = val_bit_off % 8
-        raw0 = tl.load(KV_cache_ptr + val_base + val_byte_idx, mask=d_mask, other=0).to(
+        raw0 = tl.load(KV_cache_ptr + val_base + val_byte_idx, mask=d_mask, other=0).to(tl.int32)
+        raw1 = tl.load(KV_cache_ptr + val_base + val_byte_idx + 1, mask=d_mask, other=0).to(
             tl.int32
         )
-        raw1 = tl.load(
-            KV_cache_ptr + val_base + val_byte_idx + 1, mask=d_mask, other=0
-        ).to(tl.int32)
         v_idx = (((raw0 | (raw1 << 8)) >> val_bit_shift) & 0x7).to(tl.float32)
 
     sc_base = val_base + VAL_DATA_BYTES
@@ -633,12 +617,16 @@ def triton_hayatequant_store(
     # by sqrt(D) and collapses the code usage.
     rms = k_flat.pow(2).mean(dim=1, keepdim=True).sqrt()
     y = (k_flat @ rotation) / (rms + 1e-8)
-    v_flat = value.float().reshape(NH, D)
+    # ``_store_quantized_value`` promotes each load to float32 inside Triton.
+    # Materialising a full-size float32 value tensor here only adds an eager
+    # allocation/cast and doubles input traffic before the store kernel.
+    v_flat = value.reshape(NH, D)
     norms_flat = norms.squeeze(1).contiguous()
     precompute_key_scale = _precompute_key_scale(key_bits, key_scale_mode)
+    direct_key_scale = _direct_key_scale(n_groups, precompute_key_scale)
     scale_scratch = (
         torch.zeros(NH, device=key.device, dtype=torch.float32)
-        if precompute_key_scale
+        if precompute_key_scale and not direct_key_scale
         else norms_flat
     )
 
@@ -668,12 +656,14 @@ def triton_hayatequant_store(
         NUM_KEY_BLOCKS=n_key_blocks,
         GROUP_CODES=group_codes,
         PRECOMPUTE_KEY_SCALE=1 if precompute_key_scale else 0,
+        DIRECT_KEY_SCALE=1 if direct_key_scale else 0,
         KEY_SCALE_MODE=key_scale_id,
+        SQRT_D=math.sqrt(D),
         BLOCK_GRP=block_grp,
         num_warps=4,
         num_stages=1,
     )
-    if precompute_key_scale:
+    if precompute_key_scale and not direct_key_scale:
         _hq_write_key_scales[(NH,)](
             norms_flat,
             scale_scratch,
@@ -750,40 +740,6 @@ def _decode_block_kv(key_bits: int) -> int:
     if block_kv not in {1, 2, 4, 8, 16}:
         raise ValueError("KVCOMP_VLLM_HAYATE_BLOCK_KV must be one of 1,2,4,8,16")
     return block_kv
-
-
-def _store_group_codes(code_bits: int, n_key_blocks: int) -> int:
-    mode = os.environ.get("KVCOMP_VLLM_HAYATE_STORE_GROUP_CODES", "auto")
-    mode = mode.strip().lower().replace("-", "_")
-    if mode == "auto":
-        if code_bits == 8:
-            return 64 if n_key_blocks <= 64 else 128
-        if n_key_blocks >= 128:
-            return 128
-        if n_key_blocks >= 64:
-            return 64
-        if n_key_blocks >= 32:
-            return 32
-        if n_key_blocks >= 16:
-            return 16
-        return 8 if n_key_blocks >= 8 else 4
-    group_codes = int(mode)
-    if group_codes not in {1, 2, 4, 8, 16, 32, 64, 128}:
-        raise ValueError(
-            "KVCOMP_VLLM_HAYATE_STORE_GROUP_CODES must be one of "
-            "1,2,4,8,16,32,64,128"
-        )
-    if code_bits != 8 and group_codes not in {4, 8, 16, 32, 64, 128}:
-        raise ValueError(
-            "6-bit Hayate key packing requires STORE_GROUP_CODES=4, 8, "
-            "16, 32, 64, or 128"
-        )
-    if code_bits != 8 and group_codes > n_key_blocks:
-        raise ValueError(
-            "6-bit Hayate key packing requires STORE_GROUP_CODES <= "
-            "the number of key VQ blocks"
-        )
-    return group_codes
 
 
 def _decode_num_warps(key_bits: int) -> int:

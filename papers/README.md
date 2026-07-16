@@ -2,64 +2,34 @@
 
 このディレクトリには、**3本の論文**に対応するベンチマーク結果と再現スクリプトを整理しています。
 
+> **RULER naming boundary.** 旧 `run_ruler` の数値はローカル synthetic
+> multi-key diagnostic であり、RULERベンチマークではありません。刷新後の正式軸は
+> **NeMo-Skills RULER v1 100-sample/task protocol** と明記し、canonical
+> NVIDIA/RULER v1 500-sample/task run とは区別します。
+
 ---
 
-## 論文0: HayateQuant — Codec 論文 (HALO の後継・現在の推奨手法)
+## 論文0: HayateQuant — Codec 論文
 
-> **主張:** HayateQuant は TurboQuant と HALO の完全な上位互換 (`block_size=1` で両者を
-> bit-for-bit・速度も同等に再現) であり、(1) データ不要 block vector quantization、
-> (2) 単一 GEMM に折り畳んだ Hadamard+block-dense ハイブリッド回転 (Folded Rotation)、
-> (3) 候補リスト Grid-LUT による符号帳サイズ非依存 O(T) エンコーダ、により
-> 同一ビット数で両者より厳密に低い歪み・PPL・下流タスク精度を達成しつつ、
-> **decode スループットで TurboQuant の 1.34-1.38 倍、TTFT も全ビット幅で同等 (+2〜6%)**
-> を実現する。
+HayateQuant は data-free block-VQ、folded hybrid rotation、role-asymmetric
+scale、および exact assignment を組み合わせる独立した codec recipe です。
+`block_size=1` と rotation/source-law/scale を明示的に一致させた構成は
+TurboQuant/HALO の選択された scalar path を検査する compatibility control
+ですが、完全な上位互換や全データ・全指標での優越を意味しません。
 
 - **ディレクトリ:** `papers/hayatequant_paper/`
-- **現在の状態 (v5, 2026-07-04):** 品質(歪み/PPL, 2モデル)・速度(codec/e2e)・
-  paper-level ロングコンテキスト(Needle/RULER/LongBench-E/PPL, job 58907)まで**全て完了**。
-  v4 監査で `dist="beta"` の正規化不一致 (CRITICAL) 等を修正し、HALO 主体だった全実験
-  設定・submit スクリプトを HayateQuant 主体に世代交代 (詳細は paper README の v4 節)。
-  v5 でエンコーダ/デコーダをマイクロベンチ駆動で高速化(2-bit prefill enc 5.2 倍・
-  dec 8.7 倍、TTFT 290→117ms; paper README の v5 節)。TurboQuant arXiv 論文との
-  軸別比較は `hayatequant_paper/TURBOQUANT_COMPARISON.md`。
-  再検証ベンチ: jobs 59000-59004 (v4), 59042-59047 (v5)。
-- **HALO との関係:** HALO はコードベースに残置(削除しない)。比較対象として恒久保持。
-- **vLLM プラグイン:** `mapping.py` に `HayateQuantCodec` 対応 + デフォルト設定での
-  `int(None)` クラッシュ修正 + 専用テスト 9 件 (`tests/vllm_plugins/kvcomp/`)。
-  `vllm.general_plugins` エントリポイント登録済み(EngineArgs 自動フック)。
-- **v2 での重大性能バグ修正:** block_size=1 の非効率パス + 無制限符号帳サイズによる
-  TTFT 21 倍/+32GB リグレッションを発見・修正(経緯は paper README)。
-- **v3 システム最適化 (ログ分析起点):** decode 0.7 倍・TTFT 2.5-4.3 倍という残存弱点を
-  Folded Rotation(逆回転を 1 GEMM 化、per-layer dequant 8 倍速)+ 候補リスト LUT
-  (エンコード O(K)→O(T))+ fp16 テンソルコア探索で解消。品質パリティは実測で確認
-  (ドリフト <0.005%)。Qwen 系対策の HayateQuant-dense-LS、大符号帳 HayateQuant-K12 も追加。
+- **再評価方針:** 過去の未 fingerprint の数値は、現在のコード・dataset
+  fingerprint・sample denominator・hardware provenance を備えた再実行結果に
+  置き換えてから引用します。この overview には旧 headline 値を残しません。
+- **fixed HQ recipe:** `block_size=2`、Gaussian source codebooks、exact assignment、
+  K5/V3・K7/V5・K9/V7 block-code、key NC、value LS-reassign/refit を全モデルで
+  固定します。`AdaptiveHQ` だけが opt-in proposal です。
+- **内部 proxy:** `HQ-Fib-init-proxy` と `HQ-Block-scale-proxy` は HQ 内部の
+  ablation であり、独立した FibQuant/BlockQuant 実装ではありません。
+- **HALO との関係:** HALO は backward-compatible baseline として残します。
 
-**主要結果 (v3 実測):**
-
-| Model | bits | 手法 | dist(K) | dist(V) | PPL |
-|---|---|---|---:|---:|---:|
-| Llama-3.1-8B | 3 | HALO-auto (旧最良) | 0.0319 | 0.0331 | 7.086 |
-| Llama-3.1-8B | 3 | **HayateQuant-K12** | **0.0270** (-15.3%) | **0.0267** (-19.4%) | **6.985** |
-| Llama-3.1-8B | 2 | HALO-dense-LS (旧最良PPL) | 0.1166 | 0.1151 | 9.868 |
-| Llama-3.1-8B | 2 | **HayateQuant-dense-LS** | **0.0969** | 0.0963 | **8.930** (-9.5%) |
-| R1-Qwen-1.5B | 2 | HALO-dense-LS (旧最良PPL) | 0.1119 | 0.1141 | 159.38 |
-| R1-Qwen-1.5B | 2 | **HayateQuant-dense-LS** | **0.0992** | **0.0967** | **157.45** |
-
-**推論速度 (e2e v5, Llama-3.1-8B-Instruct, prompt=4096, gen=128):**
-
-| 手法 | TTFT | decode tok/s | 備考 |
-|---|---:|---:|---|
-| FullKV | 71.4ms | 77.7 | baseline |
-| TurboQuant-3bit | 111.3ms | 19.6 | — |
-| HALO-NCIT-3bit | 95.1ms | 30.3 | — |
-| **HayateQuant-3bit** | **113.6ms** | **27.1** | TTFT は TQ と同等、decode は TQ の 1.38 倍 |
-| **HayateQuant-2bit** | **117.2ms** | **27.0** | v4 の TTFT 2.6 倍問題は v5 で解消 (290→117ms) |
-
-**Paper-level ロングコンテキスト (job 58907, Llama-3.1-8B):** 低ビット域で全指標勝利 —
-2-bit Needle **100%** (TQ 93.3/HALO 91.1)、2.5-bit RULER **0.933 = FullKV と同値** (TQ 0.800)、
-2-bit LongBench 26.87 (TQ 21.34, +5.5pt)、2-bit PPL 9.13 (TQ 10.17)。
-
-詳細は `papers/hayatequant_paper/README.md` を参照。
+再現手順と provenance contract は `papers/hayatequant_paper/` および
+`benchmark/kvcomp-codec/README.md` を参照してください。
 
 ---
 
@@ -82,7 +52,7 @@ papers/halo_paper/
 │   └── all_results.json   ← 集約済み全結果
 └── scripts/
     ├── run_codec_bench.sh      # PPL + latency
-    ├── run_longcontext_bench.sh # Needle/RULER/LongBench
+    ├── run_longcontext_bench.sh # Needle/local synthetic multi-key/LongBench
     └── run_speed_bench.sh      # encode/decode ms
 ```
 
@@ -145,9 +115,9 @@ python papers/aggregate_results.py
 | 主題 | Codec (圧縮変換方式、HALO後継) | Codec (圧縮変換方式、アーカイブ) | Policy (精度スケジュール) |
 | 比較相手 | TurboQuant, HALO, Uniform-INT, FP8, KIVI | TurboQuant, Uniform-INT, FP8, KIVI | StreamingLLM, ThinKV, PM-KVQ |
 | 評価モデル | R1-Qwen-1.5B, Llama-3.1-8B-Instruct | Llama-8B, Ministral-8B (非R1) | Llama-8B + R1-Distill系 + QwQ-32B |
-| 主要メトリクス | dist(K/V), PPL, encode ms, TTFT, tok/s, peak-mem | PPL, Needle, RULER, encode ms, relMSE | LongBench, GSM8K, MATH-500, AIME, LCB |
+| 主要メトリクス | dist(K/V), PPL, encode ms, TTFT, tok/s, peak-mem | PPL, Needle, local multi-key (legacy), encode ms, relMSE | LongBench, GSM8K, MATH-500, AIME, LCB |
 | HayateQuant の位置づけ | 提案手法 (メイン、現在の推奨) | 登場しない | 登場しない |
-| HALO の位置づけ | 比較用 baseline (superset関係) | 提案手法 (アーカイブ扱い) | 比較用 codec baseline として登場 |
+| HALO の位置づけ | backward-compatible 比較 baseline (strict-superset 関係は主張しない) | 提案手法 (アーカイブ扱い) | 比較用 codec baseline として登場 |
 | TaperKV の位置づけ | 登場しない | 登場しない | 提案手法 (メイン) |
 | TurboTaper の位置づけ | 登場しない | 登場しない | TaperKV + TurboQuant の組み合わせ variant |
 
@@ -155,9 +125,14 @@ python papers/aggregate_results.py
 
 ## 完了したジョブ (2026-07-04)
 
+> **Legacy development record.** 以下の job ID、数値、v3/v5 の名称は旧
+> auto/LUT recipe と旧 harness の履歴です。refreshed paper の HQ または
+> AdaptiveHQ の結果として引用してはいけません。正式値は repo 内へ archive
+> された coverage-complete formal run と generated table だけから更新します。
+
 | ジョブ名 | JID | 内容 | 状態 |
 |---------|-----|------|------|
-| kv-hayatequant | 58907 | paper-level ロングコンテキスト (Needle/RULER/LongBench-E/PPL) | ✅ 完了 (7h46m) |
+| kv-hayatequant | 58907 | legacy long-context (Needle/local multi-key/LongBench-E/PPL) | ✅ 完了 (7h46m) |
 | hayatequant-v3 | 58931 | v3 品質ベンチ (auto/exact/K12/dense-LS, 2モデル) + 速度 | ✅ 完了 |
 | hayatequant-speed-v3b | 58938 | v3b 最終速度 (adaptive encoder + fp16 探索) + GPUパリティ | ✅ 完了 |
 

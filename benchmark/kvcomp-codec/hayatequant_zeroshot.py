@@ -32,8 +32,14 @@ from statistics import mean
 
 THIS_DIR = Path(__file__).resolve().parent
 REPO_ROOT = THIS_DIR.parents[1]
+sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(THIS_DIR))
 
+from onecomp.kvcomp.codec.hayate.recipes import (  # noqa: E402
+    HQ_BLOCK_SCALE_PROXY_NAME,
+    HQ_FIB_INIT_PROXY_NAME,
+    hayate_result_method_candidates,
+)
 from hayatequant_cross_model import (  # noqa: E402
     ALL_SPECS,
     DEFAULT_MODELS,
@@ -41,11 +47,9 @@ from hayatequant_cross_model import (  # noqa: E402
     ModelSpec,
 )
 
-
 ZEROSHOT_BENCH = THIS_DIR / "zeroshot_benchmark.py"
 DEFAULT_OUTPUT_ROOT = Path(
-    "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/"
-    "kvcomp_hayatequant/zeroshot_v1"
+    "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/" "kvcomp_hayatequant/zeroshot_v1"
 )
 
 EXTRA_SMOKE_MODELS = {
@@ -159,7 +163,12 @@ def _launch(args: argparse.Namespace) -> None:
 
 
 def _method(payload: dict, bits: str, name: str) -> dict | None:
-    return (payload.get("results") or {}).get(bits, {}).get(name)
+    methods = (payload.get("results") or {}).get(bits, {})
+    # Legacy external-looking names are accepted only when reading old JSON.
+    for candidate in hayate_result_method_candidates(name):
+        if candidate in methods:
+            return methods[candidate]
+    return None
 
 
 def _paper_model_names() -> set[str]:
@@ -195,6 +204,7 @@ def _merge_task_payloads(paths: list[Path]) -> list[dict]:
             continue
 
         first = items[0][1]
+
         def merge_identity(payload: dict) -> dict:
             config = dict(payload.get("config") or {})
             # Task/method/bit shards are intentionally mergeable. Everything
@@ -209,8 +219,7 @@ def _merge_task_payloads(paths: list[Path]) -> list[dict]:
             }
 
         identity = merge_identity(first)
-        mismatched = [str(path) for path, payload in items
-                      if merge_identity(payload) != identity]
+        mismatched = [str(path) for path, payload in items if merge_identity(payload) != identity]
         if mismatched:
             raise RuntimeError(
                 f"Refusing to merge incompatible zero-shot shards for {model}: "
@@ -275,7 +284,7 @@ def _summarize(args: argparse.Namespace) -> None:
         if incomplete:
             raise SystemExit("Incomplete zero-shot results:\n" + "\n".join(incomplete))
     rows = [
-        "| Model | Tasks | 2b TQ | 2b Fib | 2b Block | 2b HayateQuant | 2b AdaptiveHQ | delta | 3b TQ | 3b Fib | 3b Block | 3b HayateQuant | 3b AdaptiveHQ | delta | 4b TQ | 4b Fib | 4b Block | 4b HayateQuant | 4b AdaptiveHQ | delta |",
+        "| Model | Tasks | 2b TQ | 2b HQ Fib-init proxy | 2b HQ Block-scale proxy | 2b HayateQuant | 2b AdaptiveHQ | delta | 3b TQ | 3b HQ Fib-init proxy | 3b HQ Block-scale proxy | 3b HayateQuant | 3b AdaptiveHQ | delta | 4b TQ | 4b HQ Fib-init proxy | 4b HQ Block-scale proxy | 4b HayateQuant | 4b AdaptiveHQ | delta |",
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     tq2_vals: list[float] = []
@@ -299,32 +308,32 @@ def _summarize(args: argparse.Namespace) -> None:
             continue
         task_count = len(payload.get("tasks") or [])
         tq2 = _method(payload, "2", "TurboQuant-paper")
-        fib2 = _method(payload, "2", "FibQuant")
-        bq2 = _method(payload, "2", "BlockQuant")
+        fib2 = _method(payload, "2", HQ_FIB_INIT_PROXY_NAME)
+        bq2 = _method(payload, "2", HQ_BLOCK_SCALE_PROXY_NAME)
         hq2 = _method(payload, "2", args.hq_method)
         ahq2 = _method(payload, "2", args.adaptive_method)
         tq3 = _method(payload, "3", "TurboQuant-paper")
-        fib3 = _method(payload, "3", "FibQuant")
-        bq3 = _method(payload, "3", "BlockQuant")
+        fib3 = _method(payload, "3", HQ_FIB_INIT_PROXY_NAME)
+        bq3 = _method(payload, "3", HQ_BLOCK_SCALE_PROXY_NAME)
         hq3 = _method(payload, "3", args.hq_method)
         ahq3 = _method(payload, "3", args.adaptive_method)
         tq4 = _method(payload, "4", "TurboQuant-paper")
-        fib4 = _method(payload, "4", "FibQuant")
-        bq4 = _method(payload, "4", "BlockQuant")
+        fib4 = _method(payload, "4", HQ_FIB_INIT_PROXY_NAME)
+        bq4 = _method(payload, "4", HQ_BLOCK_SCALE_PROXY_NAME)
         hq4 = _method(payload, "4", args.hq_method)
         ahq4 = _method(payload, "4", args.adaptive_method)
+
         def _official(row):
             if row is None:
                 return None
             return row.get("avg_primary_score", row.get("avg_acc_norm"))
-        tq2_a, fib2_a, bq2_a, hq2_a, ahq2_a = map(
-            _official, (tq2, fib2, bq2, hq2, ahq2))
-        tq3_a, fib3_a, bq3_a, hq3_a, ahq3_a = map(
-            _official, (tq3, fib3, bq3, hq3, ahq3))
-        tq4_a, fib4_a, bq4_a, hq4_a, ahq4_a = map(
-            _official, (tq4, fib4, bq4, hq4, ahq4))
+
+        tq2_a, fib2_a, bq2_a, hq2_a, ahq2_a = map(_official, (tq2, fib2, bq2, hq2, ahq2))
+        tq3_a, fib3_a, bq3_a, hq3_a, ahq3_a = map(_official, (tq3, fib3, bq3, hq3, ahq3))
+        tq4_a, fib4_a, bq4_a, hq4_a, ahq4_a = map(_official, (tq4, fib4, bq4, hq4, ahq4))
         if tq2_a is not None and hq2_a is not None:
-            tq2_vals.append(tq2_a); hq2_vals.append(hq2_a)
+            tq2_vals.append(tq2_a)
+            hq2_vals.append(hq2_a)
             if fib2_a is not None:
                 fib2_vals.append(fib2_a)
             if bq2_a is not None:
@@ -332,7 +341,8 @@ def _summarize(args: argparse.Namespace) -> None:
             if ahq2_a is not None:
                 ahq2_vals.append(ahq2_a)
         if tq3_a is not None and hq3_a is not None:
-            tq3_vals.append(tq3_a); hq3_vals.append(hq3_a)
+            tq3_vals.append(tq3_a)
+            hq3_vals.append(hq3_a)
             if fib3_a is not None:
                 fib3_vals.append(fib3_a)
             if bq3_a is not None:
@@ -340,7 +350,8 @@ def _summarize(args: argparse.Namespace) -> None:
             if ahq3_a is not None:
                 ahq3_vals.append(ahq3_a)
         if tq4_a is not None and hq4_a is not None:
-            tq4_vals.append(tq4_a); hq4_vals.append(hq4_a)
+            tq4_vals.append(tq4_a)
+            hq4_vals.append(hq4_a)
             if fib4_a is not None:
                 fib4_vals.append(fib4_a)
             if bq4_a is not None:
@@ -364,6 +375,11 @@ def _summarize(args: argparse.Namespace) -> None:
             f"**{_fmt(mean(tq4_vals))}** | **{_fmt(mean(fib4_vals) if fib4_vals else None)}** | **{_fmt(mean(bq4_vals) if bq4_vals else None)}** | **{_fmt(mean(hq4_vals))}** | **{_fmt(mean(ahq4_vals) if ahq4_vals else None)}** | "
             f"**{_fmt(mean(hq4_vals) - mean(tq4_vals), 100.0)}** |"
         )
+    rows += [
+        "",
+        "Legacy compatibility: historical JSON keys `FibQuant` and `BlockQuant` "
+        "are read only as aliases for the HQ proxy columns.",
+    ]
     text = "\n".join(rows)
     print(text)
     if args.summary_out:
@@ -377,22 +393,33 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--models", nargs="*")
     ap.add_argument("--models-root", type=Path, default=DEFAULT_MODELS_ROOT)
     ap.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
-    ap.add_argument("--output-suffix", default="",
-                    help="Optional filename suffix passed to zeroshot_benchmark.py.")
+    ap.add_argument(
+        "--output-suffix",
+        default="",
+        help="Optional filename suffix passed to zeroshot_benchmark.py.",
+    )
     ap.add_argument("--python", type=Path, default=REPO_ROOT / ".venv" / "bin" / "python")
     ap.add_argument("--device", default="cuda:0")
     ap.add_argument("--dtype", default="bfloat16")
     ap.add_argument("--bits", nargs="+", default=["2", "3", "4"])
-    ap.add_argument("--tasks", nargs="+", default=["arc_easy", "arc_challenge", "piqa", "hellaswag", "winogrande"])
-    ap.add_argument("--methods", nargs="+", default=[
-        "TurboQuant-paper",
-        "FibQuant",
-        "BlockQuant",
-        "HayateQuant-selected",
-        "HayateQuant-frontier",
-        "HayateQuant-auto",
-        "AdaptiveHQ",
-    ])
+    ap.add_argument(
+        "--tasks",
+        nargs="+",
+        default=["arc_easy", "arc_challenge", "piqa", "hellaswag", "winogrande"],
+    )
+    ap.add_argument(
+        "--methods",
+        nargs="+",
+        default=[
+            "TurboQuant-paper",
+            HQ_FIB_INIT_PROXY_NAME,
+            HQ_BLOCK_SCALE_PROXY_NAME,
+            "HayateQuant-selected",
+            "HayateQuant-frontier",
+            "HayateQuant-auto",
+            "AdaptiveHQ",
+        ],
+    )
     ap.add_argument("--include-fullkv", action="store_true")
     ap.add_argument("--limit", type=int)
     ap.add_argument("--sample-seed", type=int, default=2027)
@@ -400,18 +427,30 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--recent-tokens", type=int, default=0)
     ap.add_argument("--skip-outliers", action=argparse.BooleanOptionalAction, default=True)
     ap.add_argument("--outlier-ratio", type=float, default=50.0)
-    ap.add_argument("--ablation", action="store_true",
-                    help="Expose HayateQuant FibQuant/BlockQuant ablation rows.")
+    ap.add_argument(
+        "--ablation",
+        action="store_true",
+        help="Expose additional HQ-internal proxy/lever ablation rows.",
+    )
     ap.add_argument("--submit", action="store_true")
     ap.add_argument("--run-local", action="store_true")
     ap.add_argument("--summarize", action="store_true")
     ap.add_argument("--summary-out", type=Path)
-    ap.add_argument("--hq-method", default="HayateQuant-frontier",
-                    help="Fixed implementation method reported as HQ in the paper tables.")
-    ap.add_argument("--adaptive-method", default="AdaptiveHQ",
-                    help="Implementation method reported as Adaptive HQ.")
-    ap.add_argument("--include-extra-results", action="store_true",
-                    help="Summarize every result JSON instead of the current seven-model paper grid.")
+    ap.add_argument(
+        "--hq-method",
+        default="HayateQuant-frontier",
+        help="Fixed implementation method reported as HQ in the paper tables.",
+    )
+    ap.add_argument(
+        "--adaptive-method",
+        default="AdaptiveHQ",
+        help="Implementation method reported as Adaptive HQ.",
+    )
+    ap.add_argument(
+        "--include-extra-results",
+        action="store_true",
+        help="Summarize every result JSON instead of the current seven-model paper grid.",
+    )
     ap.add_argument("--require-complete", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--partition", default="batch-1gpu")

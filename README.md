@@ -27,7 +27,10 @@ Full documentation: **[https://FujitsuResearch.github.io/OneCompression/](https:
 | **TaperKV** | Static age-graded precision ladder; no eviction; length-proportional allocation prevents collapse at long context. | (proposed) |
 | **ThinKV** | Per-thought static precision (R/E=4-bit, T=2-bit); TBQ buffer + KDE-calibrated L\* threshold + attention-sparsity thought classification. | [Ramachandran et al., ICLR 2026](https://openreview.net/...) |
 | **PM-KVQ** | Progressive dynamic quantization: fixed absolute high-precision window, older KV shrinks to a floor; block-wise layer allocation; K≥V. | [arXiv:2505.18610](https://arxiv.org/abs/2505.18610) |
-| **HALO / TurboQuant** | Data-free rotated scalar quantization (Lloyd-Max + random orthogonal rotation). HALO selects the cheapest orthogonal transform per head dimension, achieving 2.9× lower overhead than TurboQuant's Hadamard default at identical quality. | — |
+| **HQ / AdaptiveHQ** | Fixed data-free block-VQ recipe with K/V-asymmetric rates and role-aware scales; AdaptiveHQ adds a preregistered causal two-pair selector. | (proposed) |
+| **TurboQuant** | Data-free rotated scalar Lloyd-Max quantization; Algorithm-1 quality and public-API speed baseline. | [arXiv:2504.19874](https://arxiv.org/abs/2504.19874) |
+| **FibQuant / BlockQuant** | Independent method-faithful quality baselines; BlockQuant remains descriptive where its public recipe cannot be fully matched. | — |
+| **HALO** | Historical rotated scalar-codec baseline with alternative rotations and role-specific scales. | — |
 | **StreamingLLM / SnapKV / H2O** | Eviction baselines. | — |
 
 ## Installation
@@ -101,13 +104,22 @@ vllm serve ./quantized --kv-cache-dtype fp8
 
 ## Benchmarks
 
-### KV-cache compression — long-context retrieval and reasoning
+### Historical exploratory KV-cache measurements
+
+The compact tables below predate the fail-closed paper protocol in
+`benchmark/kvcomp-codec/`.  They use small local diagnostics (including a
+synthetic task formerly labelled RULER), so they are retained for development
+history only and must not be cited as official RULER/LongBench/MATH results or
+as evidence of statistical superiority.
+Their KIVI/ThinKV/graded-cache/eviction PPL entries also predate causal
+cache-state scoring and are invalid: future-token group/age information could
+enter a full-window update, and the eviction row did not evict between targets.
 
 Results on **llama-3.1-8b-instruct**, iso-memory (stored/fp16 ≈ 0.28),
 context ∈ {2048, 4096, 8192}. Needle = 63 cells; RULER = 15 multi-key cells;
 GSM8K = 40 samples; PPL = WikiText-2 (16 windows).
 
-| Method | Needle | RULER | GSM8K p@1 | PPL |
+| Method | Needle | synthetic multi-key | GSM8K p@1 | PPL |
 |---|---:|---:|---:|---:|
 | FullKV | 1.00 | 1.00 | 0.825 | 6.10 |
 | StreamingLLM (evict) | 0.30 | 0.60 | 0.825 | 6.10 |
@@ -119,11 +131,13 @@ Full results, including the DeepSeek-R1-Distill reasoning models (GSM8K / MATH-5
 AIME / LiveCodeBench, the ThinKV/PM-KVQ benchmark suite) and the Ministral-8B
 retrieval model (the second TurboQuant model): `benchmark/kvcomp-longcontext/README.md`.
 
-### KV codec speed-quality — HALO vs TurboQuant
+### KV codec speed-quality — audited protocol
 
-HALO(auto) is **2.9× faster** than TurboQuant(hadamard) at identical WikiText-2 PPL
-and distortion at bits {2, 3, 4} on llama-3.1-8b-instruct (head_dim=128).
-Full results: `benchmark/kvcomp-codec/README.md`.
+Older local measurements reported a 2.9x HALO/TurboQuant number, but mixed
+rotation choices and did not satisfy the current paired public-payload and
+independent-process protocol.  It is not a valid universal speedup claim.
+The audited benchmark definitions, provenance requirements, and formal-result
+claim gates live in `benchmark/kvcomp-codec/README.md`.
 
 ## License
 

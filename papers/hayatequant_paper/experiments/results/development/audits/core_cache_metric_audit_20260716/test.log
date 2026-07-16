@@ -1,0 +1,32 @@
+Core cache and metric audit -- final verification
+Date: 2026-07-16
+Finished: 2026-07-16T06:35:13+09:00
+Branch: agent/hayate-paper-refresh-20260715
+Commit: e50379c225259b3e5d5df1facafa7133b36915d5
+State: shared uncommitted working tree
+
+COMMAND 1
+uv run --frozen pytest -q tests/onecomp/kvcomp/test_core_cache_metric_audit.py tests/onecomp/kvcomp/test_eval_correctness.py tests/onecomp/kvcomp/test_metrics_accounting.py tests/onecomp/kvcomp/test_ruler_eval.py tests/onecomp/kvcomp/test_longcontext_protocol.py tests/onecomp/kvcomp/test_code_accounting.py --disable-warnings
+
+EXIT: 0
+SUMMARY: 146 passed, 15 warnings in 11.97s
+
+COMMAND 2
+uv run --frozen pytest -q tests/onecomp/kvcomp/test_kvcomp.py
+
+EXIT: 0
+SUMMARY: 291 passed, 12 skipped, 14 warnings in 160.93s
+
+COMMAND 3
+uv run --frozen pytest -q tests/onecomp/kvcomp/test_hayatequant_ruler_aggregate.py tests/onecomp/kvcomp/test_hayatequant_formal_renderer.py -x --tb=short
+
+EXIT: 0
+SUMMARY: 82 passed in 275.17s (0:04:35)
+
+STATIC CHECKS
+- uv run --frozen python -m compileall -q <audited source and tests>: exit 0
+- git diff --check -- <audited source and tests>: exit 0
+- uv run --frozen black --check --fast <focused corrected files>: 7 files unchanged
+- credential-shape ripgrep scan: exit 1, zero matches (ripgrep exit 1 means no match)
+
+OVERALL: PASS

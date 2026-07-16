@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "audit_date": "2026-07-16",
+  "repository": {
+    "branch": "agent/hayate-paper-refresh-20260715",
+    "starting_commit": "e50379c225259b3e5d5df1facafa7133b36915d5",
+    "working_tree": "shared_uncommitted",
+    "scope": [
+      "onecomp/kvcomp/_base.py",
+      "onecomp/kvcomp/cache/**",
+      "onecomp/kvcomp/eval/_teacher_forcing.py",
+      "onecomp/kvcomp/eval/compression_accounting.py",
+      "onecomp/kvcomp/eval/metrics.py",
+      "onecomp/kvcomp/eval/ppl.py",
+      "onecomp/kvcomp/eval/zeroshot.py",
+      "onecomp/kvcomp/eval/longbench.py",
+      "onecomp/kvcomp/eval/longcontext.py",
+      "onecomp/kvcomp/eval/longcodeqa.py",
+      "onecomp/kvcomp/eval/reasoning.py",
+      "onecomp/kvcomp/eval/ruler.py",
+      "onecomp/kvcomp/eval/code.py"
+    ]
+  },
+  "findings": [
+    {
+      "id": "CORE-CACHE-001",
+      "severity": "high",
+      "status": "fixed",
+      "summary": "Graded, PMKVQ, and TurboTaper bit ledgers omitted the batch dimension, overstating compression for batch sizes above one."
+    },
+    {
+      "id": "CORE-CACHE-002",
+      "severity": "critical",
+      "status": "fixed_fail_closed",
+      "summary": "Graded and ThinkV wrappers could compose with model-side sliding layers while returning retained rather than transient full K/V state for the active attention call.  The unsupported composition is now rejected before scoring."
+    },
+    {
+      "id": "CORE-CACHE-003",
+      "severity": "critical",
+      "status": "fixed_fail_closed",
+      "summary": "ThinkV batch sizes above one warned and silently used DynamicCache, allowing an uncompressed run to be reported as ThinkV.  Unsupported batches now raise."
+    },
+    {
+      "id": "CORE-CACHE-004",
+      "severity": "high",
+      "status": "fixed",
+      "summary": "Cache reset did not consistently clear requantization cadence, delta-bit history, classifier/TBQ state, or accounting state, so repeated examples could depend on prior examples."
+    },
+    {
+      "id": "CORE-CACHE-005",
+      "severity": "high",
+      "status": "fixed_fail_closed",
+      "summary": "Malformed fake-roundtrip tuples/tensors, invalid skip-layer indices, invalid window parameters, invalid stored-bit metadata, and non-finite attention capture can no longer pass into evaluation."
+    },
+    {
+      "id": "CORE-ACCOUNT-001",
+      "severity": "high",
+      "status": "fixed",
+      "summary": "Partial exact counters and legacy ratio-only values could collapse into an apparent FullKV/exact observation.  Exact counters, FullKV, and legacy ratios now have disjoint labels and validation."
+    },
+    {
+      "id": "CORE-ACCOUNT-002",
+      "severity": "high",
+      "status": "fixed",
+      "summary": "LongBench, LongCodeQA, and RULER could average per-generation memory fractions.  Exact aggregation now computes sum(stored_bits)/sum(fp16_bits), which is the only weighting consistent with the bit ledger."
+    },
+    {
+      "id": "CORE-ACCOUNT-003",
+      "severity": "medium",
+      "status": "fixed",
+      "summary": "A valid zero-bit payload was variously treated as FullKV or divided by zero.  Positive fp16 baseline with zero stored bits now reports +infinity compression in common, code, and reasoning paths."
+    },
+    {
+      "id": "CORE-PROV-001",
+      "severity": "high",
+      "status": "fixed",
+      "summary": "LongCodeQA allowed arbitrary non-empty revision and SHA strings to claim an official complete bracket.  Completeness now requires the pinned release revision, exact per-bracket SHA, protocol commit, and max_new_tokens=16."
+    },
+    {
+      "id": "CORE-EVAL-001",
+      "severity": "high",
+      "status": "fixed_fail_closed",
+      "summary": "Teacher-forcing and generation paths accepted malformed logits/output shape, empty tokenized prompts, empty references, invalid gold indices, or non-finite metrics.  These contracts are now validated before a score is emitted."
+    },
+    {
+      "id": "CORE-EVAL-002",
+      "severity": "high",
+      "status": "fixed_fail_closed",
+      "summary": "ThinkV attention capture could fall back to uniform behavior after missing modules/weights and still retain the algorithm label.  Missing or non-finite attention capture now aborts the evaluation."
+    },
+    {
+      "id": "CORE-EVAL-003",
+      "severity": "medium",
+      "status": "fixed",
+      "summary": "Selection parameters accepted booleans/non-integral values and some full selections retained a subset label.  Exact integer validation and full-selection normalization now preserve benchmark provenance."
+    }
+  ],
+  "verified_metric_contracts": {
+    "ppl": "token_weighted_nll_with_causal_prefix_for_sequence_coupled_codec_statistics",
+    "zeroshot": "raw_and_length_normalized_multiple_choice_accuracy_with_exact_selection",
+    "longbench_e": "unweighted_macro_over_task_scores",
+    "ruler_v1": "official_substring_accuracy_and_unweighted_13_task_macro_only_when_complete",
+    "longcodeqa": "micro_exact_match_over_disjoint_complete_brackets",
+    "exact_mem_fraction": "sum_stored_bits_divided_by_sum_fp16_bits",
+    "zero_bit_payload": "positive_fp16_and_zero_stored_bits_means_infinite_compression"
+  },
+  "remaining_explicit_limitations": [
+    "ThinkV batch_size_greater_than_one_is_unsupported_and_rejected",
+    "model_side_sliding_window_composition_is_unsupported_for_affected_wrappers_and_rejected",
+    "legacy_ratio_only_cache_accounting_is_diagnostic_not_formal_exact_accounting",
+    "synthetic_longcontext_without_exact_counters_uses_explicit_legacy_display_aggregation"
+  ],
+  "verification": {
+    "focused_suite_passed": 146,
+    "full_kvcomp_passed": 291,
+    "full_kvcomp_skipped": 12,
+    "formal_compatibility_passed": 82,
+    "failures": 0,
+    "compileall": "pass",
+    "git_diff_check": "pass",
+    "focused_black_check": "pass",
+    "credential_shape_matches": 0
+  }
+}

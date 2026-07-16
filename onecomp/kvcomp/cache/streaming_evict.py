@@ -32,8 +32,26 @@ class StreamingLLMEvictCache(DynamicCache):
 
     def __init__(self, sink: int = 4, recent: int = 256, config=None, **kwargs):
         super().__init__(config=config, **kwargs)
-        self.sink = int(sink)
-        self.recent = int(recent)
+        sliding_layers = [
+            index for index, layer in enumerate(self.layers) if getattr(layer, "is_sliding", False)
+        ]
+        if sliding_layers:
+            raise NotImplementedError(
+                "StreamingLLMEvictCache cannot compose manual eviction with "
+                f"model-side sliding-window layers {sliding_layers}"
+            )
+        if isinstance(sink, bool) or not isinstance(sink, int) or sink < 0:
+            raise ValueError("sink must be a non-negative integer")
+        if isinstance(recent, bool) or not isinstance(recent, int) or recent < 0:
+            raise ValueError("recent must be a non-negative integer")
+        self.sink = sink
+        self.recent = recent
+        self.kept = 0
+        self.total = 0
+
+    def reset(self):
+        """Reset tensors and eviction accounting together."""
+        super().reset()
         self.kept = 0
         self.total = 0
 
@@ -49,13 +67,33 @@ class StreamingLLMEvictCache(DynamicCache):
         for layer in self.layers:
             s = layer.keys.shape[2]
             if s > budget:
-                idx = torch.cat([
-                    torch.arange(self.sink, device=layer.keys.device),
-                    torch.arange(s - self.recent, s, device=layer.keys.device),
-                ])
+                idx = torch.cat(
+                    [
+                        torch.arange(self.sink, device=layer.keys.device),
+                        torch.arange(s - self.recent, s, device=layer.keys.device),
+                    ]
+                )
                 layer.keys = layer.keys.index_select(2, idx).contiguous()
                 layer.values = layer.values.index_select(2, idx).contiguous()
         self.kept = int(self.layers[0].keys.shape[2])
+
+    def teacher_forced_temporal_dependency(self):
+        """Likelihood requires eviction between autoregressive target steps."""
+        return "explicit_eviction_between_autoregressive_steps"
+
+    @staticmethod
+    def teacher_forced_forward_kwargs(cache_positions):
+        """Preserve absolute RoPE/cache positions after physical eviction."""
+        if cache_positions is None:
+            raise ValueError("StreamingLLM teacher forcing requires absolute cache positions")
+        return {
+            "cache_position": cache_positions,
+            "position_ids": cache_positions.unsqueeze(0),
+        }
+
+    def teacher_forced_post_forward(self):
+        """Mirror generation: trim after prefill and after every decode step."""
+        self.evict_now()
 
     def mem_fraction(self) -> float:
         return self.kept / max(1, self.total)

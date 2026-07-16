@@ -1,14 +1,16 @@
-"""Audit and summarize the HayateQuant paper result bundle.
+"""Audit a legacy, pre-formal HayateQuant development bundle.
 
-This script is intentionally read-only.  It complements
-``submit_hayatequant_paper.sh`` by checking that an existing run root contains
-the files needed to reproduce the paper tables, and by recomputing the main
-seven-model PPL/zero-shot aggregates from per-model JSON files.
+This script is intentionally read-only, but it does **not** reproduce the
+current paper.  Its historical input schema contains only the old seven-model
+PPL/zero-shot bundle, HQ ingredient proxies, and ``HayateQuant-frontier``.  It
+has no AdaptiveHQ row, independent FibQuant/BlockQuant rows, complete eight-axis
+coverage, or current formal provenance contract.
 
-The paper HQ row is fixed to the implementation method
-``HayateQuant-frontier`` by default.  Do not use the older summary JSON
-``HayateQuant`` column for the main table; it may represent a best-of-family
-selection from development sweeps rather than the fixed paper operating rule.
+Current reproduction must use ``submit_hayatequant_paper.sh``, then
+``aggregate_hayatequant_paper_shards.py`` and
+``render_hayatequant_formal_results.py``.  Execution of this legacy auditor
+requires an explicit ``--legacy-development-audit`` acknowledgement so its
+output cannot be mistaken for paper evidence.
 """
 
 from __future__ import annotations
@@ -21,7 +23,12 @@ from statistics import mean
 from typing import Any
 
 from hayatequant_cross_model import DEFAULT_MODELS
-
+from onecomp.kvcomp.codec.hayate.recipes import (
+    HQ_BLOCK_SCALE_PROXY_NAME,
+    HQ_FIB_INIT_PROXY_NAME,
+    HQ_PROXY_LEGACY_ALIASES,
+    hayate_result_method_candidates,
+)
 
 DEFAULT_RUN_ROOT = Path(
     "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/"
@@ -30,8 +37,8 @@ DEFAULT_RUN_ROOT = Path(
 
 METHODS = {
     "TQ": "TurboQuant-paper",
-    "FibQ": "FibQuant",
-    "BlockQ": "BlockQuant",
+    "FibProxy": HQ_FIB_INIT_PROXY_NAME,
+    "BlockProxy": HQ_BLOCK_SCALE_PROXY_NAME,
 }
 DEFAULT_TASKS = ("arc_easy", "arc_challenge", "piqa", "hellaswag", "winogrande")
 
@@ -64,12 +71,21 @@ def _find_json_by_model(root: Path, pattern: str) -> dict[str, Path]:
 
 
 def _ppl(payload: dict[str, Any], bits: int, method: str) -> float | None:
-    val = (((payload.get("results") or {}).get(str(bits)) or {}).get(method) or {}).get("ppl")
+    methods = (payload.get("results") or {}).get(str(bits)) or {}
+    entry = next(
+        (methods[name] for name in hayate_result_method_candidates(method) if name in methods),
+        {},
+    )
+    val = entry.get("ppl")
     return None if val is None else float(val)
 
 
 def _acc(payload: dict[str, Any], bits: int, method: str) -> float | None:
-    entry = ((payload.get("results") or {}).get(str(bits)) or {}).get(method) or {}
+    methods = (payload.get("results") or {}).get(str(bits)) or {}
+    entry = next(
+        (methods[name] for name in hayate_result_method_candidates(method) if name in methods),
+        {},
+    )
     val = entry.get("avg_primary_score", entry.get("avg_acc_norm"))
     return None if val is None else float(val) * 100.0
 
@@ -129,6 +145,13 @@ def _main_grid(run_root: Path, hq_method: str) -> dict[str, Any]:
         "rows": rows,
         "aggregates": aggregates,
         "missing": sorted(set(missing)),
+        "proxy_methods": {
+            "fib_init": HQ_FIB_INIT_PROXY_NAME,
+            "block_scale": HQ_BLOCK_SCALE_PROXY_NAME,
+        },
+        "legacy_read_aliases": {
+            key: list(value) for key, value in HQ_PROXY_LEGACY_ALIASES.items()
+        },
         "source_roots": {"ppl": str(ppl_root), "zero_shot": str(zs_root)},
     }
 
@@ -136,41 +159,53 @@ def _main_grid(run_root: Path, hq_method: str) -> dict[str, Any]:
 def _file_status(run_root: Path) -> dict[str, Any]:
     expected = {
         "speed_e2e_frontier": run_root / "frontier_tuning/frontier_e2e_speed_triton_gpu11.json",
-        "speed_codec_frontier": run_root / "frontier_tuning/frontier_codec_speed_triton_gpu11.json",
+        "speed_codec_frontier": run_root
+        / "frontier_tuning/frontier_codec_speed_triton_gpu11.json",
         "native_smoke": run_root / "native/smoke.json",
         "long_llama31": run_root / "long/llama31-8b/results_llama-3.1-8b-instruct.json",
         "long_qwen3": run_root / "long/qwen3-8b/results_Qwen3-8B.json",
-        "reason_r1_llama": run_root / "reason/r1-llama-8b/results_DeepSeek-R1-Distill-Llama-8B.json",
+        "reason_r1_llama": run_root
+        / "reason/r1-llama-8b/results_DeepSeek-R1-Distill-Llama-8B.json",
         "reason_r1_qwen7": run_root / "reason/r1-qwen-7b/results_DeepSeek-R1-Distill-Qwen-7B.json",
-        "reason_r1_qwen15": run_root / "reason/r1-qwen-1.5b/results_DeepSeek-R1-Distill-Qwen-1.5B.json",
+        "reason_r1_qwen15": run_root
+        / "reason/r1-qwen-1.5b/results_DeepSeek-R1-Distill-Qwen-1.5B.json",
     }
     return {name: {"path": str(path), "exists": path.exists()} for name, path in expected.items()}
 
 
 def _markdown(report: dict[str, Any]) -> str:
     lines = [
-        "# HayateQuant paper reproduction audit",
+        "# Legacy HayateQuant development-bundle audit",
         "",
         f"Run root: `{report['run_root']}`",
         f"HQ method: `{report['main_grid']['hq_method']}`",
         "",
         "## Main Grid Aggregates",
         "",
-        "| bits | TQ PPL | FibQ PPL | BlockQ PPL | HQ PPL | TQ ACC | FibQ ACC | BlockQ ACC | HQ ACC |",
+        "| bits | TQ PPL | HQ Fib-init proxy PPL | HQ Block-scale proxy PPL | HQ PPL | TQ ACC | HQ Fib-init proxy ACC | HQ Block-scale proxy ACC | HQ ACC |",
         "|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for bits, vals in report["main_grid"]["aggregates"].items():
+
         def f(key: str) -> str:
             v = vals.get(key)
             return "--" if v is None else f"{v:.2f}"
+
         lines.append(
-            f"| {bits} | {f('TQ_ppl_geomean')} | {f('FibQ_ppl_geomean')} | "
-            f"{f('BlockQ_ppl_geomean')} | {f('HQ_ppl_geomean')} | "
-            f"{f('TQ_acc_mean')} | {f('FibQ_acc_mean')} | "
-            f"{f('BlockQ_acc_mean')} | {f('HQ_acc_mean')} |"
+            f"| {bits} | {f('TQ_ppl_geomean')} | {f('FibProxy_ppl_geomean')} | "
+            f"{f('BlockProxy_ppl_geomean')} | {f('HQ_ppl_geomean')} | "
+            f"{f('TQ_acc_mean')} | {f('FibProxy_acc_mean')} | "
+            f"{f('BlockProxy_acc_mean')} | {f('HQ_acc_mean')} |"
         )
     missing = report["main_grid"]["missing"]
-    lines += ["", "## Coverage", ""]
+    lines += [
+        "",
+        "Historical JSON keys `FibQuant` and `BlockQuant` are accepted only as "
+        "read aliases for the explicitly named HQ proxy columns above.",
+        "",
+        "## Coverage",
+        "",
+    ]
     for name, info in report["files"].items():
         mark = "OK" if info["exists"] else "MISSING"
         lines.append(f"- {mark}: {name}: `{info['path']}`")
@@ -181,16 +216,36 @@ def _markdown(report: dict[str, Any]) -> str:
 
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser()
+    ap.add_argument(
+        "--legacy-development-audit",
+        action="store_true",
+        help=(
+            "acknowledge that this checks an obsolete frontier/proxy bundle, "
+            "not the current formal paper"
+        ),
+    )
     ap.add_argument("--run-root", type=Path, default=DEFAULT_RUN_ROOT)
     ap.add_argument("--hq-method", default="HayateQuant-frontier")
     ap.add_argument("--out-json", type=Path)
     ap.add_argument("--out-md", type=Path)
-    ap.add_argument("--strict", action="store_true", help="Exit nonzero if required files or main entries are missing.")
+    ap.add_argument(
+        "--strict",
+        action="store_true",
+        help="Exit nonzero if required files or main entries are missing.",
+    )
     return ap.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    if not args.legacy_development_audit:
+        raise SystemExit(
+            "This command audits only a legacy frontier/proxy development bundle. "
+            "For the current paper run submit_hayatequant_paper.sh, then "
+            "aggregate_hayatequant_paper_shards.py and "
+            "render_hayatequant_formal_results.py. Pass "
+            "--legacy-development-audit only to inspect the obsolete bundle."
+        )
     report = {
         "run_root": str(args.run_root),
         "main_grid": _main_grid(args.run_root, args.hq_method),

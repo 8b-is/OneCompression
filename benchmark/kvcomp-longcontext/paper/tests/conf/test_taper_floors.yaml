@@ -1,5 +1,5 @@
 # GPU verification: which TaperKV floor preserves the needle, at what memory.
-# Needle + RULER + PPL only (fast), on Llama-3.1-8B-Instruct (no thinking).
+# Needle + local synthetic multi-key + PPL only (fast), on Llama-3.1-8B-Instruct.
 # Sweeps key/value floor candidates so we can pick the retrieval-safe operating
 # point empirically instead of guessing. This is the evidence behind the
 # b_min>=3 floor fix shipped in conf/paper_taperkv.yaml + conf/turboquant_paper.yaml.

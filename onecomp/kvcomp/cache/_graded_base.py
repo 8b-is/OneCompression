@@ -71,11 +71,49 @@ class GradedQuantCache(DynamicCache):
 
     def __init__(self, config=None, skip_layers=None, requant_stride: int = 16, **kwargs):
         super().__init__(config=config, **kwargs)
-        self.skip_layers = set(skip_layers or [])
-        self.requant_stride = max(1, int(requant_stride))
+        sliding_layers = [
+            index for index, layer in enumerate(self.layers) if getattr(layer, "is_sliding", False)
+        ]
+        if sliding_layers:
+            # DynamicSlidingWindowLayer.update() returns the transient full
+            # attention states but retains only window-1 past states.  The
+            # graded path rewrites/returns the retained layer tensor, so using
+            # it here would silently drop current-prefill positions from the
+            # very forward being scored.
+            raise NotImplementedError(
+                "GradedQuantCache does not support model-side sliding-window "
+                f"layers {sliding_layers}; use a full-attention model/backend"
+            )
+        self.skip_layers = set()
+        for raw_layer_idx in skip_layers or []:
+            if isinstance(raw_layer_idx, bool) or not isinstance(raw_layer_idx, int):
+                raise ValueError("skip_layers must contain integer layer indices")
+            layer_idx = raw_layer_idx
+            if layer_idx < 0:
+                if not self.layers:
+                    raise ValueError("negative skip_layers require a model config")
+                layer_idx += len(self.layers)
+            if layer_idx < 0 or (self.layers and layer_idx >= len(self.layers)):
+                raise ValueError(f"skip layer index {raw_layer_idx} is out of range")
+            self.skip_layers.add(layer_idx)
+        if (
+            isinstance(requant_stride, bool)
+            or not isinstance(requant_stride, int)
+            or requant_stride <= 0
+        ):
+            raise ValueError("requant_stride must be a positive integer")
+        self.requant_stride = requant_stride
         self._since = 0
-        self._layer_bits: dict = {}    # layer_idx -> stored bits (graded, or FP for skipped)
-        self._layer_fp16: dict = {}    # layer_idx -> fp16 reference bits
+        self._layer_bits: dict = {}  # layer_idx -> stored bits (graded, or FP for skipped)
+        self._layer_fp16: dict = {}  # layer_idx -> fp16 reference bits
+        self.fp16_bits_layer = 0
+
+    def reset(self):
+        """Reset tensors, cadence, and all resident bit-accounting state."""
+        super().reset()
+        self._since = 0
+        self._layer_bits.clear()
+        self._layer_fp16.clear()
         self.fp16_bits_layer = 0
 
     # --- subclass hook -----------------------------------------------------
@@ -86,6 +124,10 @@ class GradedQuantCache(DynamicCache):
         the oldest token, index ``total-1`` the newest.  Abstract.
         """
         raise NotImplementedError
+
+    def teacher_forced_temporal_dependency(self):
+        """Age/recency schedules must not see future teacher-forced targets."""
+        return "age_dependent_precision_schedule_over_update_tokens"
 
     # --- internals ---------------------------------------------------------
     @staticmethod
@@ -119,10 +161,14 @@ class GradedQuantCache(DynamicCache):
         kbits, vbits = self.token_bits(keys.shape[2], keys.device, layer_idx)
         kq = fake_quant_tokens(keys, kbits)
         vq = fake_quant_tokens(values, vbits)
-        per = keys.shape[1] * keys.shape[-1]
-        heads = keys.shape[1]
-        bits = int(kbits.sum() * per + vbits.sum() * per
-                   + self._meta_bits(kbits, heads) + self._meta_bits(vbits, heads))
+        batch_heads = keys.shape[0] * keys.shape[1]
+        per = batch_heads * keys.shape[-1]
+        bits = int(
+            kbits.sum() * per
+            + vbits.sum() * per
+            + self._meta_bits(kbits, batch_heads)
+            + self._meta_bits(vbits, batch_heads)
+        )
         return kq, vq, bits
 
     def update(self, key_states, value_states, layer_idx, *args, **kwargs):
@@ -150,11 +196,13 @@ class GradedQuantCache(DynamicCache):
             vq = fake_quant_tokens(layer.values[:, :, -q_len:], v_new_bits)
             layer.keys[:, :, -q_len:] = kq.to(layer.keys.dtype)
             layer.values[:, :, -q_len:] = vq.to(layer.values.dtype)
-            per = layer.keys.shape[1] * layer.keys.shape[-1]
-            heads = layer.keys.shape[1]
+            batch_heads = layer.keys.shape[0] * layer.keys.shape[1]
+            per = batch_heads * layer.keys.shape[-1]
             added = int(
-                k_new_bits.sum() * per + v_new_bits.sum() * per
-                + self._meta_bits(k_new_bits, heads) + self._meta_bits(v_new_bits, heads)
+                k_new_bits.sum() * per
+                + v_new_bits.sum() * per
+                + self._meta_bits(k_new_bits, batch_heads)
+                + self._meta_bits(v_new_bits, batch_heads)
             )
             self._layer_bits[layer_idx] = self._layer_bits.get(layer_idx, 0) + added
             self._layer_fp16[layer_idx] = (layer.keys.numel() + layer.values.numel()) * 16

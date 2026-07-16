@@ -1,0 +1,41 @@
+{
+  "artifact": {
+    "bytes": 1669,
+    "file_sha256": "d0b4402fa70317c6a72a85915becc9fd2923d8815793039349f7844c3000947a",
+    "finite": true,
+    "original_dtype": "torch.float32",
+    "relative_path": "artifacts/gauss_b2_k8.pt",
+    "shape": [
+      8,
+      2
+    ],
+    "tensor_sha256": "55d09c31d8bcfe4d597dff7021b85a6c9736b900dd3a298d214de9ec78333390",
+    "unique_rows": 8
+  },
+  "constructor": {
+    "ambient_dim": 128,
+    "elapsed_seconds": 0.5513961808755994,
+    "function": "lloyd_vq_gaussian_codebook",
+    "init": "auto",
+    "max_iterations": 25,
+    "quality_selection": false,
+    "restarts": 4,
+    "samples": 100000,
+    "seed": 0,
+    "source": "iid_standard_normal_fp32"
+  },
+  "runtime": {
+    "finished_at_utc": "2026-07-15T21:19:42.245679+00:00",
+    "hostname": "kagura-gpu13",
+    "python": "3.13.12",
+    "slurm_array_job_id": "69360",
+    "slurm_array_task_id": "0",
+    "torch": "2.11.0+cu130"
+  },
+  "schema": "hayatequant.current_online_serialization.reference.v1",
+  "target": {
+    "block_size": 2,
+    "code_bits": 3,
+    "k": 8
+  }
+}

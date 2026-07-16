@@ -7,7 +7,7 @@ clone the repo, sync `.venv`, place the models under `$MODELS`, and run
 
 | Paper | Proposed method | Family | Competitor(s) | Headline claim |
 |---|---|---|---|---|
-| **Paper 1** | **HayateQuant** (supersedes HALO) | codec (drop-in) | TurboQuant (arXiv:2504.19874), HALO | iso-bit, HayateQuant is **more accurate** (block-VQ space-filling gain) *and* faster to decode than TurboQuant; strict superset of both baselines |
+| **Paper 1** | **HayateQuant** (HALO retained as a baseline) | codec (drop-in) | TurboQuant (arXiv:2504.19874), HALO | iso-bit quality and separately controlled encode/decode latency; `block_size=1` is a scalar compatibility control, not a strict-superset claim |
 | **Paper 2** | **TaperKV / TurboTaper** | recipe (age-graded precision) | ThinKV (ICLR 2026), PM-KVQ (arXiv:2505.18610) | at iso-memory, eviction **structurally fails** retrieval; TaperKV's graded floor keeps the needle **and** reasoning |
 
 The two papers share one harness (`kv_benchmark.py`, `codec_benchmark.py`,

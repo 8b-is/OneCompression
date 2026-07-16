@@ -9,7 +9,7 @@
 #                        downstream metric on a real model?
 #
 # HALO lever ablation (all at iso bit-width & iso storage):
-#   HALO-h-noLS    rotation=hadamard,      ls_scale=off  == faithful TurboQuant(gaussian)
+#   HALO-h-noLS    rotation=hadamard,      ls_scale=off  == Gaussian TurboQuant component control
 #   HALO-hg-noLS   rotation=hadamard_gemm, ls_scale=off  (speed lever; quality == h-noLS)
 #   HALO-hg-LS     rotation=hadamard_gemm, ls_scale=on   (full HALO default)
 #   HALO-dense-LS  rotation=dense,         ls_scale=on   (rotation ablation; expect regress)
@@ -80,7 +80,8 @@ halo_variants:
   - {label: "HALO-hg-NCIT-4",  bits: 4, rotation_mode: hadamard_gemm, key_scale_mode: nc,  value_scale_mode: ls_iter}
   - {label: "HALO-dense-LS-4", bits: 4, rotation_mode: dense,         key_scale_mode: ls,  value_scale_mode: ls}
 
-# Faithful TurboQuant references (beta codebook) at the same bit-widths.
+# TurboQuant Algorithm-1-MSE component references (finite-Beta codebook) at
+# the same bit-widths; these do not claim a Table-1 mixed-precision reproduction.
 turboquant_variants:
   - {label: "TurboQuant-3bit", bits: 3, dist: beta, rotation_mode: dense}
   - {label: "TurboQuant-4bit", bits: 4, dist: beta, rotation_mode: dense}

@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/papers/hayatequant_paper/experiments/results/development/hq_codebook_artifacts_20260716/runtime/finalize_existing_artifact.py", line 152, in <module>
+    main()
+    ~~~~^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/papers/hayatequant_paper/experiments/results/development/hq_codebook_artifacts_20260716/runtime/finalize_existing_artifact.py", line 148, in main
+    raise RuntimeError("preserved artifact failed strict held-out source-MSE gate")
+RuntimeError: preserved artifact failed strict held-out source-MSE gate

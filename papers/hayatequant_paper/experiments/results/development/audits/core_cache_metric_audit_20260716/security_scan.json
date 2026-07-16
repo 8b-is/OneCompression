@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "scan_date": "2026-07-16",
+  "scanner": "ripgrep credential-shape scan",
+  "scope": [
+    "onecomp/kvcomp/_base.py",
+    "onecomp/kvcomp/cache/**",
+    "onecomp/kvcomp/eval/**",
+    "tests/onecomp/kvcomp/test_core_cache_metric_audit.py",
+    "tests/onecomp/kvcomp/test_metrics_accounting.py",
+    "tests/onecomp/kvcomp/test_eval_correctness.py",
+    "tests/onecomp/kvcomp/test_code_accounting.py",
+    "tests/onecomp/kvcomp/test_ruler_eval.py",
+    "papers/hayatequant_paper/experiments/results/development/audits/core_cache_metric_audit_20260716"
+  ],
+  "detectors": [
+    "common hosted-service credential prefixes",
+    "AWS access-key identifier shape",
+    "populated bearer authorization value",
+    "quoted populated access-token assignment"
+  ],
+  "result": "pass",
+  "match_count": 0,
+  "scanner_exit_code": 1,
+  "exit_code_note": "ripgrep returns 1 when no lines match"
+}

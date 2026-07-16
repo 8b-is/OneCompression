@@ -1,0 +1,20 @@
+job_id=69335
+array_job_id=69327
+array_task_id=7
+node=kagura-gpu08
+kind=adaptive
+model=llama-3.1-8b-instruct
+model_path=/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct
+start_utc=2026-07-15T20:39:21Z
+git_head=e50379c225259b3e5d5df1facafa7133b36915d5
+git_dirty=true
+d5441cab8b83d5e37b86227b338bb0e71d9e7475f27ae8fca1355518ce1feff6  /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/papers/hayatequant_paper/experiments/results/development/hq_quality_refinement_20260716/runtime/hq_quality_refinement_search.py
+c598f42efdca5311128f7472bce225782308c778e006a09d7cd5503175f3ba18  /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/benchmark/kvcomp-codec/codec_benchmark.py
+c5608752399a605a730996df6876a4f6b613bd167ddde45c21d579db224b043b  /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codec.py
+04b28eb73af881e0f4369aa84ed8af2258629c347f2f5bd46f07ce705be0436d  /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/recipes.py
+f8a0602ea4c852c2c765c9dc59a07d3c79a209b93a17c854dc51ad4791765c2d  /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/vq.py
+8d8a60631f9395b7bd55a72d206633d2b0cbd7675523a07ac74726709a309fd9  /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/eval/ppl.py
+Python 3.13.12
+NVIDIA B200, GPU-53255bfc-a040-c0e1-8f80-8e9281cdcadc, 580.126.20
+end_utc=2026-07-15T20:46:30Z
+exit_status=0

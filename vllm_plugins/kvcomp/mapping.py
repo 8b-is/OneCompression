@@ -25,13 +25,19 @@ ships native KV-cache dtypes well beyond FP8, so the bridge maps onto them:
   uniform scalar value quantizer; it must not be reported as faithful
   HayateQuant.  ``scalar_fallback`` explicitly selects TurboQuant semantics.
 * **NVFP4** -> ``"nvfp4"``; **INT8** -> ``"int8_per_token_head"``.
-* Remaining low-bit/asymmetric codecs (INT4/INT3/INT2, KIVI, Ternary) and
+* Remaining low-bit/asymmetric codecs (INT4/INT3/INT2, KIVI, Ternary),
+  role-dependent precision policies, and
   token-eviction selectors (SnapKV, ThinKV TBE) / adaptive per-token policies
   (TaperKV, ThinKV) are not expressible as one ``kv_cache_dtype`` and require the
   custom attention-backend / HF cache path.  For those the module returns
   ``native_supported=False`` with an explicit reason rather than silently
   downgrading.  Native dtypes added only in recent vLLM are validated at
   apply-time so an older vLLM falls back gracefully.
+* vLLM's native paged cache quantizes every stored token and cannot preserve
+  OneComp's full-precision ``residual_window`` suffix.  A positive window
+  therefore fails closed to the HF/custom path.  Native deployments must set
+  ``residual_window=0`` explicitly; a missing field retains OneComp's historical
+  default of 128 rather than silently changing the requested algorithm.
 
 The module deliberately imports neither ``vllm`` nor ``torch`` so it can be
 unit-tested on a CPU-only login node.
@@ -121,7 +127,8 @@ def _check_rotation_for_native(codec: dict, name: str, plan: "KVCompVLLMPlan"):
             "kernel cannot apply a learned rotation/codebook -- the native "
             "preset would quantize under the data-free transform instead "
             "(the calibration gain would be lost). Use the HF cache path "
-            "for faithful calibrated results.")
+            "for faithful calibrated results."
+        )
         return
     mode = codec.get("rotation_mode")
     block_size = codec.get("block_size")
@@ -212,7 +219,11 @@ def _hayatequant_vllm_mode(codec: dict) -> str:
     if raw is None:
         legacy = os.environ.get("KVCOMP_VLLM_SCALAR_FALLBACK")
         if legacy is not None:
-            raw = "scalar_fallback" if legacy.strip().lower() in ("1", "true", "yes", "on") else "strict"
+            raw = (
+                "scalar_fallback"
+                if legacy.strip().lower() in ("1", "true", "yes", "on")
+                else "strict"
+            )
     if raw is None:
         return "strict"
     mode = str(raw).strip().lower().replace("-", "_")
@@ -300,59 +311,42 @@ def _plan_rolekv(
     plan: "KVCompVLLMPlan",
     requested_kv_cache_dtype: str,
 ) -> "KVCompVLLMPlan":
-    """Map a role-aware precision policy ("rolekv") onto vLLM engine kwargs.
+    """Resolve a role-aware policy without silently collapsing its semantics.
 
-    vLLM applies one ``kv_cache_dtype`` uniformly to every token of every
-    sequence; per-role bit-widths are not expressible.  The mapping is
-    safe-side: the most precise role decides the dtype (8-bit -> native FP8
-    with online scales; >= 16 -> ``"auto"``), so no span is stored at lower
-    fidelity than the policy requested.  Role-aware compression below 8 bit
-    is only realised in the HF cache path (:class:`onecomp.kvcomp.cache.
-    role_cache.RoleKVCache` live, or ``.okv`` checkpoints offline).
+    The live RoleKV cache uses per-token affine quantization, optional fp16
+    sink tokens, and role-dependent bit widths. A uniform native vLLM dtype
+    reproduces none of those features except the degenerate all-fp16 policy.
     """
     bits_map = dict(policy.get("bits_per_role") or {})
     bits_map["<default>"] = int(policy.get("default_bits", 4))
-    max_bits = max(int(b) for b in bits_map.values())
+    bit_values = {int(value) for value in bits_map.values()}
+    sink_tokens = int(policy.get("sink_tokens", 4))
+    plan.skip_layers = [int(x) for x in (policy.get("skip_layers") or [])]
 
-    if max_bits >= 16:
+    if bit_values == {16} and sink_tokens >= 0:
         plan.kv_cache_dtype = "auto"
         plan.native_supported = True
         plan.notes.append(
-            "Policy 'rolekv': most precise role is uncompressed (>= 16 bit); "
-            "kv_cache_dtype='auto' keeps the model dtype."
+            "Policy 'rolekv' assigns fp16 to every role; kv_cache_dtype='auto' "
+            "faithfully keeps the model dtype."
         )
-    else:
-        dtype = _NATIVE_FP8["fp8"]
-        plan.kv_cache_dtype = dtype
-        plan.native_supported = True
-        plan.calculate_kv_scales = True
-        plan.notes.append(
-            f"Policy 'rolekv': most precise role bits={max_bits} -> native vLLM "
-            f"kv_cache_dtype='{dtype}' with online scale calculation (data-free, "
-            "mirrors the codec's tuning-free path)."
-        )
-        if requested_kv_cache_dtype not in ("auto", dtype):
-            plan.warnings.append(
-                f"Requested kv_cache_dtype='{requested_kv_cache_dtype}' conflicts "
-                f"with policy 'rolekv' -> '{dtype}'; using the policy's dtype."
-            )
-        if max_bits < 8:
-            plan.warnings.append(
-                f"Policy 'rolekv': most precise role bits={max_bits} is below vLLM's "
-                "lowest native KV cache dtype (fp8 = 8 bit); fp8 is a safe "
-                "higher-precision stand-in, so fidelity is preserved but the "
-                "expected memory saving below 8 bit is not realised inside vLLM."
-            )
-    below = sorted(role for role, bits in bits_map.items() if int(bits) < max_bits)
-    if below and plan.kv_cache_dtype != "auto":
+        return plan
+
+    plan.kv_cache_dtype = "auto"
+    plan.native_supported = False
+    plan.needs_custom_backend = True
+    plan.notes.append(
+        "Policy 'rolekv' requires the HF/custom path: vLLM applies one dtype "
+        "uniformly, whereas RoleKV uses per-role affine bit widths"
+        + (f" {sorted(bit_values)}" if len(bit_values) > 1 else f" {next(iter(bit_values))}")
+        + f" and sink_tokens={sink_tokens}. Mapping it to FP8 would change both "
+        "the quantizer and realised memory rate."
+    )
+    if requested_kv_cache_dtype != "auto":
         plan.warnings.append(
-            "vLLM applies one kv_cache_dtype to every token; the per-role "
-            f"bit-widths of roles {below} are collapsed to "
-            f"'{plan.kv_cache_dtype}'. Role-aware compression below the deciding "
-            "bit-width is only realised in the HF cache path (RoleKVCache / "
-            ".okv checkpoints)."
+            f"Requested kv_cache_dtype='{requested_kv_cache_dtype}' cannot "
+            "reproduce RoleKV and is ignored by the fail-closed plan."
         )
-    plan.skip_layers = [int(x) for x in (policy.get("skip_layers") or [])]
     return plan
 
 
@@ -382,7 +376,38 @@ def plan_from_kv_config(
     codec = kv_config.get("codec") or None
     selector = kv_config.get("selector") or None
     policy = kv_config.get("policy") or None
+    policy_name = policy.get("name") if policy else None
     plan.codec_name = codec.get("name") if codec else None
+
+    # ``KVCompressionConfig.residual_window`` means that the newest N tokens
+    # stay in full precision.  A native vLLM ``kv_cache_dtype`` is uniform over
+    # every resident token, so mapping a positive window to it silently changes
+    # both the algorithm and its effective memory rate.  Preserve the serialized
+    # config default (128, including for pre-field legacy configs) and fail closed
+    # to the faithful HF/custom path.  Users who intentionally want the uniform
+    # native deployment approximation must opt out with an explicit zero.
+    raw_residual_window = kv_config.get("residual_window", 128)
+    try:
+        residual_window = int(raw_residual_window)
+    except (TypeError, ValueError):
+        residual_window = -1
+    if residual_window < 0:
+        plan.needs_custom_backend = True
+        plan.notes.append(
+            "Invalid kv_compression_config.residual_window="
+            f"{raw_residual_window!r}; expected a non-negative integer. "
+            "Native vLLM mapping is disabled rather than guessing."
+        )
+    elif residual_window > 0 and (codec is not None or policy_name == "rolekv"):
+        plan.needs_custom_backend = True
+        plan.notes.append(
+            f"residual_window={residual_window} keeps the newest tokens in full "
+            "precision in OneComp's HF cache, but native vLLM kv_cache_dtype "
+            "quantizes every stored token and cannot reproduce that window. "
+            "Native mapping is disabled; use the HF/custom path for faithful "
+            "results, or explicitly set residual_window=0 to request uniform "
+            "native quantization. (Missing fields default to 128.)"
+        )
 
     if selector is not None:
         plan.needs_custom_backend = True
@@ -393,15 +418,7 @@ def plan_from_kv_config(
 
     # Per-token adaptive recipes (ThinKV graded eviction, TaperKV graded
     # quantization) are not a single kv_cache_dtype and need the custom backend.
-    policy_name = policy.get("name") if policy else None
     if policy_name == "rolekv" and not plan.needs_custom_backend:
-        # Role-aware precision (RolePrecisionPolicy) collapses safe-side: the
-        # most precise role decides the dtype, so no span is served below the
-        # fidelity the policy requested.  Unlike age/thought-graded policies
-        # this is a pure fidelity *upgrade* for the low-bit roles (their spans
-        # were only ever quantized harder, never softer), so a compressed
-        # native dtype is still honest -- the caveat is the unrealised extra
-        # compression, which is warned about explicitly.
         return _plan_rolekv(policy, plan, requested_kv_cache_dtype)
     if policy_name not in (None, "static", "rolekv"):
         plan.needs_custom_backend = True
@@ -464,6 +481,8 @@ def plan_from_kv_config(
             unsupported_native.append("calibration")
         if int(codec.get("n_outlier") or 0) > 0:
             unsupported_native.append("n_outlier")
+        if int(codec.get("key_n_outlier") or 0) > 0 or int(codec.get("value_n_outlier") or 0) > 0:
+            unsupported_native.append("role-specific n_outlier")
         if codec.get("use_qjl"):
             unsupported_native.append("use_qjl")
         if int(codec.get("max_codebook_bits") or 9) > 9:
@@ -639,7 +658,10 @@ def plan_from_kv_config(
                     "outlier split) has no preset equivalent and is dropped by the "
                     "native mapping; use the HF cache path to keep it."
                 )
-            if int(codec.get("key_n_outlier") or 0) > 0 or int(codec.get("value_n_outlier") or 0) > 0:
+            if (
+                int(codec.get("key_n_outlier") or 0) > 0
+                or int(codec.get("value_n_outlier") or 0) > 0
+            ):
                 plan.warnings.append(
                     f"Codec '{name}' role-specific outlier split "
                     f"(key_n_outlier={codec.get('key_n_outlier')}, "
@@ -684,8 +706,12 @@ def plan_from_kv_config(
         )
     else:
         plan.native_supported = False
-        plan.kv_cache_dtype = requested_kv_cache_dtype
-        plan.warnings.append(f"Unknown KV codec '{name}'; leaving kv_cache_dtype unchanged.")
+        plan.needs_custom_backend = True
+        plan.kv_cache_dtype = "auto"
+        plan.warnings.append(
+            f"Unknown KV codec '{name}'; refusing to preserve a caller dtype "
+            "that could silently run a different algorithm."
+        )
 
     return plan
 
@@ -704,4 +730,11 @@ def engine_kwargs_from_kv_config(
         kwargs = engine_kwargs_from_kv_config(cfg["kv_compression_config"])
         llm = LLM(model=path, **kwargs)
     """
-    return plan_from_kv_config(kv_config, requested_kv_cache_dtype).engine_kwargs()
+    plan = plan_from_kv_config(kv_config, requested_kv_cache_dtype)
+    if plan.needs_custom_backend or not plan.native_supported:
+        detail = "; ".join(plan.notes + plan.warnings) or "no faithful native mapping"
+        raise RuntimeError(
+            "KV compression recipe cannot be represented by native vLLM engine "
+            f"kwargs: {detail}"
+        )
+    return plan.engine_kwargs()

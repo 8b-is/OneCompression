@@ -61,6 +61,8 @@ max_new_reason: 512
 run_math: true
 math_limit: 6
 max_new_math: 512
+math_grader: math_verify
+math_verify_version: "0.9.0"
 
 run_livecodebench: true      # HumanEval-shaped smoke only; output is not named LiveCodeBench
 # Point at a local functional JSONL ({prompt, entry_point, test}) on the CLI, e.g.:

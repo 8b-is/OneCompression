@@ -16,8 +16,9 @@ import torch
 from ._graded_base import GradedQuantCache, fake_quant_tokens
 
 
-def progressive_bits(recency: torch.Tensor, recent_window: int, ladder_span: int,
-                     high_bits: int, final_bits: int) -> torch.Tensor:
+def progressive_bits(
+    recency: torch.Tensor, recent_window: int, ladder_span: int, high_bits: int, final_bits: int
+) -> torch.Tensor:
     """Per-token bits as a function of *recency* (0 = newest).
 
     Newest ``recent_window`` tokens stay at ``high_bits``; the next
@@ -48,8 +49,9 @@ class PMKVQCache(GradedQuantCache):
     """
 
     def __init__(self, policy, config=None, requant_stride: int = 16, **kwargs):
-        super().__init__(config=config, skip_layers=policy.skip_layers,
-                         requant_stride=requant_stride, **kwargs)
+        super().__init__(
+            config=config, skip_layers=policy.skip_layers, requant_stride=requant_stride, **kwargs
+        )
         self.policy = policy
         self._sensitive = set(policy.sensitive_layers or [])
         self._block_final = dict(getattr(policy, "block_final_bits", {}) or {})
@@ -63,17 +65,19 @@ class PMKVQCache(GradedQuantCache):
             # solver's choice; the key floor stays >= value floor (MKLV K>V).
             v_final = int(self._block_final[layer_idx])
             k_final = max(v_final, p.key_final_bits)
-            kbits = progressive_bits(recency, p.recent_window, p.ladder_span,
-                                     p.key_bits, k_final)
-            vbits = progressive_bits(recency, p.recent_window, p.ladder_span,
-                                     p.value_bits, v_final)
+            kbits = progressive_bits(recency, p.recent_window, p.ladder_span, p.key_bits, k_final)
+            vbits = progressive_bits(
+                recency, p.recent_window, p.ladder_span, p.value_bits, v_final
+            )
             return kbits, vbits
         # Manual shortcut: per-layer additive bump for sensitive blocks.
         bump = p.sensitive_bump if layer_idx in self._sensitive else 0
-        kbits = progressive_bits(recency, p.recent_window, p.ladder_span,
-                                 p.key_bits + bump, p.key_final_bits + bump)
-        vbits = progressive_bits(recency, p.recent_window, p.ladder_span,
-                                 p.value_bits + bump, p.final_bits + bump)
+        kbits = progressive_bits(
+            recency, p.recent_window, p.ladder_span, p.key_bits + bump, p.key_final_bits + bump
+        )
+        vbits = progressive_bits(
+            recency, p.recent_window, p.ladder_span, p.value_bits + bump, p.final_bits + bump
+        )
         return kbits, vbits
 
     def _grade_layer(self, keys, values, layer_idx):
@@ -88,13 +92,17 @@ class PMKVQCache(GradedQuantCache):
         if lam is None:
             return super()._grade_layer(keys, values, layer_idx)
         kbits, vbits = self.token_bits(keys.shape[2], keys.device, layer_idx)
-        lam = lam.to(keys.device, keys.dtype)              # (n_kv_heads, head_dim)
+        lam = lam.to(keys.device, keys.dtype)  # (n_kv_heads, head_dim)
         inv = (1.0 / lam.clamp_min(1e-6)).view(1, lam.shape[0], 1, lam.shape[1])
         scl = lam.view(1, lam.shape[0], 1, lam.shape[1])
         kq = scl.float() * fake_quant_tokens(keys.float() * inv.float(), kbits)
         vq = fake_quant_tokens(values, vbits)
-        per = keys.shape[1] * keys.shape[-1]
-        heads = keys.shape[1]
-        bits = int(kbits.sum() * per + vbits.sum() * per
-                   + self._meta_bits(kbits, heads) + self._meta_bits(vbits, heads))
+        batch_heads = keys.shape[0] * keys.shape[1]
+        per = batch_heads * keys.shape[-1]
+        bits = int(
+            kbits.sum() * per
+            + vbits.sum() * per
+            + self._meta_bits(kbits, batch_heads)
+            + self._meta_bits(vbits, batch_heads)
+        )
         return kq, vq, bits

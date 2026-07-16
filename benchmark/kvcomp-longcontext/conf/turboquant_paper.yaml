@@ -1,8 +1,10 @@
-# Paper-faithful TurboQuant benchmark grid (arXiv:2504.19874, Zandieh et al.),
-# with **HayateQuant** (this repo's proposed codec) as the primary method under
-# test and HALO kept as the strongest prior baseline.
+# Historical TurboQuant-inspired benchmark grid (arXiv:2504.19874, Zandieh et
+# al.), with **HayateQuant** as the primary method under test and HALO retained
+# as a research baseline. This preset is not the formal reproduction boundary:
+# the paper does not disclose enough K/V Algorithm-1-vs-2 and mixed-precision
+# selection details to identify these 2.5/3.5 rows as an exact Table-1 recipe.
 #
-# Setup faithful to the TurboQuant paper:
+# Components aligned with the paper, with the scope caveat above:
 #   * Model      : Llama-3.1-8B-Instruct (paper's 1st KV-cache model). The 2nd
 #                  paper model, Ministral-8B-Instruct-2410, runs the same grid via
 #                  conf/turboquant_paper_ministral.yaml.
@@ -117,7 +119,8 @@ turbotaper:
 # the fast Hadamard rotation applies for full-width variants.
 # Paper 2.5 / 3.5-bit at head_dim=128 = 32 outliers @ b+1 + 96 @ b:
 # 2.25/3.25 payload plus 0.25 bits/coordinate for two fp16 subset norms. All
-# three codecs use the same split so the comparison is exactly iso-memory.
+# three codecs use the same logical split and metadata accounting in this
+# repository; this does not turn the row into a Table-1 reproduction.
 turboquant_variants:
   - {label: "TurboQuant-4bit",   bits: 4, dist: beta, rotation_mode: dense}
   - {label: "TurboQuant-3.5bit", bits: 3, n_outlier: 32, outlier_bits: 4, dist: beta, rotation_mode: dense}
@@ -141,7 +144,7 @@ longbench_limit: null       # complete official split; use an integer only for s
 # TurboQuant is a long-context quantizer, not a reasoning method: GSM8K/MATH off.
 run_gsm8k: false
 run_math: false
-run_ruler: false            # local multi-key diagnostic is not the official RULER suite
+run_ruler: false            # local multi-key diagnostic is not a RULER benchmark
 ruler_keys: 4
 ruler_seeds: 5
 

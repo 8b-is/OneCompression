@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "scan_date": "2026-07-16",
+  "scanner": "ripgrep PCRE2 credential-shape scan",
+  "scope": [
+    "onecomp/kvcomp/codec/turboquant.py",
+    "onecomp/kvcomp/codec/fibquant.py",
+    "onecomp/kvcomp/codec/blockquant.py",
+    "onecomp/kvcomp/codec/rotation.py",
+    "onecomp/kvcomp/codec/quality_baselines.py",
+    "tests/onecomp/kvcomp/test_external_baseline_audit.py",
+    "papers/hayatequant_paper/experiments/results/development/audits/external_codec_math_audit_20260716"
+  ],
+  "detectors": [
+    "authorization header with a populated credential",
+    "quoted populated credential assignment",
+    "common hosted-service credential prefix",
+    "long three-component dotted credential shape"
+  ],
+  "result": "pass",
+  "match_count": 0,
+  "scanner_exit_code": 1,
+  "exit_code_note": "ripgrep returns 1 when no lines match"
+}

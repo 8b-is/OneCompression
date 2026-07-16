@@ -8,7 +8,8 @@
 #   * **Bits**: {4, 3, 2}.  3-bit is the iso-quality operating point most
 #     KV-quant papers headline on (KIVI, TurboQuant Table 1, KVTuner Fig 4),
 #     so it is the bit width readers expect to compare HALO at.
-#   * **Codecs**: HALO-auto vs TurboQuant-paper (exact Beta + Gaussian-QR)
+#   * **Codecs**: HALO-auto vs TurboQuant-paper (Algorithm-1 MSE components:
+#     exact finite-Beta + Gaussian-QR; not a Table-1 reproduction)
 #     vs TurboQuant-hadamard (fast deployment approximation). All share a data-free
 #     Lloyd-Max codebook so any quality difference is rotation only.
 #   * **Models**: Llama-3.1-8B-Instruct (the TurboQuant paper headline model)

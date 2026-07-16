@@ -1,0 +1,13 @@
+job_id=69347
+array_job_id=69346
+array_task_id=0
+node=kagura-gpu13
+start_utc=2026-07-15T21:02:21Z
+e50379c225259b3e5d5df1facafa7133b36915d5
+1031d66e5162f81c674f88821f26b0ff4f08f2209ff8e8662d2e23df802f7e7b  /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/papers/hayatequant_paper/experiments/results/development/hq_codebook_artifacts_20260716/PREREGISTRATION.md
+7366ad5656239a5b99b4f2e8bb9c74f29ad6fccf5bfe756830f3e54db86388f2  /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/papers/hayatequant_paper/experiments/results/development/hq_codebook_artifacts_20260716/runtime/fit_one_artifact.py
+f8a0602ea4c852c2c765c9dc59a07d3c79a209b93a17c854dc51ad4791765c2d  /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/vq.py
+Python 3.13.12
+NVIDIA B200, GPU-3c095bc9-d907-bb7f-0066-846f3c158dad, 580.126.20
+end_utc=2026-07-15T21:04:11Z
+exit_status=1

@@ -1,11 +1,13 @@
-"""Array-level verification that HayateQuant's block-VQ strictly improves on
-TurboQuant's scalar Lloyd-Max quantizer at equal bit-rate, and that the
-hybrid rotation gives each block better local isotropy than Hadamard alone.
+"""Array-level diagnostics for HayateQuant's block-VQ and scalar controls.
+
+The checks cover idealized source-law distortion and local rotation isotropy;
+they are regression tests under the fixed seeds/distributions below, not a
+proof of universal dominance over TurboQuant or HALO.
 
 This is the CPU-only, data-free, in-repo proof backing the claims in
 ``onecomp/kvcomp/codec/hayatequant.py``:
 
-  1. **Superset check.** ``HayateQuantCodec(block_size=1, rotation_mode=
+  1. **Scalar compatibility check.** ``HayateQuantCodec(block_size=1, rotation_mode=
      "hadamard_gemm"/"dense", key_scale_mode=value_scale_mode="rms")``
      reproduces :class:`TurboQuantCodec`'s distortion to numerical precision
      (same rotation family, same scalar codebook, same RMS scale).
@@ -30,11 +32,10 @@ This is the CPU-only, data-free, in-repo proof backing the claims in
      structured (non-i.i.d.) input -- exactly the property the block-VQ
      codebook (fit to an isotropic law) needs to hold for a good fit.
 
-  4. **Superset guarantee under real-KV-like anisotropy.** Even when the
-     input has strong axis-aligned structure (a few high-variance "massive
-     activation" channels, as in real KV caches), HayateQuant with block-VQ
-     never does *worse* than the ``block_size=1`` fallback at the same rate
-     (monotone-improving story holds, not just on the idealised source law).
+  4. **Synthetic anisotropy check.** On one fixed massive-activation-style
+     distribution, explicitly splitting the known outlier coordinates keeps
+     block-VQ within the stated tolerance of the scalar fallback.  The
+     unsplit case is reported without asserting a win.
 
 Run:  python paper/tests/verify_hayatequant_vq_gain.py
 """
@@ -78,23 +79,34 @@ def relmse(codec, x):
     return float((kd.float() - x).pow(2).sum() / x.float().pow(2).sum().clamp_min(1e-12))
 
 
-# --- 1. Superset: block_size=1 reproduces TurboQuant -----------------------
+# --- 1. Scalar compatibility: block_size=1 vs TurboQuant ------------------
 print("\n=== 1. HayateQuant(block_size=1) reproduces TurboQuant ===")
 x = torch.randn(2, 4, 256, 128)
 for bits in (2, 3, 4):
     for rot in ("hadamard_gemm", "dense"):
         tq_rot = "hadamard" if rot == "hadamard_gemm" else "dense"
         tq = TurboQuantCodec(bits=bits, rotation_mode=tq_rot, dist="gaussian")
-        hq = HayateQuantCodec(bits=bits, block_size=1, rotation_mode=rot,
-                               dist="gaussian", key_scale_mode="rms", value_scale_mode="rms")
+        hq = HayateQuantCodec(
+            bits=bits,
+            block_size=1,
+            rotation_mode=rot,
+            dist="gaussian",
+            key_scale_mode="rms",
+            value_scale_mode="rms",
+        )
         d_tq, d_hq = relmse(tq, x), relmse(hq, x)
         # hadamard_gemm is bit-identical to the WHT butterfly (both signed-Hadamard);
         # dense uses an independently-seeded QR matrix in each codec so we only
         # check the two are of the same *order of magnitude* (both faithful
         # rotate+scalar-Lloyd-Max), not bit-identical.
-        close = abs(d_tq - d_hq) < 0.01 * max(d_tq, d_hq, 1e-6) if rot == "hadamard_gemm" else \
-            abs(d_tq - d_hq) < 0.25 * max(d_tq, d_hq)
-        check(f"bits={bits} rot={rot}: TurboQuant={d_tq:.5f} ~= HayateQuant(bs=1)={d_hq:.5f}", close)
+        close = (
+            abs(d_tq - d_hq) < 0.01 * max(d_tq, d_hq, 1e-6)
+            if rot == "hadamard_gemm"
+            else abs(d_tq - d_hq) < 0.25 * max(d_tq, d_hq)
+        )
+        check(
+            f"bits={bits} rot={rot}: TurboQuant={d_tq:.5f} ~= HayateQuant(bs=1)={d_hq:.5f}", close
+        )
 
 # --- 2. Block-VQ strictly reduces distortion on the idealised source law ---
 print("\n=== 2. Block-VQ reduces distortion at equal bits (idealised Gaussian source) ===")
@@ -104,8 +116,14 @@ for bits in (1, 2, 3):
     block_sizes = (1, 2, 4, 8) if bits == 1 else (1, 2, 4)  # bits*8<=12 only at bits=1
     dists = {}
     for bs in block_sizes:
-        hq = HayateQuantCodec(bits=bits, block_size=bs, rotation_mode="dense",
-                               dist="gaussian", key_scale_mode="rms", value_scale_mode="rms")
+        hq = HayateQuantCodec(
+            bits=bits,
+            block_size=bs,
+            rotation_mode="dense",
+            dist="gaussian",
+            key_scale_mode="rms",
+            value_scale_mode="rms",
+        )
         dists[bs] = relmse(hq, g.reshape(1, 1, -1, d))
     print(f"  bits={bits}: " + ", ".join(f"b{k}={v:.5f}" for k, v in dists.items()))
     seq = [dists[bs] for bs in block_sizes]
@@ -116,10 +134,15 @@ for bits in (1, 2, 3):
     # k=2 codewords) the fit variance is large relative to the (already tiny)
     # marginal gain from step to step. The *aggregate* space-filling gain
     # (checked next, largest block_size vs. block_size=1) is the real claim.
-    check(f"bits={bits}: distortion non-increasing (up to K-means fit noise) as block_size grows {seq}",
-          all(seq[i] >= seq[i + 1] * (1 - 0.02) for i in range(len(seq) - 1)))
-    check(f"bits={bits}: largest block_size strictly beats block_size=1 (space-filling gain)",
-          dists[block_sizes[-1]] < dists[1] - 1e-4, f"{dists[block_sizes[-1]]:.5f} < {dists[1]:.5f}")
+    check(
+        f"bits={bits}: distortion non-increasing (up to K-means fit noise) as block_size grows {seq}",
+        all(seq[i] >= seq[i + 1] * (1 - 0.02) for i in range(len(seq) - 1)),
+    )
+    check(
+        f"bits={bits}: largest block_size strictly beats block_size=1 (space-filling gain)",
+        dists[block_sizes[-1]] < dists[1] - 1e-4,
+        f"{dists[block_sizes[-1]]:.5f} < {dists[1]:.5f}",
+    )
 
 # --- 3. Block-VQ also wins on the exact finite-d Beta law ------------------
 print("\n=== 3. Block-VQ reduces distortion at equal bits (exact Beta source, d=128) ===")
@@ -128,11 +151,20 @@ u = u / u.norm(dim=-1, keepdim=True)
 for bits in (2, 3):
     dists = {}
     for bs in (1, 4):
-        hq = HayateQuantCodec(bits=bits, block_size=bs, rotation_mode="dense",
-                               dist="beta", key_scale_mode="rms", value_scale_mode="rms")
-        dists[bs] = relmse(hq, (u * (d ** 0.5)).reshape(1, 1, -1, d))
-    check(f"bits={bits} (beta): block_size=4 beats block_size=1",
-          dists[4] < dists[1] - 1e-4, f"{dists[4]:.5f} < {dists[1]:.5f}")
+        hq = HayateQuantCodec(
+            bits=bits,
+            block_size=bs,
+            rotation_mode="dense",
+            dist="beta",
+            key_scale_mode="rms",
+            value_scale_mode="rms",
+        )
+        dists[bs] = relmse(hq, (u * (d**0.5)).reshape(1, 1, -1, d))
+    check(
+        f"bits={bits} (beta): block_size=4 beats block_size=1",
+        dists[4] < dists[1] - 1e-4,
+        f"{dists[4]:.5f} < {dists[1]:.5f}",
+    )
 
 # --- 4. Block-VQ + outlier mixed-precision on massive-activation-style data ---
 print("\n=== 4. Massive-activation channels: block-VQ needs outlier splitting ===")
@@ -148,16 +180,25 @@ for bits in (2, 3):
     # slightly worse than scalar quantization on this synthetic worst case --
     # exactly the regime TurboQuant/HALO's own outlier mixed-precision
     # (n_outlier) exists to handle. Report it plainly rather than hiding it.
-    print(f"  bits={bits} (no outlier split): bs1={d1:.5f} bs4={d4:.5f}"
-          f"  ({'bs4 regresses' if d4 > d1 else 'bs4 still wins'})")
+    print(
+        f"  bits={bits} (no outlier split): bs1={d1:.5f} bs4={d4:.5f}"
+        f"  ({'bs4 regresses' if d4 > d1 else 'bs4 still wins'})"
+    )
     # With the outlier channels correctly split off (the recommended usage on
     # real, massive-activation KV), block-VQ on the remaining (now much more
     # isotropic) in-channels must not regress vs. the scalar fallback.
-    hq1_o = HayateQuantCodec(bits=bits, block_size=1, rotation_mode="auto", dist="gaussian", n_outlier=4)
-    hq4_o = HayateQuantCodec(bits=bits, block_size=4, rotation_mode="auto", dist="gaussian", n_outlier=4)
+    hq1_o = HayateQuantCodec(
+        bits=bits, block_size=1, rotation_mode="auto", dist="gaussian", n_outlier=4
+    )
+    hq4_o = HayateQuantCodec(
+        bits=bits, block_size=4, rotation_mode="auto", dist="gaussian", n_outlier=4
+    )
     d1_o, d4_o = relmse(hq1_o, base.reshape(1, 1, -1, d)), relmse(hq4_o, base.reshape(1, 1, -1, d))
-    check(f"bits={bits} (n_outlier=4): block_size=4 does not regress vs block_size=1",
-          d4_o <= d1_o * 1.02, f"bs1={d1_o:.5f} bs4={d4_o:.5f}")
+    check(
+        f"bits={bits} (n_outlier=4): block_size=4 does not regress vs block_size=1",
+        d4_o <= d1_o * 1.02,
+        f"bs1={d1_o:.5f} bs4={d4_o:.5f}",
+    )
 
 # --- 5. Hybrid rotation gives better block isotropy than Hadamard alone ----
 print("\n=== 5. Hybrid rotation improves local block isotropy vs pure Hadamard (averaged) ===")
@@ -199,10 +240,13 @@ for trial in range(8):
 
 mean_had, mean_hyb = sum(had_scores) / len(had_scores), sum(hyb_scores) / len(hyb_scores)
 wins = sum(h < d_ for h, d_ in zip(hyb_scores, had_scores))
-print(f"  per-trial hybrid<hadamard: {wins}/{len(had_scores)} trials; "
-      f"mean off-diag energy hadamard={mean_had:.4f} hybrid={mean_hyb:.4f}")
-check("hybrid rotation blocks are more isotropic than Hadamard-only, on average",
-      mean_hyb < mean_had)
+print(
+    f"  per-trial hybrid<hadamard: {wins}/{len(had_scores)} trials; "
+    f"mean off-diag energy hadamard={mean_had:.4f} hybrid={mean_hyb:.4f}"
+)
+check(
+    "hybrid rotation blocks are more isotropic than Hadamard-only, on average", mean_hyb < mean_had
+)
 
 # --- Summary ----------------------------------------------------------------
 print()

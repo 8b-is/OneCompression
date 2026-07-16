@@ -1,23 +1,30 @@
-# HayateQuant vs FibQuant / BlockQuant: current delta and import plan
+# HayateQuant, FibQuant, and BlockQuant: implementation scope
 
-This note records the design delta after reading the FibQuant paper/code and
-the BlockQuant paper, then comparing them to the current HayateQuant code.
+This note distinguishes the independent quality baselines from ingredient
+controls inside HayateQuant. The registry now contains independent
+`FibQuant-paper` and `BlockQuant-paper` codecs. The separate
+`HQ-Fib-init-proxy` and `HQ-Block-scale-proxy` keys remain HQ-only component
+ablations; historical JSON labels `FibQuant`, `HayateQuant-fibinit`,
+`BlockQuant`, and `HayateQuant-BQscale` are accepted only as legacy read aliases
+for those old proxies and can never populate an external-baseline slot.
 
 ## Executive summary
 
-HayateQuant was already closest to BlockQuant: it has block vector
-quantisation, a rotated spherical/Gaussian source model, best-scalar style
-scales, a LUT encoder, outlier mixed precision, and KV-specific role
-asymmetry.  The missing BlockQuant surface was mostly terminology and the
-paper's key/value-asymmetric KV recipe.
+`FibQuant-paper` follows the published spherical-Beta/codebook method with exact
+assignment, but the paper does not release official fitted centroids or every
+seed, so this is a method-faithful comparison rather than byte-identical artifact
+reproduction. `BlockQuant-paper` implements the fixed Llama-3.1 source operating
+point with explicitly versioned deterministic completions for unpublished
+identity/top-channel lifecycle details. It is reported descriptively because
+its identity-bit-counted payload is not exactly rate matched to HQ.
 
-FibQuant is more different.  Its strongest import for HayateQuant is the
-deterministic radial-angular codebook construction: Beta-companded radii plus
-low-discrepancy directions, then Lloyd refinement.  HayateQuant now exposes
-that through `codebook_init="fibquant"` while keeping the existing
-HayateQuant block-VQ payload format and scale/rotation stack.
+The Fib-inspired proxy changes only HayateQuant's deterministic radial-angular
+codebook warm start (Beta-companded radii plus low-discrepancy directions,
+followed by HQ's Lloyd refinement).  `codebook_init="fibquant"` retains the
+HayateQuant block-VQ payload, scale stack, rotation, and encoder; it must not be
+reported as FibQuant.
 
-## Delta vs FibQuant
+## Fib-inspired initialization inside HQ
 
 FibQuant normalises by L2, samples a Haar-rotated unit vector, splits into
 blocks, and designs a radial-angular codebook for the exact projected
@@ -39,7 +46,7 @@ Not yet imported:
 * sub-one-bit / dense fractional-rate axis;
 * radius-first or tree/list encoders for very large codebooks.
 
-## Delta vs BlockQuant
+## Block-inspired scale controls inside HQ
 
 BlockQuant and HayateQuant share the same mathematical spine: rotate,
 normalise, block-quantise, then apply a scalar correction.
@@ -51,7 +58,7 @@ Naming map:
 * HayateQuant NC scale is a KV-specific compromise between LS and IP:
   `s_nc = sqrt(s_ls * s_ip)`.
 
-The code now exposes BlockQuant aliases:
+The HQ scale implementation exposes terminology aliases:
 
 * `key_scale_mode="ub"` is equivalent to `key_scale_mode="ip"`.
 * `value_scale_mode="bsm"` is equivalent to `value_scale_mode="ls"`.
@@ -63,7 +70,7 @@ values more aggressively.  HayateQuant previously had only a shared
 * `key_n_outlier`, `key_outlier_bits`
 * `value_n_outlier`, `value_outlier_bits`
 
-Example BlockQuant-style profile:
+Example HQ Block-recipe proxy profile:
 
 ```yaml
 {bits: 3, value_bits: 2,
@@ -71,19 +78,13 @@ Example BlockQuant-style profile:
  key_scale_mode: ub, value_scale_mode: bsm}
 ```
 
-The current strongest low-rate operating point is `HayateQuant-frontier`:
-for an average target rate `r`, store keys at `r+1` bits and values at
-`r-1` bits, and use UB/IP scaling only on keys.  This is not copied from
-BlockQuant: BlockQuant supplies a useful key-scale estimator, while
-HayateQuant supplies the rate-general K/V allocation, folded hybrid rotation,
-block-VQ payload, LUT encoder, and the empirical rule that keeps BSM on values
-out of the default because it hurt PPL/zero-shot in the Qwen smoke sweeps.
-
-For the paper's zero-shot acc_norm target, the benchmark factory also exposes
-`HayateQuant-selected`: it is `HayateQuant-frontier` at 2/3 bits and the
-FibQuant-initialized HayateQuant row at 4 bits, matching the small-model
-confirmation where FibQuant init slightly won 4-bit acc_norm while frontier
-kept the best PPL.
+The fixed HQ proposal uses `block_size=2`, Gaussian source codebooks, exact
+full-codebook assignment, key NC, value LS-reassign/refit, and block-code pairs
+K5/V3, K7/V5, and K9/V7 at average rates 2, 3, and 4. These settings come from
+`hayate_hq_kwargs`; benchmark configs must not depend on constructor defaults.
+The old `HayateQuant-frontier` K=`r+1`/V=`r-1`, key-UB recipe remains only a
+legacy appendix ablation. AdaptiveHQ is the sole opt-in proposal and selects
+causally between the predeclared symmetric and fixed-HQ pairs at the same rate.
 
 ## Is optional calibration a delta?
 
@@ -97,18 +98,25 @@ guarantee over all prompts, all layers, or downstream softmax behavior.
 
 ## New reproduction hooks
 
-Codec-level ablations:
+Formal proposal and independent-baseline keys:
+
+* `HQ`
+* `AdaptiveHQ`
+* `FibQuant-paper` (quality only)
+* `BlockQuant-paper` (quality only, descriptive unmatched source point)
+
+Component/legacy ablations:
 
 * `HayateQuant-frontier`
 * `HayateQuant-selected`
-* `HayateQuant-fibinit`
-* `HayateQuant-BQscale`
+* `HQ-Fib-init-proxy`
+* `HQ-Block-scale-proxy`
 
-`HayateQuant-frontier` resolves to:
+Fixed `HQ` resolves to:
 
-* 2-bit target: K3V1 + key UB/IP.
-* 3-bit target: K4V2 + key UB/IP.
-* 4-bit target: K5V3 + key UB/IP.
+* 2-bit target: K5/V3 block-code bits + key NC + value LS-reassign/refit.
+* 3-bit target: K7/V5 block-code bits + key NC + value LS-reassign/refit.
+* 4-bit target: K9/V7 block-code bits + key NC + value LS-reassign/refit.
 
 Long-context config:
 

@@ -4,13 +4,11 @@
 #   * **Bits**: {4, 3, 2}.  3-bit is the iso-quality operating point most
 #     KV-quant papers headline on (KIVI, TurboQuant Table 1, KVTuner Fig 4),
 #     so it is the bit width readers expect to compare HayateQuant at.
-#   * **Codecs** (see codec_benchmark.py `_codecs`): HayateQuant-auto
-#     (proposed: block-VQ + folded hybrid rotation + NC/ls_iter scales) plus
-#     its -exact / -K12 / -dense-LS ablations, vs HALO-auto (superseded
-#     scalar predecessor), paper-faithful TurboQuant-paper, and the explicit
-#     TurboQuant-hadamard deployment approximation. All share the
-#     same data-free per-coordinate bit budget, so quality differences come
-#     from the codec design only.
+#   * **Codecs**: the two formal proposal rows ``HQ`` and ``AdaptiveHQ`` plus
+#     independent ``TurboQuant-paper``/``FibQuant-paper`` quality baselines and
+#     the rate-3-only ``BlockQuant-paper`` fixed-seed quality row.  HQ is the
+#     exact b=2 fixed split; AdaptiveHQ keeps the same total pair budget and
+#     embeds its causal selector in an existing value scale with zero added bits.
 #   * **Models**: Llama-3.1-8B-Instruct (the TurboQuant paper headline model)
 #     plus DeepSeek-R1-Distill-Qwen-7B and -1.5B for the reasoning regime.
 #   * **Metrics**: distortion (relMSE on real-KV), WikiText-2 PPL under
@@ -29,12 +27,22 @@ defaults:
 model_path: ???
 device: cuda:0
 
+# Canonical paper contract: every layer and every token uses the named codec.
+# Keeping an FP16 sink or model-dependent skipped layers changes both the
+# algorithm and the effective bit rate, especially on short zero-shot prompts.
+# Formal TQ/HQ also use token-local scales and disable dynamic outlier/online
+# allocation, so teacher-forced PPL and likelihood safely use one causal-mask
+# forward; temporally coupled exploratory codecs automatically use incremental
+# target scoring instead.
+sink_tokens: 0
+recent_tokens: 0
+
 # Headline grid: 4-bit (mild), 3-bit (sweet spot), 2-bit (aggressive).
 bits: [4, 3, 2]
 
 # Optional method filter. Empty means run the full codec registry; paper
-# reruns override this list to benchmark only TQ/FibQuant/BlockQuant/Hayate.
-methods: []
+# This default is itself formal and contains no proxy/development labels.
+methods: [TurboQuant-paper, FibQuant-paper, BlockQuant-paper, HQ, AdaptiveHQ]
 
 # Real-KV capture: 2048 tokens covers the typical inference regime.
 capture_tokens: 2048
@@ -50,10 +58,8 @@ ppl_max_length: 2048
 ppl_stride: 1024
 ppl_windows: null
 
-# Outlier layers: massive-activation layers (common in small Qwen R1-Distill models)
-# destroy generation quality when quantized at any bit-width.  Detect them once and
-# skip uniformly for ALL codecs so the comparison stays fair.  Set to false to
-# reproduce the raw codec-only baseline (e.g. for distortion-only analysis on a model
-# without outlier layers like Llama-3.1-8B-Instruct).
-skip_outliers: true
+# Paper runs are genuinely data-free and quantize all layers.  Outlier-layer
+# skipping remains available in exploratory configs, but it is model/prompt
+# dependent and must not silently enter a fixed-rate headline result.
+skip_outliers: false
 outlier_ratio: 50.0

@@ -1,5 +1,5 @@
 # Focused downstream check for the optional SpinQuant-style calibration:
-# does the calibrated codec hold up on retrieval metrics (Needle / RULER),
+# does the calibrated codec hold up on legacy retrieval metrics (Needle / local multi-key),
 # not just PPL, vs the data-free default at the 2-bit headline point?
 #   srun --gres=gpu:1 python -u kv_benchmark.py --config-name calib_check_llama
 defaults:

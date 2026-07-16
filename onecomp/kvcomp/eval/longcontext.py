@@ -30,9 +30,52 @@ from typing import Callable, List, Optional
 
 import torch
 
+from .compression_accounting import (
+    aggregate_compression_sufficient_statistics,
+    aggregate_mem_fraction,
+    cache_compression_sufficient_statistics,
+)
+
 logger = getLogger(__name__)
 
 _Z95 = 1.959963984540054  # standard normal 97.5th percentile
+
+
+def _generation_token_id_list(value, *, label: str) -> List[int]:
+    """Normalize one HF generation token-ID field without coercion."""
+    if value is None:
+        return []
+    values = value if isinstance(value, (list, tuple, set, frozenset)) else [value]
+    if isinstance(value, (set, frozenset)):
+        values = sorted(values)
+    normalized: List[int] = []
+    for item in values:
+        if isinstance(item, bool) or not isinstance(item, int) or item < 0:
+            raise ValueError(f"{label} must contain non-negative integer token IDs")
+        if item not in normalized:
+            normalized.append(item)
+    return normalized
+
+
+def effective_generation_eos_token_ids(model, tokenizer) -> tuple[List[int], str]:
+    """Resolve EOS the way HF generation does and retain its provenance."""
+    generation_config = getattr(model, "generation_config", None)
+    if generation_config is not None:
+        configured = getattr(generation_config, "eos_token_id", None)
+        if configured is not None:
+            normalized = _generation_token_id_list(
+                configured, label="model.generation_config.eos_token_id"
+            )
+            if not normalized:
+                raise ValueError("model.generation_config.eos_token_id must not be empty")
+            return normalized, "model.generation_config.eos_token_id"
+    return (
+        _generation_token_id_list(
+            getattr(tokenizer, "eos_token_id", None),
+            label="tokenizer.eos_token_id",
+        ),
+        "tokenizer.eos_token_id",
+    )
 
 
 def proportion_stats(hits: int, n: int):
@@ -44,7 +87,13 @@ def proportion_stats(hits: int, n: int):
     stays inside [0, 1] and is well-behaved near 0 % / 100 % accuracy, unlike the
     Wald interval).
     """
-    if n <= 0:
+    if isinstance(hits, bool) or not isinstance(hits, int):
+        raise ValueError("hits must be an integer")
+    if isinstance(n, bool) or not isinstance(n, int) or n < 0:
+        raise ValueError("n must be a non-negative integer")
+    if hits < 0 or hits > n:
+        raise ValueError("hits must satisfy 0 <= hits <= n")
+    if n == 0:
         return 0.0, 0.0, 0.0
     p = hits / n
     se = math.sqrt(max(p * (1.0 - p), 0.0) / n)
@@ -63,8 +112,25 @@ def _number_hit(gold: str, text: str) -> bool:
     """
     return re.search(rf"(?<!\d){re.escape(gold)}(?!\d)", text) is not None
 
-_CITIES = ["Paris", "Tokyo", "Cairo", "Lima", "Oslo", "Delhi", "Quito", "Accra",
-           "Hanoi", "Sofia", "Riga", "Bern", "Doha", "Kyiv", "Amman", "Dakar"]
+
+_CITIES = [
+    "Paris",
+    "Tokyo",
+    "Cairo",
+    "Lima",
+    "Oslo",
+    "Delhi",
+    "Quito",
+    "Accra",
+    "Hanoi",
+    "Sofia",
+    "Riga",
+    "Bern",
+    "Doha",
+    "Kyiv",
+    "Amman",
+    "Dakar",
+]
 
 # Diverse, high-entropy filler (memo C).  The old filler was the *same* four
 # sentences repeated to fill the context, which is so low-entropy that the model
@@ -128,24 +194,53 @@ def _build_filler(tokenizer, target_tokens: int, rng) -> str:
 @dataclass
 class NeedleResult:
     """Needle-in-a-haystack retrieval result over a depth x length grid."""
+
     n: int
     accuracy: float
     mem_fraction: float
-    by_length: dict = field(default_factory=dict)   # ctx_len -> accuracy
-    grid: List[dict] = field(default_factory=list)   # per (len, depth, seed)
-    accuracy_stderr: float = 0.0                     # binomial SE of accuracy
-    accuracy_ci95: tuple = (0.0, 0.0)                # Wilson 95% interval
+    by_length: dict = field(default_factory=dict)  # ctx_len -> accuracy
+    grid: List[dict] = field(default_factory=list)  # per (len, depth, seed)
+    accuracy_stderr: float = 0.0  # binomial SE of accuracy
+    accuracy_ci95: tuple = (0.0, 0.0)  # Wilson 95% interval
+    mem_fraction_aggregation: str = "fullkv_no_cache"
+    compression_sufficient_statistics: dict = field(default_factory=dict)
+    # Kept in memory so callers that split the context grid can pool the raw
+    # per-generation ledgers.  Persisted output uses the compact exact totals
+    # above rather than a second copy of every record.
+    compression_records: List[dict] = field(default_factory=list, repr=False)
 
     def as_dict(self) -> dict:
         return {
             "n": self.n,
             "accuracy": round(self.accuracy, 4),
             "accuracy_stderr": round(self.accuracy_stderr, 4),
-            "accuracy_ci95": [round(self.accuracy_ci95[0], 4),
-                              round(self.accuracy_ci95[1], 4)],
+            "accuracy_ci95": [round(self.accuracy_ci95[0], 4), round(self.accuracy_ci95[1], 4)],
             "mem_fraction": round(self.mem_fraction, 4),
+            "mem_fraction_aggregation": self.mem_fraction_aggregation,
+            "compression_sufficient_statistics": self.compression_sufficient_statistics,
             "by_length": {k: round(v, 4) for k, v in self.by_length.items()},
         }
+
+
+def aggregate_cache_compression_records(records: List[dict]) -> tuple[dict, float, str]:
+    """Pool per-generation cache ledgers without averaging exact ratios.
+
+    Exact codecs retain integer ``sum(stored_bits) / sum(fp16_bits)``.  Caches
+    that expose only a legacy ratio keep the explicitly named arithmetic mean
+    of per-generation memory fractions.  The shared accounting helper rejects
+    mixed exact/legacy/FullKV records so a context-dependent cache factory
+    cannot silently change the metric halfway through a grid.
+    """
+
+    statistics = aggregate_compression_sufficient_statistics(records)
+    legacy_fractions = []
+    for record in records:
+        if record.get("compression_aggregation") != "legacy_cache_ratio_only":
+            continue
+        ratio = float(record["compression_ratio"])
+        legacy_fractions.append(0.0 if math.isinf(ratio) else 1.0 / ratio)
+    fraction, aggregation = aggregate_mem_fraction(statistics, legacy_fractions)
+    return statistics, fraction, aggregation
 
 
 def make_needle_prompt(tokenizer, context_tokens: int, depth: float = 0.5, seed: int = 0):
@@ -161,8 +256,10 @@ def make_needle_prompt(tokenizer, context_tokens: int, depth: float = 0.5, seed:
     pre = _build_filler(tokenizer, int(context_tokens * depth), rng)
     post = _build_filler(tokenizer, int(context_tokens * (1.0 - depth)), rng)
     haystack = pre + needle + post
-    question = (f"\n\nQuestion: What is the magic number for {city}? "
-                f"Answer with only the number.\nAnswer:")
+    question = (
+        f"\n\nQuestion: What is the magic number for {city}? "
+        f"Answer with only the number.\nAnswer:"
+    )
     return [{"role": "user", "content": haystack + question}], str(magic)
 
 
@@ -174,22 +271,123 @@ def _encode(tokenizer, messages) -> torch.Tensor:
     # templates (Llama/Mistral), so this is safe across model families.
     try:
         enc = tokenizer.apply_chat_template(
-            messages, add_generation_prompt=True, return_tensors="pt",
-            return_dict=True, enable_thinking=False)
-        return enc["input_ids"]
-    except Exception:  # template rejects the kwarg -> retry without it
-        pass
+            messages,
+            add_generation_prompt=True,
+            return_tensors="pt",
+            return_dict=True,
+            enable_thinking=False,
+        )
+    except TypeError as exc:
+        # Older tokenizer implementations may expose a fixed Python signature
+        # without template kwargs.  Retry only for that precise compatibility
+        # case; a malformed template or prompt must never silently change the
+        # benchmark into raw causal text.
+        message = str(exc)
+        if "enable_thinking" not in message or not any(
+            marker in message
+            for marker in ("unexpected keyword", "unexpected argument", "got an unexpected")
+        ):
+            raise RuntimeError("synthetic retrieval chat-template rendering failed") from exc
+        try:
+            enc = tokenizer.apply_chat_template(
+                messages, add_generation_prompt=True, return_tensors="pt", return_dict=True
+            )
+        except Exception as retry_exc:
+            raise RuntimeError("synthetic retrieval chat-template rendering failed") from retry_exc
+    except Exception as exc:
+        raise RuntimeError("synthetic retrieval chat-template rendering failed") from exc
+
     try:
-        enc = tokenizer.apply_chat_template(
-            messages, add_generation_prompt=True, return_tensors="pt", return_dict=True)
-        return enc["input_ids"]
-    except Exception:  # tokenizer without chat template
-        return tokenizer(messages[0]["content"], return_tensors="pt").input_ids
+        input_ids = enc["input_ids"]
+    except (KeyError, TypeError) as exc:
+        raise RuntimeError("synthetic retrieval chat template did not return input_ids") from exc
+    if not isinstance(input_ids, torch.Tensor) or input_ids.ndim != 2:
+        raise RuntimeError("synthetic retrieval chat template returned invalid input_ids")
+    return input_ids
+
+
+def _model_context_capacity(model) -> int:
+    """Return an explicitly advertised model context capacity.
+
+    Synthetic context labels are approximate because the needle, question and
+    chat wrapper add tokens.  Capacity therefore has to be checked against the
+    *rendered* prompt instead of trusting the requested filler length.
+    """
+    config = getattr(model, "config", None)
+    candidates = [config, getattr(config, "text_config", None)]
+    values = []
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        value = getattr(candidate, "max_position_embeddings", None)
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            continue
+        values.append(value)
+    if not values:
+        raise ValueError(
+            "synthetic retrieval requires config.max_position_embeddings for "
+            "a fail-closed prompt+generation capacity check"
+        )
+    if len(set(values)) != 1:
+        raise ValueError("ambiguous model context capacity between config and text_config")
+    return values[0]
+
+
+def _validate_prompt_capacity(model, input_ids: torch.Tensor, max_new_tokens: int) -> int:
+    capacity = _model_context_capacity(model)
+    prompt_tokens = int(input_ids.shape[1])
+    required = prompt_tokens + int(max_new_tokens)
+    if required > capacity:
+        raise ValueError(
+            "synthetic retrieval prompt+generation exceeds model context: "
+            f"{prompt_tokens} + {max_new_tokens} > {capacity} tokens"
+        )
+    return capacity
+
+
+def _validate_grid(
+    context_lens: List[int],
+    *,
+    seeds: int,
+    max_new_tokens: int,
+    depths: Optional[List[float]] = None,
+) -> None:
+    if not context_lens:
+        raise ValueError("context_lens must be non-empty")
+    if any(
+        isinstance(value, bool) or not isinstance(value, int) or value <= 0
+        for value in context_lens
+    ):
+        raise ValueError("context_lens must contain positive integers")
+    if len(set(context_lens)) != len(context_lens):
+        raise ValueError("context_lens must not contain duplicates")
+    if isinstance(seeds, bool) or not isinstance(seeds, int) or seeds <= 0:
+        raise ValueError("seeds must be a positive integer")
+    if (
+        isinstance(max_new_tokens, bool)
+        or not isinstance(max_new_tokens, int)
+        or max_new_tokens <= 0
+    ):
+        raise ValueError("max_new_tokens must be a positive integer")
+    if depths is not None:
+        if not depths:
+            raise ValueError("depths must be non-empty")
+        if any(
+            isinstance(depth, bool)
+            or not isinstance(depth, (int, float))
+            or not math.isfinite(float(depth))
+            or not 0.0 <= float(depth) <= 1.0
+            for depth in depths
+        ):
+            raise ValueError("depths must contain finite values in [0, 1]")
+        if len(set(float(depth) for depth in depths)) != len(depths):
+            raise ValueError("depths must not contain duplicates")
 
 
 @torch.no_grad()
-def greedy_answer(model, input_ids, cache, max_new_tokens=32, post_prefill=None,
-                  eos=None, attn_capture=False):
+def greedy_answer(
+    model, input_ids, cache, max_new_tokens=32, post_prefill=None, eos=None, attn_capture=False
+):
     """Greedy decode with explicit ``cache_position`` (robust to eviction).
 
     ``post_prefill(cache)`` is called after prefill and after every decode cache
@@ -200,41 +398,91 @@ def greedy_answer(model, input_ids, cache, max_new_tokens=32, post_prefill=None,
     and feeds attention sparsity into a ThinKV cache so its thought
     classification engages during the explicit decode loop.
     """
+    if (
+        isinstance(max_new_tokens, bool)
+        or not isinstance(max_new_tokens, int)
+        or max_new_tokens <= 0
+    ):
+        raise ValueError("max_new_tokens must be a positive integer")
+    if (
+        not isinstance(input_ids, torch.Tensor)
+        or input_ids.ndim != 2
+        or input_ids.shape[0] != 1
+        or input_ids.shape[1] == 0
+    ):
+        raise ValueError("greedy_answer input_ids must have shape (1, non-empty sequence)")
+    if post_prefill is not None and not callable(post_prefill):
+        raise TypeError("post_prefill must be callable or None")
+    if not isinstance(attn_capture, bool):
+        raise ValueError("attn_capture must be a bool")
+    eos_ids = set(_generation_token_id_list(eos, label="eos"))
+
+    def finite_argmax(logits, *, stage: str):
+        if not isinstance(logits, torch.Tensor) or logits.ndim < 2 or logits.shape[-1] == 0:
+            raise TypeError(f"{stage} returned invalid next-token logits")
+        next_token_logits = logits[:, -1]
+        if not torch.is_floating_point(next_token_logits):
+            raise TypeError(f"{stage} next-token logits must have a floating-point dtype")
+        if not bool(torch.isfinite(next_token_logits).all().item()):
+            raise FloatingPointError(
+                f"{stage} produced non-finite next-token logits; "
+                "refusing to turn NaN/inf into a greedy token"
+            )
+        return next_token_logits.argmax(-1, keepdim=True)
+
+    def reached_eos(token) -> bool:
+        token_id = int(token.item())
+        return token_id in eos_ids
+
     dev = model.device
     n = input_ids.shape[1]
     pos = torch.arange(n, device=dev)
     if attn_capture:
         from ..cache import thinkv_attention_capture  # local import
+
         ctx = thinkv_attention_capture(model, cache)
         oa = True
     else:
         ctx = contextlib.nullcontext()
         oa = False
     with ctx:
-        out = model(input_ids.to(dev), past_key_values=cache, use_cache=True,
-                    cache_position=pos, output_attentions=oa)
+        out = model(
+            input_ids.to(dev),
+            past_key_values=cache,
+            use_cache=True,
+            cache_position=pos,
+            output_attentions=oa,
+        )
         if post_prefill is not None:
             post_prefill(cache)
-        nxt = out.logits[:, -1].argmax(-1, keepdim=True)
+        nxt = finite_argmax(out.logits, stage="Greedy prefill")
         toks, cur = [nxt], n
+        if reached_eos(nxt):
+            return torch.cat(toks, dim=1)
         for _ in range(max_new_tokens - 1):
             cp = torch.tensor([cur], device=dev)
-            out = model(nxt, past_key_values=cache, use_cache=True,
-                        cache_position=cp, position_ids=cp.unsqueeze(0),
-                        output_attentions=oa)
+            out = model(
+                nxt,
+                past_key_values=cache,
+                use_cache=True,
+                cache_position=cp,
+                position_ids=cp.unsqueeze(0),
+                output_attentions=oa,
+            )
             if post_prefill is not None:
                 post_prefill(cache)
-            nxt = out.logits[:, -1].argmax(-1, keepdim=True)
+            nxt = finite_argmax(out.logits, stage="Greedy decode")
             toks.append(nxt)
             cur += 1
-            if eos is not None and nxt.item() == eos:
+            if reached_eos(nxt):
                 break
     return torch.cat(toks, dim=1)
 
 
 @torch.no_grad()
 def needle_in_haystack(
-    model, tokenizer,
+    model,
+    tokenizer,
     cache_factory: Optional[Callable[[], object]] = None,
     context_lens: Optional[List[int]] = None,
     depths: Optional[List[float]] = None,
@@ -257,47 +505,67 @@ def needle_in_haystack(
     """
     from transformers import DynamicCache  # local import; keeps module import light
 
-    context_lens = context_lens or [2048, 4096]
-    depths = depths or [0.1, 0.25, 0.4, 0.5, 0.6, 0.75, 0.9]
-    eos = tokenizer.eos_token_id
+    context_lens = [2048, 4096] if context_lens is None else context_lens
+    depths = [0.1, 0.25, 0.4, 0.5, 0.6, 0.75, 0.9] if depths is None else depths
+    _validate_grid(context_lens, seeds=seeds, max_new_tokens=max_new_tokens, depths=depths)
+    eos, _ = effective_generation_eos_token_ids(model, tokenizer)
 
     hit, n = 0, 0
-    mem: List[float] = []
+    compression_records: List[dict] = []
     by_len_hit: dict = {c: [0, 0] for c in context_lens}
     grid: List[dict] = []
     for ctx in context_lens:
         for di, depth in enumerate(depths):
             for s in range(seeds):
                 messages, gold = make_needle_prompt(
-                    tokenizer, ctx, depth=depth, seed=di * 97 + s * 1009 + 1)
+                    tokenizer, ctx, depth=depth, seed=di * 97 + s * 1009 + 1
+                )
                 ids = _encode(tokenizer, messages)
-                cache = cache_factory() if cache_factory is not None else DynamicCache()
+                _validate_prompt_capacity(model, ids, max_new_tokens)
+                cache = (
+                    cache_factory()
+                    if cache_factory is not None
+                    else DynamicCache(config=model.config)
+                )
                 pp = (lambda c: c.evict_now()) if evict else None
-                gen = greedy_answer(model, ids, cache, max_new_tokens, post_prefill=pp,
-                                    eos=eos, attn_capture=attn_capture)
+                gen = greedy_answer(
+                    model,
+                    ids,
+                    cache,
+                    max_new_tokens,
+                    post_prefill=pp,
+                    eos=eos,
+                    attn_capture=attn_capture,
+                )
                 txt = tokenizer.decode(gen[0], skip_special_tokens=True)
                 ok = _number_hit(gold, txt)
-                hit += int(ok); n += 1
-                by_len_hit[ctx][0] += int(ok); by_len_hit[ctx][1] += 1
-                if hasattr(cache, "mem_fraction"):
-                    mem.append(cache.mem_fraction())
-                elif hasattr(cache, "compression_ratio"):
-                    mem.append(1.0 / max(1e-9, cache.compression_ratio()))
+                hit += int(ok)
+                n += 1
+                by_len_hit[ctx][0] += int(ok)
+                by_len_hit[ctx][1] += 1
+                compression_records.append(cache_compression_sufficient_statistics(cache))
                 grid.append({"ctx": ctx, "depth": depth, "seed": s, "hit": ok})
     se, lo, hi = proportion_stats(hit, n)
+    compression, mem_fraction, mem_fraction_aggregation = aggregate_cache_compression_records(
+        compression_records
+    )
     return NeedleResult(
         n=n,
         accuracy=hit / max(1, n),
-        mem_fraction=(sum(mem) / len(mem) if mem else 1.0),
+        mem_fraction=mem_fraction,
         by_length={c: by_len_hit[c][0] / max(1, by_len_hit[c][1]) for c in context_lens},
         grid=grid,
         accuracy_stderr=se,
         accuracy_ci95=(lo, hi),
+        mem_fraction_aggregation=mem_fraction_aggregation,
+        compression_sufficient_statistics=compression,
+        compression_records=compression_records,
     )
 
 
-def make_multikey_prompt(tokenizer, context_tokens: int, num_keys: int = 4,
-                         depth: float = 0.5, seed: int = 0):
+def make_multikey_prompt(
+    tokenizer, context_tokens: int, num_keys: int = 4, depth: float = 0.5, seed: int = 0
+):
     """Build a RULER-style multi-key retrieval prompt and its gold answer.
 
     ``num_keys`` distinct ``magic number for <city>`` facts are scattered through
@@ -330,14 +598,17 @@ def make_multikey_prompt(tokenizer, context_tokens: int, num_keys: int = 4,
         prev = f
     body += _build_filler(tokenizer, int(round((1.0 - prev) * context_tokens)), rng)
 
-    question = (f"\n\nQuestion: What is the magic number for {target}? "
-                f"Answer with only the number.\nAnswer:")
+    question = (
+        f"\n\nQuestion: What is the magic number for {target}? "
+        f"Answer with only the number.\nAnswer:"
+    )
     return [{"role": "user", "content": body + question}], str(facts[target])
 
 
 @torch.no_grad()
 def ruler_multikey(
-    model, tokenizer,
+    model,
+    tokenizer,
     cache_factory: Optional[Callable[[], object]] = None,
     context_lens: Optional[List[int]] = None,
     num_keys: int = 4,
@@ -357,38 +628,61 @@ def ruler_multikey(
     """
     from transformers import DynamicCache  # local import
 
-    context_lens = context_lens or [2048, 4096]
-    eos = tokenizer.eos_token_id
+    context_lens = [2048, 4096] if context_lens is None else context_lens
+    _validate_grid(context_lens, seeds=seeds, max_new_tokens=max_new_tokens)
+    if (
+        isinstance(num_keys, bool)
+        or not isinstance(num_keys, int)
+        or not 1 <= num_keys <= len(_CITIES)
+    ):
+        raise ValueError(f"num_keys must be an integer in [1, {len(_CITIES)}]")
+    eos, _ = effective_generation_eos_token_ids(model, tokenizer)
 
     hit, n = 0, 0
-    mem: List[float] = []
+    compression_records: List[dict] = []
     by_len_hit: dict = {c: [0, 0] for c in context_lens}
     grid: List[dict] = []
     for ctx in context_lens:
         for s in range(seeds):
             messages, gold = make_multikey_prompt(
-                tokenizer, ctx, num_keys=num_keys, seed=s * 1009 + 7)
+                tokenizer, ctx, num_keys=num_keys, seed=s * 1009 + 7
+            )
             ids = _encode(tokenizer, messages)
-            cache = cache_factory() if cache_factory is not None else DynamicCache()
+            _validate_prompt_capacity(model, ids, max_new_tokens)
+            cache = (
+                cache_factory() if cache_factory is not None else DynamicCache(config=model.config)
+            )
             pp = (lambda c: c.evict_now()) if evict else None
-            gen = greedy_answer(model, ids, cache, max_new_tokens, post_prefill=pp,
-                                eos=eos, attn_capture=attn_capture)
+            gen = greedy_answer(
+                model,
+                ids,
+                cache,
+                max_new_tokens,
+                post_prefill=pp,
+                eos=eos,
+                attn_capture=attn_capture,
+            )
             txt = tokenizer.decode(gen[0], skip_special_tokens=True)
             ok = _number_hit(gold, txt)
-            hit += int(ok); n += 1
-            by_len_hit[ctx][0] += int(ok); by_len_hit[ctx][1] += 1
-            if hasattr(cache, "mem_fraction"):
-                mem.append(cache.mem_fraction())
-            elif hasattr(cache, "compression_ratio"):
-                mem.append(1.0 / max(1e-9, cache.compression_ratio()))
+            hit += int(ok)
+            n += 1
+            by_len_hit[ctx][0] += int(ok)
+            by_len_hit[ctx][1] += 1
+            compression_records.append(cache_compression_sufficient_statistics(cache))
             grid.append({"ctx": ctx, "num_keys": num_keys, "seed": s, "hit": ok})
     se, lo, hi = proportion_stats(hit, n)
+    compression, mem_fraction, mem_fraction_aggregation = aggregate_cache_compression_records(
+        compression_records
+    )
     return NeedleResult(
         n=n,
         accuracy=hit / max(1, n),
-        mem_fraction=(sum(mem) / len(mem) if mem else 1.0),
+        mem_fraction=mem_fraction,
         by_length={c: by_len_hit[c][0] / max(1, by_len_hit[c][1]) for c in context_lens},
         grid=grid,
         accuracy_stderr=se,
         accuracy_ci95=(lo, hi),
+        mem_fraction_aggregation=mem_fraction_aggregation,
+        compression_sufficient_statistics=compression,
+        compression_records=compression_records,
     )

@@ -26,6 +26,7 @@ Copyright 2025-2026 Fujitsu Ltd.
 
 from __future__ import annotations
 
+import math
 import os
 import re
 import subprocess
@@ -34,6 +35,7 @@ import tempfile
 from logging import getLogger
 from typing import Callable, List, Optional
 
+from .compression_accounting import aggregate_compression_sufficient_statistics
 from .reasoning import (
     ReasoningResult,
     _build_prompt,
@@ -143,10 +145,17 @@ def code_pass_at_1(
     ``test`` defines ``check(candidate)``).  Mirrors the math evals' aggregation
     so the result carries pass@1, its standard error, and a 95% CI.
     """
+    if k <= 0:
+        raise ValueError("Functional-code k must be positive")
+    if max_new_tokens <= 0:
+        raise ValueError("Functional-code max_new_tokens must be positive")
+    if not problems:
+        raise ValueError("Functional-code evaluation needs at least one problem")
     n = 0
     p1_values: List[float] = []
     gen_lens: List[int] = []
     ratios: List[float] = []
+    compression_records: List[dict] = []
     per_q: List[dict] = []
     pass_k_values: List[float] = []
     fired_all, saw_eviction = True, False
@@ -157,9 +166,13 @@ def code_pass_at_1(
         ids = _build_prompt(tokenizer, prompt, system)
         passed = 0
         for sample_idx in range(k):
-            seed = None if sample_seed is None else int(sample_seed) + problem_idx * 100_003 + sample_idx
+            seed = (
+                None
+                if sample_seed is None
+                else int(sample_seed) + problem_idx * 100_003 + sample_idx
+            )
             with _seeded_rng(seed, model.device):
-                gen, ratio, _fired = _generate(
+                gen, ratio, _fired, compression = _generate(
                     model,
                     tokenizer,
                     ids,
@@ -172,6 +185,7 @@ def code_pass_at_1(
                 )
             gen_lens.append(int(gen.shape[0]))
             ratios.append(ratio)
+            compression_records.append(compression)
             text = tokenizer.decode(gen, skip_special_tokens=True)
             code = extract_code(text, entry)
             ok, detail = run_code(_build_program(code, test, entry), timeout, mem_mb)
@@ -188,22 +202,42 @@ def code_pass_at_1(
         saw_eviction = True
         fired_all = bool(ratios) and (sum(ratios) / len(ratios)) > 1.0 + 1e-6
     mean_p1, se, ci = _mean_stderr_ci(p1_values)
+    compression_statistics = aggregate_compression_sufficient_statistics(compression_records)
+    if compression_statistics["compression_aggregation"] == (
+        "sum_exact_per_generation_cache_bit_counters"
+    ):
+        exact_fp16_bits = int(compression_statistics["compression_fp16_bits"])
+        exact_stored_bits = int(compression_statistics["compression_stored_bits"])
+        displayed_compression_ratio = (
+            float("inf") if exact_stored_bits == 0 else exact_fp16_bits / exact_stored_bits
+        )
+        compression_ratio_aggregation = "exact_sum_fp16_bits_over_sum_stored_bits"
+    elif cache_factory is None:
+        displayed_compression_ratio = 1.0
+        compression_ratio_aggregation = "fullkv_no_cache"
+    else:
+        displayed_compression_ratio = float(math.fsum(ratios) / len(ratios)) if ratios else 1.0
+        compression_ratio_aggregation = (
+            "legacy_arithmetic_mean_per_generation_ratio_no_exact_counters"
+        )
     return ReasoningResult(
         task=task,
         n=n,
         k=k,
         pass_at_1=mean_p1,
         avg_gen_len=sum(gen_lens) / max(len(gen_lens), 1),
-        compression_ratio=float(sum(ratios) / len(ratios)) if ratios else 1.0,
+        compression_ratio=displayed_compression_ratio,
+        compression_ratio_aggregation=compression_ratio_aggregation,
         per_question=per_q,
         pass_at_1_stderr=se,
         pass_at_1_ci95=ci,
         eviction_fired=(fired_all if saw_eviction else True),
-        observed_pass_at_k=(sum(pass_k_values) / len(pass_k_values)
-                            if pass_k_values else None),
+        observed_pass_at_k=(sum(pass_k_values) / len(pass_k_values) if pass_k_values else None),
         dataset_size=dataset_size,
         grader="resource_limited_python_check",
         protocol="humaneval_shaped_functional_smoke",
+        pass_at_1_sum=float(sum(p1_values)),
+        compression_sufficient_statistics=compression_statistics,
     )
 
 
@@ -274,6 +308,5 @@ def livecodebench_pass_at_1(
         known_dataset_size = len(problems)
         problems = problems[:limit]
     return code_pass_at_1(
-        model, tokenizer, problems, cache_factory,
-        dataset_size=known_dataset_size, **kwargs
+        model, tokenizer, problems, cache_factory, dataset_size=known_dataset_size, **kwargs
     )

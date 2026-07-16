@@ -1,6 +1,6 @@
 # CPU-feasible retrieval run on azalea (no GPU): HayateQuant vs TurboQuant turf.
 # Small grid/contexts so it finishes on CPU; produces every retrieval metric
-# (Needle, RULER, PPL) for the full codec method set with error bars.
+# (Needle, local multi-key diagnostic, PPL) for the full codec method set with error bars.
 defaults:
   - benchmark_longcontext
   - _self_

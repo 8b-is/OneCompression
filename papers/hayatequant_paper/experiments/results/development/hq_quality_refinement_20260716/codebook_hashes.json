@@ -1,0 +1,20 @@
+{
+  "DEVONLY-HQ-b4-finite-beta/head_dim=128": [
+    {
+      "key_sha256": "956dce782d7adb4c16f35e5f769a61ad261d4ecbb4fc30a1956de50320af8948",
+      "value_sha256": "cbf1f499e3a1cfee4279459e9e218247f2d069ec9faa14667484f4fbafbb6fd2"
+    }
+  ],
+  "DEVONLY-HQ-b4-gaussian-auto/head_dim=128": [
+    {
+      "key_sha256": "0537f8cb3c1380d0d7078c78f2f462776cdabc383b505ceac9a853089faa7176",
+      "value_sha256": "74ff2bc3bb11b140883d214b81fa72b1152c5b9b5169608a1d9137130fc1d091"
+    }
+  ],
+  "DEVONLY-HQ-b4-gaussian-fibinit/head_dim=128": [
+    {
+      "key_sha256": "0537f8cb3c1380d0d7078c78f2f462776cdabc383b505ceac9a853089faa7176",
+      "value_sha256": "74ff2bc3bb11b140883d214b81fa72b1152c5b9b5169608a1d9137130fc1d091"
+    }
+  ]
+}

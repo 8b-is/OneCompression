@@ -38,6 +38,7 @@ Copyright 2025-2026 Fujitsu Ltd.
 from __future__ import annotations
 
 import contextlib
+import math
 from functools import partial
 from logging import getLogger
 from typing import List, Optional
@@ -62,21 +63,33 @@ logger = getLogger(__name__)
 class _LayerTBQ:
     """Per-layer tensor state for the TBQ buffer + committed quantized cache."""
 
-    __slots__ = ("sink_k", "sink_v", "committed_k", "committed_v", "committed_bits",
-                 "buf_k", "buf_v", "buf_thought", "heads", "dim", "n_committed", "skip")
+    __slots__ = (
+        "sink_k",
+        "sink_v",
+        "committed_k",
+        "committed_v",
+        "committed_bits",
+        "buf_k",
+        "buf_v",
+        "buf_thought",
+        "heads",
+        "dim",
+        "n_committed",
+        "skip",
+    )
 
     def __init__(self):
-        self.sink_k = None       # (heads, ns, dim) full-precision attention sinks
+        self.sink_k = None  # (heads, ns, dim) full-precision attention sinks
         self.sink_v = None
         self.committed_k = None  # (heads, nc, dim)
         self.committed_v = None
         self.committed_bits = 0.0
-        self.buf_k = None        # (heads, nb, dim) full precision
+        self.buf_k = None  # (heads, nb, dim) full precision
         self.buf_v = None
         self.buf_thought = None
         self.heads = self.dim = 0
         self.n_committed = 0
-        self.skip = False        # layer left fully un-quantized (outlier layer)
+        self.skip = False  # layer left fully un-quantized (outlier layer)
 
     @property
     def n_sink(self) -> int:
@@ -100,13 +113,48 @@ class ThinKVCache(DynamicCache):
         config: Model config (forwarded for layer typing).
     """
 
-    def __init__(self, policy: Optional[ThinKVPolicy] = None, config=None,
-                 sink_tokens: int = 4, skip_layers=None, **kwargs):
+    def __init__(
+        self,
+        policy: Optional[ThinKVPolicy] = None,
+        config=None,
+        sink_tokens: int = 4,
+        skip_layers=None,
+        **kwargs,
+    ):
         super().__init__(config=config, **kwargs)
+        sliding_layers = [
+            index for index, layer in enumerate(self.layers) if getattr(layer, "is_sliding", False)
+        ]
+        if sliding_layers:
+            # ThinKV materializes its own complete tensor and assigns it to the
+            # HF layer directly, bypassing DynamicSlidingWindowLayer's
+            # cumulative-length/offset lifecycle.  Pretending that combination
+            # works changes the model's attention semantics.
+            raise NotImplementedError(
+                "ThinKVCache does not support model-side sliding-window "
+                f"layers {sliding_layers}; use a full-attention/native backend"
+            )
         self.policy = policy or ThinKVPolicy()
-        self.sink_tokens = int(sink_tokens)
-        self.skip_layers = set(skip_layers if skip_layers is not None
-                               else getattr(self.policy, "skip_layers", None) or [])
+        if isinstance(sink_tokens, bool) or not isinstance(sink_tokens, int) or sink_tokens < 0:
+            raise ValueError("sink_tokens must be a non-negative integer")
+        self.sink_tokens = sink_tokens
+        self.skip_layers = set()
+        raw_skip_layers = (
+            skip_layers
+            if skip_layers is not None
+            else getattr(self.policy, "skip_layers", None) or []
+        )
+        for raw_layer_idx in raw_skip_layers:
+            if isinstance(raw_layer_idx, bool) or not isinstance(raw_layer_idx, int):
+                raise ValueError("skip_layers must contain integer layer indices")
+            layer_idx = raw_layer_idx
+            if layer_idx < 0:
+                if not self.layers:
+                    raise ValueError("negative skip_layers require a model config")
+                layer_idx += len(self.layers)
+            if layer_idx < 0 or (self.layers and layer_idx >= len(self.layers)):
+                raise ValueError(f"skip layer index {raw_layer_idx} is out of range")
+            self.skip_layers.add(layer_idx)
         self.classifier = ThoughtClassifier(thresholds=tuple(self.policy.thresholds))
         self.calib_layers = list(self.policy.calib_layers) if self.policy.calib_layers else None
         self._codecs = {
@@ -120,10 +168,28 @@ class ThinKVCache(DynamicCache):
         self._step_thought = T_REASONING
         self._first_layer: Optional[int] = None
 
+    def reset(self):
+        """Reset HF tensors and every live TBQ/classifier state variable."""
+        super().reset()
+        self._states.clear()
+        self._pending_sparsity.clear()
+        self._step = 0
+        self._step_thought = T_REASONING
+        self._first_layer = None
+        for warning_flag in ("_warned_batch", "_warned_no_attn_weights"):
+            if hasattr(self, warning_flag):
+                delattr(self, warning_flag)
+
     # --- helpers -----------------------------------------------------------
     def _codec_for(self, thought: int):
         bits = self.policy.precision.get(_ID_TO_NAME[thought], 4)
-        return self._codecs[2] if bits <= 2 else (self._codecs[4] if bits <= 4 else self._codecs[8])
+        return (
+            self._codecs[2] if bits <= 2 else (self._codecs[4] if bits <= 4 else self._codecs[8])
+        )
+
+    def teacher_forced_temporal_dependency(self):
+        """TBQ prefill groups fit scales across the incoming token block."""
+        return "thin_kv_group_statistics_over_update_tokens"
 
     def _ensure_state(self, layer_idx: int) -> _LayerTBQ:
         while len(self._states) <= layer_idx:
@@ -151,12 +217,22 @@ class ThinKVCache(DynamicCache):
 
     # --- sparsity feed -----------------------------------------------------
     def feed_sparsity(self, layer_idx: int, sparsity: float):
-        self._pending_sparsity[layer_idx] = float(sparsity)
+        if isinstance(layer_idx, bool) or not isinstance(layer_idx, int) or layer_idx < 0:
+            raise ValueError("ThinKV sparsity layer_idx must be a non-negative integer")
+        try:
+            sparsity = float(sparsity)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("ThinKV sparsity must be a finite value in [0, 1]") from exc
+        if not math.isfinite(sparsity) or not 0.0 <= sparsity <= 1.0:
+            raise ValueError("ThinKV sparsity must be a finite value in [0, 1]")
+        self._pending_sparsity[layer_idx] = sparsity
 
     def _decide_thought(self) -> int:
         if not self._pending_sparsity:
             return self._step_thought
-        layers = self.calib_layers or sorted(self._pending_sparsity)[: self.policy.max_calib_layers]
+        layers = (
+            self.calib_layers or sorted(self._pending_sparsity)[: self.policy.max_calib_layers]
+        )
         vals = [self._pending_sparsity[l] for l in layers if l in self._pending_sparsity]
         if not vals:
             return self._step_thought
@@ -165,17 +241,10 @@ class ThinKVCache(DynamicCache):
     # --- HF Cache API ------------------------------------------------------
     def update(self, key_states, value_states, layer_idx, *args, **kwargs):
         if key_states.shape[0] != 1:
-            # The live TBQ buffer is single-sequence (heads, n, dim); batched
-            # decoding silently falls back to an *uncompressed* DynamicCache.
-            # Warn once so a batch>1 evaluation does not report compression_ratio
-            # ~1.0 without the user realising TBQ never engaged.
-            if not getattr(self, "_warned_batch", False):
-                logger.warning(
-                    "ThinKVCache received batch size %d (>1); TBQ is single-sequence "
-                    "and this falls back to an uncompressed DynamicCache. Use batch=1 "
-                    "for faithful ThinKV quantization.", key_states.shape[0])
-                self._warned_batch = True
-            return super().update(key_states, value_states, layer_idx, *args, **kwargs)
+            raise NotImplementedError(
+                "ThinKVCache is single-sequence; batch size >1 cannot silently "
+                "fall back to an uncompressed DynamicCache"
+            )
 
         while len(self.layers) <= layer_idx:
             self.layers.append(DynamicLayer())
@@ -190,8 +259,12 @@ class ThinKVCache(DynamicCache):
 
         if layer_idx in self.skip_layers:
             st.skip = True
-            st.committed_k = k0 if st.committed_k is None else torch.cat([st.committed_k, k0], dim=1)
-            st.committed_v = v0 if st.committed_v is None else torch.cat([st.committed_v, v0], dim=1)
+            st.committed_k = (
+                k0 if st.committed_k is None else torch.cat([st.committed_k, k0], dim=1)
+            )
+            st.committed_v = (
+                v0 if st.committed_v is None else torch.cat([st.committed_v, v0], dim=1)
+            )
             st.committed_bits += q_len * st.heads * st.dim * 2 * 16.0
             st.n_committed += q_len
         elif q_len > 1 or st.total == 0:
@@ -202,13 +275,15 @@ class ThinKVCache(DynamicCache):
                 st.sink_k = sk if st.sink_k is None else torch.cat([st.sink_k, sk], dim=1)
                 st.sink_v = sv if st.sink_v is None else torch.cat([st.sink_v, sv], dim=1)
             if ns < q_len:
-                kq, vq, stored_bits = self._quant_block(
-                    k0[:, ns:], v0[:, ns:], T_REASONING
+                kq, vq, stored_bits = self._quant_block(k0[:, ns:], v0[:, ns:], T_REASONING)
+                st.committed_k = (
+                    kq if st.committed_k is None else torch.cat([st.committed_k, kq], dim=1)
                 )
-                st.committed_k = kq if st.committed_k is None else torch.cat([st.committed_k, kq], dim=1)
-                st.committed_v = vq if st.committed_v is None else torch.cat([st.committed_v, vq], dim=1)
+                st.committed_v = (
+                    vq if st.committed_v is None else torch.cat([st.committed_v, vq], dim=1)
+                )
                 st.committed_bits += stored_bits
-                st.n_committed += (q_len - ns)
+                st.n_committed += q_len - ns
         else:
             if layer_idx == self._first_layer:
                 self._step += 1
@@ -225,8 +300,16 @@ class ThinKVCache(DynamicCache):
             if st.buf_k.shape[1] >= self.policy.group_size:
                 self._commit_buffer(st)
 
-        keys = self._materialize(st.sink_k, st.committed_k, st.buf_k).unsqueeze(0).to(key_states.dtype)
-        values = self._materialize(st.sink_v, st.committed_v, st.buf_v).unsqueeze(0).to(value_states.dtype)
+        keys = (
+            self._materialize(st.sink_k, st.committed_k, st.buf_k)
+            .unsqueeze(0)
+            .to(key_states.dtype)
+        )
+        values = (
+            self._materialize(st.sink_v, st.committed_v, st.buf_v)
+            .unsqueeze(0)
+            .to(value_states.dtype)
+        )
         layer = self.layers[layer_idx]
         if not layer.is_initialized:
             layer.lazy_initialization(key_states, value_states)
@@ -267,8 +350,7 @@ class ThinKVCache(DynamicCache):
         return num / den if den else 16.0
 
 
-def _attn_hook(cache: ThinKVCache, layer_idx: int, rel_threshold: float,
-               module, inputs, output):
+def _attn_hook(cache: ThinKVCache, layer_idx: int, rel_threshold: float, module, inputs, output):
     """Forward hook: read attn_weights (eager + output_attentions) -> sparsity."""
     attn_weights = None
     if isinstance(output, tuple):
@@ -283,17 +365,11 @@ def _attn_hook(cache: ThinKVCache, layer_idx: int, rel_threshold: float,
         # the hook silently returns and thought classification stays disabled.
         # Warn once per cache instance so the user knows why ThinKV falls back
         # to uniform quantisation.
-        if not getattr(cache, "_warned_no_attn_weights", False):
-            logger.warning(
-                "ThinKVCache._attn_hook: no attention-weight tensor found in "
-                "layer %d output.  ThinKV thought classification is disabled.  "
-                "Ensure the model is loaded with attn_implementation='eager' "
-                "and greedy_answer / generate is called with attn_capture=True "
-                "(output_attentions=True).",
-                layer_idx,
-            )
-            cache._warned_no_attn_weights = True  # type: ignore[attr-defined]
-        return
+        raise RuntimeError(
+            "ThinKV thought classification requested but no attention-weight "
+            f"tensor was returned by layer {layer_idx}; load the model with "
+            "attn_implementation='eager' and output_attentions=True"
+        )
     last = attn_weights[:, :, -1, :]  # (batch, heads, kv_len)
     sp = attention_sparsity(last.float(), rel_threshold).mean()
     cache.feed_sparsity(layer_idx, float(sp))
@@ -340,8 +416,20 @@ def thinkv_attention_capture(model, cache: ThinKVCache, rel_threshold: float = 0
     ``model.generate(..., output_attentions=True)`` so attention modules
     materialize ``attn_weights``.
     """
-    handles = [attn.register_forward_hook(partial(_attn_hook, cache, i, rel_threshold))
-               for i, attn in _iter_attn_modules(model)]
+    if (
+        isinstance(rel_threshold, bool)
+        or not isinstance(rel_threshold, (int, float))
+        or not math.isfinite(float(rel_threshold))
+        or not 0.0 <= float(rel_threshold) <= 1.0
+    ):
+        raise ValueError("rel_threshold must be a finite value in [0, 1]")
+    modules = list(_iter_attn_modules(model))
+    if not modules:
+        raise RuntimeError("ThinKV attention capture found no decoder attention modules")
+    handles = [
+        attn.register_forward_hook(partial(_attn_hook, cache, i, rel_threshold))
+        for i, attn in modules
+    ]
     try:
         yield cache
     finally:

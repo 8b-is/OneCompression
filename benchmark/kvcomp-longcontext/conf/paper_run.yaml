@@ -2,7 +2,7 @@
 #
 # Extends the default benchmark_longcontext.yaml with settings needed to
 # reproduce the results reported in the paper, in particular:
-#   - optional local synthetic multi-key retrieval (not official RULER)
+#   - optional local synthetic multi-key retrieval (not a RULER benchmark)
 #   - MATH-500 pass@1 (run_math: true)
 #   - Extended context lengths up to 16k
 #   - Larger evaluation samples for tighter confidence intervals
@@ -34,7 +34,8 @@ depths: [0.1, 0.25, 0.4, 0.5, 0.6, 0.75, 0.9]   # 7 depths (full grid)
 seeds: 5                                            # 5 seeds per cell
 
 # --------------------------------------------------------------------------
-# Retrieval: Needle-in-a-Haystack; official RULER must use NVIDIA's runner
+# Retrieval: Needle-in-a-Haystack; the separately named NeMo-Skills RULER-v1
+# 100/task adapter uses the dedicated `run_official_ruler_v1` compatibility path
 # --------------------------------------------------------------------------
 run_needle: true
 max_new_needle: 256          # adequate for long chain-of-thought models
@@ -53,6 +54,8 @@ max_new_reason: 8192         # long chain-of-thought models need headroom (paper
 run_math: true
 math_limit: null             # complete MATH-500 test split
 max_new_math: 8192
+math_grader: math_verify     # required; no silent local fallback
+math_verify_version: "0.9.0"
 
 # AIME evaluation (competition math -- both ThinKV and PM-KVQ evaluate this).
 # ThinKV paper: k=8 samples, PM-KVQ paper: k=16 samples.

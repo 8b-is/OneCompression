@@ -82,6 +82,13 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
             return super()._ensure_on_device(layer, device)
 
         cfg = _native_config()
+        # This backend class can remain registered after a previous Hayate
+        # engine because vLLM's attention registry is process-global. An empty
+        # config is therefore an explicit upstream-TurboQuant state, not an
+        # invitation to synthesize Hayate defaults for an unrelated engine.
+        if not cfg:
+            layer._hq_native_enabled = False
+            return super()._ensure_on_device(layer, device)
         key_bits = int(cfg.get("bits") or self.tq_config.key_quant_bits)
         value_bits = cfg.get("value_bits")
         value_bits = int(value_bits) if value_bits is not None else self.tq_config.value_quant_bits
@@ -108,7 +115,9 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
             _block_codebook,
             _dense_rotation_on,
         )
-        from onecomp.kvcomp.codec.hayate.vq import resolve_block_size  # pylint: disable=import-outside-toplevel
+        from onecomp.kvcomp.codec.hayate.vq import (
+            resolve_block_size,
+        )  # pylint: disable=import-outside-toplevel
         from onecomp.kvcomp.codec.rotation import (  # pylint: disable=import-outside-toplevel
             hybrid_rotation_matrix,
             is_power_of_two,

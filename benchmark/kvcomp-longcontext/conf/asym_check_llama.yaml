@@ -1,7 +1,7 @@
 # Downstream check for the K/V-asymmetric bit allocation (K4V2 = same 3.0
 # avg bits/coord as uniform 3-bit): PPL says K4V2 wins (-0.087 Llama /
 # -0.152 Qwen3-8B, bench_kvasym_v8.py); verify it also holds on retrieval
-# (Needle / RULER) where VALUE fidelity matters more than in PPL.
+# (Needle / local multi-key diagnostic) where VALUE fidelity matters more than in PPL.
 #   srun --gres=gpu:1 python -u kv_benchmark.py --config-name asym_check_llama
 defaults:
   - benchmark_longcontext

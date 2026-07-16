@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "run_date": "2026-07-16",
+  "finished_at": "2026-07-16T06:35:13+09:00",
+  "repository_commit": "e50379c225259b3e5d5df1facafa7133b36915d5",
+  "working_tree_note": "Tests ran against the shared uncommitted working tree on the named branch.",
+  "commands": [
+    {
+      "name": "focused_core_cache_metric_suite",
+      "argv": [
+        "uv", "run", "--frozen", "pytest", "-q",
+        "tests/onecomp/kvcomp/test_core_cache_metric_audit.py",
+        "tests/onecomp/kvcomp/test_eval_correctness.py",
+        "tests/onecomp/kvcomp/test_metrics_accounting.py",
+        "tests/onecomp/kvcomp/test_ruler_eval.py",
+        "tests/onecomp/kvcomp/test_longcontext_protocol.py",
+        "tests/onecomp/kvcomp/test_code_accounting.py",
+        "--disable-warnings"
+      ],
+      "exit_code": 0,
+      "passed": 146,
+      "failed": 0,
+      "warnings": 15,
+      "pytest_duration_seconds": 11.97
+    },
+    {
+      "name": "full_kvcomp_regression",
+      "argv": [
+        "uv", "run", "--frozen", "pytest", "-q",
+        "tests/onecomp/kvcomp/test_kvcomp.py"
+      ],
+      "exit_code": 0,
+      "passed": 291,
+      "failed": 0,
+      "skipped": 12,
+      "warnings": 14,
+      "pytest_duration_seconds": 160.93
+    },
+    {
+      "name": "formal_ruler_renderer_compatibility",
+      "argv": [
+        "uv", "run", "--frozen", "pytest", "-q",
+        "tests/onecomp/kvcomp/test_hayatequant_ruler_aggregate.py",
+        "tests/onecomp/kvcomp/test_hayatequant_formal_renderer.py",
+        "-x", "--tb=short"
+      ],
+      "exit_code": 0,
+      "passed": 82,
+      "failed": 0,
+      "pytest_duration_seconds": 275.17
+    }
+  ],
+  "static_checks": {
+    "compileall_exit_code": 0,
+    "git_diff_check_exit_code": 0,
+    "focused_black_check_exit_code": 0,
+    "credential_scan_exit_code": 1,
+    "credential_scan_match_count": 0,
+    "credential_scan_exit_note": "ripgrep returns 1 when no lines match"
+  },
+  "overall": {
+    "exit_code": 0,
+    "failures": 0
+  }
+}

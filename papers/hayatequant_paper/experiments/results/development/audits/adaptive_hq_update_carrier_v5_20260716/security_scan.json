@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "scanned_at": "2026-07-16T07:58:36+09:00",
+  "scanner": "ripgrep 15.1.0 credential-shape expressions",
+  "scope": [
+    "papers/hayatequant_paper/experiments/results/development/audits/adaptive_hq_update_carrier_v5_20260716 except security_scan.json",
+    "onecomp/kvcomp/codec/hayate/codec.py",
+    "onecomp/kvcomp/codec/hayate/recipes.py",
+    "tests/onecomp/kvcomp/test_kvcomp.py"
+  ],
+  "pattern_categories": [
+    "github_personal_access_token",
+    "gitlab_personal_access_token",
+    "aws_access_key_id",
+    "private_key_header",
+    "credentialed_https_url",
+    "bearer_authorization_value",
+    "assigned_access_token_or_api_key_or_client_secret",
+    "three_segment_high_entropy_token_shape"
+  ],
+  "matches": 0,
+  "ripgrep_exit_code": 1,
+  "ripgrep_exit_code_interpretation": "no_matches",
+  "secrets_redacted_into_bundle": false,
+  "result": "pass"
+}

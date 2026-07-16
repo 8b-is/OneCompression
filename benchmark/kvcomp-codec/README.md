@@ -3,34 +3,107 @@
 Main experiment for the data-free rotated KV codecs, the analogue of the
 weight-side `benchmark/<model>-<recipe>/` runs.
 
-**HayateQuant** (`onecomp/kvcomp/codec/hayate/codec.py`) is the proposed
-method: block-VQ (data-free K-means codebook, high-budget Lloyd
-artifacts in `onecomp/kvcomp/codec/hayate/codebooks/`) + folded rate-aware rotation
-(single GEMM; auto resolves to Haar-dense at bits<=2 and hybrid at bits>=3,
-per the measured v7 rotation-x-scale attribution) + role-asymmetric scales
-(NC keys / ls_iter values), with a
-candidate-list grid-LUT encoder that keeps encode latency independent of the
-codebook size. It is a strict superset of both baselines: `block_size=1`
-reproduces TurboQuant/HALO bit-for-bit (enforced by unit tests and by the
-live `HayateQuant-bs1` row in every run).
+**HayateQuant** (`onecomp/kvcomp/codec/hayate/codec.py`) combines block-VQ,
+folded rotation, and role-aware scales.  The paper's fixed **HQ** recipe uses
+`block_size=2`, Gaussian source codebooks, exact full-codebook assignment,
+key NC scaling, value LS-reassign/refit scaling, and integer block-code pairs
+K5/V3, K7/V5, and K9/V7 at average rates 2, 3, and 4.  The old
+`HayateQuant-frontier` K=`r+1`/V=`r-1` UB recipe is a legacy appendix ablation,
+not the formal method.  **AdaptiveHQ** is the only opt-in proposal row.
+The `HayateQuant-scalar-matched` row is the causal scalar control: source law,
+rotation, scale equation, encoder, and rate match `TurboQuant-paper`, with only
+the L2-versus-RMS parameterization of the signed-fp16 scale allowed to produce
+low-precision rounding differences.  No compatibility relation alone implies
+downstream superiority; all claims come from the coverage-checked formal runs.
 
 | Codec | Quantizer | Rotation | Scale | Role |
 |---|---|---|---|---|
-| TurboQuant (hadamard) | scalar Lloyd-Max | WHT butterfly | RMS | paper baseline |
+| TurboQuant (hadamard) | scalar Lloyd-Max | WHT butterfly | RMS | deployment/rotation ablation |
 | TurboQuant-QJL | scalar Lloyd-Max + 1-bit QJL residual | WHT butterfly + Gaussian sketch | RMS + residual norm | TurboQuant-prod appendix baseline |
-| TurboQuant (dense) | scalar Lloyd-Max | dense GEMM | RMS | rotation ablation |
+| **TurboQuant-paper** | scalar finite-Beta Lloyd-Max | Gaussian-QR dense rotation | L2 | formal MSE baseline |
+| **FibQuant-paper** | exact spherical-Beta block-VQ | shared Gaussian-QR dense rotation | L2 | independent formal quality-only baseline |
+| **BlockQuant-paper** | exact finite-sphere block-VQ, dynamic top-32 key split | per-part Gaussian-QR dense rotation | UB / BSM | fixed-seed external quality-only baseline at the paper KV point |
 | HALO (auto) | scalar Lloyd-Max | cheapest GEMM | NC / ls_iter | prior best (superseded) |
-| **HayateQuant (auto)** | **block-VQ** | **folded hybrid (1 GEMM)** | NC / ls_iter | **proposed** |
+| **HQ** | **b=2 K5/V3, K7/V5, K9/V7 block-VQ** | **rate-resolved folded rotation** | **NC / LS-reassign/refit** | **fixed formal proposal** |
+| **AdaptiveHQ** | **two-pair causal allocation over the same HQ codec** | **pair-resolved HQ rotation** | **NC / LS-reassign/refit** | **only opt-in formal proposal** |
+| HayateQuant scalar/block matched | scalar or block VQ | dense | RMS-equivalent | mechanism controls; exact encoder |
+| HQ-Fib-init-proxy | HQ block-VQ with Fib-inspired warm-start | HQ auto | HQ default | internal ablation, not FibQuant |
+| HQ-Block-scale-proxy | HQ block-VQ | HQ auto | UB/IP / BSM/LS | internal ablation, not BlockQuant |
+
+`TurboQuant-paper` is a stable internal result key, not a claim that the row
+reproduces every TurboQuant paper table.  Formal output displays it as
+**TurboQuant Algorithm 1 (MSE)**: finite-Beta Lloyd-Max scalar quantization,
+dense Gaussian-QR/Haar rotation, and a per-vector L2 norm.  The paper's
+LongBench mixed-precision description does not specify enough of its outlier
+selection and K/V recipe for an exact Table 1 reproduction, and its printed
+`(32*3 + 96*2)/128 = 2.5` arithmetic is 2.25 payload bits.  The formal
+aggregate therefore records `paper_table1_reproduction=false`; the renderer
+rejects a missing or stronger scope claim.  The signed-fp16 L2 norm is rounded
+in the payload path and included as a fixed-width data-plane field.
+
+The Python `encode`/`decode` payload used by codec microbenchmarks is a
+materialized **logical** payload: code indices are unpacked `int64` tensors.
+Its `stored_bits` field counts only fixed-width encoded-KV data-plane growth:
+logical packed code widths, signed-fp16 scales, and any enabled mask, QJL, or
+outlier fields.  Self-describing Python control tags and container bytes are
+uncharged out-of-band/cache-level configuration; global codebooks, LUTs, and
+rotations are also outside this per-token count.  Consequently `stored_bits`
+is neither the payload tensors' allocator-resident footprint nor physical
+serving memory, and the public-path timing must not be reported as packed-cache
+serving throughput.  The formal output records and revalidates the committed
+HQ/AdaptiveHQ codebook manifest and every reachable artifact hash.  Persistent
+codebook/LUT/rotation resident bytes remain outside the per-token data-plane
+count and are not reported as packed serving memory.
+
+The fair-speed runner records the exact storage bytes of the public payload's
+code-index and scale tensors separately from `stored_bits`.  Those bytes still
+exclude Python containers, control tags, allocator fragmentation, and
+persistent codec/codebook/LUT/rotation state.  Its E2E peak-memory counter is a
+third, distinct quantity: `torch.cuda.max_memory_allocated` for a resident model
+and the dequantized research fake-quant cache (reserved-but-unallocated bytes
+excluded).  It must not be relabelled as a packed KV-cache measurement.
+
+Formal speed is a fixed 60-process matrix: two checkpoints, three rates, two
+compile modes, and five fresh Slurm processes.  Every timing process is pinned
+to one selected healthy B200 node, while the aggregator independently rejects
+any GPU capacity, SM-count, driver, software, or timing-protocol mismatch.  The
+renderer exposes every public prefill/decode `encode`, prebuilt-`decode`, and
+explicit-roundtrip endpoint; research fused prefill/decode roundtrip; E2E TTFT
+and steady decode; and paired allocated-memory ratio/difference.  Per-endpoint
+intervals remain descriptive.  A complete speed/measured-memory superiority
+statement is possible only if all 132 predeclared primary-mode stochastic
+endpoints are present and their one-sided 95% Bonferroni lower bounds favor HQ,
+the public unpacked tensor footprints are no larger, and logical `stored_bits`
+remain equal.  This gate does not establish downstream-quality superiority.
+
+Independent FibQuant and BlockQuant codecs now live under
+`onecomp/kvcomp/codec/`; neither is an HQ warm-start/scale proxy.  The formal
+quality matrix registers the exact FibQuant v1 integer recipes as
+`FibQuant-paper` for PPL, corrected zero-shot, the explicitly named NeMo-Skills
+RULER-v1 100-sample/task protocol (not canonical NVIDIA 500/task), LongBench-E, MATH-500,
+and LongCodeQA.  Its logical rate includes one signed-fp16 norm per vector.
+`BlockQuant-paper` is registered only at its Llama-3.1 `head_dim=128` paper
+operating point (formal rate slot 3).  The paper does not publish the top-32
+lifecycle/identity code, the experimental LUT, the p=3 tail rule, or trained
+centroids.  The row therefore uses a versioned per-batch/head/update top-L2
+completion, fixed-width combinadic identities (`ceil(log2 C(128,32)) = 101`
+bits), lower-dimensional tails, data-free fixed-seed codebooks, and exact
+assignment.  It is a same-runtime fixed-seed quality baseline, not the paper's
+five-random-seed reproduction.  Both exact-search Python implementations have
+no packed serving kernel, so FibQuant and BlockQuant are intentionally absent
+from every codec/decode/inference speed row.
+The `HQ-*-proxy` labels remain internal HQ ablations and are never read aliases
+for either independent codec.
 
 `TurboQuant-QJL` follows the TurboQuant-prod construction for keys: for a target
 payload of `b` bits per coordinate it uses a `b-1` bit scalar MSE key code plus
 a 1-bit Gaussian QJL sketch of the key residual, while values use the regular
-`b` bit scalar MSE code.  The residual norm is counted in
+`b` bit scalar MSE code.  The residual norm is counted as an enabled data-plane field in
 `stored_bits_per_coord`, so this row should be read as an appendix diagnostic
 for the inner-product estimator rather than as an equal-stored-bits replacement
 for the main TurboQuant-MSE baseline.
 
-Ablation rows included in every run: `HayateQuant-bs1` (superset guard),
+Ablation rows included in every run: `HayateQuant-bs1` (scalar compatibility control),
 `HayateQuant-exact` (LUT off), `HayateQuant-K12` (large-codebook quality
 ceiling), `HayateQuant-dense-LS` (Qwen-family PPL operating point).
 
@@ -39,25 +112,12 @@ ceiling), `HayateQuant-dense-LS` (Qwen-family PPL operating point).
 HayateQuant-auto's levers: `HayateQuant-noscale` (RMS both roles),
 `HayateQuant-hadamard-bvq` (no per-block dense rotation factor),
 `HayateQuant-beta` (exact finite-d source law), `HayateQuant-bs2` (explicit
-block size). Measured on Llama-3.1-8B (job 59050): every lever contributes
-positively at 2/3-bit (block-VQ is dominant: 2-bit PPL 10.02 -> 9.51 -> 9.15
-for bs1 -> bs2 -> bs4; scale -0.05, hybrid rotation -0.03), and none hurts --
-see `papers/hayatequant_paper/README.md` (v6) for the full table. Results ->
-`results_ablation/`.
+block size). Results must be regenerated with the current fingerprinted
+harness before any quantitative lever claim is reported.
 
-**v7 round** (paper README v7): candidates measured and *rejected* with
-evidence: residual VQ (loses to single-stage block-VQ at every rate on the
-data-free source law) and LUT T=4 (no PPL gain). Adopted: committed
-high-budget Lloyd codebook artifacts (distortion down at every point, 2-bit
-PPL -0.12) and the rate-aware auto rotation (2-bit PPL -0.21 on Llama).
-Final 2-bit Llama PPL: 8.825 vs TurboQuant-hadamard 10.161 / -dense 9.942.
-
-**v8 round** (paper README v8): adds optional SpinQuant-style calibration
-(`HayateQuantCodec(calibration=...)`, learned per-role Cayley rotation +
-real-data codebook refit; opt-in, holdout-distortion guarded and -0.18 on Qwen3-8B
-2-bit) and the K/V-asymmetric `HayateQuant-K4V2` row at the 3.0-avg-bit
-point (keys are the sensitive role: -0.09/-0.15 PPL vs uniform 3-bit on
-Llama/Qwen3-8B, local synthetic multi-key +0.067 on Llama, same storage).
+Optional SpinQuant-style calibration and K/V-asymmetric operating points remain
+available as opt-in ablations. They are not folded into the fixed data-free HQ
+or AdaptiveHQ formal rows.
 
 ## Run
 
@@ -118,76 +178,64 @@ srun --gres=gpu:1 .venv/bin/python codec_benchmark.py --config-name paper_hayate
 
 **Full HayateQuant paper battery** (`submit_hayatequant_paper.sh`):
 ```bash
-# PPL/distortion, zero-shot ACC, long-context retrieval, reasoning decode,
-# codec speed, and native vLLM smoke. The method set includes TurboQuant,
-# FibQuant, BlockQuant, HayateQuant, and the Fib/Block import candidates.
+# Submit the fixed eight-job smoke plan first. Formal submission remains
+# disabled until every exact output finishes and is explicitly approved.
 RUN_ROOT=/lustre/.../kvcomp_hayatequant/paper_final_YYYYMMDD \
-PARTITIONS=debug,batch-1gpu \
-  bash benchmark/kvcomp-codec/submit_hayatequant_paper.sh all
+PARTITIONS=batch-1gpu \
+  bash benchmark/kvcomp-codec/submit_hayatequant_paper.sh smoke
 
-# individual slices use the same non-duplicated partition-list submission
+# Inspect results/smoke and the Slurm logs, then create the validated marker.
+FORMAL_SMOKE_APPROVAL=I_APPROVE_THE_VALIDATED_HAYATEQUANT_SMOKE_PLAN \
+  bash benchmark/kvcomp-codec/submit_hayatequant_paper.sh approve-smoke
+
+# Every formal command re-hashes the approved smoke results and fails closed
+# if the commit, input manifest, plan, result bytes, or marker has changed.
+bash benchmark/kvcomp-codec/submit_hayatequant_paper.sh formal
+
+# Individual formal slices use the same mandatory smoke approval gate.
 bash benchmark/kvcomp-codec/submit_hayatequant_paper.sh ppl
 bash benchmark/kvcomp-codec/submit_hayatequant_paper.sh zeroshot
-bash benchmark/kvcomp-codec/submit_hayatequant_paper.sh long
+bash benchmark/kvcomp-codec/submit_hayatequant_paper.sh longbench
 bash benchmark/kvcomp-codec/submit_hayatequant_paper.sh speed
 ```
+
+The formal long-code slice is specifically the released **LongCodeQA code
+comprehension subtask** (all model-feasible brackets).  It is not a result for
+the whole LongCodeBench suite and does not include LongSWE-Bench.
 
 (`conf/paper_halo.yaml` is kept only to reproduce the historical HALO runs.)
 
 Config: `conf/benchmark_codec.yaml`. Metrics per bit-width {2,3,4}: distortion
 (relMSE on captured real KV), WikiText-2 PPL under `CompressedDynamicCache`,
-and overhead (ms/encode, Melem/s) at the model's true head dim. Results →
+and, for methods with an actual timing contract, overhead (ms/encode, Melem/s)
+at the model's true head dim. `FibQuant-paper` and `BlockQuant-paper` emit an
+explicit speed-omission marker instead of timing their unpacked exact-search
+research paths. Results →
 `output_dir` (JSON + Markdown).
 
-## Headline results (v3, see papers/hayatequant_paper/README.md for full tables)
+Teacher-forced PPL and zero-shot likelihood are causal at the *codec-statistic*
+level, not merely at the attention-mask level.  A channel-axis sequence group
+(KIVI/NVFP4/Ternary), dynamic outlier-channel selection, online HQ bit split,
+enabled HALO block preconditioner, or nonzero trailing FP window is evaluated
+by pre-filling only the unscored prefix and then advancing scored targets one token at a time.  This
+prevents a future target from changing an earlier scale, mask, or allocation.
+The formal `TurboQuant-paper`, `FibQuant-paper`, and fixed `HQ` recipes use token
+axes, no dynamic outlier split, no online bit allocation, and no block-global
+preconditioner, so they retain the faster single-forward quality-evaluation
+path. `AdaptiveHQ` makes causal allocation decisions, and `BlockQuant-paper`
+selects top-32 key channels over each cache update; both therefore use causal
+prefix prefill plus token-step targets. Regression tests assert both protocols.
 
-Llama-3.1-8B-Instruct (head_dim=128), real-KV distortion + WikiText-2 PPL:
-HayateQuant-auto strictly improves distortion and PPL over both TurboQuant
-rotations and HALO-auto at every bit-width (largest gains at 2-3 bit, e.g.
-2-bit PPL −9.5% vs TurboQuant-hadamard), at equal stored bits.  On
-DeepSeek-R1-Distill-Qwen-1.5B the `HayateQuant-dense-LS` variant is the best
-PPL point (Qwen-family KV distributions interact badly with the ±1 Hadamard
-mix).  Encode/decode speed: the folded rotation + adaptive LUT/fp16 encoder
-give decode throughput 1.4× TurboQuant and TTFT parity at 3/4-bit.
+## Result status
 
-## Historical HALO results (superseded)
+The previous unversioned headline table was removed because it predates the
+current result schema, dataset fingerprints, fair speed controls, and fixed HQ
+contract. Publishable values must come from a fresh run whose JSON
+records the code commit, source/dataset fingerprint, model configuration,
+sample denominator, and hardware provenance.
 
-The tables below are the original HALO-paper measurements, kept for
-reproducibility.  HALO's contribution was **lower online overhead at
-TurboQuant-dense quality** (cheapest-transform selection); it did not improve
-quality over TurboQuant.  HayateQuant subsumes HALO (same scale levers)
-and adds the quality win via block-VQ.
+## Historical HALO results (not current evidence)
 
-### Rotation overhead (ms/encode, S=1024, H=8)
-
-| head_dim | HALO(auto) | TurboQuant(hadamard) | speedup | quality (relMSE 3-bit) |
-|---:|---:|---:|---:|---:|
-| 64  | 0.308 | 0.903 | **2.9×** | identical |
-| 128 | 0.346 | 1.004 | **2.9×** | identical |
-| 256 | 0.441 | 1.103 | **2.5×** | HALO 0.0344 = Turbo 0.0343 |
-| 512 | 0.936 | 1.297 | **1.4×** | identical |
-
-### llama-3.1-8b-instruct (head_dim=128)
-
-| bits | Codec | dist(K) | dist(V) | ms/encode | Melem/s | PPL |
-|---|---|---:|---:|---:|---:|---:|
-| 4 | TurboQuant-hadamard | 0.00884 | 0.00935 | 1.020 | 1028 | 7.7096 |
-| 4 | TurboQuant-dense | 0.00952 | 0.00920 | 0.354 | 2960 | 7.7061 |
-| 4 | HALO-auto | 0.00952 | 0.00920 | 0.356 | 2944 | 7.7061 |
-| 3 | TurboQuant-hadamard | 0.03205 | 0.03413 | 1.027 | 1022 | 8.0454 |
-| 3 | TurboQuant-dense | 0.03441 | 0.03392 | 0.358 | 2931 | 8.0973 |
-| 3 | HALO-auto | 0.03441 | 0.03392 | 0.351 | 2990 | 8.0973 |
-| 2 | TurboQuant-hadamard | 0.10945 | 0.11708 | 1.023 | 1025 | 11.3663 |
-| 2 | TurboQuant-dense | 0.11740 | 0.11592 | 0.353 | 2974 | 11.2002 |
-| 2 | HALO-auto | 0.11740 | 0.11592 | 0.349 | 3006 | 11.2002 |
-
-### DeepSeek-R1-Distill-Qwen-1.5B (head_dim=128)
-
-| bits | Codec | dist(K) | dist(V) | ms/encode | Melem/s |
-|---|---|---:|---:|---:|---:|
-| 4 | TurboQuant-hadamard | 0.00827 | 0.00915 | 1.024 | 1024 |
-| 4 | HALO-auto | 0.00899 | 0.00925 | 0.354 | 2958 |
-| 3 | TurboQuant-hadamard | 0.03043 | 0.03323 | 1.029 | 1019 |
-| 3 | HALO-auto | 0.03229 | 0.03352 | 0.354 | 2960 |
-| 2 | TurboQuant-hadamard | 0.09668 | 0.11300 | 1.031 | 1018 |
-| 2 | HALO-auto | 0.11263 | 0.11480 | 0.355 | 2954 |
+The old unversioned HALO measurements were also removed from this current-run
+README. Historical bundles remain in their archived result directories, but
+must not be cited as results from the fingerprinted benchmark contract.

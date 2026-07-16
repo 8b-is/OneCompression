@@ -38,8 +38,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
+
+from onecomp.kvcomp.codec.hayate.recipes import (  # noqa: E402
+    HQ_BLOCK_SCALE_PROXY_NAME,
+    HQ_FIB_INIT_PROXY_NAME,
+    hayate_result_method_candidates,
+)
+
 CODEC_BENCH = REPO_ROOT / "benchmark" / "kvcomp-codec" / "codec_benchmark.py"
 DEFAULT_MODELS_ROOT = Path("/lustre/home/frj/yuma-ichikawa/conference/models")
 DEFAULT_OUTPUT_ROOT = Path(
@@ -209,7 +216,13 @@ def _iter_result_files(root: Path) -> Iterable[Path]:
 
 
 def _entry(data: dict, bits: str, method: str) -> dict | None:
-    return (data.get("results") or {}).get(str(bits), {}).get(method)
+    methods = (data.get("results") or {}).get(str(bits), {})
+    # Canonical proxy key first; legacy aliases are read-only compatibility for
+    # historical bundles and are never emitted by the current benchmark.
+    for candidate in hayate_result_method_candidates(method):
+        if candidate in methods:
+            return methods[candidate]
+    return None
 
 
 def _ppl(data: dict, bits: str, method: str) -> float | None:
@@ -237,26 +250,30 @@ def _fmt(value: float | None, ndigits: int = 2) -> str:
 
 def _summarize(args: argparse.Namespace) -> None:
     rows: list[str] = []
-    rows.append("| Model | 2b TQ | 2b Fib | 2b Block | 2b HayateQuant | 2b AdaptiveHQ | 3b TQ | 3b Fib | 3b Block | 3b HayateQuant | 3b AdaptiveHQ | 4b TQ | 4b Fib | 4b Block | 4b HayateQuant | 4b AdaptiveHQ | 3b dist(K) gain |")
-    rows.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+    rows.append(
+        "| Model | 2b TQ | 2b HQ Fib-init proxy | 2b HQ Block-scale proxy | 2b HayateQuant | 2b AdaptiveHQ | 3b TQ | 3b HQ Fib-init proxy | 3b HQ Block-scale proxy | 3b HayateQuant | 3b AdaptiveHQ | 4b TQ | 4b HQ Fib-init proxy | 4b HQ Block-scale proxy | 4b HayateQuant | 4b AdaptiveHQ | 3b dist(K) gain |"
+    )
+    rows.append(
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
+    )
     for path in _iter_result_files(args.output_root):
         data = json.loads(path.read_text())
         model = data.get("model") or path.stem.replace("results_", "")
         if not args.include_extra_results and model not in _paper_model_names():
             continue
         tq2 = _ppl(data, "2", "TurboQuant-paper")
-        fib2 = _ppl(data, "2", "FibQuant")
-        bq2 = _ppl(data, "2", "BlockQuant")
+        fib2 = _ppl(data, "2", HQ_FIB_INIT_PROXY_NAME)
+        bq2 = _ppl(data, "2", HQ_BLOCK_SCALE_PROXY_NAME)
         hq2 = _ppl(data, "2", args.hq_method)
         ahq2 = _ppl(data, "2", args.adaptive_method)
         tq3 = _ppl(data, "3", "TurboQuant-paper")
-        fib3 = _ppl(data, "3", "FibQuant")
-        bq3 = _ppl(data, "3", "BlockQuant")
+        fib3 = _ppl(data, "3", HQ_FIB_INIT_PROXY_NAME)
+        bq3 = _ppl(data, "3", HQ_BLOCK_SCALE_PROXY_NAME)
         hq3 = _ppl(data, "3", args.hq_method)
         ahq3 = _ppl(data, "3", args.adaptive_method)
         tq4 = _ppl(data, "4", "TurboQuant-paper")
-        fib4 = _ppl(data, "4", "FibQuant")
-        bq4 = _ppl(data, "4", "BlockQuant")
+        fib4 = _ppl(data, "4", HQ_FIB_INIT_PROXY_NAME)
+        bq4 = _ppl(data, "4", HQ_BLOCK_SCALE_PROXY_NAME)
         hq4 = _ppl(data, "4", args.hq_method)
         ahq4 = _ppl(data, "4", args.adaptive_method)
         tq3_d = _dist_k(data, "3", "TurboQuant-paper")
@@ -269,6 +286,12 @@ def _summarize(args: argparse.Namespace) -> None:
             f"| {_fmt(fib4)} | {_fmt(bq4)} | {_fmt(hq4)} | {_fmt(ahq4)} "
             f"| {_fmt(gain, 1)}% |"
         )
+    rows += [
+        "",
+        "Legacy compatibility: historical JSON keys `FibQuant` and `BlockQuant` "
+        "are read as aliases for the two HQ proxy columns; new runs never emit "
+        "those external-method-looking keys.",
+    ]
     text = "\n".join(rows)
     print(text)
     if args.summary_out:
@@ -284,18 +307,41 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     ap.add_argument("--python", type=Path, default=REPO_ROOT / ".venv" / "bin" / "python")
     ap.add_argument("--config-name", default="paper_hayatequant")
-    ap.add_argument("--override", action="append", default=[], help="Extra Hydra override, e.g. ppl_windows=16")
+    ap.add_argument(
+        "--override", action="append", default=[], help="Extra Hydra override, e.g. ppl_windows=16"
+    )
     ap.add_argument("--download-missing", action="store_true")
-    ap.add_argument("--submit", action="store_true", help="Submit Slurm jobs. This is the default unless --run-local/--summarize is set.")
-    ap.add_argument("--run-local", action="store_true", help="Run sequentially in the current process allocation.")
-    ap.add_argument("--summarize", action="store_true", help="Summarize existing JSON results instead of launching jobs.")
+    ap.add_argument(
+        "--submit",
+        action="store_true",
+        help="Submit Slurm jobs. This is the default unless --run-local/--summarize is set.",
+    )
+    ap.add_argument(
+        "--run-local",
+        action="store_true",
+        help="Run sequentially in the current process allocation.",
+    )
+    ap.add_argument(
+        "--summarize",
+        action="store_true",
+        help="Summarize existing JSON results instead of launching jobs.",
+    )
     ap.add_argument("--summary-out", type=Path)
-    ap.add_argument("--hq-method", default="HayateQuant-frontier",
-                    help="Fixed implementation method reported as HQ in the paper tables.")
-    ap.add_argument("--adaptive-method", default="AdaptiveHQ",
-                    help="Implementation method reported as Adaptive HQ.")
-    ap.add_argument("--include-extra-results", action="store_true",
-                    help="Summarize every result JSON instead of the current seven-model paper grid.")
+    ap.add_argument(
+        "--hq-method",
+        default="HayateQuant-frontier",
+        help="Fixed implementation method reported as HQ in the paper tables.",
+    )
+    ap.add_argument(
+        "--adaptive-method",
+        default="AdaptiveHQ",
+        help="Implementation method reported as Adaptive HQ.",
+    )
+    ap.add_argument(
+        "--include-extra-results",
+        action="store_true",
+        help="Summarize every result JSON instead of the current seven-model paper grid.",
+    )
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--partition", default="debug")
     ap.add_argument("--gpus", type=int, default=1)

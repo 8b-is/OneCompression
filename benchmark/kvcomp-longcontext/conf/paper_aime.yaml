@@ -6,7 +6,7 @@
 #   - PM-KVQ (arXiv:2505.18610): k=16 samples on AIME-2024/2025, CMIMC, LC-Bench;
 #     models: DeepSeek-R1-Distill-Qwen-7B/14B/32B, LLaMA-8B/70B, QwQ-32B.
 #
-# This config skips needle/RULER (long-context retrieval), focusing only on
+# This config skips needle/local multi-key retrieval, focusing only on
 # competition math reasoning -- the primary claim of both papers.
 #
 # Usage:
@@ -42,6 +42,8 @@ max_new_reason: 8192
 run_math: true
 math_limit: null             # complete MATH-500 test split
 max_new_math: 8192
+math_grader: math_verify     # required; no silent local fallback
+math_verify_version: "0.9.0"
 
 # AIME-2024 and AIME-2025: primary evaluation axis for both papers.
 # k=8 matches ThinKV; set aime_k=16 to match PM-KVQ (doubles compute).

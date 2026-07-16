@@ -9,6 +9,8 @@ ThinKV TBQ/TBE state machine, the token selectors, and the vLLM dtype mapping.
 Copyright 2025-2026 Fujitsu Ltd.
 """
 
+import math
+
 import pytest
 import torch
 
@@ -17,7 +19,9 @@ from onecomp.kvcomp.codec._quant_primitives import (
     fake_quantize_affine,
     effective_bits,
 )
+from onecomp.kvcomp.codec._scale import fit_scale
 from onecomp.kvcomp.codec.rotation import (
+    _solve_lloyd_fixed_point,
     walsh_hadamard_transform,
     random_sign,
     rotate,
@@ -28,24 +32,46 @@ from onecomp.kvcomp.codec.rotation import (
     lloyd_max_beta,
     quantize_to_codebook,
 )
-from onecomp.kvcomp.codec.turboquant import TurboQuantCodec, _codebook, _qjl_projection_on
+from onecomp.kvcomp.codec.turboquant import (
+    TurboQuantCodec,
+    _codebook,
+    _codebook_on,
+    _qjl_projection_on,
+)
 from onecomp.kvcomp.codec.halo import HALOCodec
 from onecomp.kvcomp.codec.hayate import HayateQuantCodec
-from onecomp.kvcomp.codec.hayate.codec import _block_codebook_on
+from onecomp.kvcomp.codec.hayate.codec import (
+    ADAPTIVE_HQ_OBJECTIVE,
+    ADAPTIVE_HQ_POLICY_VERSION,
+    ADAPTIVE_HQ_DISTORTION_TABLE_VERSION,
+    _adaptive_datafree_relative_distortion,
+    _adaptive_value_distortion_for_update,
+    _block_codebook_on,
+)
 from onecomp.kvcomp.codec.hayate.vq import lookup_codewords
 from onecomp.kvcomp.codec.hayate.recipes import (
+    HQ_BLOCK_SCALE_PROXY_NAME,
+    HQ_FIB_INIT_PROXY_NAME,
     HQ_FRONTIER_KEY_SCALE_MODE,
+    HQ_FRONTIER_SCALE_KWARGS,
+    HQ_FRONTIER_VALUE_SCALE_MODE,
     build_hayate_adaptive2,
+    build_hayate_adaptive_rate,
     build_hayate_frontier,
+    build_hayate_hq,
     build_hayate_fractional_rate,
     build_hayate_fractional2,
     hayate_adaptive2_kwargs,
     hayate_fractional_rate_kwargs,
     hayate_fractional2_kwargs,
     hayate_fractional2_variant,
+    hayate_hq_code_bits,
+    hayate_hq_role_rates,
     hayate_frontier_bits,
     hayate_frontier_kwargs,
     hayate_frontier_variant,
+    canonical_hayate_method_name,
+    hayate_result_method_candidates,
 )
 from onecomp.kvcomp.codec.affine import AffineKVCodec, Int4Codec, Int3Codec, KIVICodec
 from onecomp.kvcomp.codec.fp8 import FP8Codec
@@ -119,6 +145,127 @@ def test_lloyd_max_sizes_and_sorted():
     assert lloyd_max_beta(3, 128).numel() == 8
 
 
+def _gaussian_lloyd_audit(codebook):
+    """Independently recompute exact Gaussian cells, residual, and MSE."""
+    import numpy as np
+    from scipy.special import ndtr
+
+    centroids = codebook.detach().double().cpu().numpy()
+    boundaries = 0.5 * (centroids[:-1] + centroids[1:])
+    lower = np.concatenate(([-np.inf], boundaries))
+    upper = np.concatenate((boundaries, [np.inf]))
+    mass = ndtr(upper) - ndtr(lower)
+    inv_sqrt_two_pi = 1.0 / np.sqrt(2.0 * np.pi)
+    first_moment = (np.exp(-0.5 * lower * lower) - np.exp(-0.5 * upper * upper)) * inv_sqrt_two_pi
+    conditional_mean = first_moment / mass
+    residual = float(np.max(np.abs(centroids - conditional_mean)))
+    distortion = float(
+        1.0 - 2.0 * np.sum(centroids * first_moment) + np.sum(centroids * centroids * mass)
+    )
+    return residual, distortion
+
+
+def _beta_lloyd_audit(codebook, d):
+    """Independently recompute exact finite-Beta cells, residual, and MSE."""
+    import numpy as np
+    from scipy.special import betainc
+
+    centroids = codebook.detach().double().cpu().numpy()
+    alpha = (d - 1.0) / 2.0
+    boundaries = 0.5 * (centroids[:-1] + centroids[1:])
+    lower = np.concatenate(([-1.0], boundaries))
+    upper = np.concatenate((boundaries, [1.0]))
+    lower_beta = 0.5 * (lower + 1.0)
+    upper_beta = 0.5 * (upper + 1.0)
+    mass = betainc(alpha, alpha, upper_beta) - betainc(alpha, alpha, lower_beta)
+    shifted_first_moment = betainc(alpha + 1.0, alpha, upper_beta) - betainc(
+        alpha + 1.0, alpha, lower_beta
+    )
+    first_moment = shifted_first_moment - mass
+    conditional_mean = first_moment / mass
+    residual = float(np.max(np.abs(centroids - conditional_mean)))
+    distortion = float(
+        1.0 / d - 2.0 * np.sum(centroids * first_moment) + np.sum(centroids * centroids * mass)
+    )
+    return residual, distortion
+
+
+@pytest.mark.parametrize(
+    "bits,expected_distortion",
+    [
+        (1, 0.3633802276324186),
+        (2, 0.11748184782932913),
+        (3, 0.03454776078850352),
+        (4, 0.009501008008191869),
+        (5, 0.002504668355674644),
+    ],
+)
+def test_gaussian_lloyd_max_is_converged_against_exact_moments(bits, expected_distortion):
+    residual, distortion = _gaussian_lloyd_audit(lloyd_max_gaussian(bits))
+    # Threshold includes the final float32 codebook cast; the float64 solver
+    # itself is required to reach <=5e-9 before serialization.
+    assert residual < 2e-7
+    assert distortion == pytest.approx(expected_distortion, abs=5e-9)
+
+
+@pytest.mark.parametrize(
+    "bits,expected_distortion",
+    [
+        (1, 0.002819442138179162),
+        (2, 0.0009062505490244344),
+        (3, 0.0002653587952649288),
+        (4, 0.00007277178088904886),
+    ],
+)
+def test_beta_lloyd_max_is_converged_against_exact_moments(bits, expected_distortion):
+    residual, distortion = _beta_lloyd_audit(lloyd_max_beta(bits, 128), 128)
+    assert residual < 2e-7
+    assert distortion == pytest.approx(expected_distortion, abs=5e-11)
+
+
+def test_lloyd_codebooks_are_grid_independent_after_exact_moment_fix():
+    # The retained grid argument must no longer move a formal codebook.  The
+    # old 4096-point discretization and [-6,6] Gaussian truncation did.
+    assert torch.equal(lloyd_max_gaussian(5, grid=17), lloyd_max_gaussian(5, grid=65537))
+    assert torch.equal(
+        lloyd_max_beta(4, 128, grid=17),
+        lloyd_max_beta(4, 128, grid=65537),
+    )
+
+
+@pytest.mark.parametrize("bits", range(1, 9))
+def test_all_supported_gaussian_codebooks_satisfy_exact_lloyd_equations(bits):
+    residual, distortion = _gaussian_lloyd_audit(lloyd_max_gaussian(bits))
+    assert residual < 3e-7
+    assert 0.0 < distortion < 1.0
+
+
+@pytest.mark.parametrize("bits", range(1, 9))
+def test_all_supported_beta_codebooks_satisfy_exact_lloyd_equations(bits):
+    residual, distortion = _beta_lloyd_audit(lloyd_max_beta(bits, 128), 128)
+    assert residual < 3e-7
+    assert 0.0 < distortion < 1.0 / 128.0
+
+
+def test_lloyd_solver_fails_closed_on_large_fixed_point_residual(monkeypatch):
+    import numpy as np
+    import scipy.optimize
+
+    class _NonSolution:
+        x = np.asarray([-1.0, 1.0], dtype=np.float64)
+        success = True
+        message = "synthetic non-solution"
+
+    monkeypatch.setattr(scipy.optimize, "root", lambda *args, **kwargs: _NonSolution())
+    with pytest.raises(RuntimeError, match="did not converge.*residual"):
+        _solve_lloyd_fixed_point(
+            [-1.0, 1.0],
+            lambda centroids: np.asarray(centroids, dtype=np.float64) + 0.25,
+            warmup_iters=0,
+            label="test",
+        )
+
+
 # --- affine primitive -----------------------------------------------------
 @pytest.mark.parametrize("bits", [2, 3, 4, 8])
 def test_affine_error_within_half_step(bits):
@@ -140,12 +287,112 @@ def _kv(b=1, h=8, s=128, d=128):
     return x, x.clone()
 
 
+def _rotated_payload_subsets(payload):
+    """Yield the independently scaled subsets in a TQ/HQ role payload."""
+    if payload["mode"] == "single":
+        return (payload["main"],)
+    return payload["out"], payload["in"]
+
+
+def _logical_rotated_payload_bits(payload):
+    """Recompute only the fixed-width data-plane fields in a TQ/HQ payload."""
+    # Mixed-precision channel selection is data-dependent and must be available
+    # to the decoder.  Count the logically packed channel bitmap once per role.
+    total = payload["mask"].numel() if payload.get("mode") == "outlier" else 0
+    for main in _rotated_payload_subsets(payload):
+        if "block_size" in main:
+            code_width = int(main.get("code_bits", int(main["bits"]) * int(main["block_size"])))
+        else:
+            code_width = int(main["bits"])
+        total += main["codes"].numel() * code_width
+
+        scale = main["scale"]
+        assert scale.dtype == torch.float16
+        total += scale.numel() * scale.element_size() * 8
+
+        if "qjl_sign" in main:
+            # QJL signs are logically bit-packed; its residual norm is an
+            # enabled fp16 data-plane field and must be charged by the codec.
+            total += main["qjl_sign"].numel()
+            norm = main["qjl_norm"]
+            assert norm.dtype == torch.float16
+            total += norm.numel() * norm.element_size() * 8
+    return total
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("codec_name", ["turboquant_beta", "turboquant_gaussian", "hayatequant"])
+@pytest.mark.parametrize("qjl,outliers", [(False, 0), (True, 0), (True, 8)])
+def test_rotated_codec_fixed_width_data_plane_matches_numel_bits(dtype, codec_name, qjl, outliers):
+    """Only fixed-width fields, not control/container bytes, enter the rate.
+
+    Covers fp16/bf16 inputs, asymmetric K/V bit-widths, plain and QJL paths,
+    and both subsets of the mixed-precision outlier path for TurboQuant and
+    HayateQuant. Codes and QJL signs are logically packed; scale/norm tensors
+    are signed-fp16 data-plane fields. Recipe tags and Python containers make
+    the payload self-describing but remain out-of-band/cache-level controls.
+    """
+    torch.manual_seed(11)
+    key = torch.randn(1, 2, 8, 32).to(dtype)
+    value = (1.3 * torch.randn(1, 2, 8, 32)).to(dtype)
+    common = dict(bits=3, value_bits=2, n_outlier=outliers, use_qjl=qjl)
+    if codec_name.startswith("turboquant"):
+        codec = TurboQuantCodec(
+            **common,
+            dist=codec_name.removeprefix("turboquant_"),
+            rotation_mode="dense",
+            qjl_roles="both",
+        )
+    else:
+        codec = HayateQuantCodec(
+            **common,
+            block_size=2,
+            encoder="exact",
+            rotation_mode="dense",
+            key_scale_mode="ub",
+            value_scale_mode="ls_iter",
+        )
+
+    compressed = codec.encode(key, value)
+    expected_bits = _logical_rotated_payload_bits(
+        compressed.key_q
+    ) + _logical_rotated_payload_bits(compressed.value_q)
+    assert compressed.numel_bits() == compressed.meta["stored_bits"] == expected_bits
+    for role_payload in (compressed.key_q, compressed.value_q):
+        for main in _rotated_payload_subsets(role_payload):
+            assert {"bits", "m", "rot", "dist"}.issubset(main)
+    # Python control tags and container bytes do not alter logical data-plane
+    # accounting; this is intentionally not serialized-object-size accounting.
+    before = compressed.numel_bits()
+    compressed.key_q["self_describing_control_only"] = "x" * 4096
+    assert compressed.numel_bits() == before == expected_bits
+
+    key_hat, value_hat = codec.decode(compressed)
+    assert key_hat.dtype == value_hat.dtype == dtype
+    assert torch.isfinite(key_hat).all() and torch.isfinite(value_hat).all()
+
+    key_rt, value_rt, stored = codec.fake_quant_roundtrip(key, value)
+    assert stored == expected_bits
+    assert torch.equal(key_rt, key_hat)
+    assert torch.equal(value_rt, value_hat)
+
+
 @pytest.mark.parametrize("bits", [2, 3, 4])
 def test_turboquant_mse_decreases_with_bits(bits):
     x, _ = _kv()
     c = TurboQuantCodec(bits=bits, rotation_mode="hadamard")
     mse = float((c.decode(c.encode(x, x))[0] - x).pow(2).mean())
     assert 0.0 < mse < 1.0
+
+
+def test_turboquant_codebook_is_cached_on_target_device():
+    """Online encode/decode must not copy the immutable codebook per call."""
+    _codebook_on.cache_clear()
+    first = _codebook_on(3, "beta", 32, "cpu")
+    second = _codebook_on(3, "beta", 32, "cpu")
+    assert first is second
+    info = _codebook_on.cache_info()
+    assert info.misses == 1 and info.hits == 1
 
 
 def test_turboquant_bits_monotone():
@@ -251,10 +498,12 @@ def test_halo_ls_scale_reduces_mse_and_is_storage_neutral():
     # lower reconstruction MSE; storage (one fp16/vector) is unchanged.
     x, _ = _kv()
     for bits in (2, 3, 4):
-        ls = HALOCodec(bits=bits, rotation_mode="hadamard_gemm",
-                       key_scale_mode="ls", value_scale_mode="ls")
-        rms = HALOCodec(bits=bits, rotation_mode="hadamard_gemm",
-                        key_scale_mode="rms", value_scale_mode="rms")
+        ls = HALOCodec(
+            bits=bits, rotation_mode="hadamard_gemm", key_scale_mode="ls", value_scale_mode="ls"
+        )
+        rms = HALOCodec(
+            bits=bits, rotation_mode="hadamard_gemm", key_scale_mode="rms", value_scale_mode="rms"
+        )
         e_ls, e_rms = ls.encode(x, x), rms.encode(x, x)
         m_ls = float((ls.decode(e_ls)[0] - x).pow(2).mean())
         m_rms = float((rms.decode(e_rms)[0] - x).pow(2).mean())
@@ -263,6 +512,27 @@ def test_halo_ls_scale_reduces_mse_and_is_storage_neutral():
 
 
 # --- HALO role-asymmetric scale modes (lever 1) + ls_iter (lever 2) -------
+def test_role_scale_zero_and_negative_denominators_remain_finite_and_signed():
+    zero = torch.zeros(1, 2)
+    chat = torch.ones_like(zero)
+    scale_ip, _ = fit_scale(zero, chat, "ip", torch.ones(1, 1))
+    assert torch.isfinite(scale_ip).all()
+    assert torch.equal(scale_ip, torch.zeros_like(scale_ip))
+
+    seen = {}
+
+    def requantize(z):
+        seen["z"] = z
+        return torch.ones_like(z), torch.zeros((1, 2), dtype=torch.long)
+
+    xr = -2.0 * torch.ones(1, 2)
+    scale_iter, _ = fit_scale(xr, torch.ones_like(xr), "ls_iter", torch.ones(1, 1), requantize)
+    # s_ls is negative in this adversarial case.  Requantization must divide
+    # by that signed scale, not clamp it to +eps and explode the input.
+    assert torch.equal(seen["z"], torch.ones_like(xr))
+    assert torch.equal(scale_iter, -2.0 * torch.ones_like(scale_iter))
+
+
 def test_halo_scale_modes_storage_neutral_and_roundtrip():
     # Every key/value scale-mode combo stores the SAME bits and round-trips.
     x, _ = _kv(h=4, s=128)
@@ -270,8 +540,9 @@ def test_halo_scale_modes_storage_neutral_and_roundtrip():
     stored = set()
     for km in modes:
         for vm in modes:
-            c = HALOCodec(bits=3, rotation_mode="hadamard_gemm",
-                          key_scale_mode=km, value_scale_mode=vm)
+            c = HALOCodec(
+                bits=3, rotation_mode="hadamard_gemm", key_scale_mode=km, value_scale_mode=vm
+            )
             enc = c.encode(x, x)
             k, v = c.decode(enc)
             assert k.shape == x.shape and v.shape == x.shape
@@ -280,22 +551,30 @@ def test_halo_scale_modes_storage_neutral_and_roundtrip():
 
 
 def test_halo_nc_preserves_rotated_norm():
-    # The norm-correcting scale reconstructs each rotated vector at its true norm
-    # (||x_hat|| == ||x_rot||), unlike the least-squares scale which shrinks it.
+    # NC targets ||x_hat|| == ||x_rot|| before metadata serialization.  The
+    # reported/storage contract is one fp16 scale per vector, so the realised
+    # norm can differ only by the relative rounding error of that fp16 scale;
+    # it must not be tested against the old, unreported fp32-metadata codec.
     x, _ = _kv(h=2, s=256)
     c = HALOCodec(bits=4, rotation_mode="hadamard_gemm", key_scale_mode="nc")
     p = c._encode_tensor(x, 4, "k")
     from onecomp.kvcomp.codec.halo import _gaussian_codebook
+
     cb = _gaussian_codebook(4)
     xr, _ = c._rotate(x, x.shape[-1])
     xhat = cb[p["codes"]] * p["scale"]
-    assert torch.allclose(xhat.norm(dim=-1), xr.norm(dim=-1), rtol=1e-4)
+    assert p["scale"].dtype == torch.float16
+    relative_norm_error = (xhat.norm(dim=-1) - xr.norm(dim=-1)).abs() / xr.norm(dim=-1).clamp_min(
+        1e-12
+    )
+    assert float(relative_norm_error.max()) <= 5e-4
 
 
 def test_halo_ls_iter_monotone_mse():
     # One alternating-minimisation step never raises reconstruction MSE vs LS.
     from onecomp.kvcomp.codec.halo import _gaussian_codebook
     from onecomp.kvcomp.codec.rotation import quantize_to_codebook
+
     x, _ = _kv(h=2, s=512)
     c = HALOCodec(bits=2, rotation_mode="dense")
     for bits in (2, 3, 4):
@@ -313,8 +592,8 @@ def test_halo_ls_iter_monotone_mse():
 def test_halo_legacy_ls_scale_backcompat():
     # Default (key/value modes=None, ls_scale=True) -> smart NC+ls_iter.
     x, _ = _kv(h=2, s=128)
-    assert HALOCodec(bits=4)._scale_mode_for("k") == "nc"        # smart default
-    assert HALOCodec(bits=4)._scale_mode_for("v") == "ls_iter"   # smart default
+    assert HALOCodec(bits=4)._scale_mode_for("k") == "nc"  # smart default
+    assert HALOCodec(bits=4)._scale_mode_for("v") == "ls_iter"  # smart default
     # Explicit modes always override ls_scale.
     o = HALOCodec(bits=4, key_scale_mode="nc", value_scale_mode="rms")
     assert o._scale_mode_for("k") == "nc" and o._scale_mode_for("v") == "rms"
@@ -325,8 +604,12 @@ def test_halo_legacy_ls_scale_backcompat():
     o3 = HALOCodec(bits=4, ls_scale=False, key_scale_mode="nc")
     assert o3._scale_mode_for("k") == "nc" and o3._scale_mode_for("v") == "rms"
     # Explicit ls on both is the old symmetric-LS behaviour.
-    a = HALOCodec(bits=3, rotation_mode="hadamard_gemm", key_scale_mode="ls", value_scale_mode="ls")
-    b = HALOCodec(bits=3, rotation_mode="hadamard_gemm", key_scale_mode="ls", value_scale_mode="ls")
+    a = HALOCodec(
+        bits=3, rotation_mode="hadamard_gemm", key_scale_mode="ls", value_scale_mode="ls"
+    )
+    b = HALOCodec(
+        bits=3, rotation_mode="hadamard_gemm", key_scale_mode="ls", value_scale_mode="ls"
+    )
     assert torch.allclose(a.decode(a.encode(x, x))[0], b.decode(b.encode(x, x))[0])
 
 
@@ -338,11 +621,12 @@ def test_halo_invalid_scale_mode_raises():
 def test_halo_stateless_precond_no_ema():
     # Lever 4: no EMA state; encoding a block is independent of any prior block.
     x_a = torch.randn(1, 4, 200, 128)
-    means = torch.zeros(128); means[:4] = torch.tensor([40.0, -30.0, 20.0, -10.0])
+    means = torch.zeros(128)
+    means[:4] = torch.tensor([40.0, -30.0, 20.0, -10.0])
     x_b = torch.randn(1, 4, 200, 128) + means
     c = HALOCodec(bits=4, rotation_mode="dense", precond_roles=("k", "v"), center=True)
     assert not hasattr(c, "_ema")
-    _ = c.encode(x_a, x_a)              # would have polluted an EMA
+    _ = c.encode(x_a, x_a)  # would have polluted an EMA
     enc_b_after = c.encode(x_b, x_b)
     fresh = HALOCodec(bits=4, rotation_mode="dense", precond_roles=("k", "v"), center=True)
     enc_b_fresh = fresh.encode(x_b, x_b)
@@ -354,29 +638,42 @@ def test_halo_stateless_precond_no_ema():
 
 # --- HALO outlier mixed-precision (lever 3) -------------------------------
 @pytest.mark.parametrize("rot", ["auto", "hadamard_gemm", "dense"])
-@pytest.mark.parametrize("n_o,ob,base,eff", [(32, 3, 2, 2.5), (32, 4, 3, 3.5),
-                                             (64, 3, 2, 2.75)])
+@pytest.mark.parametrize("n_o,ob,base,eff", [(32, 3, 2, 2.5), (32, 4, 3, 3.5), (64, 3, 2, 2.75)])
 def test_halo_outlier_roundtrip_and_accounting(rot, n_o, ob, base, eff):
     x, _ = _kv(h=4, s=64)  # head_dim 128
     b, h, s, d = x.shape
-    c = HALOCodec(bits=base, n_outlier=n_o, outlier_bits=ob, rotation_mode=rot,
-                  key_scale_mode="nc", value_scale_mode="ls")
+    c = HALOCodec(
+        bits=base,
+        n_outlier=n_o,
+        outlier_bits=ob,
+        rotation_mode=rot,
+        key_scale_mode="nc",
+        value_scale_mode="ls",
+    )
     enc = c.encode(x, x)
     k, v = c.decode(enc)
     assert k.shape == x.shape and v.shape == x.shape
     assert enc.key_q.get("outlier") and int(enc.key_q["mask"].sum()) == n_o
     vecs = b * h * s * 2
     payload = vecs * (n_o * ob + (d - n_o) * base)
-    assert enc.meta["stored_bits"] == payload + vecs * 2 * 16
-    assert abs(enc.meta["stored_bits"] / (vecs * d) - eff) < 1e-6
+    # K and V each need one d-bit channel-selection bitmap.
+    mask_bits = 2 * d
+    assert enc.meta["stored_bits"] == payload + vecs * 2 * 16 + mask_bits
+    assert abs(enc.meta["stored_bits"] / (vecs * d) - (eff + mask_bits / (vecs * d))) < 1e-6
 
 
 def test_halo_outlier_matches_turboquant_storage():
     # HALO and TurboQuant compute identical mixed-precision storage at the same
     # split, so the 2.5/3.5-bit comparison table is iso-memory.
     x, _ = _kv(h=4, s=64)
-    hh = HALOCodec(bits=2, n_outlier=32, outlier_bits=3, rotation_mode="hadamard",
-                   key_scale_mode="nc", value_scale_mode="ls")
+    hh = HALOCodec(
+        bits=2,
+        n_outlier=32,
+        outlier_bits=3,
+        rotation_mode="hadamard",
+        key_scale_mode="nc",
+        value_scale_mode="ls",
+    )
     tq = TurboQuantCodec(bits=2, n_outlier=32, outlier_bits=3, rotation_mode="hadamard")
     assert hh.encode(x, x).meta["stored_bits"] == tq.encode(x, x).meta["stored_bits"]
 
@@ -386,25 +683,27 @@ def test_halo_outlier_beats_uniform_on_anisotropic_kv():
     # reconstruction MSE vs uniform base bits at the SAME nominal base.
     x = torch.randn(2, 4, 64, 128)
     x[..., [3, 17, 40, 91]] *= 12.0
-    mix = HALOCodec(bits=2, n_outlier=32, outlier_bits=3, rotation_mode="dense",
-                    key_scale_mode="nc")
+    mix = HALOCodec(
+        bits=2, n_outlier=32, outlier_bits=3, rotation_mode="dense", key_scale_mode="nc"
+    )
     uni = HALOCodec(bits=2, rotation_mode="dense", key_scale_mode="nc")
     mse_mix = (mix.decode(mix.encode(x, x))[0] - x).pow(2).sum()
     mse_uni = (uni.decode(uni.encode(x, x))[0] - x).pow(2).sum()
     assert float(mse_mix) <= float(mse_uni)
 
 
-# --- HayateQuant: superset of TurboQuant + HALO, block-VQ, hybrid rotation
+# --- HayateQuant: scalar compatibility controls, block-VQ, hybrid rotation
 def test_hayatequant_block_size_1_matches_turboquant():
-    # block_size=1, RMS scale on both roles -> bit-identical to TurboQuant
+    # block_size=1, RMS scale on both roles -> the same TurboQuant scalar math
     # (HayateQuant's scalar codebook falls back to rotation.lloyd_max_*).
     # TurboQuantCodec itself only exposes "hadamard"/"dense" (no accelerated
     # "hadamard_gemm" alias); HayateQuant's hadamard_gemm-vs-hadamard
     # equivalence is already covered by the HALO tests above (same transform).
     x, _ = _kv(h=4, s=64)
     for rot in ("hadamard", "dense"):
-        hq = HayateQuantCodec(bits=4, block_size=1, rotation_mode=rot,
-                               key_scale_mode="rms", value_scale_mode="rms")
+        hq = HayateQuantCodec(
+            bits=4, block_size=1, rotation_mode=rot, key_scale_mode="rms", value_scale_mode="rms"
+        )
         tq = TurboQuantCodec(bits=4, rotation_mode=rot, dist="gaussian")
         mse_hq = float((hq.decode(hq.encode(x, x))[0] - x).pow(2).mean())
         mse_tq = float((tq.decode(tq.encode(x, x))[0] - x).pow(2).mean())
@@ -417,12 +716,17 @@ def test_hayatequant_block_size_1_matches_turboquant_beta():
     # beta codebook; HayateQuant normalises by the RMS (= L2/sqrt(m)) and a
     # sqrt(m)-rescaled beta codebook -- the codes and reconstruction are
     # identical (regression test for the missing rescale, which silently
-    # broke the superset claim for dist="beta").
+    # broke the scalar compatibility reduction for dist="beta").
     x, _ = _kv(h=4, s=64)
     for rot in ("hadamard", "dense"):
-        hq = HayateQuantCodec(bits=4, block_size=1, rotation_mode=rot,
-                              dist="beta", key_scale_mode="rms",
-                              value_scale_mode="rms")
+        hq = HayateQuantCodec(
+            bits=4,
+            block_size=1,
+            rotation_mode=rot,
+            dist="beta",
+            key_scale_mode="rms",
+            value_scale_mode="rms",
+        )
         tq = TurboQuantCodec(bits=4, rotation_mode=rot, dist="beta")
         mse_hq = float((hq.decode(hq.encode(x, x))[0] - x).pow(2).mean())
         mse_tq = float((tq.decode(tq.encode(x, x))[0] - x).pow(2).mean())
@@ -433,11 +737,13 @@ def test_hayatequant_payload_dist_roundtrip():
     # ``dist`` is stored in the payload (as in TurboQuant) so decode picks the
     # same codebook even if the codec instance is reconfigured in between.
     x, _ = _kv(h=2, s=32)
-    enc = HayateQuantCodec(bits=4, block_size=1, dist="beta",
-                           key_scale_mode="rms", value_scale_mode="rms")
+    enc = HayateQuantCodec(
+        bits=4, block_size=1, dist="beta", key_scale_mode="rms", value_scale_mode="rms"
+    )
     comp = enc.encode(x, x)
-    dec = HayateQuantCodec(bits=4, block_size=1, dist="gaussian",
-                           key_scale_mode="rms", value_scale_mode="rms")
+    dec = HayateQuantCodec(
+        bits=4, block_size=1, dist="gaussian", key_scale_mode="rms", value_scale_mode="rms"
+    )
     k1, _ = enc.decode(comp)
     k2, _ = dec.decode(comp)
     assert torch.allclose(k1, k2)
@@ -447,11 +753,9 @@ def test_hayatequant_payload_codebook_init_roundtrip():
     # ``codebook_init`` can change the block codebook. Store it in the payload
     # so decode is self-describing even if the codec object is reconfigured.
     x, _ = _kv(h=2, s=16, d=32)
-    enc = HayateQuantCodec(bits=2, block_size=2, codebook_init="fibquant",
-                           encoder="exact")
+    enc = HayateQuantCodec(bits=2, block_size=2, codebook_init="fibquant", encoder="exact")
     comp = enc.encode(x, x)
-    dec = HayateQuantCodec(bits=2, block_size=2, codebook_init="forgy",
-                           encoder="exact")
+    dec = HayateQuantCodec(bits=2, block_size=2, codebook_init="forgy", encoder="exact")
     k1, _ = enc.decode(comp)
     k2, _ = dec.decode(comp)
     assert torch.allclose(k1, k2)
@@ -471,14 +775,20 @@ def test_hayatequant_fibquant_init_shape_and_finite():
 
 
 def test_hayatequant_block_size_1_matches_halo_scale_modes():
-    # block_size=1 with HALO's role-asymmetric scale modes -> bit-identical to
-    # HALOCodec (HayateQuant absorbs _scale.fit_scale, the shared module both
-    # codecs now call).
+    # block_size=1 with HALO's role-asymmetric scale modes -> the same codec
+    # equations. HayateQuant materialises the advertised fp16 scale metadata,
+    # while the historical HALO fake payload still keeps its fit in fp32.
     x, _ = _kv(h=4, s=64)
-    hq = HayateQuantCodec(bits=4, block_size=1, rotation_mode="hadamard_gemm",
-                          key_scale_mode="nc", value_scale_mode="ls_iter")
-    ha = HALOCodec(bits=4, rotation_mode="hadamard_gemm",
-                   key_scale_mode="nc", value_scale_mode="ls_iter")
+    hq = HayateQuantCodec(
+        bits=4,
+        block_size=1,
+        rotation_mode="hadamard_gemm",
+        key_scale_mode="nc",
+        value_scale_mode="ls_iter",
+    )
+    ha = HALOCodec(
+        bits=4, rotation_mode="hadamard_gemm", key_scale_mode="nc", value_scale_mode="ls_iter"
+    )
     mse_hq = float((hq.decode(hq.encode(x, x))[0] - x).pow(2).mean())
     mse_ha = float((ha.decode(ha.encode(x, x))[0] - x).pow(2).mean())
     assert abs(mse_hq - mse_ha) < 1e-6
@@ -509,30 +819,252 @@ def test_hayatequant_storage_neutral_across_block_size():
     assert s1 == s4
 
 
-def test_hayatequant_frontier_recipe_is_canonical():
-    assert hayate_frontier_bits(2) == (3, 1)
-    assert hayate_frontier_bits(3) == (4, 2)
-    assert hayate_frontier_bits(4) == (5, 3)
+def test_hayatequant_frontier_compatibility_alias_resolves_canonical_hq():
+    assert hayate_frontier_bits(2) == hayate_hq_role_rates(2) == (2.5, 1.5)
+    assert hayate_frontier_bits(3) == hayate_hq_role_rates(3) == (3.5, 2.5)
+    assert hayate_frontier_bits(4) == hayate_hq_role_rates(4) == (4.5, 3.5)
+    assert hayate_hq_code_bits(2) == (5, 3)
+    assert hayate_hq_code_bits(3) == (7, 5)
+    assert hayate_hq_code_bits(4) == (9, 7)
     assert hayate_frontier_bits(1) is None
 
     kwargs = hayate_frontier_kwargs(2)
     assert kwargs == {
-        "bits": 3,
-        "value_bits": 1,
+        "bits": 2,
+        "value_bits": 2,
+        "avg_bits": 2.0,
+        "block_size": 2,
+        "key_code_bits_per_block": 5,
+        "value_code_bits_per_block": 3,
+        "max_codebook_bits": 9,
+        "dist": "gaussian",
+        "required_codebook_bundle": "fixed_hq_b2_v1",
+        "rotation_mode": "auto",
+        "encoder": "exact",
         "key_scale_mode": HQ_FRONTIER_KEY_SCALE_MODE,
+        "value_scale_mode": HQ_FRONTIER_VALUE_SCALE_MODE,
+    }
+    assert dict(HQ_FRONTIER_SCALE_KWARGS) == {
+        "key_scale_mode": "nc",
+        "value_scale_mode": "ls_iter",
     }
     codec = build_hayate_frontier(2)
-    assert codec.bits == 3
-    assert codec.value_bits == 1
-    assert codec.key_scale_mode == "ub"
+    assert codec.bits == 2
+    assert codec.value_bits == 2
+    assert codec.key_code_bits_per_block == 5
+    assert codec.value_code_bits_per_block == 3
+    assert codec.encoder == "exact"
+    assert codec.key_scale_mode == "nc"
+    assert codec.value_scale_mode == "ls_iter"
 
     variant = hayate_frontier_variant(3, label="HQ")
     assert variant == {
         "label": "HQ",
-        "bits": 4,
-        "value_bits": 2,
-        "key_scale_mode": "ub",
+        "bits": 3,
+        "value_bits": 3,
+        "avg_bits": 3.0,
+        "block_size": 2,
+        "key_code_bits_per_block": 7,
+        "value_code_bits_per_block": 5,
+        "max_codebook_bits": 9,
+        "dist": "gaussian",
+        "required_codebook_bundle": "fixed_hq_b2_v1",
+        "rotation_mode": "auto",
+        "encoder": "exact",
+        "key_scale_mode": "nc",
+        "value_scale_mode": "ls_iter",
     }
+
+
+@pytest.mark.parametrize("rate", [2, 3, 4])
+def test_hayatequant_frontier_and_turboquant_have_exact_same_logical_rate(rate):
+    """K(r+.5)/V(r-.5) and TQ K(r)/V(r) have identical data-plane bits."""
+    x, _ = _kv(h=1, s=3, d=128)
+    tq = TurboQuantCodec(bits=rate, value_bits=rate)
+    hq = build_hayate_frontier(rate, encoder="exact")
+    tq_payload = tq.encode(x, x)
+    hq_payload = hq.encode(x, x)
+    vecs = x.shape[0] * x.shape[1] * x.shape[2]
+    expected = vecs * (2 * x.shape[-1] * rate + 2 * 16)
+    assert tq_payload.numel_bits() == hq_payload.numel_bits() == expected
+    for payload in (tq_payload, hq_payload):
+        assert payload.key_q["main"]["scale"].dtype == torch.float16
+        assert payload.value_q["main"]["scale"].dtype == torch.float16
+
+
+def test_hayate_proxy_names_and_legacy_result_aliases():
+    assert canonical_hayate_method_name("FibQuant") == HQ_FIB_INIT_PROXY_NAME
+    assert canonical_hayate_method_name("BlockQuant") == HQ_BLOCK_SCALE_PROXY_NAME
+    assert hayate_result_method_candidates(HQ_FIB_INIT_PROXY_NAME) == (
+        HQ_FIB_INIT_PROXY_NAME,
+        "FibQuant",
+        "HayateQuant-fibinit",
+    )
+    assert hayate_result_method_candidates(HQ_BLOCK_SCALE_PROXY_NAME) == (
+        HQ_BLOCK_SCALE_PROXY_NAME,
+        "BlockQuant",
+        "HayateQuant-BQscale",
+    )
+
+
+def test_codec_benchmark_emits_only_honest_proxy_names():
+    import importlib
+    import os
+    import sys
+
+    bench_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "benchmark", "kvcomp-codec")
+    )
+    if bench_dir not in sys.path:
+        sys.path.insert(0, bench_dir)
+    make_registry = importlib.import_module("codec_benchmark")._codecs
+    registry = make_registry(3)
+
+    for candidate in (registry, make_registry(3, ablation=True)):
+        assert HQ_FIB_INIT_PROXY_NAME in candidate
+        assert HQ_BLOCK_SCALE_PROXY_NAME in candidate
+        assert "FibQuant" not in candidate
+        assert "BlockQuant" not in candidate
+        assert "HayateQuant-fibinit" not in candidate
+        assert "HayateQuant-BQscale" not in candidate
+    assert registry[HQ_FIB_INIT_PROXY_NAME].codebook_init == "fibquant"
+    assert registry[HQ_BLOCK_SCALE_PROXY_NAME].key_scale_mode == "ub"
+    assert registry[HQ_BLOCK_SCALE_PROXY_NAME].value_scale_mode == "bsm"
+    hq = registry["HQ"]
+    assert hq.block_size == 2
+    assert hq.key_code_bits_per_block == 7
+    assert hq.value_code_bits_per_block == 5
+    assert hq.key_scale_mode == "nc"
+    assert hq.value_scale_mode == "ls_iter"
+    assert hq.teacher_forced_temporal_dependency() is None
+    assert not any(name.startswith("HQ-dev-") for name in registry)
+    assert registry["TurboQuant-paper"].teacher_forced_temporal_dependency() is None
+
+
+@pytest.mark.parametrize("bits", [2, 3, 4])
+def test_codec_benchmark_matched_controls_change_only_block_size(bits):
+    """Mechanism controls must not mix block-VQ with another HQ lever."""
+    import importlib
+    import os
+    import sys
+
+    from onecomp.kvcomp.codec.hayate.codec import resolve_block_size
+
+    bench_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "benchmark", "kvcomp-codec")
+    )
+    if bench_dir not in sys.path:
+        sys.path.insert(0, bench_dir)
+    registry = importlib.import_module("codec_benchmark")._codecs(bits)
+    scalar = registry["HayateQuant-scalar-matched"]
+    block = registry["HayateQuant-blockvq-matched"]
+
+    scalar_cfg = scalar.get_kv_config()
+    block_cfg = block.get_kv_config()
+    differences = {
+        key: (scalar_cfg.get(key), block_cfg.get(key))
+        for key in scalar_cfg.keys() | block_cfg.keys()
+        if scalar_cfg.get(key) != block_cfg.get(key)
+    }
+    assert differences == {"block_size": (1, None)}
+    assert scalar.value_bits == block.value_bits == bits
+    assert scalar.dist == block.dist == "beta"
+    assert scalar.rotation_mode == block.rotation_mode == "dense"
+    assert not scalar.ls_scale and not block.ls_scale
+    assert scalar.encoder == block.encoder == "exact"
+    assert resolve_block_size(bits, block.block_size, block.max_codebook_bits, 128) > 1
+
+    # Both methods retain TQ's symmetric rate and signed-fp16 scale charge.
+    x = torch.empty(1, 2, 8, 128)
+    expected = 2 * (x.numel() * bits + 1 * 2 * 8 * 16)
+    scalar_bits = scalar._stored_bits(x, bits, "k") + scalar._stored_bits(x, bits, "v")
+    block_bits = block._stored_bits(x, bits, "k") + block._stored_bits(x, bits, "v")
+    assert scalar_bits == block_bits == expected
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("bits", [2, 3, 4])
+def test_hayate_scalar_matched_turboquant_beta_contract(dtype, bits):
+    """The scalar control matches TQ codes/rate and reconstruction quality.
+
+    TurboQuant stores its Beta scale as L2 while HayateQuant uses the
+    equivalent RMS + sqrt(d)-rescaled-codebook parameterization.  Hence codes
+    and real-arithmetic reconstruction agree exactly, while independently
+    rounded fp16 metadata need not produce bit-identical low-precision output.
+    """
+    torch.manual_seed(29)
+    key = torch.randn(1, 2, 8, 128).to(dtype)
+    value = (1.2 * torch.randn(1, 2, 8, 128)).to(dtype)
+    tq = TurboQuantCodec(bits=bits, value_bits=bits, dist="beta", rotation_mode="dense")
+    scalar = HayateQuantCodec(
+        bits=bits,
+        value_bits=bits,
+        block_size=1,
+        dist="beta",
+        rotation_mode="dense",
+        ls_scale=False,
+        encoder="exact",
+    )
+    tq_payload = tq.encode(key, value)
+    scalar_payload = scalar.encode(key, value)
+    assert tq_payload.numel_bits() == scalar_payload.numel_bits()
+    for tq_role, scalar_role in (
+        (tq_payload.key_q, scalar_payload.key_q),
+        (tq_payload.value_q, scalar_payload.value_q),
+    ):
+        assert torch.equal(tq_role["main"]["codes"], scalar_role["main"]["codes"])
+        assert tq_role["main"]["scale"].dtype == torch.float16
+        assert scalar_role["main"]["scale"].dtype == torch.float16
+
+    tq_decoded = tq.decode(tq_payload)
+    scalar_decoded = scalar.decode(scalar_payload)
+    for source, tq_hat, scalar_hat in zip((key, value), tq_decoded, scalar_decoded):
+        tq_mse = (tq_hat.float() - source.float()).pow(2).mean()
+        scalar_mse = (scalar_hat.float() - source.float()).pow(2).mean()
+        relative_delta = (tq_mse - scalar_mse).abs() / tq_mse.clamp_min(1e-12)
+        assert float(relative_delta) < 2e-3
+        relative_reconstruction_l2 = (tq_hat.float() - scalar_hat.float()).norm(
+            dim=-1
+        ) / tq_hat.float().norm(dim=-1).clamp_min(1e-12)
+        assert float(relative_reconstruction_l2.max()) <= torch.finfo(dtype).eps
+
+
+def test_hayate_summarizers_read_legacy_proxy_keys_without_emitting_them():
+    import importlib
+    import os
+    import sys
+
+    bench_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "benchmark", "kvcomp-codec")
+    )
+    if bench_dir not in sys.path:
+        sys.path.insert(0, bench_dir)
+    cross = importlib.import_module("hayatequant_cross_model")
+    zero = importlib.import_module("hayatequant_zeroshot")
+    reproduce = importlib.import_module("reproduce_hayatequant_paper")
+
+    legacy = {
+        "results": {
+            "3": {
+                "FibQuant": {"ppl": 7.5, "avg_primary_score": 0.4},
+                "BlockQuant": {"ppl": 8.0, "avg_primary_score": 0.3},
+            }
+        }
+    }
+    assert cross._entry(legacy, "3", HQ_FIB_INIT_PROXY_NAME)["ppl"] == 7.5
+    assert zero._method(legacy, "3", HQ_BLOCK_SCALE_PROXY_NAME)["avg_primary_score"] == 0.3
+    assert reproduce._ppl(legacy, 3, HQ_FIB_INIT_PROXY_NAME) == 7.5
+    assert reproduce._acc(legacy, 3, HQ_BLOCK_SCALE_PROXY_NAME) == 30.0
+
+    canonical = {
+        "results": {
+            "3": {
+                HQ_FIB_INIT_PROXY_NAME: {"ppl": 6.0},
+                "FibQuant": {"ppl": 99.0},
+            }
+        }
+    }
+    assert cross._entry(canonical, "3", HQ_FIB_INIT_PROXY_NAME)["ppl"] == 6.0
 
 
 def test_hayatequant_fractional2_recipe_is_opt_in():
@@ -543,7 +1075,11 @@ def test_hayatequant_fractional2_recipe_is_opt_in():
         "avg_bits": 2.0,
         "block_size": 4,
         "key_bit_fraction": 0.625,
-        "key_scale_mode": "ub",
+        "max_codebook_bits": 10,
+        "dist": "gaussian",
+        "rotation_mode": "auto",
+        "key_scale_mode": "nc",
+        "value_scale_mode": "ls_iter",
     }
     codec = build_hayate_fractional2()
     assert codec.bits == 2
@@ -567,16 +1103,83 @@ def test_hayatequant_fractional_rate_ui_resolves_code_bits():
     assert codec.max_codebook_bits == 9
 
 
+def test_hayatequant_fractional_rate_ui_enforces_declared_pair_budget():
+    # A single explicit role is completed from the declared total instead of
+    # silently leaving the other role at its nominal integer rate.
+    codec = HayateQuantCodec(
+        avg_bits=2,
+        block_size=4,
+        max_codebook_bits=10,
+        key_code_bits_per_block=10,
+    )
+    assert codec.key_code_bits_per_block == 10
+    assert codec.value_code_bits_per_block == 6
+
+    with pytest.raises(ValueError, match="must sum to the declared pair budget 16"):
+        HayateQuantCodec(
+            avg_bits=2,
+            block_size=4,
+            max_codebook_bits=10,
+            key_code_bits_per_block=9,
+            value_code_bits_per_block=6,
+        )
+
+
+def test_hayatequant_explicit_code_bits_honour_requested_block_dimension():
+    # Explicit code bits describe the whole block.  Nominal bits are metadata
+    # for recipe/rotation selection and must not downgrade b=4 to b=2, which
+    # would double the realised code rate.  K=256,b=4 uses the shipped artifact
+    # and keeps this end-to-end regression inexpensive.
+    torch.manual_seed(101)
+    x = torch.randn(1, 1, 2, 32)
+    codec = HayateQuantCodec(
+        bits=4,
+        value_bits=4,
+        block_size=4,
+        max_codebook_bits=9,
+        key_code_bits_per_block=8,
+        value_code_bits_per_block=8,
+        encoder="exact",
+    )
+    compressed = codec.encode(x, x)
+    assert compressed.key_q["main"]["block_size"] == 4
+    assert compressed.value_q["main"]["block_size"] == 4
+    vecs = x.shape[0] * x.shape[1] * x.shape[2]
+    expected = 2 * (vecs * (x.shape[-1] // 4) * 8 + vecs * 16)
+    assert compressed.numel_bits() == expected
+
+    with pytest.raises(ValueError, match="silent block-size fallback"):
+        codec.encode(torch.randn(1, 1, 2, 30), torch.randn(1, 1, 2, 30))
+
+
+def test_hayatequant_adaptive_explicit_budget_uses_one_matched_block_size():
+    # The selected K/V code bits, rather than asymmetric nominal bit labels,
+    # determine feasibility for the matched adaptive block.
+    codec = HayateQuantCodec(
+        bits=2,
+        value_bits=4,
+        block_size=4,
+        max_codebook_bits=10,
+        code_bits_per_pair_block=16,
+        adaptive_bit_split="online_stats",
+    )
+    assert codec._resolve_block_size_for("k", 2, 128, code_bits_override=10) == 4
+    assert codec._resolve_block_size_for("v", 4, 128, code_bits_override=6) == 4
+    assert all(k + v == 16 for k, v in codec._adaptive_code_bit_pairs(4))
+
+
 def test_hayatequant_adaptive2_recipe_is_opt_in():
     kwargs = hayate_adaptive2_kwargs()
     assert kwargs["avg_bits"] == 2.0
-    assert kwargs["block_size"] == 4
+    assert kwargs["block_size"] == 2
     assert kwargs["adaptive_bit_split"] == "online_stats"
+    assert kwargs["encoder"] == "exact"
     assert kwargs.get("adaptive_stats_min_tokens", 16) == 16
     codec = build_hayate_adaptive2()
     assert codec.key_code_bits_per_block is None
     assert codec.value_code_bits_per_block is None
-    assert codec.max_codebook_bits == 10
+    assert codec.key_bit_fraction == 0.5
+    assert codec.max_codebook_bits == 9
 
 
 def test_hayatequant_invalid_block_size_raises():
@@ -618,15 +1221,51 @@ def test_hayatequant_calibrated_fast_roundtrip_matches_encode_decode():
         codebook={"k": cb, "v": cb.clone()},
         cb_key={"k": (2, 2), "v": (2, 2)},
     )
-    c = HayateQuantCodec(bits=2, value_bits=2, block_size=2, encoder="lut",
-                         calibration=cal, key_scale_mode="ub",
-                         value_scale_mode="ls_iter")
+    c = HayateQuantCodec(
+        bits=2,
+        value_bits=2,
+        block_size=2,
+        encoder="lut",
+        calibration=cal,
+        key_scale_mode="ub",
+        value_scale_mode="ls_iter",
+    )
     comp = c.encode(x, x)
     k_ref, v_ref = c.decode(comp)
     k_rt, v_rt, stored = c.fake_quant_roundtrip(x, x)
     assert stored == comp.meta["stored_bits"]
     assert torch.allclose(k_rt, k_ref, atol=1e-6)
     assert torch.allclose(v_rt, v_ref, atol=1e-6)
+
+
+def test_hayatequant_calibrated_unsorted_scalar_roundtrip_matches_public_payload():
+    from onecomp.kvcomp.codec.hayate.calibration import HayateQuantCalibration
+
+    # Learned scalar codebooks have no row-order contract.  The public encoder
+    # sorts defensively for assignment; the fused round trip must reconstruct
+    # the same centroids rather than applying searchsorted to unsorted bounds.
+    cb = torch.tensor([[1.5], [-1.5], [0.25], [-0.25]], dtype=torch.float32)
+    cal = HayateQuantCalibration(
+        head_dim=8,
+        rot={"k": torch.eye(8), "v": torch.eye(8)},
+        codebook={"k": cb, "v": cb.clone()},
+        cb_key={"k": (2, 1), "v": (2, 1)},
+    )
+    codec = HayateQuantCodec(
+        bits=2,
+        block_size=1,
+        calibration=cal,
+        key_scale_mode="rms",
+        value_scale_mode="rms",
+    )
+    torch.manual_seed(2)
+    x = torch.randn(1, 2, 5, 8)
+    compressed = codec.encode(x, x)
+    public = codec.decode(compressed)
+    key_rt, value_rt, stored = codec.fake_quant_roundtrip(x, x)
+    assert stored == compressed.numel_bits()
+    assert torch.equal(key_rt, public[0])
+    assert torch.equal(value_rt, public[1])
 
 
 def test_hayatequant_block_size_falls_back_when_codebook_too_big():
@@ -643,8 +1282,9 @@ def test_hayatequant_outlier_mixed_precision_matches_halo_accounting():
     # HayateQuant inherits HALO/TurboQuant's outlier mixed-precision accounting
     # verbatim (same n_outlier/outlier_bits split logic) at block_size=1.
     x, _ = _kv(h=4, s=64)
-    hq = HayateQuantCodec(bits=2, block_size=1, n_outlier=32, outlier_bits=3,
-                          rotation_mode="hadamard")
+    hq = HayateQuantCodec(
+        bits=2, block_size=1, n_outlier=32, outlier_bits=3, rotation_mode="hadamard"
+    )
     ha = HALOCodec(bits=2, n_outlier=32, outlier_bits=3, rotation_mode="hadamard")
     assert hq.encode(x, x).meta["stored_bits"] == ha.encode(x, x).meta["stored_bits"]
 
@@ -653,12 +1293,12 @@ def test_hayatequant_role_specific_outlier_accounting_blockquant_recipe():
     # BlockQuant's KV-cache recipe protects key outlier channels while keeping
     # values at a lower uniform bit-width.
     x, _ = _kv(h=2, s=16, d=128)
-    c = HayateQuantCodec(bits=3, value_bits=2,
-                         key_n_outlier=32, key_outlier_bits=4,
-                         value_n_outlier=0)
+    c = HayateQuantCodec(
+        bits=3, value_bits=2, key_n_outlier=32, key_outlier_bits=4, value_n_outlier=0
+    )
     enc = c.encode(x, x)
     vecs = x.shape[0] * x.shape[1] * x.shape[2]
-    key_bits = vecs * (32 * 4 + 96 * 3) + vecs * 2 * 16
+    key_bits = vecs * (32 * 4 + 96 * 3) + vecs * 2 * 16 + x.shape[-1]
     value_bits = x.numel() * 2 + vecs * 16
     assert enc.meta["stored_bits"] == key_bits + value_bits
     assert enc.key_q["mode"] == "outlier"
@@ -702,19 +1342,270 @@ def test_hayatequant_adaptive_bit_split_roundtrip_and_accounting():
     assert kd.shape == x.shape
     assert vd.shape == x.shape
     chosen = enc.meta["adaptive_bit_split"]
-    assert chosen["policy"] == "online_stats"
+    assert chosen["policy"] == "cache_causal_datafree_rd"
     assert chosen["used_stats"]
-    assert chosen["key_code_bits_per_block"] + chosen["value_code_bits_per_block"] == 16
+    assert chosen["key_code_bits_per_block"] + chosen["value_code_bits_per_block"] == 8
     assert enc.key_q["main"]["code_bits"] == chosen["key_code_bits_per_block"]
     assert enc.value_q["main"]["code_bits"] == chosen["value_code_bits_per_block"]
-    assert chosen["key_power"] > 0
-    assert chosen["value_power"] > 0
+    assert chosen["cumulative_key_power"] > 0
+    assert chosen["cumulative_value_power"] > 0
     assert chosen["predicted_key_error"] > 0
     assert chosen["predicted_value_error"] > 0
+    assert chosen["selection_scope"] == "per_encode_kv_pair"
+    assert chosen["state_scope"] == "update_local"
+    assert chosen["objective"] == ADAPTIVE_HQ_OBJECTIVE
+    assert chosen["policy_version"] == ADAPTIVE_HQ_POLICY_VERSION
+    assert chosen["distortion_table_version"] == ADAPTIVE_HQ_DISTORTION_TABLE_VERSION
+    assert len(chosen["datafree_distortion_table"]) == len(chosen["candidates"])
+    assert all(
+        row["value_scale_fraction_lsb_clear_bits"] == chosen["selector_bits"]
+        for row in chosen["datafree_distortion_table"]
+    )
+    assert all(
+        "value_relative_distortion_base" in row
+        and "value_selector_carrier_relative_distortion_delta_per_vector" in row
+        for row in chosen["datafree_distortion_table"]
+    )
+    assert chosen["carrier_amortization_vector_count"] == x.shape[0] * x.shape[1] * x.shape[2]
+    assert all(
+        row["carrier_amortization_vector_count"] == chosen["carrier_amortization_vector_count"]
+        for row in chosen["candidate_objectives"]
+    )
+    assert chosen["selected_pair_index"] == chosen["candidates"].index(
+        (
+            chosen["key_code_bits_per_block"],
+            chosen["value_code_bits_per_block"],
+        )
+    )
+    assert chosen["selector_bits"] == (len(chosen["candidates"]) - 1).bit_length()
+    assert chosen["selector_information_bits"] == chosen["selector_bits"]
+    assert chosen["selector_incremental_stored_bits"] == 0
+    assert chosen["selector_carrier"] == "first_value_fp16_scale_low_fraction_bits"
+    carried_word = (
+        enc.value_q["main"]["scale"].contiguous().view(torch.int16).reshape(-1)[0].item() & 0xFFFF
+    )
+    assert carried_word & ((1 << chosen["selector_bits"]) - 1) == chosen["selected_pair_index"]
     vecs = x.shape[0] * x.shape[1] * x.shape[2]
-    blocks = x.shape[-1] // 4
-    expected = vecs * blocks * 16 + vecs * 2 * 16
+    blocks = x.shape[-1] // 2
+    expected = vecs * blocks * 8 + vecs * 2 * 16
     assert enc.meta["stored_bits"] == expected
+    assert build_hayate_hq(2, encoder="exact").encode(x, x).meta["stored_bits"] == expected
+    assert TurboQuantCodec(bits=2).encode(x, x).meta["stored_bits"] == expected
+
+    resolved = c.get_resolved_kv_config(x.shape[-1])
+    adaptive = resolved["adaptive_allocation"]
+    assert adaptive["selection_scope"] == "per_encode_kv_pair"
+    assert adaptive["policy"] == "cache_causal_datafree_rd"
+    assert adaptive["selected_pair"] == "payload_dependent"
+    assert adaptive["selector_bits_per_encode"] == chosen["selector_bits"]
+    assert adaptive["selector_incremental_stored_bits_per_encode"] == 0
+    assert adaptive["candidate_pairs"] == [list(pair) for pair in chosen["candidates"]]
+    assert adaptive["objective"] == ADAPTIVE_HQ_OBJECTIVE
+    assert adaptive["selector_carrier_distortion_amortization"] == (
+        "signed_qmc_all_scales_delta_divided_by_current_update_vectors"
+    )
+
+
+def test_adaptive_hq_selector_carrier_delta_is_amortized_per_update_vector():
+    constants = {
+        "value_relative_distortion_base": 0.25,
+        "value_selector_carrier_relative_distortion_delta_per_vector": 0.125,
+    }
+    assert _adaptive_value_distortion_for_update(constants, 1) == pytest.approx(0.375)
+    assert _adaptive_value_distortion_for_update(constants, 2) == pytest.approx(0.3125)
+    assert _adaptive_value_distortion_for_update(constants, 8) == pytest.approx(0.265625)
+    assert _adaptive_value_distortion_for_update(constants, 128) == pytest.approx(0.2509765625)
+    signed = dict(constants)
+    signed["value_selector_carrier_relative_distortion_delta_per_vector"] = -0.125
+    assert _adaptive_value_distortion_for_update(signed, 8) == pytest.approx(0.234375)
+    for invalid in (0, -1, True, 1.5):
+        with pytest.raises(ValueError, match="vector count"):
+            _adaptive_value_distortion_for_update(constants, invalid)
+    for malformed in (
+        {},
+        {**constants, "value_relative_distortion_base": 0.0},
+        {**constants, "value_relative_distortion_base": float("nan")},
+        {
+            **constants,
+            "value_selector_carrier_relative_distortion_delta_per_vector": float("inf"),
+        },
+        {
+            "value_relative_distortion_base": 0.1,
+            "value_selector_carrier_relative_distortion_delta_per_vector": -0.2,
+        },
+    ):
+        with pytest.raises(ValueError):
+            _adaptive_value_distortion_for_update(malformed, 1)
+
+
+@pytest.mark.parametrize(
+    ("code_bits", "expected_delta"),
+    [
+        (3, 1.774123516e-7),
+        (4, 1.976560441e-7),
+        (5, 3.034548573e-7),
+        (6, 2.301313684e-7),
+        (7, 3.548635458e-7),
+        (8, 3.360389705e-7),
+    ],
+)
+def test_adaptive_hq_qmc_all_scale_carrier_delta_is_frozen(code_bits, expected_delta):
+    args = (code_bits, 2, "gaussian", 128, "auto", "ls_iter")
+    base = _adaptive_datafree_relative_distortion(*args)
+    all_scales_cleared = _adaptive_datafree_relative_distortion(*args, 1)
+    assert all_scales_cleared - base == pytest.approx(expected_delta, rel=2e-8, abs=2e-12)
+
+
+def test_adaptive_hq_update_vector_count_can_change_the_rd_choice(monkeypatch):
+    def encode_with_vectors(vectors):
+        codec = build_hayate_adaptive2(
+            encoder="exact", adaptive_bit_margin=1, adaptive_stats_min_tokens=1
+        )
+        pairs = codec._adaptive_code_bit_pairs(2)  # pylint: disable=protected-access
+        table = [
+            {
+                "pair": list(pairs[0]),
+                "value_scale_fraction_lsb_clear_bits": 1,
+                "key_relative_distortion": 0.1,
+                "value_relative_distortion_base": 0.1,
+                "value_selector_carrier_relative_distortion_delta_per_vector": 1.0,
+            },
+            {
+                "pair": list(pairs[1]),
+                "value_scale_fraction_lsb_clear_bits": 1,
+                "key_relative_distortion": 0.1,
+                "value_relative_distortion_base": 0.2,
+                "value_selector_carrier_relative_distortion_delta_per_vector": 0.0,
+            },
+        ]
+        monkeypatch.setattr(codec, "_adaptive_distortion_table", lambda *_: table)
+        key = torch.ones(1, 1, vectors, 8)
+        encoded = codec.encode(key, key)
+        return encoded.meta["adaptive_bit_split"]
+
+    one = encode_with_vectors(1)
+    many = encode_with_vectors(128)
+    assert one["carrier_amortization_vector_count"] == 1
+    assert many["carrier_amortization_vector_count"] == 128
+    assert one["selected_pair_index"] == 1
+    assert many["selected_pair_index"] == 0
+    for chosen in (one, many):
+        for row, constants in zip(
+            chosen["candidate_objectives"], chosen["datafree_distortion_table"]
+        ):
+            expected = _adaptive_value_distortion_for_update(
+                constants, chosen["carrier_amortization_vector_count"]
+            )
+            assert row["value_relative_distortion_effective"] == pytest.approx(expected)
+
+
+def test_adaptive_hq_real_qmc_boundary_uses_actual_update_vector_count():
+    selections = {}
+    for vectors in (1, 128):
+        codec = build_hayate_adaptive_rate(3, encoder="exact", adaptive_stats_min_tokens=1)
+        key = torch.full((1, 1, vectors, 128), math.sqrt(0.4812705))
+        value = torch.ones_like(key)
+        encoded = codec.encode(key, value)
+        assert encoded.value_q["main"]["scale"].numel() == vectors
+        split = encoded.meta["adaptive_bit_split"]
+        assert split["carrier_amortization_vector_count"] == vectors
+        selections[vectors] = (
+            split["key_code_bits_per_block"],
+            split["value_code_bits_per_block"],
+        )
+    assert selections == {1: (6, 6), 128: (7, 5)}
+
+
+def test_hayatequant_adaptive_selector_carrier_is_required_for_decode():
+    x, _ = _kv(h=1, s=16, d=32)
+    c = build_hayate_adaptive2(encoder="exact", adaptive_bit_margin=1)
+    enc = c.encode(x * 4.0, x * 0.25)
+    chosen = enc.meta["adaptive_bit_split"]
+    assert chosen["selector_bits"] > 0
+
+    # Flip the carried split without rewriting either code stream.  Decode
+    # must reject the resulting mismatch instead of trusting free Python tags.
+    words = enc.value_q["main"]["scale"].view(torch.int16).reshape(-1)
+    words[0] ^= 1
+    with pytest.raises(ValueError, match="carrier"):
+        c.decode(enc)
+
+
+def test_hayatequant_adaptive_rotation_tracks_selected_effective_rate():
+    """Auto rotation follows each selected block rate, not nominal avg bits."""
+    key = torch.full((1, 1, 16, 32), 10.0)
+    value = torch.full_like(key, 1e-3)
+    c = build_hayate_adaptive2(
+        encoder="exact",
+        adaptive_bit_margin=4,
+        adaptive_stats_min_tokens=1,
+        key_error_weight=1.0,
+        value_error_weight=1.0,
+    )
+
+    enc = c.encode(key, value)
+    selected = enc.meta["adaptive_bit_split"]
+    key_bits = selected["key_code_bits_per_block"]
+    value_bits = selected["value_code_bits_per_block"]
+    block = enc.key_q["main"]["block_size"]
+
+    assert key_bits > 2 * block
+    assert value_bits <= 2 * block
+    assert selected["key_rotation_mode"] == "hybrid"
+    assert selected["value_rotation_mode"] == "dense"
+    assert enc.key_q["main"]["rot"][0] == "y"
+    assert enc.value_q["main"]["rot"][0] == "d"
+
+
+def test_hayatequant_adaptive_singleton_split_needs_no_selector_bits():
+    x, _ = _kv(h=1, s=16, d=32)
+    c = build_hayate_adaptive2(encoder="exact", adaptive_bit_margin=0)
+    enc = c.encode(x, x)
+    chosen = enc.meta["adaptive_bit_split"]
+    assert len(chosen["candidates"]) == 1
+    assert chosen["selected_pair_index"] == 0
+    assert chosen["selector_bits"] == 0
+    vecs = x.shape[0] * x.shape[1] * x.shape[2]
+    blocks = x.shape[-1] // 2
+    assert enc.meta["stored_bits"] == vecs * blocks * 8 + vecs * 2 * 16
+
+
+def test_resolved_outlier_subsets_match_payload_rotations_and_seeds():
+    x, _ = _kv(h=1, s=3, d=35)
+
+    tq = TurboQuantCodec(
+        bits=2,
+        outlier_bits=3,
+        n_outlier=3,
+        rotation_mode="hadamard",
+        seed=11,
+    )
+    tq_payload = tq.encode(x, x).key_q
+    tq_subsets = tq.get_resolved_kv_config(35)["roles"]["key"]["subsets"]
+    assert tq_payload["in"]["rot"] == ("h", 13)
+    assert tq_payload["out"]["rot"] == ("d", 12)
+    assert tq_subsets["inlier"]["rotation_mode"] == "hadamard"
+    assert tq_subsets["inlier"]["rotation_seed"] == 13
+    assert tq_subsets["outlier"]["rotation_mode"] == "dense"
+    assert tq_subsets["outlier"]["rotation_seed"] == 12
+
+    hq = HayateQuantCodec(
+        bits=2,
+        outlier_bits=3,
+        n_outlier=3,
+        block_size=4,
+        rotation_mode="hybrid",
+        encoder="exact",
+        seed=11,
+    )
+    hq_payload = hq.encode(x, x).key_q
+    hq_subsets = hq.get_resolved_kv_config(35)["roles"]["key"]["subsets"]
+    assert hq_payload["in"]["rot"] == ("y", 4, 11)
+    assert hq_payload["out"]["rot"] == ("d", None, 11)
+    assert hq_subsets["inlier"]["block_size"] == 4
+    assert hq_subsets["inlier"]["rotation_mode"] == "hybrid"
+    assert hq_subsets["outlier"]["block_size"] == 1
+    assert hq_subsets["outlier"]["rotation_mode"] == "dense"
 
 
 def test_hybrid_rotation_matrix_matches_two_stage():
@@ -724,9 +1615,12 @@ def test_hybrid_rotation_matrix_matches_two_stage():
     # (exact inverse via the transpose) -- this is what makes the hybrid
     # rotation cost the same as a plain dense rotation at runtime.
     from onecomp.kvcomp.codec.rotation import (
-        random_sign, block_dense_matrices, hybrid_rotate,
+        random_sign,
+        block_dense_matrices,
+        hybrid_rotate,
         hybrid_rotation_matrix,
     )
+
     torch.manual_seed(0)
     for d, bsz in ((128, 2), (128, 4), (64, 2)):
         x = torch.randn(2, 3, 5, d)
@@ -738,6 +1632,62 @@ def test_hybrid_rotation_matrix_matches_two_stage():
         assert torch.allclose((x @ w) @ w.t(), x, atol=1e-4)
 
 
+def test_hayatequant_lut_tie_break_matches_exact_smallest_global_index():
+    from onecomp.kvcomp.codec.hayate.vq import (
+        build_vq_lut,
+        quantize_exact_pre,
+        quantize_to_vq_codebook,
+        quantize_via_lut,
+    )
+
+    # The query is exactly equidistant from the two symmetric codewords.  A
+    # score-ranked top-k may return them in either order, but the materialized
+    # LUT must canonicalize that row so both exact implementations and the LUT
+    # implementation select the smallest global codebook index.
+    cb = torch.tensor([[-1.0, 0.0], [1.0, 0.0]])
+    z = torch.tensor([[0.0, 0.0]])
+    lut = build_vq_lut(cb, bins=1, top_t=2)
+
+    assert torch.equal(lut, torch.tensor([[0, 1]], dtype=lut.dtype))
+    assert quantize_to_vq_codebook(z, cb).item() == 0
+    assert quantize_exact_pre(z, cb, cb.pow(2).sum(dim=1)).item() == 0
+    assert quantize_via_lut(z, lut, bins=1, cb=cb).item() == 0
+
+
+def test_hayatequant_all_internal_lut_builders_sort_candidate_indices():
+    from onecomp.kvcomp.codec.hayate.calibration import HayateQuantCalibration
+    from onecomp.kvcomp.codec.hayate.codec import (
+        _block_codebook_code_bits_on,
+        _block_codebook_on,
+        _block_lut_code_bits_on,
+        _block_lut_on,
+    )
+    from onecomp.kvcomp.codec.hayate.vq import build_vq_lut
+
+    bins, top_t = 3, 4
+    ordinary_cb = _block_codebook_on(2, 2, "gaussian", 8, "auto", "cpu")
+    ordinary_lut = _block_lut_on(2, 2, "gaussian", 8, "auto", bins, top_t, "cpu")
+    explicit_cb = _block_codebook_code_bits_on(4, 2, "gaussian", 8, "auto", "cpu")
+    explicit_lut = _block_lut_code_bits_on(4, 2, "gaussian", 8, "auto", bins, top_t, "cpu")
+
+    calibrated_cb = ordinary_cb.roll(1, dims=0).clone()
+    calibration = HayateQuantCalibration(
+        head_dim=8,
+        codebook={"k": calibrated_cb},
+        cb_key={"k": (2, 2)},
+    )
+    calibrated_lut = calibration.lut_on("k", 2, 2, bins, top_t, "cpu")
+
+    paths = (
+        (ordinary_lut, build_vq_lut(ordinary_cb, bins, top_t)),
+        (explicit_lut, build_vq_lut(explicit_cb, bins, top_t)),
+        (calibrated_lut, build_vq_lut(calibrated_cb, bins, top_t)),
+    )
+    for internal_lut, direct_lut in paths:
+        assert torch.equal(internal_lut, direct_lut)
+        assert bool((internal_lut.diff(dim=1) > 0).all())
+
+
 def test_hayatequant_lut_encoder_matches_exact_distortion():
     # The candidate-list LUT encoder restricts the nearest-codeword search to
     # the top-T candidates of the query's grid cell; distances over the
@@ -746,9 +1696,13 @@ def test_hayatequant_lut_encoder_matches_exact_distortion():
     # is negligible (<0.5%) at every default (block_size, K) spec, on the
     # exact source law the codebook was fit to.
     from onecomp.kvcomp.codec.hayate.vq import (
-        lloyd_vq_gaussian_block, lut_spec_for, build_vq_lut,
-        quantize_via_lut, quantize_to_vq_codebook,
+        lloyd_vq_gaussian_block,
+        lut_spec_for,
+        build_vq_lut,
+        quantize_via_lut,
+        quantize_to_vq_codebook,
     )
+
     torch.manual_seed(0)
     for bits, bsz in ((2, 4), (3, 2), (4, 2)):
         k = 1 << (bits * bsz)
@@ -792,7 +1746,7 @@ def test_hayatequant_auto_rotation_is_rate_aware():
     assert hq._resolved_mode(128, 4, 1) == "dense"
     assert hq._resolved_mode(128, 2, 3) == "hybrid"
     assert hq._resolved_mode(128, 2, 4) == "hybrid"
-    assert hq._resolved_mode(96, 2, 4) == "dense"     # non power-of-two dim
+    assert hq._resolved_mode(96, 2, 4) == "dense"  # non power-of-two dim
     assert hq._resolved_mode(128, 1, 4) == "hadamard_gemm"  # scalar path
     # Explicit rotation_mode always wins over the rate-aware default.
     assert HayateQuantCodec(bits=2, rotation_mode="hybrid")._resolved_mode(128, 4, 2) == "hybrid"
@@ -804,6 +1758,95 @@ def test_hayatequant_auto_rotation_is_rate_aware():
     assert enc3.key_q["main"]["rot"][0] == "y"
 
 
+@pytest.mark.parametrize(
+    (
+        "rate",
+        "key_bits",
+        "key_block",
+        "key_rotation",
+        "key_code_bits",
+        "key_rate",
+        "value_bits",
+        "value_block",
+        "value_rotation",
+        "value_code_bits",
+        "value_rate",
+    ),
+    [
+        (2, 2, 2, "hybrid", 5, 2.5, 2, 2, "dense", 3, 1.5),
+        (3, 3, 2, "hybrid", 7, 3.5, 3, 2, "hybrid", 5, 2.5),
+        (4, 4, 2, "hybrid", 9, 4.5, 4, 2, "hybrid", 7, 3.5),
+    ],
+)
+def test_frontier_resolved_recipe_records_each_role_exactly(
+    rate,
+    key_bits,
+    key_block,
+    key_rotation,
+    key_code_bits,
+    key_rate,
+    value_bits,
+    value_block,
+    value_rotation,
+    value_code_bits,
+    value_rate,
+):
+    record = build_hayate_frontier(rate).get_resolved_kv_config(128)
+    assert record["head_dim"] == 128
+    assert record["calibration"] is None
+    assert record["roles"]["key"] == {
+        "bits": key_bits,
+        "block_size": key_block,
+        "rotation_mode": key_rotation,
+        "rotation_seed": 0,
+        "scale_mode": "nc",
+        "mathematical_scale_mode": "nc",
+        "source_law": "gaussian",
+        "quantized_dim": 128,
+        "outlier_channels": 0,
+        "outlier_bits": None,
+        "outlier_selection": "none",
+        "qjl_enabled": False,
+        "code_bits_per_block": key_code_bits,
+        "payload_bits_per_coordinate": key_rate,
+    }
+    assert record["roles"]["value"] == {
+        "bits": value_bits,
+        "block_size": value_block,
+        "rotation_mode": value_rotation,
+        "rotation_seed": 0,
+        "scale_mode": "ls_iter",
+        "mathematical_scale_mode": "ls_iter",
+        "source_law": "gaussian",
+        "quantized_dim": 128,
+        "outlier_channels": 0,
+        "outlier_bits": None,
+        "outlier_selection": "none",
+        "qjl_enabled": False,
+        "code_bits_per_block": value_code_bits,
+        "payload_bits_per_coordinate": value_rate,
+    }
+
+
+def test_turboquant_resolved_recipe_records_beta_l2_dense_roles():
+    record = TurboQuantCodec(bits=3).get_resolved_kv_config(128)
+    assert record["roles"]["key"] == record["roles"]["value"]
+    assert record["roles"]["key"] == {
+        "bits": 3,
+        "block_size": 1,
+        "rotation_mode": "dense",
+        "rotation_seed": 0,
+        "scale_mode": "l2",
+        "mathematical_scale_mode": "l2",
+        "source_law": "beta",
+        "quantized_dim": 128,
+        "outlier_channels": 0,
+        "outlier_bits": None,
+        "outlier_selection": "none",
+        "qjl_enabled": False,
+    }
+
+
 def test_hayatequant_codebook_artifacts_loaded_when_present():
     # The committed high-budget Lloyd artifacts (codebooks/gauss_b*_k*.pt)
     # must be preferred over the online fit for the default fit params, and
@@ -811,14 +1854,16 @@ def test_hayatequant_codebook_artifacts_loaded_when_present():
     # online fit).
     import os
     from onecomp.kvcomp.codec.hayate import vq as _vq
+
     art_dir = os.path.join(os.path.dirname(_vq.__file__), "codebooks")
     if not os.path.isfile(os.path.join(art_dir, "gauss_b4_k256.pt")):
         pytest.skip("codebook artifacts not present")
     _vq.lloyd_vq_gaussian_block.cache_clear()
     _vq._gaussian_codebook_artifact.cache_clear()
     cb = _vq.lloyd_vq_gaussian_block(2, 4)
-    art = torch.load(os.path.join(art_dir, "gauss_b4_k256.pt"),
-                     map_location="cpu", weights_only=True)
+    art = torch.load(
+        os.path.join(art_dir, "gauss_b4_k256.pt"), map_location="cpu", weights_only=True
+    )
     assert torch.equal(cb, art) and cb.shape == (256, 4)
     # Non-default fit params bypass the artifact (different tensor).
     online = _vq.lloyd_vq_gaussian_block(2, 4, n_samples=50_000)
@@ -827,9 +1872,11 @@ def test_hayatequant_codebook_artifacts_loaded_when_present():
 
 def _tiny_calibration(codec, x, steps=8):
     from onecomp.kvcomp.codec.hayate.calibration import calibrate_hayatequant
+
     flat = x.reshape(-1, x.shape[-1])
-    return calibrate_hayatequant(codec, flat, flat, steps=steps, refit_every=4,
-                                 batch_vectors=256, device="cpu")
+    return calibrate_hayatequant(
+        codec, flat, flat, steps=steps, refit_every=4, batch_vectors=256, device="cpu"
+    )
 
 
 def test_hayatequant_spectral_balanced_rotation_flattens_covariance():
@@ -894,8 +1941,9 @@ def test_hayatequant_attention_weighted_calibration_roundtrip():
     )
     assert cal.meta["method"] == "attention_weighted_key_rotation"
     assert cal.meta["k_aw_after"] <= cal.meta["k_aw_before"] + 1e-9
-    c = HayateQuantCodec(bits=2, block_size=2, encoder="exact",
-                         key_scale_mode="ub", calibration=cal)
+    c = HayateQuantCodec(
+        bits=2, block_size=2, encoder="exact", key_scale_mode="ub", calibration=cal
+    )
     kd, vd = c.decode(c.encode(x, x))
     assert kd.shape == x.shape
     assert vd.shape == x.shape
@@ -922,8 +1970,9 @@ def test_hayatequant_pair_weighted_calibration_roundtrip():
     )
     assert cal.meta["method"] == "attention_pair_key_rotation"
     assert cal.meta["k_pair_after"] <= cal.meta["k_pair_before"] + 1e-9
-    c = HayateQuantCodec(bits=2, block_size=2, encoder="exact",
-                         key_scale_mode="ub", calibration=cal)
+    c = HayateQuantCodec(
+        bits=2, block_size=2, encoder="exact", key_scale_mode="ub", calibration=cal
+    )
     kd, vd = c.decode(c.encode(x, x))
     assert kd.shape == x.shape
     assert vd.shape == x.shape
@@ -940,8 +1989,9 @@ def test_hayatequant_layer_rotation_uses_ctx():
         0: torch.eye(32),
         1: random_orthogonal(32, seed=99),
     }
-    codec = HayateQuantCodec(bits=2, block_size=2, encoder="exact",
-                             key_scale_mode="ub", calibration=cal)
+    codec = HayateQuantCodec(
+        bits=2, block_size=2, encoder="exact", key_scale_mode="ub", calibration=cal
+    )
     out0 = codec.fake_quant_roundtrip(x, x, ctx={"layer_idx": 0})[0]
     out1 = codec.fake_quant_roundtrip(x, x, ctx={"layer_idx": 1})[0]
     assert out0.shape == x.shape
@@ -960,9 +2010,10 @@ def test_hayatequant_calibration_roundtrip_and_digest_guard(tmp_path):
     torch.manual_seed(0)
     x, _ = _kv(h=2, s=48, d=32)
     codec = HayateQuantCodec(bits=3)
-    cal = codec.calibrate({"key": x.reshape(-1, 32), "value": x.reshape(-1, 32)},
-                          ctx={"steps": 8, "refit_every": 4, "batch_vectors": 256,
-                               "device": "cpu"})
+    cal = codec.calibrate(
+        {"key": x.reshape(-1, 32), "value": x.reshape(-1, 32)},
+        ctx={"steps": 8, "refit_every": 4, "batch_vectors": 256, "device": "cpu"},
+    )
     assert codec.flag_calibration
     comp = codec.encode(x, x)
     if "k" in cal.rot:
@@ -1037,7 +2088,67 @@ def test_hayatequant_invalid_value_or_outlier_bits_raise():
         HayateQuantCodec(bits=4, key_outlier_bits=0)
     with pytest.raises(Exception):
         HayateQuantCodec(bits=4, value_n_outlier=-1)
+    with pytest.raises(ValueError, match=r"bits\+1"):
+        HayateQuantCodec(bits=8, n_outlier=1)
     assert HayateQuantCodec(bits=4, value_bits=2, outlier_bits=5).value_bits == 2
+
+
+@pytest.mark.parametrize("codec_cls", [TurboQuantCodec, HALOCodec])
+def test_rotated_scalar_codecs_reject_invalid_role_bit_widths(codec_cls):
+    with pytest.raises(ValueError, match="value_bits"):
+        codec_cls(bits=4, value_bits=0)
+    with pytest.raises(ValueError, match="outlier_bits"):
+        codec_cls(bits=4, outlier_bits=9)
+    with pytest.raises(ValueError, match=r"bits\+1"):
+        codec_cls(bits=8, n_outlier=1)
+    with pytest.raises(ValueError, match=r"bits\+1"):
+        codec_cls(bits=3, value_bits=8, n_outlier=1)
+
+
+@pytest.mark.parametrize("codec_cls", [TurboQuantCodec, HALOCodec])
+def test_rotated_scalar_default_outlier_bits_are_role_relative(codec_cls):
+    key = torch.randn(1, 2, 4, 16)
+    value = torch.randn_like(key)
+    codec = codec_cls(
+        bits=3,
+        value_bits=2,
+        n_outlier=4,
+        rotation_mode="dense",
+    )
+    encoded = codec.encode(key, value)
+    key_payload = encoded.key_q
+    value_payload = encoded.value_q
+    if codec_cls is HALOCodec:
+        assert key_payload["out"]["bits"] == 4
+        assert value_payload["out"]["bits"] == 3
+        vecs = key.shape[0] * key.shape[1] * key.shape[2]
+        d = key.shape[-1]
+        expected = (
+            vecs * (4 * 4 + (d - 4) * 3 + 2 * 16) + d + vecs * (4 * 3 + (d - 4) * 2 + 2 * 16) + d
+        )
+        assert encoded.numel_bits() == expected
+    else:
+        assert key_payload["out"]["bits"] == 4
+        assert value_payload["out"]["bits"] == 3
+        assert encoded.numel_bits() == (
+            _logical_rotated_payload_bits(key_payload)
+            + _logical_rotated_payload_bits(value_payload)
+        )
+
+
+@pytest.mark.parametrize(
+    "codec",
+    [
+        TurboQuantCodec(bits=3, n_outlier=32),
+        HALOCodec(bits=3, n_outlier=32),
+        HayateQuantCodec(bits=3, n_outlier=32),
+        HayateQuantCodec(bits=3, key_n_outlier=32),
+    ],
+)
+def test_rotated_codecs_reject_outlier_split_not_smaller_than_head_dim(codec):
+    x = torch.randn(1, 2, 4, 32)
+    with pytest.raises(ValueError, match="smaller than head_dim"):
+        codec.encode(x, x)
 
 
 def test_hayatequant_decode_uses_payload_seed():
@@ -1087,14 +2198,16 @@ def test_hayatequant_qjl_uses_gaussian_projection_formula():
     """HayateQuant QJL must match TurboQuant's Gaussian residual sketch."""
     torch.manual_seed(0)
     x = torch.randn(1, 2, 8, 32)
-    c = HayateQuantCodec(
-        bits=2, block_size=2, rotation_mode="dense", use_qjl=True, seed=13
-    )
+    c = HayateQuantCodec(bits=2, block_size=2, rotation_mode="dense", use_qjl=True, seed=13)
     enc = c.encode(x, x)
     p = enc.key_q["main"]
     cb = _block_codebook_on(
-        p["bits"], p["block_size"], p["dist"], p["m"],
-        p["codebook_init"], str(x.device),
+        p["bits"],
+        p["block_size"],
+        p["dist"],
+        p["m"],
+        p["codebook_init"],
+        str(x.device),
     )
     xr, _ = c._rotate(x, p["m"], p["block_size"], p["bits"], "k")
     recon = lookup_codewords(cb, p["codes"]).reshape_as(xr) * p["scale"]
@@ -1103,12 +2216,17 @@ def test_hayatequant_qjl_uses_gaussian_projection_formula():
     projected = (resid.reshape(-1, p["m"]) @ proj.t()).reshape_as(resid)
 
     assert torch.equal(p["qjl_sign"], projected >= 0)
-    assert torch.allclose(p["qjl_norm"], resid.norm(dim=-1, keepdim=True), atol=1e-6)
+    expected_norm = resid.norm(dim=-1, keepdim=True).to(torch.float16)
+    assert p["qjl_norm"].dtype == torch.float16
+    assert torch.equal(p["qjl_norm"], expected_norm)
 
     sign = torch.where(p["qjl_sign"], 1.0, -1.0).float()
-    expected_rot = recon + (
-        sign.reshape(-1, p["m"]) @ proj
-    ).reshape_as(resid) * (torch.sqrt(torch.tensor(torch.pi / 2.0)) / p["m"]) * p["qjl_norm"]
+    expected_rot = (
+        recon
+        + (sign.reshape(-1, p["m"]) @ proj).reshape_as(resid)
+        * (torch.sqrt(torch.tensor(torch.pi / 2.0)) / p["m"])
+        * p["qjl_norm"]
+    )
     got_rot, _ = c._rotate(c.decode(enc)[0], p["m"], p["block_size"], p["bits"], "k")
     assert torch.allclose(got_rot, expected_rot, atol=1e-5)
 
@@ -1133,8 +2251,10 @@ def test_non_power_of_two_hadamard_preserves_rotated_codec():
     # A Hadamard is undefined at d=96. The codec records a dense QR rotation
     # instead of silently changing the requested algorithm to affine INT.
     kf = torch.randn(1, 2, 8, 96)
-    for codec in (HALOCodec(bits=4, rotation_mode="hadamard"),
-                  TurboQuantCodec(bits=4, rotation_mode="hadamard")):
+    for codec in (
+        HALOCodec(bits=4, rotation_mode="hadamard"),
+        TurboQuantCodec(bits=4, rotation_mode="hadamard"),
+    ):
         enc = codec.encode(kf, kf)
         assert not enc.meta.get("fallback")
         vecs = 1 * 2 * 8
@@ -1148,8 +2268,16 @@ def test_non_power_of_two_hadamard_preserves_rotated_codec():
 def test_turboquant_qjl_counts_residual_norm():
     x, _ = _kv(h=4, s=64)
     b, h, s, d = x.shape
-    s0 = TurboQuantCodec(bits=4, rotation_mode="hadamard", use_qjl=False).encode(x, x).meta["stored_bits"]
-    s1 = TurboQuantCodec(bits=4, rotation_mode="hadamard", use_qjl=True).encode(x, x).meta["stored_bits"]
+    s0 = (
+        TurboQuantCodec(bits=4, rotation_mode="hadamard", use_qjl=False)
+        .encode(x, x)
+        .meta["stored_bits"]
+    )
+    s1 = (
+        TurboQuantCodec(bits=4, rotation_mode="hadamard", use_qjl=True)
+        .encode(x, x)
+        .meta["stored_bits"]
+    )
     vecs = b * h * s
     assert s1 - s0 == x.numel() * 1 + vecs * 16  # key signs + key residual norms
 
@@ -1184,28 +2312,68 @@ def test_turboquant_qjl_uses_gaussian_projection_formula():
     proj = _qjl_projection_on(p["m"], p["qjl_seed"], str(x.device))
     sign = torch.where(p["qjl_sign"], 1.0, -1.0).float()
 
-    assert torch.equal(p["qjl_sign"], (resid.reshape(-1, p["m"]) @ proj.t() >= 0).reshape_as(resid))
-    assert torch.allclose(p["qjl_norm"], resid.norm(dim=-1, keepdim=True), atol=1e-6)
+    assert torch.equal(
+        p["qjl_sign"], (resid.reshape(-1, p["m"]) @ proj.t() >= 0).reshape_as(resid)
+    )
+    expected_norm = resid.norm(dim=-1, keepdim=True).to(torch.float16)
+    assert p["qjl_norm"].dtype == torch.float16
+    assert torch.equal(p["qjl_norm"], expected_norm)
 
-    expected_rot = mse_recon + (
-        sign.reshape(-1, p["m"]) @ proj
-    ).reshape_as(resid) * (torch.sqrt(torch.tensor(torch.pi / 2.0)) / p["m"]) * p["qjl_norm"]
+    expected_rot = (
+        mse_recon
+        + (sign.reshape(-1, p["m"]) @ proj).reshape_as(resid)
+        * (torch.sqrt(torch.tensor(torch.pi / 2.0)) / p["m"])
+        * p["qjl_norm"]
+    )
     got_rot, _ = c._rotate(c.decode(enc)[0], p["m"], 13)
     assert torch.allclose(got_rot, expected_rot, atol=1e-5)
 
 
 # --- fused fake-quant round trip (the serving hot path) --------------------
-@pytest.mark.parametrize("kw", [
-    dict(bits=2), dict(bits=3), dict(bits=4),
-    dict(bits=3, block_size=1),            # scalar (TurboQuant-equivalent) path
-    dict(bits=4, value_bits=2),            # K/V bit asymmetry (separate cores)
-    dict(bits=3, dist="beta"),             # exact finite-d law
-    dict(bits=3, ls_scale=False),          # rms scale on both roles
-    dict(bits=3, key_scale_mode="ip", value_scale_mode="ls"),
-    dict(bits=2, block_size=2, encoder="lut"),  # forced LUT assignment path
-    dict(bits=3, rotation_mode="dense"),
-    dict(bits=3, rotation_mode="hadamard_gemm"),
-])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("mode", ["rms", "nc", "ls", "ip", "ls_iter", "bsm", "ub"])
+def test_hayatequant_all_scale_modes_round_fp16_in_fused_path(dtype, mode):
+    """Every K/V scale mode must match its materialized fp16 payload."""
+    torch.manual_seed(23)
+    key = torch.randn(1, 2, 8, 32).to(dtype)
+    value = (0.7 * torch.randn(1, 2, 8, 32)).to(dtype)
+    codec = HayateQuantCodec(
+        bits=2,
+        value_bits=2,
+        block_size=2,
+        encoder="exact",
+        rotation_mode="dense",
+        key_scale_mode=mode,
+        value_scale_mode=mode,
+    )
+    compressed = codec.encode(key, value)
+    assert compressed.key_q["main"]["scale"].dtype == torch.float16
+    assert compressed.value_q["main"]["scale"].dtype == torch.float16
+
+    key_ref, value_ref = codec.decode(compressed)
+    key_rt, value_rt, stored = codec.fake_quant_roundtrip(key, value)
+    assert stored == compressed.numel_bits()
+    assert key_rt.dtype == value_rt.dtype == dtype
+    assert torch.allclose(key_rt, key_ref, rtol=0, atol=1e-5), mode
+    assert torch.allclose(value_rt, value_ref, rtol=0, atol=1e-5), mode
+
+
+@pytest.mark.parametrize(
+    "kw",
+    [
+        dict(bits=2),
+        dict(bits=3),
+        dict(bits=4),
+        dict(bits=3, block_size=1),  # scalar (TurboQuant-equivalent) path
+        dict(bits=4, value_bits=2),  # K/V bit asymmetry (separate cores)
+        dict(bits=3, dist="beta"),  # exact finite-d law
+        dict(bits=3, ls_scale=False),  # rms scale on both roles
+        dict(bits=3, key_scale_mode="ip", value_scale_mode="ls"),
+        dict(bits=2, block_size=2, encoder="lut"),  # forced LUT assignment path
+        dict(bits=3, rotation_mode="dense"),
+        dict(bits=3, rotation_mode="hadamard_gemm"),
+    ],
+)
 def test_hayatequant_roundtrip_matches_encode_decode(kw):
     # The fused round trip must reproduce decode(encode(x)) -- same rotation,
     # codebook, assignment and scale fit -- while skipping the payload.  Any
@@ -1233,10 +2401,13 @@ def test_hayatequant_roundtrip_decode_step_shape():
     assert torch.allclose(k1, k2, atol=1e-5) and torch.allclose(v1, v2, atol=1e-5)
 
 
-@pytest.mark.parametrize("kw", [
-    dict(bits=3, n_outlier=16),   # outlier split -> base-class fallback
-    dict(bits=3, use_qjl=True),   # QJL residual -> base-class fallback
-])
+@pytest.mark.parametrize(
+    "kw",
+    [
+        dict(bits=3, n_outlier=16),  # outlier split -> base-class fallback
+        dict(bits=3, use_qjl=True),  # QJL residual -> base-class fallback
+    ],
+)
 def test_hayatequant_roundtrip_fallback_matches(kw):
     torch.manual_seed(2)
     k, v = torch.randn(1, 4, 64, 128), torch.randn(1, 4, 64, 128)
@@ -1289,16 +2460,30 @@ def _triton_reference_roundtrip(x, w, cb32, block_size, modes):
                     num2 = (xi * chat).sum(-1, keepdim=True)
                     den2 = (chat * chat).sum(-1, keepdim=True).clamp_min(1e-8)
                     s = num2 / den2
-        out[lo:hi] = chat * s
+        # The payload and native cache store the signed scale as fp16; mirror
+        # that rounding even though this reference has no materialized cache.
+        out[lo:hi] = chat * s.to(torch.float16).float()
     return (out @ w.t()).reshape(x.shape)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
-@pytest.mark.parametrize("kw", [
-    dict(bits=2), dict(bits=3), dict(bits=4),
-    dict(bits=4, value_bits=2), dict(bits=3, block_size=1),
-    dict(bits=3, ls_scale=False),
-])
+@pytest.mark.parametrize(
+    "kw",
+    [
+        dict(bits=2),
+        dict(bits=3),
+        dict(bits=4),
+        dict(
+            bits=3,
+            value_bits=1,
+            key_scale_mode="ub",
+            value_scale_mode="ls_iter",
+        ),  # canonical average-2 K3V1: key b=2, value b=8
+        dict(bits=4, value_bits=2),
+        dict(bits=3, block_size=1),
+        dict(bits=3, ls_scale=False),
+    ],
+)
 def test_hayatequant_triton_step_matches_eager_roundtrip(kw, monkeypatch):
     # Two-level parity for the fused Triton decode-step kernel:
     #  1. exact agreement with a fp32 torch mirror of the kernel semantics
@@ -1309,6 +2494,7 @@ def test_hayatequant_triton_step_matches_eager_roundtrip(kw, monkeypatch):
     #     fitted scale, so elementwise comparisons are meaningless).
     from onecomp.kvcomp.codec.hayate.triton_step import HAS_TRITON, roundtrip_step_triton
     from onecomp.kvcomp.codec.hayate.codec import _codebook_aux_on, resolve_block_size
+
     if not HAS_TRITON:
         pytest.skip("triton not installed")
     torch.manual_seed(0)
@@ -1342,6 +2528,43 @@ def test_hayatequant_triton_step_matches_eager_roundtrip(kw, monkeypatch):
             assert abs(m1 - m2) / max(m1, 1e-12) < 5e-2, (kw, s, m1, m2)
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+@pytest.mark.parametrize(
+    "bits,block_size",
+    [
+        (3, 2),
+        (1, 8),
+        (4, 2),
+        (2, 4),
+        (5, 1),
+    ],
+)
+def test_hayatequant_triton_payload_decode_matches_eager_reference(bits, block_size):
+    """Fused decode is exact for every block layout in the formal rates."""
+    from onecomp.kvcomp.codec.hayate.codec import _codebook_aux_on
+    from onecomp.kvcomp.codec.hayate.triton_step import (
+        HAS_TRITON,
+        decode_payload_triton,
+    )
+    from onecomp.kvcomp.codec.hayate.vq import lookup_codewords
+
+    if not HAS_TRITON:
+        pytest.skip("triton not installed")
+    torch.manual_seed(19 + bits)
+    cb32 = _codebook_aux_on(bits, block_size, "gaussian", 128, "auto", "cuda:0")[0]
+    codes = torch.randint(
+        0,
+        cb32.shape[0],
+        (1, 8, 8, 128 // block_size),
+        device="cuda",
+        dtype=torch.int64,
+    )
+    scale = torch.randn(1, 8, 8, 1, device="cuda", dtype=torch.float16)
+    got = decode_payload_triton(codes, scale, cb32, 128, block_size)
+    reference = lookup_codewords(cb32, codes).reshape_as(got) * scale.float()
+    assert torch.equal(got, reference)
+
+
 def test_base_codec_roundtrip_default_matches_encode_decode():
     # Codecs without a fused override (e.g. TurboQuant) must behave exactly
     # as before through the cache's new fake_quant_roundtrip entry point.
@@ -1369,8 +2592,16 @@ def test_compressed_cache_matches_manual_roundtrip():
 
 @pytest.mark.parametrize(
     "codec",
-    [KIVICodec(bits=2), FP8Codec(), NVFP4Codec(), TernaryCodec(), Int3Codec(), Int4Codec(),
-     HayateQuantCodec(bits=2, block_size=1), HayateQuantCodec(bits=2, block_size=4)],
+    [
+        KIVICodec(bits=2),
+        FP8Codec(),
+        NVFP4Codec(),
+        TernaryCodec(),
+        Int3Codec(),
+        Int4Codec(),
+        HayateQuantCodec(bits=2, block_size=1),
+        HayateQuantCodec(bits=2, block_size=4),
+    ],
 )
 def test_codec_roundtrip_shapes_and_bits(codec):
     x, _ = _kv(h=4, s=64)
@@ -1389,6 +2620,52 @@ def test_invalid_params_raise_on_construction():
     with pytest.raises(Exception):
         FP8Codec(key_axis="bogus")
     assert TurboQuantCodec(bits=4).bits == 4  # valid still constructs
+
+
+@pytest.mark.parametrize(
+    "factory",
+    [
+        lambda: TurboQuantCodec(bits=True),
+        lambda: TurboQuantCodec(seed=True),
+        lambda: HayateQuantCodec(bits=True),
+        lambda: HayateQuantCodec(block_size=True),
+        lambda: HayateQuantCodec(max_codebook_bits=0),
+        lambda: HayateQuantCodec(seed=True),
+    ],
+)
+def test_rotated_codecs_reject_bool_and_invalid_integer_controls(factory):
+    with pytest.raises(ValueError):
+        factory()
+
+
+@pytest.mark.parametrize(
+    "codec",
+    [
+        TurboQuantCodec(bits=2, rotation_mode="dense"),
+        HayateQuantCodec(bits=2, block_size=2, rotation_mode="dense", encoder="exact"),
+    ],
+)
+def test_rotated_payload_unknown_rotation_tag_fails_closed(codec):
+    x = torch.randn(1, 1, 2, 8)
+    compressed = codec.encode(x, x)
+    compressed.key_q["main"]["rot"] = ("unknown-rotation", 0)
+    with pytest.raises(ValueError, match="unknown .* rotation payload tag"):
+        codec.decode(compressed)
+
+
+@pytest.mark.parametrize(
+    "codec",
+    [
+        TurboQuantCodec(bits=2, rotation_mode="dense"),
+        HayateQuantCodec(bits=2, block_size=2, rotation_mode="dense", encoder="exact"),
+    ],
+)
+def test_rotated_payload_unknown_source_law_fails_closed(codec):
+    x = torch.randn(1, 1, 2, 8)
+    compressed = codec.encode(x, x)
+    compressed.key_q["main"]["dist"] = "unknown-law"
+    with pytest.raises(ValueError, match="unknown .* source law"):
+        codec.decode(compressed)
 
 
 # --- precision schedules --------------------------------------------------
@@ -1488,6 +2765,38 @@ def test_turbotaper_ratio_counts_norm_metadata():
 
 
 # --- CompressedDynamicCache integration -----------------------------------
+def test_compressed_cache_single_quantized_piece_skips_cat(monkeypatch):
+    class _RecordingCodec:
+        key_axis = "token"
+        skip_layers = ()
+
+        def fake_quant_roundtrip(self, key, value, ctx=None):
+            self.key_q = key.clone().add_(1)
+            self.value_q = value.clone().sub_(1)
+            return self.key_q, self.value_q, key.numel() + value.numel()
+
+    codec = _RecordingCodec()
+    cache = CompressedDynamicCache(codec=codec)
+    key = torch.randn(1, 2, 1, 8)
+    value = torch.randn_like(key)
+    real_cat = torch.cat
+    one_piece_cat_shapes = []
+
+    def _record_cat(tensors, *args, **kwargs):
+        if len(tensors) == 1:
+            one_piece_cat_shapes.append(tuple(tensors[0].shape))
+        return real_cat(tensors, *args, **kwargs)
+
+    monkeypatch.setattr(torch, "cat", _record_cat)
+    out_key, out_value = cache.update(key, value, 0)
+
+    # With neither a sink nor a recent suffix, joining a one-item list would
+    # be a pure copy.  (HF's DynamicLayer may independently copy on update.)
+    assert one_piece_cat_shapes == []
+    assert torch.equal(out_key, key + 1)
+    assert torch.equal(out_value, value - 1)
+
+
 def test_compressed_cache_prefill_decode_and_sink():
     b, h, s, d = 1, 4, 40, 64
     c = CompressedDynamicCache(
@@ -1586,42 +2895,56 @@ def test_h2o_scores_nonneg_and_keeps_recent():
 def test_vllm_mapping_fp8_native_and_int3_custom():
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
-    p_fp8 = plan_from_kv_config({"codec": {"name": "fp8"}})
+    p_fp8 = plan_from_kv_config({"residual_window": 0, "codec": {"name": "fp8"}})
     assert p_fp8.native_supported and p_fp8.kv_cache_dtype.startswith("fp8")
-    p_int3 = plan_from_kv_config({"codec": {"name": "int3"}})
+    p_int3 = plan_from_kv_config({"residual_window": 0, "codec": {"name": "int3"}})
     assert p_int3.needs_custom_backend and not p_int3.warnings
 
 
-@pytest.mark.parametrize("name,dtype", [
-    ("fp8", "fp8_e4m3"), ("fp8_e4m3", "fp8_e4m3"), ("fp8_e5m2", "fp8_e5m2"),
-])
+@pytest.mark.parametrize(
+    "name,dtype",
+    [
+        ("fp8", "fp8_e4m3"),
+        ("fp8_e4m3", "fp8_e4m3"),
+        ("fp8_e5m2", "fp8_e5m2"),
+    ],
+)
 def test_vllm_mapping_fp8_variants(name, dtype):
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config, engine_kwargs_from_kv_config
 
-    p = plan_from_kv_config({"codec": {"name": name}})
+    p = plan_from_kv_config({"residual_window": 0, "codec": {"name": name}})
     assert p.native_supported and not p.needs_custom_backend
     assert p.kv_cache_dtype == dtype and p.calculate_kv_scales
-    kw = engine_kwargs_from_kv_config({"codec": {"name": name}})
+    kw = engine_kwargs_from_kv_config({"residual_window": 0, "codec": {"name": name}})
     assert kw == {"kv_cache_dtype": dtype, "calculate_kv_scales": True}
 
 
 @pytest.mark.parametrize("name", ["int4", "int3", "int2", "kivi", "ternary"])
 def test_vllm_mapping_lowbit_needs_custom_backend(name):
-    from vllm_plugins.kvcomp.mapping import plan_from_kv_config
+    from vllm_plugins.kvcomp.mapping import (
+        engine_kwargs_from_kv_config,
+        plan_from_kv_config,
+    )
 
-    p = plan_from_kv_config({"codec": {"name": name}})
+    config = {"residual_window": 0, "codec": {"name": name}}
+    p = plan_from_kv_config(config)
     assert p.needs_custom_backend and not p.native_supported
     assert p.kv_cache_dtype == "auto" and not p.warnings  # warned via notes, no silent downgrade
+    with pytest.raises(RuntimeError, match="cannot be represented"):
+        engine_kwargs_from_kv_config(config)
 
 
-@pytest.mark.parametrize("bits,vbits,preset", [
-    (8, 4, "turboquant_k8v4"),
-    (4, None, "turboquant_4bit_nc"),
-    (4, 4, "turboquant_4bit_nc"),
-    (3, 4, "turboquant_k3v4_nc"),
-    (3, None, "turboquant_3bit_nc"),
-    (3, 3, "turboquant_3bit_nc"),
-])
+@pytest.mark.parametrize(
+    "bits,vbits,preset",
+    [
+        (8, 4, "turboquant_k8v4"),
+        (4, None, "turboquant_4bit_nc"),
+        (4, 4, "turboquant_4bit_nc"),
+        (3, 4, "turboquant_k3v4_nc"),
+        (3, None, "turboquant_3bit_nc"),
+        (3, 3, "turboquant_3bit_nc"),
+    ],
+)
 def test_vllm_mapping_turboquant_native_presets(bits, vbits, preset, monkeypatch):
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
@@ -1629,7 +2952,7 @@ def test_vllm_mapping_turboquant_native_presets(bits, vbits, preset, monkeypatch
     codec = {"name": "turboquant", "bits": bits}
     if vbits is not None:
         codec["value_bits"] = vbits
-    p = plan_from_kv_config({"codec": codec})
+    p = plan_from_kv_config({"residual_window": 0, "codec": codec})
     assert p.native_supported and not p.needs_custom_backend
     assert p.kv_cache_dtype == preset
 
@@ -1638,7 +2961,7 @@ def test_vllm_mapping_turboquant_unsupported_bits_custom():
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
     # 2-bit has no native preset -> custom backend.
-    p = plan_from_kv_config({"codec": {"name": "turboquant", "bits": 2}})
+    p = plan_from_kv_config({"residual_window": 0, "codec": {"name": "turboquant", "bits": 2}})
     assert p.needs_custom_backend and p.kv_cache_dtype == "auto"
 
 
@@ -1646,7 +2969,7 @@ def test_vllm_mapping_halo_maps_to_turboquant_with_warning(monkeypatch):
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
     monkeypatch.setenv("KVCOMP_VLLM_TURBOQUANT_MODE", "native")
-    p = plan_from_kv_config({"codec": {"name": "halo", "bits": 4}})
+    p = plan_from_kv_config({"residual_window": 0, "codec": {"name": "halo", "bits": 4}})
     assert p.native_supported and p.kv_cache_dtype == "turboquant_4bit_nc"
     # honestly warns that vLLM runs faithful TurboQuant (no HALO LS/hadamard-gemm)
     assert any("HALO" in w for w in p.warnings)
@@ -1657,7 +2980,9 @@ def test_vllm_mapping_hayatequant_block_size_1_native(monkeypatch):
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
     monkeypatch.setenv("KVCOMP_VLLM_HAYATEQUANT_MODE", "native")
-    p = plan_from_kv_config({"codec": {"name": "hayatequant", "bits": 4, "block_size": 1}})
+    p = plan_from_kv_config(
+        {"residual_window": 0, "codec": {"name": "hayatequant", "bits": 4, "block_size": 1}}
+    )
     assert p.native_supported and p.kv_cache_dtype == "turboquant_4bit_nc"
     assert any("HayateQuant" in w for w in p.warnings)
 
@@ -1666,7 +2991,9 @@ def test_vllm_mapping_hayatequant_block_vq_no_preset_needs_custom_backend():
     # block_size>1 (block-VQ) at 2-bit has no native scalar vLLM preset either.
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
-    p = plan_from_kv_config({"codec": {"name": "hayatequant", "bits": 2, "block_size": 4}})
+    p = plan_from_kv_config(
+        {"residual_window": 0, "codec": {"name": "hayatequant", "bits": 2, "block_size": 4}}
+    )
     assert p.needs_custom_backend and not p.native_supported and p.kv_cache_dtype == "auto"
     assert any("no native scalar TurboQuant preset" in n for n in p.notes)
 
@@ -1674,7 +3001,9 @@ def test_vllm_mapping_hayatequant_block_vq_no_preset_needs_custom_backend():
 def test_vllm_mapping_hayatequant_fractional_rate_needs_custom_backend():
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
-    p = plan_from_kv_config({"codec": build_hayate_fractional2().get_kv_config()})
+    p = plan_from_kv_config(
+        {"residual_window": 0, "codec": build_hayate_fractional2().get_kv_config()}
+    )
     notes = "\n".join(p.notes)
     assert p.needs_custom_backend and not p.native_supported
     assert "key_code_bits_per_block" in notes
@@ -1684,7 +3013,9 @@ def test_vllm_mapping_hayatequant_fractional_rate_needs_custom_backend():
 def test_vllm_mapping_hayatequant_adaptive_rate_needs_custom_backend():
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
-    p = plan_from_kv_config({"codec": {**hayate_adaptive2_kwargs(), "name": "hayatequant"}})
+    p = plan_from_kv_config(
+        {"residual_window": 0, "codec": {**hayate_adaptive2_kwargs(), "name": "hayatequant"}}
+    )
     notes = "\n".join(p.notes)
     assert p.needs_custom_backend and not p.native_supported
     assert "avg_bits" in notes
@@ -1698,12 +3029,12 @@ def test_vllm_mapping_hayatequant_block_vq_is_strict_by_default(monkeypatch):
     monkeypatch.delenv("KVCOMP_VLLM_HAYATEQUANT_MODE", raising=False)
     monkeypatch.delenv("KVCOMP_VLLM_SCALAR_FALLBACK", raising=False)
     codec = {"name": "hayatequant", "bits": 3, "block_size": 4}
-    p = plan_from_kv_config({"codec": codec})
+    p = plan_from_kv_config({"residual_window": 0, "codec": codec})
     assert p.needs_custom_backend and not p.native_supported
     assert p.kv_cache_dtype == "auto" and not p.hayate_native
 
     monkeypatch.setenv("KVCOMP_VLLM_HAYATEQUANT_MODE", "native")
-    p_native = plan_from_kv_config({"codec": codec})
+    p_native = plan_from_kv_config({"residual_window": 0, "codec": codec})
     assert p_native.native_supported and p_native.kv_cache_dtype == "turboquant_3bit_nc"
     assert not p_native.needs_custom_backend and p_native.hayate_native
     assert p_native.hayate_config["bits"] == 3
@@ -1712,14 +3043,16 @@ def test_vllm_mapping_hayatequant_block_vq_is_strict_by_default(monkeypatch):
     assert any("key-only" in w for w in p_native.warnings)
 
     monkeypatch.setenv("KVCOMP_VLLM_HAYATEQUANT_MODE", "scalar_fallback")
-    p_fb = plan_from_kv_config({"codec": codec})
+    p_fb = plan_from_kv_config({"residual_window": 0, "codec": codec})
     assert p_fb.native_supported and p_fb.kv_cache_dtype == "turboquant_3bit_nc"
     assert not p_fb.needs_custom_backend
     assert not p_fb.hayate_native
     assert any("block-VQ accuracy" in w for w in p_fb.warnings)
 
     # Bit-widths with no scalar preset still fall through to custom-backend.
-    p2 = plan_from_kv_config({"codec": {"name": "hayatequant", "bits": 2, "block_size": 4}})
+    p2 = plan_from_kv_config(
+        {"residual_window": 0, "codec": {"name": "hayatequant", "bits": 2, "block_size": 4}}
+    )
     assert p2.needs_custom_backend and p2.kv_cache_dtype == "auto"
 
 
@@ -1736,7 +3069,7 @@ def test_vllm_mapping_hayatequant_block_vq_native_key_ub():
         "key_scale_mode": "ub",
         "codebook_init": "fibquant",
     }
-    p = plan_from_kv_config({"codec": codec})
+    p = plan_from_kv_config({"residual_window": 0, "codec": codec})
     assert p.native_supported and p.kv_cache_dtype == "turboquant_3bit_nc"
     assert p.hayate_native
     assert p.hayate_config["key_scale_mode"] == "ip"
@@ -1748,7 +3081,7 @@ def test_vllm_mapping_hayatequant_block_vq_strict_mode(monkeypatch):
 
     monkeypatch.setenv("KVCOMP_VLLM_HAYATEQUANT_MODE", "strict")
     codec = {"name": "hayatequant", "bits": 3, "block_size": 4}
-    p = plan_from_kv_config({"codec": codec})
+    p = plan_from_kv_config({"residual_window": 0, "codec": codec})
     assert p.needs_custom_backend and not p.native_supported
     assert p.kv_cache_dtype == "auto"
     assert any("strict/custom mode" in n for n in p.notes)
@@ -1771,16 +3104,25 @@ def test_vllm_mapping_hayatequant_default_get_kv_config_does_not_crash(bits):
 
     codec = HayateQuantCodec(bits=bits)
     assert codec.block_size is None  # sanity: the default really is "auto"
-    p = plan_from_kv_config({"codec": codec.get_kv_config()})
+    p = plan_from_kv_config({"residual_window": 0, "codec": codec.get_kv_config()})
     # Whichever branch it resolves to, it must not have thrown, and must be
     # internally consistent (native XOR custom-backend, never neither/both).
     assert p.native_supported != p.needs_custom_backend
 
 
-@pytest.mark.parametrize("bits,expect_block_vq", [
-    (2, True), (3, True), (4, True), (6, False), (8, False),
-])
-def test_vllm_mapping_hayatequant_block_vq_detection_matches_resolve_block_size(bits, expect_block_vq):
+@pytest.mark.parametrize(
+    "bits,expect_block_vq",
+    [
+        (2, True),
+        (3, True),
+        (4, True),
+        (6, False),
+        (8, False),
+    ],
+)
+def test_vllm_mapping_hayatequant_block_vq_detection_matches_resolve_block_size(
+    bits, expect_block_vq
+):
     """The mapper's torch-free ``block_size>1`` guess must agree with the real,
     torch-backed :func:`onecomp.kvcomp.codec._vq.resolve_block_size` for the
     codec's own default ``max_codebook_bits`` -- otherwise a config that
@@ -1800,7 +3142,7 @@ def test_vllm_mapping_hayatequant_block_vq_detection_matches_resolve_block_size(
     codec = HayateQuantCodec(bits=bits)
     real_block_size = resolve_block_size(bits, None, codec.max_codebook_bits, m=128)
     assert (real_block_size > 1) == expect_block_vq
-    p = plan_from_kv_config({"codec": codec.get_kv_config()})
+    p = plan_from_kv_config({"residual_window": 0, "codec": codec.get_kv_config()})
     if expect_block_vq:
         assert p.needs_custom_backend and not p.native_supported
         assert any("block-VQ" in n or "block_size" in n for n in p.notes)
@@ -1808,12 +3150,11 @@ def test_vllm_mapping_hayatequant_block_vq_detection_matches_resolve_block_size(
         assert not any("block-VQ" in n for n in p.notes)
 
 
-@pytest.mark.parametrize("name,dtype", [("nvfp4", "nvfp4"),
-                                        ("int8", "int8_per_token_head")])
+@pytest.mark.parametrize("name,dtype", [("nvfp4", "nvfp4"), ("int8", "int8_per_token_head")])
 def test_vllm_mapping_other_native(name, dtype):
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
-    p = plan_from_kv_config({"codec": {"name": name}})
+    p = plan_from_kv_config({"residual_window": 0, "codec": {"name": name}})
     assert p.native_supported and p.kv_cache_dtype == dtype
 
 
@@ -1824,33 +3165,46 @@ def test_vllm_mapping_eviction_only_and_policy():
     p = plan_from_kv_config({"selector": {"name": "snapkv"}})
     assert p.needs_custom_backend and p.kv_cache_dtype == "auto" and p.codec_name is None
     # Non-static adaptive policy needs the custom backend even with FP8 codec.
-    p2 = plan_from_kv_config({"codec": {"name": "fp8"}, "policy": {"name": "taperkv"}})
+    p2 = plan_from_kv_config(
+        {"residual_window": 0, "codec": {"name": "fp8"}, "policy": {"name": "taperkv"}}
+    )
     assert p2.needs_custom_backend
     # static policy + fp8 stays native.
-    p3 = plan_from_kv_config({"codec": {"name": "fp8"}, "policy": {"name": "static"}})
+    p3 = plan_from_kv_config(
+        {"residual_window": 0, "codec": {"name": "fp8"}, "policy": {"name": "static"}}
+    )
     assert p3.native_supported and not p3.needs_custom_backend
 
 
 def test_vllm_mapping_conflict_and_unknown():
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
-    p = plan_from_kv_config({"codec": {"name": "fp8"}}, requested_kv_cache_dtype="fp8_e5m2")
+    p = plan_from_kv_config(
+        {"residual_window": 0, "codec": {"name": "fp8"}}, requested_kv_cache_dtype="fp8_e5m2"
+    )
     assert p.kv_cache_dtype == "fp8_e4m3" and p.warnings  # codec dtype wins, warns
-    p2 = plan_from_kv_config({"codec": {"name": "mystery"}})
-    assert not p2.native_supported and p2.warnings
+    p2 = plan_from_kv_config({"residual_window": 0, "codec": {"name": "mystery"}})
+    assert p2.needs_custom_backend and not p2.native_supported and p2.warnings
 
 
-def test_vllm_apply_to_engine_args_fp8_and_lowbit(tmp_path):
+def test_vllm_apply_to_engine_args_fp8_and_lowbit(tmp_path, monkeypatch):
     """apply_to_engine_args mutates a (mock) EngineArgs from a model config.json.
 
     Uses a SimpleNamespace mock -- apply_to_engine_args never imports vLLM, so
     the FP8 auto-apply logic is fully testable on a CPU-only node.
     """
     import json
+    import os
     from types import SimpleNamespace
-    from vllm_plugins.kvcomp.vllm_plugin import apply_to_engine_args
+    from vllm_plugins.kvcomp.vllm_plugin import (
+        _HAYATE_NATIVE_CONFIG_ENV,
+        apply_to_engine_args,
+    )
 
     def model_dir(kv_cfg):
+        # These mapping checks intentionally request uniform native storage;
+        # a positive/missing residual window now fails closed to HF/custom.
+        kv_cfg = {"residual_window": 0, **kv_cfg}
         d = tmp_path / ("m" + str(abs(hash(str(kv_cfg)))))
         d.mkdir()
         (d / "config.json").write_text(json.dumps({"kv_compression_config": kv_cfg}))
@@ -1863,11 +3217,33 @@ def test_vllm_apply_to_engine_args_fp8_and_lowbit(tmp_path):
 
     int4_dir = model_dir({"codec": {"name": "int4"}, "policy": {"name": "static"}})
     ea2 = SimpleNamespace(model=int4_dir, kv_cache_dtype="auto", calculate_kv_scales=False)
-    apply_to_engine_args(ea2)
+    with pytest.raises(RuntimeError, match="cannot run through native vLLM"):
+        apply_to_engine_args(ea2)
     assert ea2.kv_cache_dtype == "auto"  # low-bit not auto-applied (needs custom backend)
 
+    # A caller-supplied native dtype cannot bypass a recipe that failed closed.
+    # In particular, fp8 cannot preserve the requested FP recent-token window.
+    residual_dir = model_dir(
+        {
+            "codec": {"name": "fp8"},
+            "policy": {"name": "static"},
+            "residual_window": 128,
+        }
+    )
+    ea_residual = SimpleNamespace(
+        model=residual_dir,
+        kv_cache_dtype="fp8_e4m3",
+        calculate_kv_scales=False,
+    )
+    monkeypatch.setenv(_HAYATE_NATIVE_CONFIG_ENV, '{"bits": 3}')
+    with pytest.raises(RuntimeError, match="cannot run through native vLLM"):
+        apply_to_engine_args(ea_residual)
+    assert ea_residual.kv_cache_dtype == "fp8_e4m3"
+    assert _HAYATE_NATIVE_CONFIG_ENV not in os.environ
+
     # No kv_compression_config -> no-op.
-    plain = tmp_path / "plain"; plain.mkdir()
+    plain = tmp_path / "plain"
+    plain.mkdir()
     (plain / "config.json").write_text(json.dumps({"model_type": "llama"}))
     ea3 = SimpleNamespace(model=str(plain), kv_cache_dtype="auto")
     apply_to_engine_args(ea3)
@@ -1885,8 +3261,10 @@ def test_ppl_skips_nonfinite_windows():
 
     class _Model:
         device = "cpu"
+
         def __init__(self, bad):
             self.bad = bad
+
         def __call__(self, ids, past_key_values=None, use_cache=False):
             v, L = 7, ids.shape[1]
             logits = torch.zeros(1, L, v)
@@ -1943,12 +3321,10 @@ def test_detect_outlier_layers_multiprobe_agg():
     assert detect_outlier_layers(_outlier_fake_model([sched[0]]), ids) == [0, 1]
 
     # mean: layer1's one huge probe dominates the average -> both skipped.
-    assert detect_outlier_layers(
-        _outlier_fake_model(sched), [ids, ids, ids], agg="mean") == [0, 1]
+    assert detect_outlier_layers(_outlier_fake_model(sched), [ids, ids, ids], agg="mean") == [0, 1]
 
     # vote: layer1 is a minority outlier (1/3) -> only layer0 skipped (stable).
-    assert detect_outlier_layers(
-        _outlier_fake_model(sched), [ids, ids, ids], agg="vote") == [0]
+    assert detect_outlier_layers(_outlier_fake_model(sched), [ids, ids, ids], agg="vote") == [0]
 
 
 # --- benchmark harness: codec speed-quality ablation matrix & CI formatting ---
@@ -1958,8 +3334,8 @@ def _import_benchmark_module(name):
     import sys
 
     bench_dir = os.path.join(
-        os.path.dirname(__file__), "..", "..", "..",
-        "benchmark", "kvcomp-longcontext")
+        os.path.dirname(__file__), "..", "..", "..", "benchmark", "kvcomp-longcontext"
+    )
     bench_dir = os.path.abspath(bench_dir)
     if bench_dir not in sys.path:
         sys.path.insert(0, bench_dir)
@@ -1972,8 +3348,13 @@ def test_codec_speed_ablation_matrix():
     codecs = cs._codecs(4)
     # The legacy speed/quality levers plus the role-asymmetric enhanced variants
     # (NC keys, NC keys + ls_iter values) that the paper benchmarks.
-    assert {"TurboQuant-hadamard", "HALO-hadamard-noLS", "HALO-hadamard_gemm-noLS",
-            "HALO-hadamard_gemm-LS", "HALO-dense-LS"} <= set(codecs)
+    assert {
+        "TurboQuant-hadamard",
+        "HALO-hadamard-noLS",
+        "HALO-hadamard_gemm-noLS",
+        "HALO-hadamard_gemm-LS",
+        "HALO-dense-LS",
+    } <= set(codecs)
     assert {"HALO-hadamard_gemm-NC", "HALO-hadamard_gemm-NCIT"} <= set(codecs)
 
     torch.manual_seed(0)
@@ -1991,7 +3372,7 @@ def test_codec_speed_ablation_matrix():
     mse_hg_ls, bits_ls = rt(codecs["HALO-hadamard_gemm-LS"])
     # GEMM is mathematically identical to the butterfly => same MSE & storage.
     assert mse_hg == pytest.approx(mse_h, rel=1e-4)
-    assert bits_hg == bits_h == bits_ls          # LS is storage-neutral
+    assert bits_hg == bits_h == bits_ls  # LS is storage-neutral
     # Least-squares dequant scale provably lowers (<=) reconstruction MSE.
     assert mse_hg_ls <= mse_hg + 1e-9
 
@@ -2000,9 +3381,11 @@ def test_markdown_ci_formatting():
     kb = _import_benchmark_module("kv_benchmark")
     # value ± half-width of the 95% CI
     assert kb._fmt_ci({"pass@1": 0.5, "pass@1_ci95": [0.4, 0.6]}) == "0.5\u00b10.100"
-    assert kb._fmt_ci({"accuracy": 0.9, "accuracy_ci95": [0.85, 0.97]},
-                      "accuracy", "accuracy_ci95") == "0.9\u00b10.060"
-    assert kb._fmt_ci({}) == ""               # missing metric -> blank cell
+    assert (
+        kb._fmt_ci({"accuracy": 0.9, "accuracy_ci95": [0.85, 0.97]}, "accuracy", "accuracy_ci95")
+        == "0.9\u00b10.060"
+    )
+    assert kb._fmt_ci({}) == ""  # missing metric -> blank cell
     assert kb._fmt_ci({"pass@1": 0.3}) == "0.3"  # no CI -> bare value
 
 
@@ -2016,8 +3399,8 @@ def test_code_sandbox_executor():
     bad, detail = run_code(_build_program("def add(a, b):\n    return a - b", test, "add"))
     assert bad is False and "AssertionError" in detail
     loop, det2 = run_code(
-        _build_program("def add(a, b):\n    while True:\n        pass", test, "add"),
-        timeout=2)
+        _build_program("def add(a, b):\n    while True:\n        pass", test, "add"), timeout=2
+    )
     assert loop is False and det2 == "timeout"
 
 
@@ -2061,13 +3444,14 @@ def test_code_pass_at_1_fake_model():
             # return prompt (4 toks) + 3 "generated" toks
             return torch.zeros(1, 7, dtype=torch.long)
 
-    problems = [{
-        "prompt": "Write add(a, b) returning the sum.",
-        "entry_point": "add",
-        "test": "def check(c):\n    assert c(2, 3) == 5",
-    }]
-    res = code_pass_at_1(_Model(), _Tok(), problems, cache_factory=None,
-                         k=1, max_new_tokens=8)
+    problems = [
+        {
+            "prompt": "Write add(a, b) returning the sum.",
+            "entry_point": "add",
+            "test": "def check(c):\n    assert c(2, 3) == 5",
+        }
+    ]
+    res = code_pass_at_1(_Model(), _Tok(), problems, cache_factory=None, k=1, max_new_tokens=8)
     d = res.as_dict()
     assert d["task"] == "functional_code_smoke" and d["pass@1"] == 1.0
     assert "pass@1_ci95" in d and d["n"] == 1
@@ -2078,9 +3462,17 @@ def test_vllm_mapping_turboquant_warns_semantics_and_propagates_skip_layers(monk
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
     monkeypatch.setenv("KVCOMP_VLLM_TURBOQUANT_MODE", "native")
-    p = plan_from_kv_config({"codec": {
-        "name": "turboquant", "bits": 4, "value_bits": 4,
-        "skip_layers": [0, 1, 34, 35]}})
+    p = plan_from_kv_config(
+        {
+            "residual_window": 0,
+            "codec": {
+                "name": "turboquant",
+                "bits": 4,
+                "value_bits": 4,
+                "skip_layers": [0, 1, 34, 35],
+            },
+        }
+    )
     assert p.native_supported and p.kv_cache_dtype == "turboquant_4bit_nc"
     # semantic-swap warning (Lloyd-Max keys + uniform values) now fires for TQ too
     assert any("uniform" in w for w in p.warnings)
@@ -2093,9 +3485,18 @@ def test_vllm_mapping_turboquant_outlier_and_qjl_warn(monkeypatch):
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
     monkeypatch.setenv("KVCOMP_VLLM_TURBOQUANT_MODE", "native")
-    p = plan_from_kv_config({"codec": {
-        "name": "turboquant", "bits": 4, "value_bits": 4,
-        "n_outlier": 32, "use_qjl": True}})
+    p = plan_from_kv_config(
+        {
+            "residual_window": 0,
+            "codec": {
+                "name": "turboquant",
+                "bits": 4,
+                "value_bits": 4,
+                "n_outlier": 32,
+                "use_qjl": True,
+            },
+        }
+    )
     assert any("n_outlier" in w for w in p.warnings)
     assert any("use_qjl" in w or "QJL" in w for w in p.warnings)
 
@@ -2104,9 +3505,18 @@ def test_vllm_mapping_hayatequant_role_specific_outlier_warns(monkeypatch):
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
     monkeypatch.setenv("KVCOMP_VLLM_HAYATEQUANT_MODE", "native")
-    p = plan_from_kv_config({"codec": {
-        "name": "hayatequant", "bits": 4, "block_size": 1,
-        "key_n_outlier": 32, "value_n_outlier": 0}})
+    p = plan_from_kv_config(
+        {
+            "residual_window": 0,
+            "codec": {
+                "name": "hayatequant",
+                "bits": 4,
+                "block_size": 1,
+                "key_n_outlier": 32,
+                "value_n_outlier": 0,
+            },
+        }
+    )
     assert any("role-specific outlier" in w for w in p.warnings)
 
 
@@ -2123,7 +3533,7 @@ def test_vllm_mapping_hadamard_family_rotation_is_native_compatible(mode, monkey
     codec = {"name": "hayatequant", "bits": 4, "block_size": 1}
     if mode is not None:
         codec["rotation_mode"] = mode
-    p = plan_from_kv_config({"codec": codec})
+    p = plan_from_kv_config({"residual_window": 0, "codec": codec})
     assert p.native_supported and p.kv_cache_dtype == "turboquant_4bit_nc"
     assert not any("does NOT match" in w for w in p.warnings)
     assert any("Hadamard" in n for n in p.notes)
@@ -2141,7 +3551,7 @@ def test_vllm_mapping_dense_rotation_warns(name, monkeypatch):
     else:
         monkeypatch.setenv("KVCOMP_VLLM_TURBOQUANT_MODE", "native")
     codec = {"name": name, "bits": 4, "block_size": 1, "rotation_mode": "dense"}
-    p = plan_from_kv_config({"codec": codec})
+    p = plan_from_kv_config({"residual_window": 0, "codec": codec})
     # Still mapped (the preset is a valid quantizer) but with an explicit
     # rotation-mismatch warning so nothing is swapped silently.
     assert p.native_supported and p.kv_cache_dtype == "turboquant_4bit_nc"
@@ -2155,9 +3565,17 @@ def test_vllm_mapping_hybrid_rotation_at_block_size_1_is_hadamard(monkeypatch):
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
     monkeypatch.setenv("KVCOMP_VLLM_HAYATEQUANT_MODE", "native")
-    p = plan_from_kv_config({"codec": {
-        "name": "hayatequant", "bits": 4, "block_size": 1,
-        "rotation_mode": "hybrid"}})
+    p = plan_from_kv_config(
+        {
+            "residual_window": 0,
+            "codec": {
+                "name": "hayatequant",
+                "bits": 4,
+                "block_size": 1,
+                "rotation_mode": "hybrid",
+            },
+        }
+    )
     assert p.native_supported
     assert any("degenerates to a signed-Hadamard" in n for n in p.notes)
     assert not any("does NOT match" in w for w in p.warnings)
@@ -2171,9 +3589,8 @@ def test_vllm_mapping_hayatequant_real_codec_hadamard_gemm_bs1(tmp_path, monkeyp
     from vllm_plugins.kvcomp.mapping import plan_from_kv_config
 
     monkeypatch.setenv("KVCOMP_VLLM_HAYATEQUANT_MODE", "native")
-    codec = HayateQuantCodec(bits=3, value_bits=4, block_size=1,
-                             rotation_mode="hadamard_gemm")
-    p = plan_from_kv_config({"codec": codec.get_kv_config()})
+    codec = HayateQuantCodec(bits=3, value_bits=4, block_size=1, rotation_mode="hadamard_gemm")
+    p = plan_from_kv_config({"residual_window": 0, "codec": codec.get_kv_config()})
     assert p.native_supported and p.kv_cache_dtype == "turboquant_k3v4_nc"
     assert any("Hadamard" in n for n in p.notes)
     assert not any("does NOT match" in w for w in p.warnings)

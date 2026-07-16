@@ -1,0 +1,3026 @@
+[
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw1",
+    "candidate_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "encoded_tokens": 16384,
+    "encoded_updates": 16384,
+    "model": "llama-3.1-8b-instruct",
+    "observed_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "rate": 2,
+    "selector_bits_total": 16384,
+    "split_histogram": {
+      "4:4": {
+        "pair": [
+          4,
+          4
+        ],
+        "tokens": 480,
+        "updates": 480,
+        "vectors": 3840
+      },
+      "5:3": {
+        "pair": [
+          5,
+          3
+        ],
+        "tokens": 15904,
+        "updates": 15904,
+        "vectors": 127232
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw4",
+    "candidate_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "encoded_tokens": 16384,
+    "encoded_updates": 16384,
+    "model": "llama-3.1-8b-instruct",
+    "observed_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "rate": 2,
+    "selector_bits_total": 16384,
+    "split_histogram": {
+      "4:4": {
+        "pair": [
+          4,
+          4
+        ],
+        "tokens": 480,
+        "updates": 480,
+        "vectors": 3840
+      },
+      "5:3": {
+        "pair": [
+          5,
+          3
+        ],
+        "tokens": 15904,
+        "updates": 15904,
+        "vectors": 127232
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw16",
+    "candidate_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "encoded_tokens": 16384,
+    "encoded_updates": 16384,
+    "model": "llama-3.1-8b-instruct",
+    "observed_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "rate": 2,
+    "selector_bits_total": 16384,
+    "split_histogram": {
+      "4:4": {
+        "pair": [
+          4,
+          4
+        ],
+        "tokens": 480,
+        "updates": 480,
+        "vectors": 3840
+      },
+      "5:3": {
+        "pair": [
+          5,
+          3
+        ],
+        "tokens": 15904,
+        "updates": 15904,
+        "vectors": 127232
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw1",
+    "candidate_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "encoded_tokens": 16384,
+    "encoded_updates": 16384,
+    "model": "llama-3.1-8b-instruct",
+    "observed_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "rate": 3,
+    "selector_bits_total": 16384,
+    "split_histogram": {
+      "6:6": {
+        "pair": [
+          6,
+          6
+        ],
+        "tokens": 480,
+        "updates": 480,
+        "vectors": 3840
+      },
+      "7:5": {
+        "pair": [
+          7,
+          5
+        ],
+        "tokens": 15904,
+        "updates": 15904,
+        "vectors": 127232
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw4",
+    "candidate_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "encoded_tokens": 16384,
+    "encoded_updates": 16384,
+    "model": "llama-3.1-8b-instruct",
+    "observed_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "rate": 3,
+    "selector_bits_total": 16384,
+    "split_histogram": {
+      "6:6": {
+        "pair": [
+          6,
+          6
+        ],
+        "tokens": 480,
+        "updates": 480,
+        "vectors": 3840
+      },
+      "7:5": {
+        "pair": [
+          7,
+          5
+        ],
+        "tokens": 15904,
+        "updates": 15904,
+        "vectors": 127232
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw16",
+    "candidate_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "encoded_tokens": 16384,
+    "encoded_updates": 16384,
+    "model": "llama-3.1-8b-instruct",
+    "observed_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "rate": 3,
+    "selector_bits_total": 16384,
+    "split_histogram": {
+      "6:6": {
+        "pair": [
+          6,
+          6
+        ],
+        "tokens": 480,
+        "updates": 480,
+        "vectors": 3840
+      },
+      "7:5": {
+        "pair": [
+          7,
+          5
+        ],
+        "tokens": 15904,
+        "updates": 15904,
+        "vectors": 127232
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw1",
+    "candidate_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "encoded_tokens": 16384,
+    "encoded_updates": 16384,
+    "model": "llama-3.1-8b-instruct",
+    "observed_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "rate": 4,
+    "selector_bits_total": 16384,
+    "split_histogram": {
+      "8:8": {
+        "pair": [
+          8,
+          8
+        ],
+        "tokens": 480,
+        "updates": 480,
+        "vectors": 3840
+      },
+      "9:7": {
+        "pair": [
+          9,
+          7
+        ],
+        "tokens": 15904,
+        "updates": 15904,
+        "vectors": 127232
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw4",
+    "candidate_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "encoded_tokens": 16384,
+    "encoded_updates": 16384,
+    "model": "llama-3.1-8b-instruct",
+    "observed_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "rate": 4,
+    "selector_bits_total": 16384,
+    "split_histogram": {
+      "8:8": {
+        "pair": [
+          8,
+          8
+        ],
+        "tokens": 480,
+        "updates": 480,
+        "vectors": 3840
+      },
+      "9:7": {
+        "pair": [
+          9,
+          7
+        ],
+        "tokens": 15904,
+        "updates": 15904,
+        "vectors": 127232
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw16",
+    "candidate_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "encoded_tokens": 16384,
+    "encoded_updates": 16384,
+    "model": "llama-3.1-8b-instruct",
+    "observed_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "rate": 4,
+    "selector_bits_total": 16384,
+    "split_histogram": {
+      "8:8": {
+        "pair": [
+          8,
+          8
+        ],
+        "tokens": 480,
+        "updates": 480,
+        "vectors": 3840
+      },
+      "9:7": {
+        "pair": [
+          9,
+          7
+        ],
+        "tokens": 15904,
+        "updates": 15904,
+        "vectors": 127232
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw1",
+    "candidate_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "encoded_tokens": 16384,
+    "encoded_updates": 16384,
+    "model": "Llama-2-7b-hf",
+    "observed_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "rate": 2,
+    "selector_bits_total": 16384,
+    "split_histogram": {
+      "4:4": {
+        "pair": [
+          4,
+          4
+        ],
+        "tokens": 480,
+        "updates": 480,
+        "vectors": 15360
+      },
+      "5:3": {
+        "pair": [
+          5,
+          3
+        ],
+        "tokens": 15904,
+        "updates": 15904,
+        "vectors": 508928
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw4",
+    "candidate_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "encoded_tokens": 16384,
+    "encoded_updates": 16384,
+    "model": "Llama-2-7b-hf",
+    "observed_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "rate": 2,
+    "selector_bits_total": 16384,
+    "split_histogram": {
+      "4:4": {
+        "pair": [
+          4,
+          4
+        ],
+        "tokens": 480,
+        "updates": 480,
+        "vectors": 15360
+      },
+      "5:3": {
+        "pair": [
+          5,
+          3
+        ],
+        "tokens": 15904,
+        "updates": 15904,
+        "vectors": 508928
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw16",
+    "candidate_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "encoded_tokens": 16384,
+    "encoded_updates": 16384,
+    "model": "Llama-2-7b-hf",
+    "observed_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "rate": 2,
+    "selector_bits_total": 16384,
+    "split_histogram": {
+      "4:4": {
+        "pair": [
+          4,
+          4
+        ],
+        "tokens": 480,
+        "updates": 480,
+        "vectors": 15360
+      },
+      "5:3": {
+        "pair": [
+          5,
+          3
+        ],
+        "tokens": 15904,
+        "updates": 15904,
+        "vectors": 508928
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw1",
+    "candidate_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "encoded_tokens": 16384,
+    "encoded_updates": 16384,
+    "model": "Llama-2-7b-hf",
+    "observed_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "rate": 3,
+    "selector_bits_total": 16384,
+    "split_histogram": {
+      "6:6": {
+        "pair": [
+          6,
+          6
+        ],
+        "tokens": 480,
+        "updates": 480,
+        "vectors": 15360
+      },
+      "7:5": {
+        "pair": [
+          7,
+          5
+        ],
+        "tokens": 15904,
+        "updates": 15904,
+        "vectors": 508928
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw4",
+    "candidate_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "encoded_tokens": 16384,
+    "encoded_updates": 16384,
+    "model": "Llama-2-7b-hf",
+    "observed_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "rate": 3,
+    "selector_bits_total": 16384,
+    "split_histogram": {
+      "6:6": {
+        "pair": [
+          6,
+          6
+        ],
+        "tokens": 480,
+        "updates": 480,
+        "vectors": 15360
+      },
+      "7:5": {
+        "pair": [
+          7,
+          5
+        ],
+        "tokens": 15904,
+        "updates": 15904,
+        "vectors": 508928
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw16",
+    "candidate_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "encoded_tokens": 16384,
+    "encoded_updates": 16384,
+    "model": "Llama-2-7b-hf",
+    "observed_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "rate": 3,
+    "selector_bits_total": 16384,
+    "split_histogram": {
+      "6:6": {
+        "pair": [
+          6,
+          6
+        ],
+        "tokens": 480,
+        "updates": 480,
+        "vectors": 15360
+      },
+      "7:5": {
+        "pair": [
+          7,
+          5
+        ],
+        "tokens": 15904,
+        "updates": 15904,
+        "vectors": 508928
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw1",
+    "candidate_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "encoded_tokens": 16384,
+    "encoded_updates": 16384,
+    "model": "Llama-2-7b-hf",
+    "observed_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "rate": 4,
+    "selector_bits_total": 16384,
+    "split_histogram": {
+      "8:8": {
+        "pair": [
+          8,
+          8
+        ],
+        "tokens": 480,
+        "updates": 480,
+        "vectors": 15360
+      },
+      "9:7": {
+        "pair": [
+          9,
+          7
+        ],
+        "tokens": 15904,
+        "updates": 15904,
+        "vectors": 508928
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw4",
+    "candidate_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "encoded_tokens": 16384,
+    "encoded_updates": 16384,
+    "model": "Llama-2-7b-hf",
+    "observed_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "rate": 4,
+    "selector_bits_total": 16384,
+    "split_histogram": {
+      "8:8": {
+        "pair": [
+          8,
+          8
+        ],
+        "tokens": 480,
+        "updates": 480,
+        "vectors": 15360
+      },
+      "9:7": {
+        "pair": [
+          9,
+          7
+        ],
+        "tokens": 15904,
+        "updates": 15904,
+        "vectors": 508928
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw16",
+    "candidate_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "encoded_tokens": 16384,
+    "encoded_updates": 16384,
+    "model": "Llama-2-7b-hf",
+    "observed_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "rate": 4,
+    "selector_bits_total": 16384,
+    "split_histogram": {
+      "8:8": {
+        "pair": [
+          8,
+          8
+        ],
+        "tokens": 480,
+        "updates": 480,
+        "vectors": 15360
+      },
+      "9:7": {
+        "pair": [
+          9,
+          7
+        ],
+        "tokens": 15904,
+        "updates": 15904,
+        "vectors": 508928
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw1",
+    "candidate_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "encoded_tokens": 18432,
+    "encoded_updates": 18432,
+    "model": "Qwen3-4B",
+    "observed_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "rate": 2,
+    "selector_bits_total": 18432,
+    "split_histogram": {
+      "4:4": {
+        "pair": [
+          4,
+          4
+        ],
+        "tokens": 4516,
+        "updates": 4516,
+        "vectors": 36128
+      },
+      "5:3": {
+        "pair": [
+          5,
+          3
+        ],
+        "tokens": 13916,
+        "updates": 13916,
+        "vectors": 111328
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw4",
+    "candidate_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "encoded_tokens": 18432,
+    "encoded_updates": 18432,
+    "model": "Qwen3-4B",
+    "observed_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "rate": 2,
+    "selector_bits_total": 18432,
+    "split_histogram": {
+      "4:4": {
+        "pair": [
+          4,
+          4
+        ],
+        "tokens": 2528,
+        "updates": 2528,
+        "vectors": 20224
+      },
+      "5:3": {
+        "pair": [
+          5,
+          3
+        ],
+        "tokens": 15904,
+        "updates": 15904,
+        "vectors": 127232
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw16",
+    "candidate_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "encoded_tokens": 18432,
+    "encoded_updates": 18432,
+    "model": "Qwen3-4B",
+    "observed_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "rate": 2,
+    "selector_bits_total": 18432,
+    "split_histogram": {
+      "4:4": {
+        "pair": [
+          4,
+          4
+        ],
+        "tokens": 1037,
+        "updates": 1037,
+        "vectors": 8296
+      },
+      "5:3": {
+        "pair": [
+          5,
+          3
+        ],
+        "tokens": 17395,
+        "updates": 17395,
+        "vectors": 139160
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw1",
+    "candidate_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "encoded_tokens": 18432,
+    "encoded_updates": 18432,
+    "model": "Qwen3-4B",
+    "observed_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "rate": 3,
+    "selector_bits_total": 18432,
+    "split_histogram": {
+      "6:6": {
+        "pair": [
+          6,
+          6
+        ],
+        "tokens": 4604,
+        "updates": 4604,
+        "vectors": 36832
+      },
+      "7:5": {
+        "pair": [
+          7,
+          5
+        ],
+        "tokens": 13828,
+        "updates": 13828,
+        "vectors": 110624
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw4",
+    "candidate_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "encoded_tokens": 18432,
+    "encoded_updates": 18432,
+    "model": "Qwen3-4B",
+    "observed_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "rate": 3,
+    "selector_bits_total": 18432,
+    "split_histogram": {
+      "6:6": {
+        "pair": [
+          6,
+          6
+        ],
+        "tokens": 2527,
+        "updates": 2527,
+        "vectors": 20216
+      },
+      "7:5": {
+        "pair": [
+          7,
+          5
+        ],
+        "tokens": 15905,
+        "updates": 15905,
+        "vectors": 127240
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw16",
+    "candidate_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "encoded_tokens": 18432,
+    "encoded_updates": 18432,
+    "model": "Qwen3-4B",
+    "observed_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "rate": 3,
+    "selector_bits_total": 18432,
+    "split_histogram": {
+      "6:6": {
+        "pair": [
+          6,
+          6
+        ],
+        "tokens": 1037,
+        "updates": 1037,
+        "vectors": 8296
+      },
+      "7:5": {
+        "pair": [
+          7,
+          5
+        ],
+        "tokens": 17395,
+        "updates": 17395,
+        "vectors": 139160
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw1",
+    "candidate_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "encoded_tokens": 18432,
+    "encoded_updates": 18432,
+    "model": "Qwen3-4B",
+    "observed_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "rate": 4,
+    "selector_bits_total": 18432,
+    "split_histogram": {
+      "8:8": {
+        "pair": [
+          8,
+          8
+        ],
+        "tokens": 4602,
+        "updates": 4602,
+        "vectors": 36816
+      },
+      "9:7": {
+        "pair": [
+          9,
+          7
+        ],
+        "tokens": 13830,
+        "updates": 13830,
+        "vectors": 110640
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw4",
+    "candidate_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "encoded_tokens": 18432,
+    "encoded_updates": 18432,
+    "model": "Qwen3-4B",
+    "observed_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "rate": 4,
+    "selector_bits_total": 18432,
+    "split_histogram": {
+      "8:8": {
+        "pair": [
+          8,
+          8
+        ],
+        "tokens": 2461,
+        "updates": 2461,
+        "vectors": 19688
+      },
+      "9:7": {
+        "pair": [
+          9,
+          7
+        ],
+        "tokens": 15971,
+        "updates": 15971,
+        "vectors": 127768
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw16",
+    "candidate_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "encoded_tokens": 18432,
+    "encoded_updates": 18432,
+    "model": "Qwen3-4B",
+    "observed_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "rate": 4,
+    "selector_bits_total": 18432,
+    "split_histogram": {
+      "8:8": {
+        "pair": [
+          8,
+          8
+        ],
+        "tokens": 1033,
+        "updates": 1033,
+        "vectors": 8264
+      },
+      "9:7": {
+        "pair": [
+          9,
+          7
+        ],
+        "tokens": 17399,
+        "updates": 17399,
+        "vectors": 139192
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw1",
+    "candidate_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "encoded_tokens": 18432,
+    "encoded_updates": 18432,
+    "model": "Qwen3-8B",
+    "observed_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "rate": 2,
+    "selector_bits_total": 18432,
+    "split_histogram": {
+      "4:4": {
+        "pair": [
+          4,
+          4
+        ],
+        "tokens": 5556,
+        "updates": 5556,
+        "vectors": 44448
+      },
+      "5:3": {
+        "pair": [
+          5,
+          3
+        ],
+        "tokens": 12876,
+        "updates": 12876,
+        "vectors": 103008
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw4",
+    "candidate_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "encoded_tokens": 18432,
+    "encoded_updates": 18432,
+    "model": "Qwen3-8B",
+    "observed_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "rate": 2,
+    "selector_bits_total": 18432,
+    "split_histogram": {
+      "4:4": {
+        "pair": [
+          4,
+          4
+        ],
+        "tokens": 3064,
+        "updates": 3064,
+        "vectors": 24512
+      },
+      "5:3": {
+        "pair": [
+          5,
+          3
+        ],
+        "tokens": 15368,
+        "updates": 15368,
+        "vectors": 122944
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw16",
+    "candidate_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "encoded_tokens": 18432,
+    "encoded_updates": 18432,
+    "model": "Qwen3-8B",
+    "observed_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "rate": 2,
+    "selector_bits_total": 18432,
+    "split_histogram": {
+      "4:4": {
+        "pair": [
+          4,
+          4
+        ],
+        "tokens": 1321,
+        "updates": 1321,
+        "vectors": 10568
+      },
+      "5:3": {
+        "pair": [
+          5,
+          3
+        ],
+        "tokens": 17111,
+        "updates": 17111,
+        "vectors": 136888
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw1",
+    "candidate_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "encoded_tokens": 18432,
+    "encoded_updates": 18432,
+    "model": "Qwen3-8B",
+    "observed_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "rate": 3,
+    "selector_bits_total": 18432,
+    "split_histogram": {
+      "6:6": {
+        "pair": [
+          6,
+          6
+        ],
+        "tokens": 5608,
+        "updates": 5608,
+        "vectors": 44864
+      },
+      "7:5": {
+        "pair": [
+          7,
+          5
+        ],
+        "tokens": 12824,
+        "updates": 12824,
+        "vectors": 102592
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw4",
+    "candidate_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "encoded_tokens": 18432,
+    "encoded_updates": 18432,
+    "model": "Qwen3-8B",
+    "observed_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "rate": 3,
+    "selector_bits_total": 18432,
+    "split_histogram": {
+      "6:6": {
+        "pair": [
+          6,
+          6
+        ],
+        "tokens": 3593,
+        "updates": 3593,
+        "vectors": 28744
+      },
+      "7:5": {
+        "pair": [
+          7,
+          5
+        ],
+        "tokens": 14839,
+        "updates": 14839,
+        "vectors": 118712
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw16",
+    "candidate_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "encoded_tokens": 18432,
+    "encoded_updates": 18432,
+    "model": "Qwen3-8B",
+    "observed_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "rate": 3,
+    "selector_bits_total": 18432,
+    "split_histogram": {
+      "6:6": {
+        "pair": [
+          6,
+          6
+        ],
+        "tokens": 1534,
+        "updates": 1534,
+        "vectors": 12272
+      },
+      "7:5": {
+        "pair": [
+          7,
+          5
+        ],
+        "tokens": 16898,
+        "updates": 16898,
+        "vectors": 135184
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw1",
+    "candidate_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "encoded_tokens": 18432,
+    "encoded_updates": 18432,
+    "model": "Qwen3-8B",
+    "observed_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "rate": 4,
+    "selector_bits_total": 18432,
+    "split_histogram": {
+      "8:8": {
+        "pair": [
+          8,
+          8
+        ],
+        "tokens": 5532,
+        "updates": 5532,
+        "vectors": 44256
+      },
+      "9:7": {
+        "pair": [
+          9,
+          7
+        ],
+        "tokens": 12900,
+        "updates": 12900,
+        "vectors": 103200
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw4",
+    "candidate_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "encoded_tokens": 18432,
+    "encoded_updates": 18432,
+    "model": "Qwen3-8B",
+    "observed_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "rate": 4,
+    "selector_bits_total": 18432,
+    "split_histogram": {
+      "8:8": {
+        "pair": [
+          8,
+          8
+        ],
+        "tokens": 3042,
+        "updates": 3042,
+        "vectors": 24336
+      },
+      "9:7": {
+        "pair": [
+          9,
+          7
+        ],
+        "tokens": 15390,
+        "updates": 15390,
+        "vectors": 123120
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw16",
+    "candidate_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "encoded_tokens": 18432,
+    "encoded_updates": 18432,
+    "model": "Qwen3-8B",
+    "observed_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "rate": 4,
+    "selector_bits_total": 18432,
+    "split_histogram": {
+      "8:8": {
+        "pair": [
+          8,
+          8
+        ],
+        "tokens": 1431,
+        "updates": 1431,
+        "vectors": 11448
+      },
+      "9:7": {
+        "pair": [
+          9,
+          7
+        ],
+        "tokens": 17001,
+        "updates": 17001,
+        "vectors": 136008
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw1",
+    "candidate_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "encoded_tokens": 16384,
+    "encoded_updates": 16384,
+    "model": "DeepSeek-R1-Distill-Llama-8B",
+    "observed_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "rate": 2,
+    "selector_bits_total": 16384,
+    "split_histogram": {
+      "4:4": {
+        "pair": [
+          4,
+          4
+        ],
+        "tokens": 480,
+        "updates": 480,
+        "vectors": 3840
+      },
+      "5:3": {
+        "pair": [
+          5,
+          3
+        ],
+        "tokens": 15904,
+        "updates": 15904,
+        "vectors": 127232
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw4",
+    "candidate_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "encoded_tokens": 16384,
+    "encoded_updates": 16384,
+    "model": "DeepSeek-R1-Distill-Llama-8B",
+    "observed_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "rate": 2,
+    "selector_bits_total": 16384,
+    "split_histogram": {
+      "4:4": {
+        "pair": [
+          4,
+          4
+        ],
+        "tokens": 480,
+        "updates": 480,
+        "vectors": 3840
+      },
+      "5:3": {
+        "pair": [
+          5,
+          3
+        ],
+        "tokens": 15904,
+        "updates": 15904,
+        "vectors": 127232
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw16",
+    "candidate_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "encoded_tokens": 16384,
+    "encoded_updates": 16384,
+    "model": "DeepSeek-R1-Distill-Llama-8B",
+    "observed_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "rate": 2,
+    "selector_bits_total": 16384,
+    "split_histogram": {
+      "4:4": {
+        "pair": [
+          4,
+          4
+        ],
+        "tokens": 480,
+        "updates": 480,
+        "vectors": 3840
+      },
+      "5:3": {
+        "pair": [
+          5,
+          3
+        ],
+        "tokens": 15904,
+        "updates": 15904,
+        "vectors": 127232
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw1",
+    "candidate_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "encoded_tokens": 16384,
+    "encoded_updates": 16384,
+    "model": "DeepSeek-R1-Distill-Llama-8B",
+    "observed_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "rate": 3,
+    "selector_bits_total": 16384,
+    "split_histogram": {
+      "6:6": {
+        "pair": [
+          6,
+          6
+        ],
+        "tokens": 480,
+        "updates": 480,
+        "vectors": 3840
+      },
+      "7:5": {
+        "pair": [
+          7,
+          5
+        ],
+        "tokens": 15904,
+        "updates": 15904,
+        "vectors": 127232
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw4",
+    "candidate_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "encoded_tokens": 16384,
+    "encoded_updates": 16384,
+    "model": "DeepSeek-R1-Distill-Llama-8B",
+    "observed_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "rate": 3,
+    "selector_bits_total": 16384,
+    "split_histogram": {
+      "6:6": {
+        "pair": [
+          6,
+          6
+        ],
+        "tokens": 480,
+        "updates": 480,
+        "vectors": 3840
+      },
+      "7:5": {
+        "pair": [
+          7,
+          5
+        ],
+        "tokens": 15904,
+        "updates": 15904,
+        "vectors": 127232
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw16",
+    "candidate_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "encoded_tokens": 16384,
+    "encoded_updates": 16384,
+    "model": "DeepSeek-R1-Distill-Llama-8B",
+    "observed_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "rate": 3,
+    "selector_bits_total": 16384,
+    "split_histogram": {
+      "6:6": {
+        "pair": [
+          6,
+          6
+        ],
+        "tokens": 480,
+        "updates": 480,
+        "vectors": 3840
+      },
+      "7:5": {
+        "pair": [
+          7,
+          5
+        ],
+        "tokens": 15904,
+        "updates": 15904,
+        "vectors": 127232
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw1",
+    "candidate_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "encoded_tokens": 16384,
+    "encoded_updates": 16384,
+    "model": "DeepSeek-R1-Distill-Llama-8B",
+    "observed_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "rate": 4,
+    "selector_bits_total": 16384,
+    "split_histogram": {
+      "8:8": {
+        "pair": [
+          8,
+          8
+        ],
+        "tokens": 480,
+        "updates": 480,
+        "vectors": 3840
+      },
+      "9:7": {
+        "pair": [
+          9,
+          7
+        ],
+        "tokens": 15904,
+        "updates": 15904,
+        "vectors": 127232
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw4",
+    "candidate_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "encoded_tokens": 16384,
+    "encoded_updates": 16384,
+    "model": "DeepSeek-R1-Distill-Llama-8B",
+    "observed_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "rate": 4,
+    "selector_bits_total": 16384,
+    "split_histogram": {
+      "8:8": {
+        "pair": [
+          8,
+          8
+        ],
+        "tokens": 480,
+        "updates": 480,
+        "vectors": 3840
+      },
+      "9:7": {
+        "pair": [
+          9,
+          7
+        ],
+        "tokens": 15904,
+        "updates": 15904,
+        "vectors": 127232
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw16",
+    "candidate_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "encoded_tokens": 16384,
+    "encoded_updates": 16384,
+    "model": "DeepSeek-R1-Distill-Llama-8B",
+    "observed_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "rate": 4,
+    "selector_bits_total": 16384,
+    "split_histogram": {
+      "8:8": {
+        "pair": [
+          8,
+          8
+        ],
+        "tokens": 480,
+        "updates": 480,
+        "vectors": 3840
+      },
+      "9:7": {
+        "pair": [
+          9,
+          7
+        ],
+        "tokens": 15904,
+        "updates": 15904,
+        "vectors": 127232
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw1",
+    "candidate_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "encoded_tokens": 14336,
+    "encoded_updates": 14336,
+    "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+    "observed_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "rate": 2,
+    "selector_bits_total": 14336,
+    "split_histogram": {
+      "4:4": {
+        "pair": [
+          4,
+          4
+        ],
+        "tokens": 3935,
+        "updates": 3935,
+        "vectors": 7870
+      },
+      "5:3": {
+        "pair": [
+          5,
+          3
+        ],
+        "tokens": 10401,
+        "updates": 10401,
+        "vectors": 20802
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw4",
+    "candidate_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "encoded_tokens": 14336,
+    "encoded_updates": 14336,
+    "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+    "observed_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "rate": 2,
+    "selector_bits_total": 14336,
+    "split_histogram": {
+      "4:4": {
+        "pair": [
+          4,
+          4
+        ],
+        "tokens": 2408,
+        "updates": 2408,
+        "vectors": 4816
+      },
+      "5:3": {
+        "pair": [
+          5,
+          3
+        ],
+        "tokens": 11928,
+        "updates": 11928,
+        "vectors": 23856
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw16",
+    "candidate_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "encoded_tokens": 14336,
+    "encoded_updates": 14336,
+    "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+    "observed_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "rate": 2,
+    "selector_bits_total": 14336,
+    "split_histogram": {
+      "4:4": {
+        "pair": [
+          4,
+          4
+        ],
+        "tokens": 579,
+        "updates": 579,
+        "vectors": 1158
+      },
+      "5:3": {
+        "pair": [
+          5,
+          3
+        ],
+        "tokens": 13757,
+        "updates": 13757,
+        "vectors": 27514
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw1",
+    "candidate_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "encoded_tokens": 14336,
+    "encoded_updates": 14336,
+    "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+    "observed_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "rate": 3,
+    "selector_bits_total": 14336,
+    "split_histogram": {
+      "6:6": {
+        "pair": [
+          6,
+          6
+        ],
+        "tokens": 4074,
+        "updates": 4074,
+        "vectors": 8148
+      },
+      "7:5": {
+        "pair": [
+          7,
+          5
+        ],
+        "tokens": 10262,
+        "updates": 10262,
+        "vectors": 20524
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw4",
+    "candidate_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "encoded_tokens": 14336,
+    "encoded_updates": 14336,
+    "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+    "observed_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "rate": 3,
+    "selector_bits_total": 14336,
+    "split_histogram": {
+      "6:6": {
+        "pair": [
+          6,
+          6
+        ],
+        "tokens": 2406,
+        "updates": 2406,
+        "vectors": 4812
+      },
+      "7:5": {
+        "pair": [
+          7,
+          5
+        ],
+        "tokens": 11930,
+        "updates": 11930,
+        "vectors": 23860
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw16",
+    "candidate_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "encoded_tokens": 14336,
+    "encoded_updates": 14336,
+    "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+    "observed_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "rate": 3,
+    "selector_bits_total": 14336,
+    "split_histogram": {
+      "6:6": {
+        "pair": [
+          6,
+          6
+        ],
+        "tokens": 439,
+        "updates": 439,
+        "vectors": 878
+      },
+      "7:5": {
+        "pair": [
+          7,
+          5
+        ],
+        "tokens": 13897,
+        "updates": 13897,
+        "vectors": 27794
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw1",
+    "candidate_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "encoded_tokens": 14336,
+    "encoded_updates": 14336,
+    "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+    "observed_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "rate": 4,
+    "selector_bits_total": 14336,
+    "split_histogram": {
+      "8:8": {
+        "pair": [
+          8,
+          8
+        ],
+        "tokens": 4000,
+        "updates": 4000,
+        "vectors": 8000
+      },
+      "9:7": {
+        "pair": [
+          9,
+          7
+        ],
+        "tokens": 10336,
+        "updates": 10336,
+        "vectors": 20672
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw4",
+    "candidate_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "encoded_tokens": 14336,
+    "encoded_updates": 14336,
+    "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+    "observed_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "rate": 4,
+    "selector_bits_total": 14336,
+    "split_histogram": {
+      "8:8": {
+        "pair": [
+          8,
+          8
+        ],
+        "tokens": 2400,
+        "updates": 2400,
+        "vectors": 4800
+      },
+      "9:7": {
+        "pair": [
+          9,
+          7
+        ],
+        "tokens": 11936,
+        "updates": 11936,
+        "vectors": 23872
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw16",
+    "candidate_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "encoded_tokens": 14336,
+    "encoded_updates": 14336,
+    "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+    "observed_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "rate": 4,
+    "selector_bits_total": 14336,
+    "split_histogram": {
+      "8:8": {
+        "pair": [
+          8,
+          8
+        ],
+        "tokens": 435,
+        "updates": 435,
+        "vectors": 870
+      },
+      "9:7": {
+        "pair": [
+          9,
+          7
+        ],
+        "tokens": 13901,
+        "updates": 13901,
+        "vectors": 27802
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw1",
+    "candidate_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "encoded_tokens": 14336,
+    "encoded_updates": 14336,
+    "model": "DeepSeek-R1-Distill-Qwen-7B",
+    "observed_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "rate": 2,
+    "selector_bits_total": 14336,
+    "split_histogram": {
+      "4:4": {
+        "pair": [
+          4,
+          4
+        ],
+        "tokens": 3899,
+        "updates": 3899,
+        "vectors": 15596
+      },
+      "5:3": {
+        "pair": [
+          5,
+          3
+        ],
+        "tokens": 10437,
+        "updates": 10437,
+        "vectors": 41748
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw4",
+    "candidate_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "encoded_tokens": 14336,
+    "encoded_updates": 14336,
+    "model": "DeepSeek-R1-Distill-Qwen-7B",
+    "observed_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "rate": 2,
+    "selector_bits_total": 14336,
+    "split_histogram": {
+      "4:4": {
+        "pair": [
+          4,
+          4
+        ],
+        "tokens": 2408,
+        "updates": 2408,
+        "vectors": 9632
+      },
+      "5:3": {
+        "pair": [
+          5,
+          3
+        ],
+        "tokens": 11928,
+        "updates": 11928,
+        "vectors": 47712
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw16",
+    "candidate_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "encoded_tokens": 14336,
+    "encoded_updates": 14336,
+    "model": "DeepSeek-R1-Distill-Qwen-7B",
+    "observed_pairs": [
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        3
+      ]
+    ],
+    "rate": 2,
+    "selector_bits_total": 14336,
+    "split_histogram": {
+      "4:4": {
+        "pair": [
+          4,
+          4
+        ],
+        "tokens": 917,
+        "updates": 917,
+        "vectors": 3668
+      },
+      "5:3": {
+        "pair": [
+          5,
+          3
+        ],
+        "tokens": 13419,
+        "updates": 13419,
+        "vectors": 53676
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw1",
+    "candidate_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "encoded_tokens": 14336,
+    "encoded_updates": 14336,
+    "model": "DeepSeek-R1-Distill-Qwen-7B",
+    "observed_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "rate": 3,
+    "selector_bits_total": 14336,
+    "split_histogram": {
+      "6:6": {
+        "pair": [
+          6,
+          6
+        ],
+        "tokens": 3529,
+        "updates": 3529,
+        "vectors": 14116
+      },
+      "7:5": {
+        "pair": [
+          7,
+          5
+        ],
+        "tokens": 10807,
+        "updates": 10807,
+        "vectors": 43228
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw4",
+    "candidate_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "encoded_tokens": 14336,
+    "encoded_updates": 14336,
+    "model": "DeepSeek-R1-Distill-Qwen-7B",
+    "observed_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "rate": 3,
+    "selector_bits_total": 14336,
+    "split_histogram": {
+      "6:6": {
+        "pair": [
+          6,
+          6
+        ],
+        "tokens": 2408,
+        "updates": 2408,
+        "vectors": 9632
+      },
+      "7:5": {
+        "pair": [
+          7,
+          5
+        ],
+        "tokens": 11928,
+        "updates": 11928,
+        "vectors": 47712
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw16",
+    "candidate_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "encoded_tokens": 14336,
+    "encoded_updates": 14336,
+    "model": "DeepSeek-R1-Distill-Qwen-7B",
+    "observed_pairs": [
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "rate": 3,
+    "selector_bits_total": 14336,
+    "split_histogram": {
+      "6:6": {
+        "pair": [
+          6,
+          6
+        ],
+        "tokens": 917,
+        "updates": 917,
+        "vectors": 3668
+      },
+      "7:5": {
+        "pair": [
+          7,
+          5
+        ],
+        "tokens": 13419,
+        "updates": 13419,
+        "vectors": 53676
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw1",
+    "candidate_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "encoded_tokens": 14336,
+    "encoded_updates": 14336,
+    "model": "DeepSeek-R1-Distill-Qwen-7B",
+    "observed_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "rate": 4,
+    "selector_bits_total": 14336,
+    "split_histogram": {
+      "8:8": {
+        "pair": [
+          8,
+          8
+        ],
+        "tokens": 3899,
+        "updates": 3899,
+        "vectors": 15596
+      },
+      "9:7": {
+        "pair": [
+          9,
+          7
+        ],
+        "tokens": 10437,
+        "updates": 10437,
+        "vectors": 41748
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw4",
+    "candidate_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "encoded_tokens": 14336,
+    "encoded_updates": 14336,
+    "model": "DeepSeek-R1-Distill-Qwen-7B",
+    "observed_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "rate": 4,
+    "selector_bits_total": 14336,
+    "split_histogram": {
+      "8:8": {
+        "pair": [
+          8,
+          8
+        ],
+        "tokens": 2408,
+        "updates": 2408,
+        "vectors": 9632
+      },
+      "9:7": {
+        "pair": [
+          9,
+          7
+        ],
+        "tokens": 11928,
+        "updates": 11928,
+        "vectors": 47712
+      }
+    }
+  },
+  {
+    "candidate": "DEVONLY-AdaptiveHQ-safe-kw16",
+    "candidate_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "encoded_tokens": 14336,
+    "encoded_updates": 14336,
+    "model": "DeepSeek-R1-Distill-Qwen-7B",
+    "observed_pairs": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "rate": 4,
+    "selector_bits_total": 14336,
+    "split_histogram": {
+      "8:8": {
+        "pair": [
+          8,
+          8
+        ],
+        "tokens": 917,
+        "updates": 917,
+        "vectors": 3668
+      },
+      "9:7": {
+        "pair": [
+          9,
+          7
+        ],
+        "tokens": 13419,
+        "updates": 13419,
+        "vectors": 53676
+      }
+    }
+  }
+]

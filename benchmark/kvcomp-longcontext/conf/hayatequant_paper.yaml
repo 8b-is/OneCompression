@@ -1,8 +1,12 @@
-# Paper-level HayateQuant benchmark, run under the exact same long-context
-# harness/protocol as the TurboQuant-faithful comparison (see
-# ``conf/turboquant_paper.yaml``): Needle-in-a-Haystack recall, LongBench-E
-# end-to-end generation, RULER retrieval stress, and WikiText-2 PPL, all on
-# Llama-3.1-8B-Instruct (the TurboQuant paper's own 1st KV-cache model).
+# LEGACY PRE-FORMAL PRESET -- NOT THE REFRESHED PAPER PROTOCOL.
+# This file retains the historical auto/outlier variants, 32K LongBench cap,
+# and 4096/2048 PPL settings for development archaeology.  It must not be used
+# to refresh paper claims.  Use benchmark/kvcomp-codec/
+# submit_hayatequant_paper.sh for the fail-closed HQ/AdaptiveHQ formal grid.
+#
+# Historically this benchmark ran under the same long-context harness as the
+# TurboQuant comparison: Needle, LongBench-E, a local retrieval diagnostic,
+# and WikiText-2 PPL on Llama-3.1-8B-Instruct.
 #
 # This config answers the question the codec-only micro-benchmarks
 # (``codec_benchmark.py`` distortion/PPL, ``codec_speed.py`` / ``e2e_speed.py``
@@ -108,6 +112,8 @@ longbench_limit: null
 
 run_gsm8k: false
 run_math: false
+math_grader: math_verify
+math_verify_version: "0.9.0"
 # Keep the synthetic multi-key diagnostic out of official paper benchmark tables.
 run_ruler: false
 ruler_keys: 4

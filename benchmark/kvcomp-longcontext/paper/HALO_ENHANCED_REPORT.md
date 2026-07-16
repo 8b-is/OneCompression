@@ -96,7 +96,7 @@ Legend: ✅ implemented/fixed · 📝 documented (deliberate, with rationale) ·
 | Item | Issue | Status | Resolution |
 |---|---|---|---|
 | C-timing | `_ms_per_encode` is encode+decode, S=1024 only; CUDA-sync breaks CPU | ✅ | `codec_speed.py` now reports encode **and** decode separately, in **both** prefill (S=4096) and decode (S=1) regimes, with throughput (Melem/s, tok/s/layer); CPU path guarded. |
-| C-needle | haystack was the same 4 sentences repeated (low-entropy, too forgiving) | ✅ | `eval/longcontext.py` now samples a 30-sentence diverse bank without immediate repetition (`_build_filler`), seeded/deterministic. Applies to both needle and RULER multi-key. |
+| C-needle | haystack was the same 4 sentences repeated (low-entropy, too forgiving) | ✅ | `eval/longcontext.py` now samples a 30-sentence diverse bank without immediate repetition (`_build_filler`), seeded/deterministic. Applies to both needle and the local synthetic multi-key diagnostic. |
 | C-position | `greedy_answer` position/cache_position after eviction | 📝 (already correct) | Confirmed correct; kept. |
 
 ### vLLM plugin
@@ -173,7 +173,7 @@ The four superiority axes, in decreasing strength:
   direct rebuttal of the paper's "unbiased IP needs QJL" thesis.
 
 **What we must concede** (reviewer-proofing): TurboQuant proves a near-optimal
-*generic* distortion-rate (≤ √3π/2 ≈ 2.7× the Shannon lower bound, exponential
+*generic* distortion-rate (≤ π√3/2 ≈ 2.72× the Shannon lower bound, exponential
 4⁻ᵇ rate). HALO does not beat that *generic* theory. Our framing: generic VQ
 optimality ≠ attention-end-to-end optimality; HALO optimises a **task-aligned**
 distortion (keys→logit, values→reconstruction MSE), which is the right objective
@@ -189,7 +189,7 @@ dedicated `results_halo_enh_*` dirs so they never clobber other paper JSONs.
 
 | Axis | Harness / config | Operating points | Result dir |
 |---|---|---|---|
-| Retrieval (Needle/RULER/PPL) | `kv_benchmark.py` `turboquant_paper[_ministral]` | 2 / **2.5** / 3 / **3.5** / 4-bit × {TurboQuant, HALO, HALO-NC, HALO-NCIT} | `results_halo_enh_{llama,minis}_retr` |
+| Retrieval (Needle/local multi-key/PPL) | `kv_benchmark.py` `turboquant_paper[_ministral]` | 2 / **2.5** / 3 / **3.5** / 4-bit × {TurboQuant, HALO, HALO-NC, HALO-NCIT} | `results_halo_enh_{llama,minis}_retr` |
 | LongBench-E downstream | same, `run_longbench=true` | same | `results_halo_enh_llama_lb` |
 | Reasoning (GSM8K/MATH/PPL) | `paper_aime` | 3 / 4-bit × {HALO, HALO-NC, HALO-NCIT} | `results_halo_enh_basic_{r1q15,r1l8,r1q7,r1q14,qwq}` |
 | Codec speed × quality | `codec_speed.py` | prefill S=4096 + decode S=1, bits 2/3/4, incl. NC/NCIT | `results_codec_speed/codec_speed_enh_*` |

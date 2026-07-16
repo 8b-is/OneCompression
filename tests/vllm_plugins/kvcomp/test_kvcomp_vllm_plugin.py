@@ -13,10 +13,13 @@ the fix holds through the *plugin* entry point as well, not just the mapper.
 
 Copyright 2025-2026 Fujitsu Ltd.
 """
+
 from __future__ import annotations
 
 import json
 import os
+import sys
+from types import ModuleType
 
 import pytest
 
@@ -25,12 +28,16 @@ from onecomp.kvcomp.codec.turboquant import TurboQuantCodec
 from onecomp.kvcomp.codec.halo import HALOCodec
 from vllm_plugins.kvcomp.vllm_plugin import (
     _HAYATE_NATIVE_CONFIG_ENV,
+    _install_engine_args_hook,
     _register_hayate_native_backend,
     apply_to_engine_args,
     plan_for_model,
     read_kv_compression_config,
 )
-from vllm_plugins.kvcomp.hayate_triton import _store_group_codes
+from vllm_plugins.kvcomp.hayate_triton_config import (
+    _direct_key_scale,
+    _store_group_codes,
+)
 from vllm_plugins.kvcomp.native_turboquant import (
     resolve_turboquant_preset,
     turboquant_engine_kwargs,
@@ -49,6 +56,10 @@ class _FakeEngineArgs:
 
 
 def _write_model_config(tmp_path, kv_compression_config):
+    # Native-mapping tests intentionally request uniform quantization.  The
+    # production config default is residual_window=128 and now fails closed,
+    # because vLLM cannot keep a recent FP suffix.
+    kv_compression_config = {"residual_window": 0, **kv_compression_config}
     cfg = {"model_type": "llama", "kv_compression_config": kv_compression_config}
     (tmp_path / "config.json").write_text(json.dumps(cfg))
     return str(tmp_path)
@@ -72,26 +83,65 @@ def test_apply_to_engine_args_noop_without_model_path():
     assert out.kv_cache_dtype == "auto"
 
 
-def test_apply_to_engine_args_hayatequant_block_size_1_stays_faithful(tmp_path):
+def test_engine_args_hook_propagates_mapping_failures(monkeypatch):
+    """A bad serialized recipe must stop engine construction, not become FullKV."""
+    from vllm_plugins.kvcomp import vllm_plugin
+
+    class EngineArgs:
+        def create_engine_config(self):
+            return "engine-created"
+
+    vllm_mod = ModuleType("vllm")
+    engine_mod = ModuleType("vllm.engine")
+    arg_utils_mod = ModuleType("vllm.engine.arg_utils")
+    arg_utils_mod.EngineArgs = EngineArgs
+    vllm_mod.engine = engine_mod
+    engine_mod.arg_utils = arg_utils_mod
+    monkeypatch.setitem(sys.modules, "vllm", vllm_mod)
+    monkeypatch.setitem(sys.modules, "vllm.engine", engine_mod)
+    monkeypatch.setitem(sys.modules, "vllm.engine.arg_utils", arg_utils_mod)
+    monkeypatch.setattr(vllm_plugin, "_PATCHED", False)
+
+    def fail_closed(_engine_args):
+        raise RuntimeError("unrepresentable recipe")
+
+    monkeypatch.setattr(vllm_plugin, "apply_to_engine_args", fail_closed)
+    assert _install_engine_args_hook(vllm_plugin._get_logger())
+    with pytest.raises(RuntimeError, match="unrepresentable recipe"):
+        EngineArgs().create_engine_config()
+
+
+def test_apply_rejects_native_dtype_missing_from_installed_vllm(tmp_path, monkeypatch):
+    model_path = _write_model_config(tmp_path, {"codec": {"name": "fp8"}})
+    engine_args = _FakeEngineArgs(model=model_path)
+    monkeypatch.setattr(
+        "vllm_plugins.kvcomp.vllm_plugin._vllm_accepts_dtype", lambda _dtype: False
+    )
+    with pytest.raises(RuntimeError, match="does not support the required"):
+        apply_to_engine_args(engine_args)
+
+
+def test_apply_to_engine_args_hayatequant_block_size_1_fails_closed(tmp_path):
     codec = HayateQuantCodec(bits=4, block_size=1)
     model_path = _write_model_config(tmp_path, {"codec": codec.get_kv_config()})
     engine_args = _FakeEngineArgs(model=model_path)
-    apply_to_engine_args(engine_args)
+    with pytest.raises(RuntimeError, match="cannot run through native vLLM"):
+        apply_to_engine_args(engine_args)
     assert engine_args.kv_cache_dtype == "auto"
 
 
 @pytest.mark.parametrize("bits", [2, 3, 4])
-def test_apply_to_engine_args_hayatequant_default_auto_is_faithful(tmp_path, bits):
-    """The exact regression this test guards: a HayateQuant model saved with
-    its *default* ``block_size=None`` ("auto", the recommended/shipped
-    setting) must not crash ``apply_to_engine_args``.  Supported 3/4-bit
-    settings remain on the faithful custom/HF path because the byte-compatible
-    native override only block-quantizes keys, not values.
+def test_apply_to_engine_args_hayatequant_default_auto_fails_closed(tmp_path, bits):
+    """Default block-VQ cannot silently become FullKV or key-only native HQ.
+
+    The byte-compatible override block-quantizes keys but not values, so the
+    faithful default must stop engine construction and direct users to HF/custom.
     """
     codec = HayateQuantCodec(bits=bits)  # block_size left at its None default
     model_path = _write_model_config(tmp_path, {"codec": codec.get_kv_config()})
     engine_args = _FakeEngineArgs(model=model_path)
-    apply_to_engine_args(engine_args)  # must not raise
+    with pytest.raises(RuntimeError, match="cannot run through native vLLM"):
+        apply_to_engine_args(engine_args)
     assert engine_args.kv_cache_dtype == "auto"
 
 
@@ -101,7 +151,8 @@ def test_apply_to_engine_args_turboquant_defaults_to_faithful_path(tmp_path):
     codec = TurboQuantCodec(bits=8, value_bits=4)
     model_path = _write_model_config(tmp_path, {"codec": codec.get_kv_config()})
     engine_args = _FakeEngineArgs(model=model_path)
-    apply_to_engine_args(engine_args)
+    with pytest.raises(RuntimeError, match="cannot run through native vLLM"):
+        apply_to_engine_args(engine_args)
     assert engine_args.kv_cache_dtype == "auto"
 
 
@@ -139,17 +190,19 @@ def test_apply_to_engine_args_halo_defaults_to_faithful_path(tmp_path):
     codec = HALOCodec(bits=4)
     model_path = _write_model_config(tmp_path, {"codec": codec.get_kv_config()})
     engine_args = _FakeEngineArgs(model=model_path)
-    apply_to_engine_args(engine_args)
+    with pytest.raises(RuntimeError, match="cannot run through native vLLM"):
+        apply_to_engine_args(engine_args)
     assert engine_args.kv_cache_dtype == "auto"
 
 
-def test_apply_to_engine_args_lowbit_leaves_auto_and_warns(tmp_path):
+def test_apply_to_engine_args_lowbit_fails_before_fullkv_start(tmp_path):
     from onecomp.kvcomp.codec.affine import Int4Codec
 
     codec = Int4Codec()
     model_path = _write_model_config(tmp_path, {"codec": codec.get_kv_config()})
     engine_args = _FakeEngineArgs(model=model_path)
-    apply_to_engine_args(engine_args)
+    with pytest.raises(RuntimeError, match="cannot run through native vLLM"):
+        apply_to_engine_args(engine_args)
     assert engine_args.kv_cache_dtype == "auto"  # never silently downgraded
 
 
@@ -192,15 +245,18 @@ def test_hayate_native_backend_registers_from_env_for_spawn(monkeypatch):
     monkeypatch.setattr(vllm_plugin, "_HAYATE_NATIVE_INSTALLED", False)
     monkeypatch.setenv(
         _HAYATE_NATIVE_CONFIG_ENV,
-        json.dumps({
-            "bits": 3,
-            "value_bits": 3,
-            "dist": "gaussian",
-            "block_size": None,
-            "max_codebook_bits": 9,
-            "rotation_mode": "auto",
-            "seed": 0,
-        }, sort_keys=True),
+        json.dumps(
+            {
+                "bits": 3,
+                "value_bits": 3,
+                "dist": "gaussian",
+                "block_size": None,
+                "max_codebook_bits": 9,
+                "rotation_mode": "auto",
+                "seed": 0,
+            },
+            sort_keys=True,
+        ),
     )
 
     assert _register_hayate_native_backend(vllm_plugin._get_logger())
@@ -210,6 +266,31 @@ def test_hayate_native_backend_registers_from_env_for_spawn(monkeypatch):
         == "vllm_plugins.kvcomp.hayate_native.HayateQuantNativeBackend"
     )
     registry.AttentionBackendEnum.TURBOQUANT.clear_override()
+
+
+def test_registered_hayate_backend_without_config_delegates_upstream(monkeypatch):
+    """A stale process-global registry override must not invent HQ defaults."""
+    from types import SimpleNamespace
+
+    pytest.importorskip("vllm", reason="native backend delegation requires vLLM")
+    from vllm.v1.attention.backends.turboquant_attn import TurboQuantAttentionImpl
+    from vllm_plugins.kvcomp.hayate_native import HayateQuantNativeImpl
+
+    monkeypatch.delenv(_HAYATE_NATIVE_CONFIG_ENV, raising=False)
+    delegated = []
+
+    def fake_upstream(_self, layer, device):
+        delegated.append((layer, device))
+
+    monkeypatch.setattr(TurboQuantAttentionImpl, "_ensure_on_device", fake_upstream)
+    impl = object.__new__(HayateQuantNativeImpl)
+    impl.tq_config = SimpleNamespace(key_fp8=False, key_quant_bits=3)
+    layer = SimpleNamespace()
+
+    impl._ensure_on_device(layer, "cuda:0")
+
+    assert layer._hq_native_enabled is False
+    assert delegated == [(layer, "cuda:0")]
 
 
 def test_hayate_store_group_codes_auto_tracks_cache_layout(monkeypatch):
@@ -227,6 +308,21 @@ def test_hayate_store_group_codes_rejects_unsafe_6bit_override(monkeypatch):
         _store_group_codes(6, 32)
 
 
+def test_hayate_direct_key_scale_only_for_single_group(monkeypatch):
+    monkeypatch.delenv("KVCOMP_VLLM_HAYATE_DIRECT_KEY_SCALE", raising=False)
+    assert _direct_key_scale(1, True)
+    assert not _direct_key_scale(2, True)
+    assert not _direct_key_scale(1, False)
+
+    monkeypatch.setenv("KVCOMP_VLLM_HAYATE_DIRECT_KEY_SCALE", "never")
+    assert not _direct_key_scale(1, True)
+    monkeypatch.setenv("KVCOMP_VLLM_HAYATE_DIRECT_KEY_SCALE", "always")
+    assert _direct_key_scale(1, True)
+    monkeypatch.setenv("KVCOMP_VLLM_HAYATE_DIRECT_KEY_SCALE", "invalid")
+    with pytest.raises(ValueError, match="DIRECT_KEY_SCALE"):
+        _direct_key_scale(1, True)
+
+
 def test_plan_for_model_hayatequant_strict_mode_requires_custom_backend(tmp_path, monkeypatch):
     codec = HayateQuantCodec(bits=3, block_size=4)
     model_path = _write_model_config(tmp_path, {"codec": codec.get_kv_config()})
@@ -236,11 +332,13 @@ def test_plan_for_model_hayatequant_strict_mode_requires_custom_backend(tmp_path
     assert plan.needs_custom_backend and not plan.native_supported
     assert plan.kv_cache_dtype == "auto"
 
+    engine_args = _FakeEngineArgs(model=model_path)
+    with pytest.raises(RuntimeError, match="cannot run through native vLLM"):
+        apply_to_engine_args(engine_args)
+
 
 @pytest.mark.parametrize("mode", ["hadamard", "hadamard_gemm"])
-def test_apply_to_engine_args_hayatequant_hadamard_rotation_native(
-    tmp_path, mode, monkeypatch
-):
+def test_apply_to_engine_args_hayatequant_hadamard_rotation_native(tmp_path, mode, monkeypatch):
     """A HayateQuant model saved with an explicit Hadamard-family rotation and
     block_size=1 maps to the native TurboQuant preset (vLLM's kernel applies
     the same randomized-Hadamard transform family) with no rotation warning."""
