@@ -43,6 +43,89 @@ def short_model(model_name: str) -> str:
     return model_name
 
 
+def _valid_cache_accounting(value: object) -> bool:
+    """Validate the compact per-generation cache accounting schema."""
+
+    if not isinstance(value, dict):
+        return False
+    mode = value.get("compression_aggregation")
+    if mode == "fullkv_no_cache":
+        return (
+            value.get("compression_fp16_bits") is None
+            and value.get("compression_stored_bits") is None
+        )
+    if mode == "exact_cache_bit_counters":
+        fp16_bits = value.get("compression_fp16_bits")
+        stored_bits = value.get("compression_stored_bits")
+        return (
+            not isinstance(fp16_bits, bool)
+            and isinstance(fp16_bits, int)
+            and fp16_bits > 0
+            and not isinstance(stored_bits, bool)
+            and isinstance(stored_bits, int)
+            and stored_bits >= 0
+        )
+    if mode == "legacy_cache_ratio_only":
+        ratio = value.get("compression_ratio")
+        return (
+            not isinstance(ratio, bool)
+            and isinstance(ratio, (int, float))
+            and float(ratio) > 0.0
+            and not math.isnan(float(ratio))
+        )
+    return False
+
+
+def _valid_synthetic_grid_row(row: object, *, require_depth: bool) -> bool:
+    """Validate one persisted retrieval trial before it reaches a paper table."""
+
+    if not isinstance(row, dict):
+        return False
+    integer_fields = (
+        "requested_filler_tokens",
+        "prompt_seed",
+        "rendered_prompt_tokens",
+        "reserved_prompt_plus_generation_tokens",
+        "model_context_capacity",
+    )
+    if any(
+        isinstance(row.get(key), bool)
+        or not isinstance(row.get(key), int)
+        or row[key] <= 0
+        for key in integer_fields
+    ):
+        return False
+    if not (
+        row["rendered_prompt_tokens"]
+        < row["reserved_prompt_plus_generation_tokens"]
+        <= row["model_context_capacity"]
+    ):
+        return False
+    if require_depth:
+        depth = row.get("requested_depth")
+        if (
+            isinstance(depth, bool)
+            or not isinstance(depth, (int, float))
+            or not math.isfinite(float(depth))
+            or not 0.0 <= float(depth) <= 1.0
+        ):
+            return False
+    prompt_sha256 = row.get("prompt_sha256")
+    if (
+        not isinstance(prompt_sha256, str)
+        or len(prompt_sha256) != 64
+        or any(char not in "0123456789abcdef" for char in prompt_sha256)
+    ):
+        return False
+    return (
+        isinstance(row.get("gold"), str)
+        and bool(row["gold"])
+        and isinstance(row.get("prediction"), str)
+        and isinstance(row.get("hit"), bool)
+        and _valid_cache_accounting(row.get("cache_accounting"))
+    )
+
+
 def audited_needle(bench: dict) -> dict | None:
     """Return a citable synthetic-needle record or reject legacy summaries.
 
@@ -73,14 +156,8 @@ def audited_needle(bench: dict) -> dict | None:
         or not 0 <= hits <= n
     ):
         return None
-    required = {
-        "requested_filler_tokens", "requested_depth", "prompt_seed",
-        "rendered_prompt_tokens", "reserved_prompt_plus_generation_tokens",
-        "model_context_capacity", "prompt_sha256", "gold", "prediction", "hit",
-        "cache_accounting",
-    }
     grid = needle["grid"]
-    if any(not isinstance(row, dict) or not required.issubset(row) for row in grid):
+    if any(not _valid_synthetic_grid_row(row, require_depth=True) for row in grid):
         return None
     if sum(int(row["hit"] is True) for row in grid) != hits:
         return None
@@ -121,11 +198,11 @@ def audited_synthetic_multikey(bench: dict) -> dict | None:
         or isinstance(hits, bool)
         or not isinstance(hits, int)
         or not 0 <= hits <= n
-        or sum(
-            int(row.get("hit") is True)
+        or any(
+            not _valid_synthetic_grid_row(row, require_depth=True)
             for row in result["grid"]
-            if isinstance(row, dict)
-        ) != hits
+        )
+        or sum(int(row["hit"]) for row in result["grid"]) != hits
     ):
         return None
     return result

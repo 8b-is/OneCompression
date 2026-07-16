@@ -35,6 +35,11 @@ def test_needle_aggregate_rejects_legacy_or_inconsistent_trial_ledger():
     assert audited_needle({"needle": legacy}) is None
     inconsistent = dict(needle, hits=2)
     assert audited_needle({"needle": inconsistent}) is None
+    malformed_hash = dict(
+        needle,
+        grid=[dict(_grid_row(), prompt_sha256="not-a-hash"), _grid_row(hit=False)],
+    )
+    assert audited_needle({"needle": malformed_hash}) is None
 
 
 def test_multikey_aggregate_is_never_accepted_as_ruler():
