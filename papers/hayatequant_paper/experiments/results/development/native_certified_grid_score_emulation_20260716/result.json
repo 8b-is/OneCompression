@@ -1,0 +1,196 @@
+{
+  "all_zero_mismatch": false,
+  "development_only": true,
+  "fixture": {
+    "dtype": "torch.float16",
+    "known_rejected_grid_queries_included": true,
+    "random_rows": 1000000,
+    "seed": 918273,
+    "sha256": "1dacbb7a0c236e8219480ce0e1323e6898a0da808f7a9c024cba435ae293637a",
+    "total_rows": 1000008
+  },
+  "promotion_allowed": false,
+  "provenance": {
+    "accepted_reference_source": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/worktrees/native-grid-source-8cbe158/vllm_plugins/kvcomp/hayate_full_triton.py",
+    "accepted_reference_source_sha256": "d7a81483628629a96e3a2b0546d571208b528c08c97dea9908b10140ffad3049",
+    "created_at_utc": "2026-07-16T05:51:42.860129+00:00",
+    "git_commit": "8cbe1584a0561e67e6d374efd339d3a57097c10b",
+    "git_status_porcelain": "",
+    "gpu": "NVIDIA B200",
+    "gpu_uuid": "5c2cdd13-9017-19d0-215d-754b79509cea",
+    "hostname": "kagura-gpu11",
+    "script": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/worktrees/native-grid-source-8cbe158/benchmark/kvcomp-codec/hayatequant_exact_score_emulation.py",
+    "script_sha256": "b2035568f54263612ea2d3b317d4b3d5ca06ab064637ae07664b5f7d5187a2d1",
+    "torch_version": "2.11.0+cu130"
+  },
+  "results": [
+    {
+      "codebook_sha256": "54cc4dc55a5c071202382497f99dc921e9d770ab8b9d175c8705c6d7b1208512",
+      "codebook_size": 32,
+      "csq_sha256": "f0870f2105a4a74852723519d5b0cab670bb34166e9061c30baf15dabf0f2701",
+      "examples": [
+        {
+          "index": 420903,
+          "observed": 31,
+          "query": [
+            -0.093994140625,
+            -1.1396484375
+          ],
+          "reference": 16
+        }
+      ],
+      "mismatch_count": 1,
+      "rate": 2,
+      "role": "key",
+      "rows": 1000008
+    },
+    {
+      "codebook_sha256": "88df6e456f9d0b96d83bfef897894591dd755baa8927f4281d1f0288d2b30eba",
+      "codebook_size": 8,
+      "csq_sha256": "744d52a720521e8bee784bb8714f106d905b3a87a372a3ddfae4f3f5aa1ac489",
+      "examples": [],
+      "mismatch_count": 0,
+      "rate": 2,
+      "role": "value",
+      "rows": 1000008
+    },
+    {
+      "codebook_sha256": "1cbfbd035db0b8f77e92d42124bcbbb4acfddc99bc46d6fa92cdf84de9d5565a",
+      "codebook_size": 128,
+      "csq_sha256": "38b40019ab6a4e2ce3e209a99eed241ee879c7849812fc0d8b7127991edf6727",
+      "examples": [
+        {
+          "index": 2,
+          "observed": 21,
+          "query": [
+            0.873046875,
+            0.007843017578125
+          ],
+          "reference": 34
+        },
+        {
+          "index": 3,
+          "observed": 34,
+          "query": [
+            1.236328125,
+            0.0033016204833984375
+          ],
+          "reference": 55
+        }
+      ],
+      "mismatch_count": 2,
+      "rate": 3,
+      "role": "key",
+      "rows": 1000008
+    },
+    {
+      "codebook_sha256": "54cc4dc55a5c071202382497f99dc921e9d770ab8b9d175c8705c6d7b1208512",
+      "codebook_size": 32,
+      "csq_sha256": "f0870f2105a4a74852723519d5b0cab670bb34166e9061c30baf15dabf0f2701",
+      "examples": [
+        {
+          "index": 420903,
+          "observed": 31,
+          "query": [
+            -0.093994140625,
+            -1.1396484375
+          ],
+          "reference": 16
+        }
+      ],
+      "mismatch_count": 1,
+      "rate": 3,
+      "role": "value",
+      "rows": 1000008
+    },
+    {
+      "codebook_sha256": "6e3a6d7ec0872eb06a0bf749d05244c010a03a2ef94ac365dac7d0ed059c307d",
+      "codebook_size": 512,
+      "csq_sha256": "54dab312bd8fcb2a58962c0f313fd33e417aca9b3a33a200626998d97cb7a5be",
+      "examples": [
+        {
+          "index": 0,
+          "observed": 125,
+          "query": [
+            -0.07568359375,
+            -1.0361328125
+          ],
+          "reference": 104
+        },
+        {
+          "index": 1,
+          "observed": 220,
+          "query": [
+            1.40234375,
+            0.358154296875
+          ],
+          "reference": 186
+        },
+        {
+          "index": 552333,
+          "observed": 246,
+          "query": [
+            1.46875,
+            -0.293701171875
+          ],
+          "reference": 212
+        },
+        {
+          "index": 988784,
+          "observed": 214,
+          "query": [
+            -0.258056640625,
+            -1.4287109375
+          ],
+          "reference": 227
+        },
+        {
+          "index": 995166,
+          "observed": 451,
+          "query": [
+            -0.4072265625,
+            3.263671875
+          ],
+          "reference": 472
+        }
+      ],
+      "mismatch_count": 5,
+      "rate": 4,
+      "role": "key",
+      "rows": 1000008
+    },
+    {
+      "codebook_sha256": "1cbfbd035db0b8f77e92d42124bcbbb4acfddc99bc46d6fa92cdf84de9d5565a",
+      "codebook_size": 128,
+      "csq_sha256": "38b40019ab6a4e2ce3e209a99eed241ee879c7849812fc0d8b7127991edf6727",
+      "examples": [
+        {
+          "index": 2,
+          "observed": 21,
+          "query": [
+            0.873046875,
+            0.007843017578125
+          ],
+          "reference": 34
+        },
+        {
+          "index": 3,
+          "observed": 34,
+          "query": [
+            1.236328125,
+            0.0033016204833984375
+          ],
+          "reference": 55
+        }
+      ],
+      "mismatch_count": 2,
+      "rate": 4,
+      "role": "value",
+      "rows": 1000008
+    }
+  ],
+  "schema": {
+    "name": "onecomp.hq_exact_score_emulation_dev",
+    "version": 1
+  }
+}
