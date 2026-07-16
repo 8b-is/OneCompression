@@ -1,0 +1,128 @@
+{
+  "schema": {
+    "name": "onecomp.hayatequant_native_speed_formal_contract",
+    "version": 1
+  },
+  "status": "preregistered_before_new_formal_native_speed_results",
+  "known_development_evidence": {
+    "blind_preregistration_claimed": false,
+    "description": "The clean 4096-token development diagnostic was observed before this contract; it is retained and is not a formal cell.",
+    "repo_path": "papers/hayatequant_paper/experiments/results/development/native_full_clean_8aee55b_gpu11_20260716"
+  },
+  "methods": {
+    "candidate": "HQ",
+    "candidate_implementation": "faithful_packed_fixed_HQ_native",
+    "baseline": "TurboQuant",
+    "baseline_implementation": "unmodified_upstream_vllm_0.20_TurboQuant_native",
+    "excluded": [
+      "AdaptiveHQ",
+      "FibQuant",
+      "BlockQuant",
+      "native_hybrid",
+      "fake_quant",
+      "public_payload_api"
+    ]
+  },
+  "common_support": {
+    "average_rates": [
+      3,
+      4
+    ],
+    "reason_rate_2_is_absent": "Unmodified upstream vLLM 0.20 exposes no native 2-bit TurboQuant preset; no private substitute is admitted.",
+    "dtype": "bfloat16",
+    "page_size": 16,
+    "max_kv_splits": 32,
+    "contexts": [
+      4096,
+      16384,
+      65536
+    ],
+    "shape_points": [
+      {
+        "id": "llama31-8b-gqa",
+        "model_config_path": "/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct/config.json",
+        "model_config_sha256": "ad98082c6bc4ea7078915219241814762be259de16d6ca5f170ba02820b3928b",
+        "query_heads": 32,
+        "kv_heads": 8,
+        "head_dim": 128,
+        "max_position_embeddings": 131072
+      },
+      {
+        "id": "r1-qwen15b-gqa",
+        "model_config_path": "/lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Qwen-1.5B/config.json",
+        "model_config_sha256": "37bd455e9679d2959536270fed49d25cc7c290a64f6e52abb97c71345a9cee41",
+        "query_heads": 12,
+        "kv_heads": 2,
+        "head_dim": 128,
+        "max_position_embeddings": 131072
+      }
+    ]
+  },
+  "timed_endpoints": [
+    {
+      "metric": "prefill_store",
+      "meaning": "encode and store the complete K/V context into each method's physical packed cache"
+    },
+    {
+      "metric": "decode_attention",
+      "meaning": "one fused packed-cache GQA attention output with no store"
+    },
+    {
+      "metric": "serving_step_store1_plus_decode",
+      "meaning": "eager one-token K/V store followed by one fused packed-cache GQA attention output"
+    },
+    {
+      "metric": "cudagraph_serving_step_store1_plus_decode",
+      "meaning": "the same one-token store plus attention endpoint replayed from a CUDA graph"
+    }
+  ],
+  "timing_protocol": {
+    "counterbalance": "five alternating ABBA/BAAB quartets",
+    "fresh_processes_total_per_cell": 20,
+    "fresh_processes_per_method_per_cell": 10,
+    "warmups_per_process": 10,
+    "timed_iterations_per_process": 100,
+    "timer": "CUDA events",
+    "compilation_and_allocation_excluded": true,
+    "same_exclusive_physical_gpu_required": true,
+    "same_gpu_uuid_driver_clock_and_software_stratum_required": true,
+    "primary_cell_estimate": "median of fresh-process median CUDA-event latency",
+    "speedup_definition": "TurboQuant latency divided by HQ latency",
+    "confidence_intervals": "retained as diagnostics; point estimates own the preregistered win gate"
+  },
+  "correctness_protocol": {
+    "before_timing": true,
+    "physical_packed_cache_independently_dequantized": true,
+    "dense_reference": "fp32 GQA logits, softmax, and value reduction over the independently dequantized physical cache",
+    "eager_and_cudagraph_outputs_checked": true,
+    "rtol": 0.002,
+    "bf16_atol": 0.015,
+    "padding_sentinel_must_remain_untouched": true,
+    "logical_packed_bytes_and_outputs_must_be_identical_across_fresh_processes": true,
+    "nonfinite_missing_malformed_or_failed_correctness": "fail"
+  },
+  "matrix_gate": {
+    "cell_count": 48,
+    "factorization": "2 rates x 2 model-derived shapes x 3 contexts x 4 endpoints",
+    "strict_win": "HQ median latency < TurboQuant median latency",
+    "ties": "loss",
+    "missing_or_failed_cells": "fail the complete matrix and count as losses",
+    "minimum_overall_wins": 44,
+    "minimum_overall_win_fraction": 0.9,
+    "cells_per_endpoint": 12,
+    "minimum_wins_per_endpoint": 11,
+    "cells_per_rate": 24,
+    "minimum_wins_per_rate": 22,
+    "rounding_before_comparison": false,
+    "single_cell_claim_allowed": false,
+    "matrix_or_endpoint_redefinition_after_results": false
+  },
+  "retention": {
+    "source_execution": "clean detached worktree at the tested commit",
+    "result_destination": "repo-local papers/hayatequant_paper/experiments/results/formal/native_speed_<commit>/",
+    "worker_stdout_stderr_command_exit_status_raw_json_and_failures_required": true,
+    "source_and_upstream_sha256_required": true,
+    "sha256_manifest_required": true,
+    "unfavorable_results_must_be_retained": true
+  }
+}
