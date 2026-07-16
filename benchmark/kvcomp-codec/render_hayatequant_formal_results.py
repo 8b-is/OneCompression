@@ -4762,6 +4762,38 @@ def _formal_summary_figure(data: Mapping[str, Any]) -> str:
         ]
         for proposal in PROPOSAL_METHODS
     }
+    # This is deliberately a paired latency ratio, not a raw throughput average.
+    # Each cell has already been reduced from technical repeats to one median per
+    # independently launched process, then to a geometric process mean by the
+    # formal speed aggregator.  Taking the geometric mean across the two
+    # predeclared long-context model cells preserves that multiplicative
+    # baseline-latency / candidate-latency interpretation.  The result remains
+    # descriptive: the complete Pareto contract, rather than this panel, is the
+    # only gate that can admit a global speed claim.
+    speed_values = {}
+    speed_comparisons = {
+        "HQ": "hq_vs_turboquant",
+        "AdaptiveHQ": "adaptive_hq_vs_turboquant",
+    }
+    for proposal, comparison_name in speed_comparisons.items():
+        by_rate = []
+        for rate in RATES:
+            per_model = []
+            for model in LONG_MODELS:
+                comparison = data["speed"]["models"][model][rate]["off"][
+                    "paired_speedups"
+                ]["e2e.decode_steady_latency"][comparison_name]
+                per_model.append(
+                    _number(
+                        comparison.get("geometric_mean_process_speedup_x"),
+                        f"summary E2E decode speedup {proposal}/{model}/{rate}",
+                        minimum=0.0,
+                    )
+                )
+            if any(value <= 0.0 for value in per_model):
+                raise RenderError(f"summary E2E decode speedup must be positive: {proposal}/{rate}")
+            by_rate.append(math.exp(statistics.fmean(math.log(value) for value in per_model)))
+        speed_values[proposal] = by_rate
     lines = [
         r"\begin{figure*}[t]",
         r"\centering",
@@ -4779,7 +4811,7 @@ def _formal_summary_figure(data: Mapping[str, Any]) -> str:
     )
     lines.extend(
         _summary_panel(
-            origin_x=7.0,
+            origin_x=5.5,
             title=r"Five-task zero-shot quality",
             y_label=r"ZS-Mean $\Delta$ (percentage points)",
             values=zero_values,
@@ -4788,9 +4820,19 @@ def _formal_summary_figure(data: Mapping[str, Any]) -> str:
         )
     )
     lines.extend(
+        _summary_panel(
+            origin_x=11.0,
+            title=r"Paired E2E steady decode",
+            y_label=r"speedup $=$ TQ latency / proposal latency",
+            values=speed_values,
+            reference=1.0,
+            digits=2,
+        )
+    )
+    lines.extend(
         [
             r"\end{tikzpicture}",
-            r"\caption{\textbf{Coverage-checked fixed-panel quality summary.} Left: geometric mean of within-checkpoint proposal/TurboQuant Algorithm-1-MSE WikiText-2 PPL ratios; lower is better and the dashed line is parity. Right: proposal-minus-TurboQuant ZS-Mean in percentage points; higher is better and the dashed line is parity. Points are descriptive estimates for the seven preselected, family-correlated checkpoints. Exact per-checkpoint values, win/tie/loss counts, and simultaneous family-wise intervals are retained in the coverage-checked audit ledger. The figure is generated from the same complete aggregate and makes no model-population claim.}",
+            r"\caption{\textbf{Coverage-checked fixed-panel summary.} Left: geometric mean of within-checkpoint proposal/TurboQuant Algorithm-1-MSE WikiText-2 PPL ratios; lower is better and the dashed line is parity. Middle: proposal-minus-TurboQuant ZS-Mean in percentage points; higher is better and the dashed line is parity. Right: geometric mean, over the two predeclared long-context model cells, of independently paired research fake-quant E2E steady-decode speedups (TurboQuant latency divided by proposal latency); higher is faster and the dashed line is parity. The right panel is descriptive and is neither packed KV-cache serving nor a hardware-native throughput claim. Points are descriptive estimates for fixed, family-correlated checkpoint panels. Exact per-checkpoint values, process-level speed ratios, win/tie/loss counts, and simultaneous family-wise intervals are retained in the coverage-checked audit ledger. The figure is generated from the same complete aggregate and makes no model-population claim.}",
             r"\label{fig:formal-quality-summary}",
             r"\end{figure*}",
         ]

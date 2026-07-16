@@ -1576,6 +1576,9 @@ def test_renderer_is_deterministic_and_emits_every_formal_axis(tmp_path):
     assert r"\label{tab:formal-main-quality}" in main_results
     assert r"\label{tab:formal-main-gates}" in main_results
     assert "GM PPL ratio (proposal/TQ)" in main_results
+    assert "Paired E2E steady decode" in main_results
+    assert "TQ latency / proposal latency" in main_results
+    assert "neither packed KV-cache serving nor a hardware-native throughput claim" in main_results
     assert r"ZS-Mean $\Delta$ (percentage points)" in main_results
     assert main_results.index(r"\HayateValidateFormalMainIdentity") < main_results.index(
         r"\begin{figure*}[t]"
