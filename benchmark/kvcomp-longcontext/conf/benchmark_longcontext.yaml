@@ -13,12 +13,13 @@ output_dir: ${hydra:runtime.cwd}/results
 # Uniform-INT2, StreamingLLM, ThinKV (TBQ-only in HF), PM-KVQ, TaperKV.
 methods: null
 
-# --- shared budget knobs (kept identical across methods for a fair iso-memory
-#     comparison; sink+recent define the high-precision window everywhere) ---
+# --- shared cache knobs. Needle reports an accuracy-vs-realised-memory Pareto
+#     frontier. `target_mem` controls StreamingLLM only; do not call two methods
+#     iso-memory unless a dedicated matched operating-point run verifies it. ---
 sink_tokens: 4
 recent_tokens: 64
 requant_stride: 16          # graded caches re-grade every N decode steps
-target_mem: 0.27            # iso-memory budget (stored/fp16) for the evict window
+target_mem: 0.27            # StreamingLLM stored/fp16 operating point
 
 uniform_bits: [4, 2]        # uniform-quant baselines (per-token INT)
 
@@ -107,7 +108,10 @@ taperkv_sweep:
 # Pareto curves of the rotated-codec recipe variant.
 turbotaper_sweep: []
 
-# --- needle-in-a-haystack grid ---
+# --- deterministic synthetic needle grid ---
+# `context_lens` are requested filler-token budgets. Per-example rendered prompt
+# lengths, realised depths, golds/predictions, hashes, and per-trial cache
+# accounting are retained in result JSON; this is not a canonical external benchmark.
 context_lens: [2048, 4096, 8192]
 depths: [0.1, 0.25, 0.4, 0.5, 0.6, 0.75, 0.9]
 seeds: 3

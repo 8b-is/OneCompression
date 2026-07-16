@@ -9,8 +9,9 @@
 
 Main experiment for the KV-cache compression methods, the analogue of the
 weight-side `benchmark/<model>-<recipe>/` runs (GPTQ / JointQ). It compares,
-**at a matched memory budget**, the two compression *families* the design memo
-contrasts, plus the proposed method:
+on a shared prompt grid with each method's **realised memory** recorded.  It is
+a Pareto harness by default: pairwise iso-memory claims require a separately
+verified matched operating point.
 
 | Method | Family | Mechanism | Evicts? |
 |---|---|---|:---:|
@@ -77,7 +78,7 @@ srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py \
     model_path=/lustre/.../models/llama-3.1-8b-instruct
 ```
 
-**TaperKV paper preset** (`conf/paper_taperkv.yaml`, iso-memory ~3-bit;
+**TaperKV paper preset** (`conf/paper_taperkv.yaml`, ~3-bit candidate schedule;
 TaperKV vs ThinKV/PM-KVQ/StreamingLLM/KIVI/TurboQuant/HayateQuant/Uniform-INT3):
 ```bash
 srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py \
@@ -164,11 +165,12 @@ paper, predeclared point estimates are primary, while a separate simultaneous
 global gate governs any aggregate superiority statement; per-endpoint intervals
 remain descriptive and are not used to hide or discard point-estimate losses.
 
-Config: `conf/benchmark_longcontext.yaml`. Knobs are kept identical across
-methods (`sink_tokens`, `recent_tokens`, `target_mem`) for a fair iso-memory
-comparison; the eviction window is sized to `target_mem * ctx` so eviction gets
-the **same** memory budget as the quant methods. Results (JSON + Markdown
-table) are written to `output_dir`.
+Config: `conf/benchmark_longcontext.yaml`. `sink_tokens` and `recent_tokens`
+are shared; `target_mem` is the explicit StreamingLLM operating point, while
+every method's stored/fp16 fraction is measured from the same generated
+prompts. Needle v2 retains rendered lengths, depth, prompt hashes, golds,
+predictions, and per-trial cache-accounting ledgers. Results (JSON + Markdown table) are
+written to `output_dir`.
 
 **Historical outlier-layer handling (applied uniformly in these presets).** A small set of layers carry
 massive activations whose keys span orders of magnitude; quantizing them at low
@@ -222,8 +224,14 @@ methods including eviction).
 
 ### llama-3.1-8b-instruct — retrieval + reasoning instruct model
 
-Needle = 63 cells (7 depths × 3 ctx lengths × 3 seeds); synthetic multi-key = 15 cells
-(4 distractor keys × 3 lengths × 5 seeds); GSM8K n=40; PPL = WikiText-2 (16 windows).
+Needle = 63 cells (7 depths × 3 ctx lengths × 3 seeds); synthetic multi-key = 15 prompts
+(4 facts: one queried + three distractors, × 3 lengths × 5 seeds); GSM8K n=40;
+PPL = WikiText-2 (16 windows).
+
+> **Historical snapshot — not citable.** The Needle rows in this table were
+> produced before Needle v2 retained its rendered-prompt and per-trial ledger.
+> They do not establish a matched-memory or quality result; rerun the v2 preset
+> and use the emitted JSON grid instead.
 
 | Method | Needle ↑ | synthetic multi-key ↑ | Mem | GSM8K p@1 ↑ | PPL ↓ |
 |---|---:|---:|---:|---:|---:|
@@ -244,9 +252,11 @@ Needle = 63 cells (7 depths × 3 ctx lengths × 3 seeds); synthetic multi-key = 
    half the needles (PPL 28.5); keeping tokens *and* a sensible precision floor
    is what makes them usable.
 
-2. **TaperKV matches FullKV on all three axes simultaneously.** It is the only
+2. **Historical development observation (not a formal conclusion).** The old
+   development table suggests TaperKV may match FullKV on all three axes.  It is the only
    method with perfect retrieval (Needle/synthetic multi-key 1.00), FullKV-level reasoning
-   (GSM8K 0.825), and near-FullKV perplexity (6.24 vs 6.10) at iso-memory.
+   (GSM8K 0.825), and near-FullKV perplexity (6.24 vs 6.10) at the reported
+   development memory point.  This requires a Needle v2 rerun before use.
    PM-KVQ matches retrieval but pays with higher PPL (7.42) and a small reasoning
    drop. ThinKV retrieves perfectly but over-compresses on an instruct model
    (GSM8K 0.575 — it is designed for long chain-of-thought models).

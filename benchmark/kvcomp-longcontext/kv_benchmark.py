@@ -1,9 +1,10 @@
 """KV-cache compression benchmark: long-context retrieval + reasoning.
 
 Main experiment for the KV-compression methods, the analogue of the weight-side
-``benchmark/<model>-<recipe>/quant_benchmark.py`` runs (GPTQ / JointQ).  It
-compares, at a matched memory budget, the two *families* the design memo
-contrasts and the proposed method:
+``benchmark/<model>-<recipe>/quant_benchmark.py`` runs (GPTQ / JointQ). It
+compares the two *families* the design memo contrasts and the proposed method
+on common prompts, recording realised memory for Pareto analysis. Pairwise
+iso-memory is a separate, explicitly validated protocol.
 
 * **FullKV**            -- fp16 upper bound.
 * **Uniform-INT{4,2}**  -- uniform per-token quantization (the baseline the memo
@@ -73,6 +74,9 @@ from onecomp.kvcomp.eval import (
     aggregate_longcodeqa,
 )
 from onecomp.kvcomp.eval.longcontext import (
+    NEEDLE_PROTOCOL_LABEL,
+    NEEDLE_PROTOCOL_SCOPE,
+    NEEDLE_PROTOCOL_VERSION,
     aggregate_cache_compression_records,
     proportion_stats,
 )
@@ -196,9 +200,11 @@ def _model_head_dim(config) -> int:
 def build_methods(cfg: DictConfig, model, tok):
     """Return ``{name: dict(make, evict, reason, capture)}``.
 
-    ``make(ctx)`` builds the needle cache for a given context length (so the
-    eviction baseline can be sized to the *same* memory budget as the quant
-    methods -- a fair iso-memory test); ``reason`` builds the cache for the
+    ``make(ctx)`` builds the needle cache for a given requested filler budget.
+    The runner reports exact realised memory and therefore supports a Pareto
+    comparison. A single fixed eviction window is not automatically iso-memory
+    with every quantizer; matching requires a separately pre-registered pair.
+    ``reason`` builds the
     generate-based GSM8K / PPL evals (the reasoning harness explicitly drives
     eviction after prefill and every decode step). ``capture``
     flags methods (ThinKV) whose decode-time policy needs attention sparsity.
@@ -206,7 +212,7 @@ def build_methods(cfg: DictConfig, model, tok):
     mc = model.config
     sink = cfg.sink_tokens
     recent = cfg.recent_tokens
-    target = cfg.target_mem  # iso-memory budget (stored/fp16) for the eviction window
+    target = cfg.target_mem  # requested stored/fp16 operating point for StreamingLLM only
     methods = {}
     model_head_dim = _model_head_dim(mc)
 
@@ -274,9 +280,9 @@ def build_methods(cfg: DictConfig, model, tok):
             ),
         )
 
-    # Eviction window sized to the iso-memory budget at each context length:
-    # recent = target * ctx - sink (so kept/total ~= target, the same budget the
-    # quant methods use).  The needle survives only if it lands in this window.
+    # StreamingLLM's explicit operating point. It is intentionally not called
+    # iso-memory with TaperKV/PM-KVQ/etc.: exact payload and metadata fractions
+    # are measured from the same prompts and reported as a Pareto frontier.
     def _evict(ctx):
         rec = max(recent, int(target * ctx) - sink)
         return StreamingLLMEvictCache(sink=sink, recent=rec, config=mc)
@@ -751,11 +757,15 @@ def main(cfg: DictConfig):
         cap = spec.get("capture", False)  # short reasoning prompts
         cap_long = spec.get("capture_long", False)  # long context (OOM-prone)
 
-        # Needle: one pass per context length so eviction is sized iso-memory.
+        # Needle: one pass per requested filler budget. All methods receive the
+        # same deterministic prompt grid; outputs retain rendered token counts,
+        # gold/prediction pairs, prompt hashes, and per-trial cache accounting
+        # for regrading and memory verification.
         # Skipped on reasoning models where FullKV itself fails retrieval (K24).
         if cfg.get("run_needle", True):
-            by_len, accs, n_tot = {}, [], 0
+            by_len, by_depth_counts, n_tot, hit_tot = {}, {}, 0, 0
             needle_compression_records = []
+            needle_grid = []
             for ctx in list(cfg.context_lens):
                 nr = needle_in_haystack(
                     model,
@@ -770,12 +780,18 @@ def main(cfg: DictConfig):
                 )
                 by_len[ctx] = round(nr.accuracy, 4)
                 needle_compression_records.extend(nr.compression_records)
-                accs.append(nr.accuracy * nr.n)
+                needle_grid.extend(nr.grid)
+                for row in nr.grid:
+                    depth = str(row["requested_depth"])
+                    bucket = by_depth_counts.setdefault(depth, [0, 0])
+                    bucket[0] += int(bool(row["hit"]))
+                    bucket[1] += 1
+                hit_tot += nr.hits
                 n_tot += nr.n
             # Pooled accuracy + binomial SE / Wilson 95% CI over all (ctx,depth,seed)
             # trials, so the paper table carries error bars (benchmark review B-4).
-            acc_all = sum(accs) / max(1, n_tot)
-            se, lo, hi = proportion_stats(int(round(acc_all * n_tot)), n_tot)
+            acc_all = hit_tot / max(1, n_tot)
+            se, lo, hi = proportion_stats(hit_tot, n_tot)
             needle_compression, needle_mem_fraction, needle_mem_aggregation = (
                 aggregate_cache_compression_records(needle_compression_records)
             )
@@ -783,17 +799,32 @@ def main(cfg: DictConfig):
                 "accuracy": round(acc_all, 4),
                 "accuracy_stderr": round(se, 4),
                 "accuracy_ci95": [round(lo, 4), round(hi, 4)],
+                "hits": hit_tot,
                 "mem_fraction": round(needle_mem_fraction, 4),
                 "mem_fraction_aggregation": needle_mem_aggregation,
                 "compression_sufficient_statistics": needle_compression,
                 "by_length": by_len,
+                "by_depth": {
+                    depth: round(hits / max(1, count), 4)
+                    for depth, (hits, count) in by_depth_counts.items()
+                },
+                "benchmark": NEEDLE_PROTOCOL_LABEL,
+                "protocol_version": NEEDLE_PROTOCOL_VERSION,
+                "official_reference": False,
+                "protocol_scope": NEEDLE_PROTOCOL_SCOPE,
+                "comparison_scope": (
+                    "common deterministic prompts; Pareto over realised memory; "
+                    "not an implicit pairwise iso-memory comparison"
+                ),
+                "grid": needle_grid,
                 "n": n_tot,
             }
             print("  needle:", entry["needle"], flush=True)
 
         if cfg.get("run_ruler", False):
-            by_len_r, accs_r, n_r = {}, [], 0
+            by_len_r, n_r, hit_r = {}, 0, 0
             multikey_compression_records = []
+            multikey_grid = []
             for ctx in list(cfg.context_lens):
                 rr2 = ruler_multikey(
                     model,
@@ -808,10 +839,11 @@ def main(cfg: DictConfig):
                 )
                 by_len_r[ctx] = round(rr2.accuracy, 4)
                 multikey_compression_records.extend(rr2.compression_records)
-                accs_r.append(rr2.accuracy * rr2.n)
+                multikey_grid.extend(rr2.grid)
+                hit_r += rr2.hits
                 n_r += rr2.n
-            acc_all_r = sum(accs_r) / max(1, n_r)
-            se_r, lo_r, hi_r = proportion_stats(int(round(acc_all_r * n_r)), n_r)
+            acc_all_r = hit_r / max(1, n_r)
+            se_r, lo_r, hi_r = proportion_stats(hit_r, n_r)
             multikey_compression, multikey_mem_fraction, multikey_mem_aggregation = (
                 aggregate_cache_compression_records(multikey_compression_records)
             )
@@ -819,10 +851,18 @@ def main(cfg: DictConfig):
                 "accuracy": round(acc_all_r, 4),
                 "accuracy_stderr": round(se_r, 4),
                 "accuracy_ci95": [round(lo_r, 4), round(hi_r, 4)],
+                "hits": hit_r,
                 "mem_fraction": round(multikey_mem_fraction, 4),
                 "mem_fraction_aggregation": multikey_mem_aggregation,
                 "compression_sufficient_statistics": multikey_compression,
                 "by_length": by_len_r,
+                "benchmark": "deterministic synthetic multi-key retrieval v2",
+                "protocol_version": 2,
+                "official_reference": False,
+                "protocol_scope": (
+                    "local diagnostic on common deterministic prompts; not NVIDIA RULER"
+                ),
+                "grid": multikey_grid,
                 "n": n_r,
             }
             print("  synthetic_multikey:", entry["synthetic_multikey"], flush=True)

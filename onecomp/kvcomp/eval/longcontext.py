@@ -21,6 +21,7 @@ Copyright 2025-2026 Fujitsu Ltd.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import math
 import random
 import re
@@ -41,6 +42,13 @@ from .compression_accounting import (
 logger = getLogger(__name__)
 
 _Z95 = 1.959963984540054  # standard normal 97.5th percentile
+NEEDLE_PROTOCOL_VERSION = 2
+NEEDLE_PROTOCOL_LABEL = "deterministic synthetic needle-in-a-haystack v2"
+NEEDLE_PROTOCOL_SCOPE = (
+    "common deterministic prompts across methods; rendered prompt lengths, "
+    "depths, predictions, and per-trial cache-accounting ledgers retained; "
+    "Pareto comparison over realized memory rather than an external benchmark"
+)
 
 
 def _generation_token_id_list(value, *, label: str) -> List[int]:
@@ -107,12 +115,16 @@ def proportion_stats(hits: int, n: int):
 
 
 def _number_hit(gold: str, text: str) -> bool:
-    """True iff ``gold`` appears in ``text`` as a standalone integer.
+    """True iff every standalone integer prediction equals ``gold``.
 
-    Uses digit boundaries so e.g. gold ``1234`` is not falsely matched inside
-    ``91234`` / ``12345`` -- a substring check would inflate accuracy.
+    A raw substring metric gives credit to ``"1234, or perhaps 5678"`` for
+    gold ``1234`` even though that response does not answer the retrieval
+    question.  The prompt asks for one number, so accept a terse answer or a
+    repeated explanation of the same number, but reject a response containing
+    any competing integer.  Digit boundaries prevent partial-number matches.
     """
-    return re.search(rf"(?<!\d){re.escape(gold)}(?!\d)", text) is not None
+    numbers = re.findall(r"(?<!\d)(\d+)(?!\d)", text)
+    return bool(numbers) and all(number == gold for number in numbers)
 
 
 _CITIES = [
@@ -177,6 +189,43 @@ _FILLER_BANK = [
 ]
 
 
+def _content_token_count(tokenizer, text: str) -> int:
+    """Count message-content tokens without injecting BOS/EOS tokens.
+
+    The old filler builder called ``tokenizer(sentence)`` for every sentence.
+    Decoder tokenizers commonly add a BOS there, so it systematically believed
+    the haystack was longer than the text actually passed through the chat
+    template.  This helper makes the requested *filler* budget meaningful;
+    the final rendered prompt length is recorded separately below.
+    """
+
+    try:
+        encoded = tokenizer(text, add_special_tokens=False)
+    except TypeError as exc:
+        raise RuntimeError(
+            "synthetic retrieval tokenizer must support add_special_tokens=False "
+            "for reproducible content-token accounting"
+        ) from exc
+    input_ids = getattr(encoded, "input_ids", None)
+    if input_ids is None and isinstance(encoded, dict):
+        input_ids = encoded.get("input_ids")
+    if isinstance(input_ids, torch.Tensor):
+        if input_ids.ndim == 2:
+            if input_ids.shape[0] != 1:
+                raise RuntimeError("synthetic retrieval tokenizer returned a batched content encoding")
+            return int(input_ids.shape[1])
+        if input_ids.ndim == 1:
+            return int(input_ids.shape[0])
+    if isinstance(input_ids, (list, tuple)):
+        if input_ids and isinstance(input_ids[0], (list, tuple)):
+            if len(input_ids) != 1:
+                raise RuntimeError("synthetic retrieval tokenizer returned a batched content encoding")
+            input_ids = input_ids[0]
+        if all(isinstance(token, int) for token in input_ids):
+            return len(input_ids)
+    raise RuntimeError("synthetic retrieval tokenizer returned invalid content input_ids")
+
+
 def _build_filler(tokenizer, target_tokens: int, rng) -> str:
     """Sample diverse sentences (no immediate repeat) until ~``target_tokens``."""
     if target_tokens <= 0:
@@ -189,7 +238,7 @@ def _build_filler(tokenizer, target_tokens: int, rng) -> str:
         prev = i
         s = _FILLER_BANK[i] + " "
         out.append(s)
-        ntok += len(tokenizer(s).input_ids)
+        ntok += _content_token_count(tokenizer, s)
     return "".join(out)
 
 
@@ -198,22 +247,33 @@ class NeedleResult:
     """Needle-in-a-haystack retrieval result over a depth x length grid."""
 
     n: int
+    hits: int
     accuracy: float
     mem_fraction: float
     by_length: dict = field(default_factory=dict)  # ctx_len -> accuracy
+    by_depth: dict = field(default_factory=dict)  # requested depth -> accuracy
     grid: List[dict] = field(default_factory=list)  # per (len, depth, seed)
     accuracy_stderr: float = 0.0  # binomial SE of accuracy
     accuracy_ci95: tuple = (0.0, 0.0)  # Wilson 95% interval
     mem_fraction_aggregation: str = "fullkv_no_cache"
     compression_sufficient_statistics: dict = field(default_factory=dict)
+    benchmark: str = NEEDLE_PROTOCOL_LABEL
+    protocol_scope: str = NEEDLE_PROTOCOL_SCOPE
     # Kept in memory so callers that split the context grid can pool the raw
-    # per-generation ledgers.  Persisted output uses the compact exact totals
-    # above rather than a second copy of every record.
+    # per-generation ledgers. Each persisted grid row also carries its ledger,
+    # while the aggregate totals above make the reported memory fraction easy
+    # to independently recompute.
     compression_records: List[dict] = field(default_factory=list, repr=False)
 
     def as_dict(self) -> dict:
         return {
+            "benchmark": self.benchmark,
+            "protocol_version": NEEDLE_PROTOCOL_VERSION,
+            "official_reference": False,
+            "protocol_scope": self.protocol_scope,
+            "metric": "all standalone generated integers equal the hidden gold integer",
             "n": self.n,
+            "hits": self.hits,
             "accuracy": round(self.accuracy, 4),
             "accuracy_stderr": round(self.accuracy_stderr, 4),
             "accuracy_ci95": [round(self.accuracy_ci95[0], 4), round(self.accuracy_ci95[1], 4)],
@@ -225,6 +285,8 @@ class NeedleResult:
             ),
             "compression_sufficient_statistics": self.compression_sufficient_statistics,
             "by_length": {k: round(v, 4) for k, v in self.by_length.items()},
+            "by_depth": {str(k): round(v, 4) for k, v in self.by_depth.items()},
+            "grid": self.grid,
         }
 
 
@@ -249,12 +311,37 @@ def aggregate_cache_compression_records(records: List[dict]) -> tuple[dict, floa
     return statistics, fraction, aggregation
 
 
-def make_needle_prompt(tokenizer, context_tokens: int, depth: float = 0.5, seed: int = 0):
+def make_needle_prompt(
+    tokenizer,
+    context_tokens: int,
+    depth: float = 0.5,
+    seed: int = 0,
+    *,
+    return_metadata: bool = False,
+):
     """Build a needle-in-haystack chat prompt and its gold answer.
 
-    A secret ``magic number`` is hidden at fractional ``depth`` inside ~``context_tokens``
-    tokens of filler.  Returns ``(messages, gold_str)``.
+    A secret ``magic number`` is hidden at fractional ``depth`` inside a
+    requested number of *content filler* tokens.  The chat-template prompt is
+    intentionally not called a ``context_tokens``-exact grid: template,
+    question, and needle tokens differ by model.  Their rendered lengths are
+    retained by :func:`needle_in_haystack` for every trial.
+
+    The public default remains ``(messages, gold_str)`` for compatibility.
+    ``return_metadata=True`` adds deterministic prompt-construction facts used
+    by the audit ledger.
     """
+    if isinstance(context_tokens, bool) or not isinstance(context_tokens, int) or context_tokens <= 0:
+        raise ValueError("context_tokens must be a positive integer")
+    if (
+        isinstance(depth, bool)
+        or not isinstance(depth, (int, float))
+        or not math.isfinite(float(depth))
+        or not 0.0 <= float(depth) <= 1.0
+    ):
+        raise ValueError("depth must be finite and in [0, 1]")
+    if isinstance(seed, bool) or not isinstance(seed, int):
+        raise ValueError("seed must be an integer")
     rng = random.Random(seed)
     magic = rng.randint(1000, 9999)
     city = rng.choice(_CITIES)
@@ -266,7 +353,26 @@ def make_needle_prompt(tokenizer, context_tokens: int, depth: float = 0.5, seed:
         f"\n\nQuestion: What is the magic number for {city}? "
         f"Answer with only the number.\nAnswer:"
     )
-    return [{"role": "user", "content": haystack + question}], str(magic)
+    messages = [{"role": "user", "content": haystack + question}]
+    if not return_metadata:
+        return messages, str(magic)
+    pre_tokens = _content_token_count(tokenizer, pre)
+    post_tokens = _content_token_count(tokenizer, post)
+    filler_tokens = pre_tokens + post_tokens
+    return (
+        messages,
+        str(magic),
+        {
+            "requested_filler_tokens": context_tokens,
+            "requested_depth": float(depth),
+            "pre_filler_tokens": pre_tokens,
+            "post_filler_tokens": post_tokens,
+            "actual_filler_tokens": filler_tokens,
+            "realized_filler_depth": (pre_tokens / filler_tokens if filler_tokens else 0.0),
+            "prompt_seed": seed,
+            "city": city,
+        },
+    )
 
 
 def _encode(tokenizer, messages) -> torch.Tensor:
@@ -497,11 +603,13 @@ def needle_in_haystack(
     evict: bool = False,
     attn_capture: bool = False,
 ) -> NeedleResult:
-    """Needle retrieval accuracy over a depth x context-length grid.
+    """Needle retrieval accuracy over a deterministic depth x filler-budget grid.
 
     Args:
         cache_factory: ``() -> Cache`` (``None`` = FullKV ``DynamicCache``).
-        context_lens: approximate prompt lengths in tokens (e.g. [2048, 4096]).
+        context_lens: requested filler-token budgets (e.g. [2048, 4096]).
+            The full rendered prompt length is model-specific and retained for
+            every trial; it is never inferred from this label.
         depths: fractional needle positions (e.g. [0.1, .., 0.9]).
         seeds: independent needles per (length, depth) cell.
         max_new_tokens: decode budget (use ~256 for reasoning models that think
@@ -519,15 +627,33 @@ def needle_in_haystack(
     hit, n = 0, 0
     compression_records: List[dict] = []
     by_len_hit: dict = {c: [0, 0] for c in context_lens}
+    by_depth_hit: dict = {float(depth): [0, 0] for depth in depths}
     grid: List[dict] = []
     for ctx in context_lens:
         for di, depth in enumerate(depths):
             for s in range(seeds):
-                messages, gold = make_needle_prompt(
-                    tokenizer, ctx, depth=depth, seed=di * 97 + s * 1009 + 1
+                prompt_seed = di * 97 + s * 1009 + 1
+                prompt = make_needle_prompt(
+                    tokenizer,
+                    ctx,
+                    depth=depth,
+                    seed=prompt_seed,
+                    return_metadata=True,
+                )
+                if not isinstance(prompt, tuple) or len(prompt) not in (2, 3):
+                    raise RuntimeError("make_needle_prompt returned an invalid prompt contract")
+                messages, gold = prompt[:2]
+                metadata = (
+                    dict(prompt[2])
+                    if len(prompt) == 3 and isinstance(prompt[2], dict)
+                    else {
+                        "requested_filler_tokens": ctx,
+                        "requested_depth": float(depth),
+                        "prompt_seed": prompt_seed,
+                    }
                 )
                 ids = _encode(tokenizer, messages)
-                _validate_prompt_capacity(model, ids, max_new_tokens)
+                capacity = _validate_prompt_capacity(model, ids, max_new_tokens)
                 cache = (
                     cache_factory()
                     if cache_factory is not None
@@ -549,8 +675,33 @@ def needle_in_haystack(
                 n += 1
                 by_len_hit[ctx][0] += int(ok)
                 by_len_hit[ctx][1] += 1
-                compression_records.append(cache_compression_sufficient_statistics(cache))
-                grid.append({"ctx": ctx, "depth": depth, "seed": s, "hit": ok})
+                by_depth_hit[float(depth)][0] += int(ok)
+                by_depth_hit[float(depth)][1] += 1
+                cache_accounting = cache_compression_sufficient_statistics(cache)
+                compression_records.append(cache_accounting)
+                content = messages[0].get("content") if messages else None
+                if not isinstance(content, str):
+                    raise RuntimeError("needle prompt must be one user message with string content")
+                grid.append(
+                    {
+                        "ctx": ctx,
+                        "depth": float(depth),
+                        "seed": s,
+                        "requested_filler_tokens": ctx,
+                        "requested_depth": float(depth),
+                        "seed_index": s,
+                        "prompt_seed": prompt_seed,
+                        "rendered_prompt_tokens": int(ids.shape[1]),
+                        "reserved_prompt_plus_generation_tokens": int(ids.shape[1]) + max_new_tokens,
+                        "model_context_capacity": capacity,
+                        "prompt_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+                        "gold": gold,
+                        "prediction": txt,
+                        "hit": ok,
+                        "cache_accounting": cache_accounting,
+                        **metadata,
+                    }
+                )
                 del cache, gen, ids
     se, lo, hi = proportion_stats(hit, n)
     compression, mem_fraction, mem_fraction_aggregation = aggregate_cache_compression_records(
@@ -558,9 +709,14 @@ def needle_in_haystack(
     )
     return NeedleResult(
         n=n,
+        hits=hit,
         accuracy=hit / max(1, n),
         mem_fraction=mem_fraction,
         by_length={c: by_len_hit[c][0] / max(1, by_len_hit[c][1]) for c in context_lens},
+        by_depth={
+            depth: by_depth_hit[depth][0] / max(1, by_depth_hit[depth][1])
+            for depth in by_depth_hit
+        },
         grid=grid,
         accuracy_stderr=se,
         accuracy_ci95=(lo, hi),
@@ -573,7 +729,7 @@ def needle_in_haystack(
 def make_multikey_prompt(
     tokenizer, context_tokens: int, num_keys: int = 4, depth: float = 0.5, seed: int = 0
 ):
-    """Build a RULER-style multi-key retrieval prompt and its gold answer.
+    """Build a synthetic multi-key retrieval prompt and its gold answer.
 
     ``num_keys`` distinct ``magic number for <city>`` facts are scattered through
     ~``context_tokens`` of filler; the query asks for one of them.  Distractor
@@ -655,7 +811,7 @@ def ruler_multikey(
                 tokenizer, ctx, num_keys=num_keys, seed=s * 1009 + 7
             )
             ids = _encode(tokenizer, messages)
-            _validate_prompt_capacity(model, ids, max_new_tokens)
+            capacity = _validate_prompt_capacity(model, ids, max_new_tokens)
             cache = (
                 cache_factory() if cache_factory is not None else DynamicCache(config=model.config)
             )
@@ -675,8 +831,30 @@ def ruler_multikey(
             n += 1
             by_len_hit[ctx][0] += int(ok)
             by_len_hit[ctx][1] += 1
-            compression_records.append(cache_compression_sufficient_statistics(cache))
-            grid.append({"ctx": ctx, "num_keys": num_keys, "seed": s, "hit": ok})
+            cache_accounting = cache_compression_sufficient_statistics(cache)
+            compression_records.append(cache_accounting)
+            content = messages[0].get("content") if messages else None
+            if not isinstance(content, str):
+                raise RuntimeError("synthetic multi-key prompt must be one user message with string content")
+            grid.append(
+                {
+                    "ctx": ctx,
+                    "seed": s,
+                    "requested_filler_tokens": ctx,
+                    "requested_depth": 0.5,
+                    "num_keys": num_keys,
+                    "seed_index": s,
+                    "prompt_seed": s * 1009 + 7,
+                    "rendered_prompt_tokens": int(ids.shape[1]),
+                    "reserved_prompt_plus_generation_tokens": int(ids.shape[1]) + max_new_tokens,
+                    "model_context_capacity": capacity,
+                    "prompt_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+                    "gold": gold,
+                    "prediction": txt,
+                    "hit": ok,
+                    "cache_accounting": cache_accounting,
+                }
+            )
             del cache, gen, ids
     se, lo, hi = proportion_stats(hit, n)
     compression, mem_fraction, mem_fraction_aggregation = aggregate_cache_compression_records(
@@ -684,6 +862,7 @@ def ruler_multikey(
     )
     return NeedleResult(
         n=n,
+        hits=hit,
         accuracy=hit / max(1, n),
         mem_fraction=mem_fraction,
         by_length={c: by_len_hit[c][0] / max(1, by_len_hit[c][1]) for c in context_lens},
@@ -693,4 +872,10 @@ def ruler_multikey(
         mem_fraction_aggregation=mem_fraction_aggregation,
         compression_sufficient_statistics=compression,
         compression_records=compression_records,
+        benchmark="deterministic synthetic multi-key retrieval v2",
+        protocol_scope=(
+            "common deterministic prompts across methods; rendered prompt lengths, "
+            "predictions, and per-trial cache-accounting ledgers retained; local diagnostic rather "
+            "than NVIDIA RULER"
+        ),
     )

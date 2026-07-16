@@ -68,8 +68,8 @@ papers/halo_paper/
 
 ## 論文2: TaperKV — Policy 論文
 
-> **主張:** TaperKV の age-graded 精度スケジュールは、StreamingLLM/ThinKV/PM-KVQ に対して
-> 同等メモリ予算で LongBench スコアを最大 +4pt 向上させ、GSM8K では FullKV を超える。
+> **再評価中:** 旧needleは実入力長・depth・予測を保存していなかったため、needle v2 の
+> 再実行と実測メモリの照合が完了するまで、iso-memory優位・LongBench優位を主張しない。
 
 - **ディレクトリ:** `papers/taperkv_paper/`
 - **現在の状態:** Llama-8B 完了、R1-Qwen 系・AIME・LCB は実行中
@@ -85,7 +85,7 @@ papers/taperkv_paper/
     └── run_lcb_bench.sh        # LiveCodeBench単独
 ```
 
-**主要結果 (Llama-8B, 完了):**
+**旧スナップショット（needle v2以前のため論文値として引用不可）:**
 
 | 手法 | LongBench | GSM8K% | MATH% | Needle% | mem |
 |------|-----------|--------|-------|---------|-----|

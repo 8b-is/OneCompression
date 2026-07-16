@@ -100,6 +100,42 @@ def test_chat_template_failure_never_falls_back_to_raw_tokenization():
         longcontext._encode(Tokenizer(), [{"role": "user", "content": "x"}])
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("1234", True),
+        ("The answer is 1234.", True),
+        ("1234; I repeat 1234.", True),
+        ("1234, or perhaps 5678", False),
+        ("91234", False),
+        ("no numeric answer", False),
+    ],
+)
+def test_needle_scoring_rejects_ambiguous_or_partial_numbers(text, expected):
+    assert longcontext._number_hit("1234", text) is expected
+
+
+def test_needle_filler_counts_content_without_sentence_level_special_tokens():
+    class Tokenizer:
+        def __init__(self):
+            self.add_special_tokens_values = []
+
+        def __call__(self, text, *, add_special_tokens=True):
+            self.add_special_tokens_values.append(add_special_tokens)
+            tokens = text.split()
+            return {"input_ids": list(range(len(tokens) + int(add_special_tokens)))}
+
+    tokenizer = Tokenizer()
+    _messages, _gold, metadata = longcontext.make_needle_prompt(
+        tokenizer, 32, depth=0.5, seed=17, return_metadata=True
+    )
+    assert tokenizer.add_special_tokens_values
+    assert set(tokenizer.add_special_tokens_values) == {False}
+    assert metadata["requested_filler_tokens"] == 32
+    assert metadata["actual_filler_tokens"] >= 32
+    assert 0.0 <= metadata["realized_filler_depth"] <= 1.0
+
+
 def test_old_fixed_chat_signature_retries_without_thinking_kwarg_only():
     class Tokenizer:
         def __init__(self):
@@ -187,6 +223,13 @@ def test_fullkv_dynamic_cache_receives_model_config(monkeypatch):
     assert result.mem_fraction == 1.0
     assert result.mem_fraction_aggregation == "fullkv_no_cache"
     assert result.compression_sufficient_statistics["compression_observations"] == 1
+    record = result.as_dict()["grid"][0]
+    assert result.hits == 1
+    assert record["rendered_prompt_tokens"] == 2
+    assert record["reserved_prompt_plus_generation_tokens"] == 3
+    assert record["gold"] == "1234"
+    assert record["prediction"] == "1234"
+    assert record["cache_accounting"]["compression_aggregation"] == "fullkv_no_cache"
 
 
 def test_synthetic_grid_memory_fraction_uses_exact_ratio_of_sums(monkeypatch):

@@ -13,6 +13,7 @@ aggregate_results.py
 """
 from __future__ import annotations
 import json, os, sys, copy
+import math
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent  # onecomp-lab/
@@ -40,6 +41,94 @@ def short_model(model_name: str) -> str:
         if k in model_name:
             return v
     return model_name
+
+
+def audited_needle(bench: dict) -> dict | None:
+    """Return a citable synthetic-needle record or reject legacy summaries.
+
+    Needle v1 did not retain the rendered prompt length, depth, prediction, or
+    exact hit ledger, and its filler counter injected sentence-level special
+    tokens.  Keeping its scalar accuracy in a paper aggregate would let a
+    historical development run masquerade as a reproducible retrieval result.
+    """
+
+    needle = bench.get("needle", {})
+    if not isinstance(needle, dict):
+        return None
+    if (
+        needle.get("benchmark") != "deterministic synthetic needle-in-a-haystack v2"
+        or needle.get("protocol_version") != 2
+        or needle.get("official_reference") is not False
+        or not isinstance(needle.get("grid"), list)
+        or needle.get("n") != len(needle["grid"])
+    ):
+        return None
+    n, hits = needle.get("n"), needle.get("hits")
+    if (
+        isinstance(n, bool)
+        or not isinstance(n, int)
+        or n <= 0
+        or isinstance(hits, bool)
+        or not isinstance(hits, int)
+        or not 0 <= hits <= n
+    ):
+        return None
+    required = {
+        "requested_filler_tokens", "requested_depth", "prompt_seed",
+        "rendered_prompt_tokens", "reserved_prompt_plus_generation_tokens",
+        "model_context_capacity", "prompt_sha256", "gold", "prediction", "hit",
+        "cache_accounting",
+    }
+    grid = needle["grid"]
+    if any(not isinstance(row, dict) or not required.issubset(row) for row in grid):
+        return None
+    if sum(int(row["hit"] is True) for row in grid) != hits:
+        return None
+    accuracy = needle.get("accuracy")
+    if (
+        isinstance(accuracy, bool)
+        or not isinstance(accuracy, (int, float))
+        or not math.isfinite(accuracy)
+        or not math.isclose(float(accuracy), hits / n, abs_tol=5e-4)
+    ):
+        return None
+    return needle
+
+
+def audited_synthetic_multikey(bench: dict) -> dict | None:
+    """Return an explicitly-labelled local multi-key diagnostic, if auditable.
+
+    It deliberately has a separate name from RULER: a local synthetic task must
+    never become an apparent external RULER score in a paper summary.
+    """
+
+    result = bench.get("synthetic_multikey", {})
+    if not isinstance(result, dict):
+        return None
+    if (
+        result.get("benchmark") != "deterministic synthetic multi-key retrieval v2"
+        or result.get("protocol_version") != 2
+        or result.get("official_reference") is not False
+        or not isinstance(result.get("grid"), list)
+        or result.get("n") != len(result["grid"])
+    ):
+        return None
+    n, hits = result.get("n"), result.get("hits")
+    if (
+        isinstance(n, bool)
+        or not isinstance(n, int)
+        or n <= 0
+        or isinstance(hits, bool)
+        or not isinstance(hits, int)
+        or not 0 <= hits <= n
+        or sum(
+            int(row.get("hit") is True)
+            for row in result["grid"]
+            if isinstance(row, dict)
+        ) != hits
+    ):
+        return None
+    return result
 
 # ──────────────────────────────────────────────────────────
 # 1.  HALO Paper — Codec + Speed + Longcontext retrieval
@@ -90,7 +179,7 @@ def aggregate_halo_paper() -> dict:
         out["codec_ppl_latency"][mkey] = results_by_bits
         out["status"]["complete"].append(f"codec/{mkey}")
 
-    # ── Longcontext retrieval (Needle + RULER + PPL) ──
+    # ── Long-context retrieval (Needle + local multi-key diagnostic + PPL) ──
     retr_dirs = {
         "llama-8b":     ROOT / "benchmark/kvcomp-longcontext/results_tq_llama_retr",
         "ministral-8b": ROOT / "benchmark/kvcomp-longcontext/results_tq_minis_retr",
@@ -103,9 +192,17 @@ def aggregate_halo_paper() -> dict:
         data = load(files[0])
         methods_out: dict = {}
         for method, bench in data.get("results", {}).items():
+            needle = audited_needle(bench)
+            multikey = audited_synthetic_multikey(bench)
             methods_out[method] = {
-                "needle_acc":       bench.get("needle", {}).get("accuracy"),
-                "ruler_acc":        bench.get("ruler", {}).get("accuracy"),
+                "needle_acc":       needle.get("accuracy") if needle else None,
+                "needle_protocol":  needle.get("benchmark") if needle else "legacy_or_unverified",
+                "synthetic_multikey_acc": (
+                    multikey.get("accuracy") if multikey else None
+                ),
+                "synthetic_multikey_protocol": (
+                    multikey.get("benchmark") if multikey else "legacy_or_unverified"
+                ),
                 "ppl":              bench.get("ppl", {}).get("ppl"),
                 "mem_fraction":     bench.get("needle", {}).get("mem_fraction")
                                     or bench.get("ppl", {}).get("mem_fraction"),
@@ -172,8 +269,8 @@ def aggregate_taperkv_paper() -> dict:
         "paper": "TaperKV: Recency-Graded Precision Scheduling for KV Cache Compression",
         "description": (
             "Policy paper for age-graded precision scheduling without token eviction. "
-            "Main claim: TaperKV achieves the best LongBench score at iso-memory vs. "
-            "StreamingLLM, ThinKV, PM-KVQ, TurboQuant at ~3x compression."
+            "Needle results are reported as an accuracy-vs-realised-memory Pareto "
+            "frontier unless an explicit matched-memory validation is present."
         ),
         "policy_comparison": {},  # model -> method -> metrics (needle/ruler/lb/gsm8k/math500)
         "aime_reasoning": {},     # model -> method -> {aime2024, aime2025, gsm8k, math500}
@@ -207,14 +304,22 @@ def aggregate_taperkv_paper() -> dict:
         methods_out = {}
         n_complete = 0
         for method, bench in data.get("results", {}).items():
+            needle = audited_needle(bench)
+            multikey = audited_synthetic_multikey(bench)
             methods_out[method] = {
-                "needle_acc":    bench.get("needle", {}).get("accuracy"),
-                "ruler_acc":     bench.get("ruler", {}).get("accuracy"),
+                "needle_acc":    needle.get("accuracy") if needle else None,
+                "needle_protocol": needle.get("benchmark") if needle else "legacy_or_unverified",
+                "synthetic_multikey_acc": (
+                    multikey.get("accuracy") if multikey else None
+                ),
+                "synthetic_multikey_protocol": (
+                    multikey.get("benchmark") if multikey else "legacy_or_unverified"
+                ),
                 "longbench":     bench.get("longbench", {}).get("score"),
                 "gsm8k":         bench.get("gsm8k", {}).get("pass@1"),
                 "math500":       bench.get("math500", {}).get("pass@1"),
                 "ppl":           bench.get("ppl", {}).get("ppl"),
-                "mem_fraction":  (bench.get("needle", {}) or bench.get("ppl", {})).get("mem_fraction"),
+                "mem_fraction":  (needle or bench.get("ppl", {})).get("mem_fraction"),
                 "compression_ratio": bench.get("ppl", {}).get("compression_ratio"),
             }
             n_complete += 1
@@ -327,7 +432,7 @@ if __name__ == "__main__":
             print(f"    {m:<30} ppl={_f(v['ppl'])}  enc={_ms(v['ms_per_encode'])}ms  relMSE_k={_f(v['distortion_key'],4)}")
 
     print("\n" + "="*70)
-    print("HALO PAPER — Retrieval Accuracy (Needle / RULER) @ iso-memory")
+    print("HALO PAPER — Retrieval Accuracy (Needle / synthetic multi-key) @ realised memory")
     print("="*70)
     for model in ["llama-8b", "ministral-8b"]:
         print(f"\n  {model}")
@@ -336,10 +441,10 @@ if __name__ == "__main__":
                        "HALO-dense-LS-4bit","HALO-dense-LS-3bit","HALO-dense-LS-2bit",
                        "TurboQuant-4bit","TurboQuant-3bit","TurboQuant-2bit",
                        "FP8","NVFP4","KIVI-INT2"]
-        print(f"    {'method':<28} {'needle':>7} {'ruler':>7} {'ppl':>7} {'mem':>6}")
+        print(f"    {'method':<28} {'needle':>7} {'synthetic':>9} {'ppl':>7} {'mem':>6}")
         for m in key_methods:
             v = data.get(m, {})
-            print(f"    {m:<28} {_pct(v.get('needle_acc')):>7} {_pct(v.get('ruler_acc')):>7} {_f(v.get('ppl')):>7} {_f(v.get('mem_fraction'),3):>6}")
+            print(f"    {m:<28} {_pct(v.get('needle_acc')):>7} {_pct(v.get('synthetic_multikey_acc')):>9} {_f(v.get('ppl')):>7} {_f(v.get('mem_fraction'),3):>6}")
 
     print("\n" + "="*70)
     print("HALO PAPER — Speed (encode ms @3-bit, Llama setup)")
@@ -352,13 +457,13 @@ if __name__ == "__main__":
     print("TaperKV PAPER — Policy Comparison (Llama-8B)")
     print("="*70)
     data = taper["policy_comparison"].get("llama-8b", {})
-    print(f"  {'method':<22} {'needle':>7} {'ruler':>7} {'lb':>7} {'gsm8k':>7} {'math':>7} {'ppl':>7} {'mem':>6}")
+    print(f"  {'method':<22} {'needle':>7} {'synthetic':>9} {'lb':>7} {'gsm8k':>7} {'math':>7} {'ppl':>7} {'mem':>6}")
     key_methods = ["FullKV","StreamingLLM","ThinKV","PM-KVQ",
                    "TaperKV","TaperKV-3bit","TurboTaper-3bit",
                    "TurboQuant-3bit","KIVI-INT2","HALO-3bit","Uniform-INT3"]
     for m in key_methods:
         v = data.get(m, {})
-        print(f"  {m:<22} {_pct(v.get('needle_acc')):>7} {_pct(v.get('ruler_acc')):>7} "
+        print(f"  {m:<22} {_pct(v.get('needle_acc')):>7} {_pct(v.get('synthetic_multikey_acc')):>9} "
               f"{_f(v.get('longbench')):>7} {_pct(v.get('gsm8k')):>7} "
               f"{_pct(v.get('math500')):>7} {_f(v.get('ppl')):>7} {_f(v.get('mem_fraction'),3):>6}")
 
