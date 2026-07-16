@@ -3795,19 +3795,34 @@ def _write_repo_local_receipt_fixture(tmp_path: Path) -> tuple[Path, Path, Path]
     scheduler_stderr.write_text("", encoding="utf-8")
     expected_relative = source.relative_to(root).as_posix()
     identity = {
-        "schema_version": 1,
+        "schema_version": 2,
         "phase": "formal",
         "job_key": "formal-ppl",
         "attempt_id": "attempt-1",
         "source_commit": "c" * 40,
-        "run_id": "fixture",
+        "run_id": root.name,
         "expected_result": expected_relative,
-        "results_worktree": "/fixture/results-worktree",
+        "results_worktree": str(root.parents[4].resolve(strict=True)),
+        "scheduler_user": "fixture-user",
+        "scheduler_job_name": "hq-f-ppl",
         "created_at_utc": "2026-07-16T00:00:00+00:00",
         "updated_at_utc": "2026-07-16T00:01:00+00:00",
         "terminal": True,
         "stage": "fixture",
     }
+    tag_fields = (
+        "hayatequant-paper-submission-v1",
+        identity["source_commit"],
+        identity["run_id"],
+        identity["results_worktree"],
+        identity["phase"],
+        identity["job_key"],
+        identity["attempt_id"],
+        identity["expected_result"],
+    )
+    identity["submission_tag"] = "hayatequant-" + hashlib.sha256(
+        b"".join(str(value).encode() + b"\0" for value in tag_fields)
+    ).hexdigest()
     submission = {
         **identity,
         "kind": "hayatequant_paper_submission_receipt",
@@ -3817,6 +3832,18 @@ def _write_repo_local_receipt_fixture(tmp_path: Path) -> tuple[Path, Path, Path]
         "slurm_job_id": "123",
         "scheduler_stdout": scheduler_stdout.relative_to(root).as_posix(),
         "scheduler_stderr": scheduler_stderr.relative_to(root).as_posix(),
+        "scheduler_submission_evidence": {
+            "stdout": {
+                "path": scheduler_stdout.relative_to(root).as_posix(),
+                "bytes": scheduler_stdout.stat().st_size,
+                "sha256": hashlib.sha256(scheduler_stdout.read_bytes()).hexdigest(),
+            },
+            "stderr": {
+                "path": scheduler_stderr.relative_to(root).as_posix(),
+                "bytes": scheduler_stderr.stat().st_size,
+                "sha256": hashlib.sha256(scheduler_stderr.read_bytes()).hexdigest(),
+            },
+        },
     }
     worker = {
         **identity,
@@ -3840,6 +3867,117 @@ def _write_repo_local_receipt_fixture(tmp_path: Path) -> tuple[Path, Path, Path]
     _write(attempt_root / "submission.json", submission)
     _write(attempt_root / "worker.json", worker)
     return root, source, attempt_root / "worker.json"
+
+
+def _add_scheduler_failure_attempt(root: Path, source: Path) -> Path:
+    attempt_root = root / "job_records/formal/formal-ppl/attempt-0"
+    attempt_root.mkdir(parents=True)
+    scheduler_stdout = attempt_root / "sbatch.stdout"
+    scheduler_stderr = attempt_root / "sbatch.stderr"
+    scheduler_stdout.write_text("122\n", encoding="utf-8")
+    scheduler_stderr.write_text("", encoding="utf-8")
+    evidence_root = attempt_root / "scheduler_evidence"
+    evidence_root.mkdir()
+    sacct_stdout = evidence_root / "sacct.stdout"
+    sacct_stderr = evidence_root / "sacct.stderr"
+    sacct_stdout.write_text(
+        "122|fixture-user|hq-f-ppl|NODE_FAIL|1:0|2026-07-16T00:00:00|"
+        "2026-07-16T00:00:00|2026-07-16T00:01:00|placeholder|\n",
+        encoding="utf-8",
+    )
+    sacct_stderr.write_text("", encoding="utf-8")
+    identity = {
+        "schema_version": 2,
+        "phase": "formal",
+        "job_key": "formal-ppl",
+        "attempt_id": "attempt-0",
+        "source_commit": "c" * 40,
+        "run_id": root.name,
+        "expected_result": source.relative_to(root).as_posix(),
+        "results_worktree": str(root.parents[4].resolve(strict=True)),
+        "scheduler_user": "fixture-user",
+        "scheduler_job_name": "hq-f-ppl",
+        "created_at_utc": "2026-07-16T00:00:00+00:00",
+        "updated_at_utc": "2026-07-16T00:01:00+00:00",
+        "terminal": True,
+        "stage": "fixture",
+    }
+    fields = (
+        "hayatequant-paper-submission-v1",
+        identity["source_commit"],
+        identity["run_id"],
+        identity["results_worktree"],
+        identity["phase"],
+        identity["job_key"],
+        identity["attempt_id"],
+        identity["expected_result"],
+    )
+    identity["submission_tag"] = "hayatequant-" + hashlib.sha256(
+        b"".join(str(value).encode() + b"\0" for value in fields)
+    ).hexdigest()
+    sacct_stdout.write_text(
+        "122|fixture-user|hq-f-ppl|NODE_FAIL|1:0|2026-07-16T00:00:00|"
+        "2026-07-16T00:00:00|2026-07-16T00:01:00|"
+        f"{identity['submission_tag']}|\n",
+        encoding="utf-8",
+    )
+    submission = {
+        **identity,
+        "kind": "hayatequant_paper_submission_receipt",
+        "status": "submitted",
+        "reason_code": "sbatch_accepted",
+        "exit_code": 0,
+        "slurm_job_id": "122",
+        "scheduler_stdout": scheduler_stdout.relative_to(root).as_posix(),
+        "scheduler_stderr": scheduler_stderr.relative_to(root).as_posix(),
+        "scheduler_submission_evidence": {
+            "stdout": {
+                "path": scheduler_stdout.relative_to(root).as_posix(),
+                "bytes": scheduler_stdout.stat().st_size,
+                "sha256": hashlib.sha256(scheduler_stdout.read_bytes()).hexdigest(),
+            },
+            "stderr": {
+                "path": scheduler_stderr.relative_to(root).as_posix(),
+                "bytes": scheduler_stderr.stat().st_size,
+                "sha256": hashlib.sha256(scheduler_stderr.read_bytes()).hexdigest(),
+            },
+        },
+    }
+    scheduler = {
+        **identity,
+        "kind": "hayatequant_paper_scheduler_receipt",
+        "status": "scheduler_terminal_failure",
+        "reason_code": "slurm_terminal_before_worker",
+        "slurm_job_id": "122",
+        "slurm": {
+            "job_id_raw": "122",
+            "user": identity["scheduler_user"],
+            "job_name": identity["scheduler_job_name"],
+            "state": "NODE_FAIL",
+            "state_raw": "NODE_FAIL",
+            "exit_code": "1:0",
+            "submit_time": "2026-07-16T00:00:00",
+            "start_time": "2026-07-16T00:00:00",
+            "end_time": "2026-07-16T00:01:00",
+            "submission_tag": identity["submission_tag"],
+        },
+        "scheduler_query_evidence": {
+            "stdout": {
+                "path": sacct_stdout.relative_to(root).as_posix(),
+                "bytes": sacct_stdout.stat().st_size,
+                "sha256": hashlib.sha256(sacct_stdout.read_bytes()).hexdigest(),
+            },
+            "stderr": {
+                "path": sacct_stderr.relative_to(root).as_posix(),
+                "bytes": sacct_stderr.stat().st_size,
+                "sha256": hashlib.sha256(sacct_stderr.read_bytes()).hexdigest(),
+            },
+        },
+    }
+    _write(attempt_root / "submission.json", submission)
+    scheduler_path = attempt_root / "scheduler.json"
+    _write(scheduler_path, scheduler)
+    return scheduler_path
 
 
 def test_formal_aggregate_requires_repo_local_success_receipts(tmp_path):
@@ -3876,7 +4014,7 @@ def test_formal_aggregate_rejects_nonterminal_or_missing_worker_success(tmp_path
 def test_formal_aggregate_rejects_submitted_attempt_without_terminal_worker(tmp_path):
     root, source, worker_path = _write_repo_local_receipt_fixture(tmp_path)
     worker_path.unlink()
-    with pytest.raises(shards.AggregateError, match="no terminal worker receipt"):
+    with pytest.raises(shards.AggregateError, match="exactly one terminal execution receipt"):
         shards._validate_formal_job_receipts(
             root, source_paths=[source], expected_commit="c" * 40
         )
@@ -3890,7 +4028,61 @@ def test_formal_aggregate_rejects_failed_worker_with_mismatched_submission(tmp_p
     worker["slurm_job_id"] = "999"
     worker.pop("result")
     _write(worker_path, worker)
-    with pytest.raises(shards.AggregateError, match="Slurm identities disagree"):
+    with pytest.raises(shards.AggregateError, match="Slurm ID"):
+        shards._validate_formal_job_receipts(
+            root, source_paths=[source], expected_commit="c" * 40
+        )
+
+
+def test_formal_aggregate_allows_failed_scheduler_attempt_then_successful_retry(tmp_path):
+    root, source, _worker_path = _write_repo_local_receipt_fixture(tmp_path)
+    _add_scheduler_failure_attempt(root, source)
+    audit = shards._validate_formal_job_receipts(
+        root, source_paths=[source], expected_commit="c" * 40
+    )
+    assert audit["worker_status_counts"] == {"succeeded": 1}
+    assert audit["scheduler_status_counts"] == {"scheduler_terminal_failure": 1}
+    assert audit["source_results_validated"] == 1
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("status", "succeeded"), ("slurm_state", "COMPLETED")],
+)
+def test_formal_aggregate_never_counts_scheduler_receipt_as_success(
+    tmp_path, field, value
+):
+    root, source, _worker_path = _write_repo_local_receipt_fixture(tmp_path)
+    scheduler_path = _add_scheduler_failure_attempt(root, source)
+    scheduler = json.loads(scheduler_path.read_text(encoding="utf-8"))
+    if field == "slurm_state":
+        scheduler["slurm"]["state"] = value
+    else:
+        scheduler[field] = value
+    _write(scheduler_path, scheduler)
+    with pytest.raises(shards.AggregateError, match="scheduler"):
+        shards._validate_formal_job_receipts(
+            root, source_paths=[source], expected_commit="c" * 40
+        )
+
+
+@pytest.mark.parametrize("receipt_name", ["submission.json", "worker.json", "scheduler.json"])
+def test_formal_aggregate_binds_every_receipt_to_exact_run_and_results_worktree(
+    tmp_path, receipt_name
+):
+    root, source, worker_path = _write_repo_local_receipt_fixture(tmp_path)
+    scheduler_path = _add_scheduler_failure_attempt(root, source)
+    if receipt_name == "submission.json":
+        path = worker_path.with_name(receipt_name)
+    elif receipt_name == "worker.json":
+        path = worker_path
+    else:
+        path = scheduler_path
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document["run_id"] = "different-run"
+    document["results_worktree"] = "/different/results-worktree"
+    _write(path, document)
+    with pytest.raises(shards.AggregateError, match="immutable identity"):
         shards._validate_formal_job_receipts(
             root, source_paths=[source], expected_commit="c" * 40
         )

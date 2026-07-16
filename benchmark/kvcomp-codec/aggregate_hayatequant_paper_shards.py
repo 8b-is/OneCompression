@@ -33,6 +33,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from onecomp.kvcomp.eval.paper_job_receipts import (
+    ReceiptValidationError,
+    validate_successful_result_receipts,
+)
+
 DEFAULT_RUN_ROOT = Path(
     "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/" "hayate_iclr2027_refresh_20260715"
 )
@@ -9374,77 +9379,176 @@ def _validate_formal_job_receipts(
 ) -> dict[str, Any]:
     """Require one successful worker/submission receipt for every source JSON.
 
-    Failed retry attempts remain admissible evidence, but every receipt must be
-    well formed and terminal.  A source file written by a killed, bypassed, or
-    zero-exit-but-invalid worker is therefore never accepted into a paper
-    aggregate merely because bytes happen to exist at the expected path.
+    Failed retry attempts remain admissible evidence.  Every accepted
+    submission must have exactly one terminal execution receipt: normally a
+    worker receipt, or a failure-only scheduler receipt when ``sacct`` proves
+    that the wrapper never started.  Scheduler receipts can never establish
+    scientific success.
     """
 
     root = run_root.expanduser().resolve(strict=True)
+    try:
+        generic_receipt_validation = validate_successful_result_receipts(
+            root,
+            phase="formal",
+            source_paths=source_paths,
+            expected_commit=expected_commit,
+        )
+    except ReceiptValidationError as exc:
+        raise AggregateError(f"Formal lifecycle receipts are not auditable: {exc}") from exc
     records_root = root / "job_records/formal"
     if not records_root.is_dir() or records_root.is_symlink():
         raise AggregateError(f"Formal repo-local job receipt tree is missing: {records_root}")
     worker_paths = sorted(records_root.glob("*/*/worker.json"))
+    scheduler_paths = sorted(records_root.glob("*/*/scheduler.json"))
     submission_paths = sorted(records_root.glob("*/*/submission.json"))
     if not submission_paths:
         raise AggregateError("Formal job receipts contain no submission records")
 
     workers: list[tuple[Path, dict[str, Any]]] = []
     workers_by_attempt: dict[tuple[str, str], tuple[Path, dict[str, Any]]] = {}
+    schedulers_by_attempt: dict[tuple[str, str], tuple[Path, dict[str, Any]]] = {}
     submissions: dict[tuple[str, str], tuple[Path, dict[str, Any]]] = {}
     worker_status_counts: dict[str, int] = {}
+    scheduler_status_counts: dict[str, int] = {}
     submission_status_counts: dict[str, int] = {}
-    identity_fields = ("phase", "job_key", "attempt_id", "source_commit", "expected_result")
+    expected_results_worktree = str(root.parents[4].resolve(strict=True))
+    identity_fields = (
+        "schema_version",
+        "phase",
+        "job_key",
+        "attempt_id",
+        "source_commit",
+        "run_id",
+        "expected_result",
+        "results_worktree",
+        "scheduler_user",
+        "scheduler_job_name",
+        "submission_tag",
+    )
+
+    def expected_job_name(job_key: str) -> str:
+        prefix = "formal-"
+        if not job_key.startswith(prefix) or job_key == prefix:
+            raise AggregateError(f"Formal job key is not phase-namespaced: {job_key!r}")
+        return f"hq-f-{job_key[len(prefix):]}"
+
+    def expected_tag(row: Mapping[str, Any]) -> str:
+        fields = (
+            "hayatequant-paper-submission-v1",
+            row["source_commit"],
+            row["run_id"],
+            row["results_worktree"],
+            row["phase"],
+            row["job_key"],
+            row["attempt_id"],
+            row["expected_result"],
+        )
+        digest = hashlib.sha256(
+            b"".join(str(value).encode("utf-8") + b"\0" for value in fields)
+        ).hexdigest()
+        return f"hayatequant-{digest}"
+
+    def validate_identity(
+        row: Mapping[str, Any], path: Path, *, expected_kind: str
+    ) -> tuple[str, str]:
+        relative = path.relative_to(records_root)
+        if len(relative.parts) != 3 or relative.name != f"{expected_kind}.json":
+            raise AggregateError(f"Malformed {expected_kind} receipt location: {path}")
+        job_key, attempt_id = relative.parts[:2]
+        expected_result = row.get("expected_result")
+        if not isinstance(expected_result, str) or not expected_result.startswith(
+            "results/formal/"
+        ):
+            raise AggregateError(f"Receipt expected result escapes results/formal: {path}")
+        if (
+            row.get("schema_version") != 2
+            or row.get("phase") != "formal"
+            or row.get("job_key") != job_key
+            or row.get("attempt_id") != attempt_id
+            or row.get("source_commit") != expected_commit
+            or row.get("run_id") != root.name
+            or row.get("results_worktree") != expected_results_worktree
+            or row.get("scheduler_job_name") != expected_job_name(job_key)
+            or row.get("submission_tag") != expected_tag(row)
+            or not isinstance(row.get("scheduler_user"), str)
+            or not row["scheduler_user"]
+        ):
+            raise AggregateError(f"Receipt immutable identity is malformed: {path}")
+        return job_key, attempt_id
+
+    def validate_evidence(
+        evidence: Any, *, expected_path: Any, label: str, receipt: Path
+    ) -> Path:
+        if not isinstance(evidence, dict) or evidence.get("path") != expected_path:
+            raise AggregateError(f"{label} evidence identity is malformed: {receipt}")
+        retained = _receipt_file(root, expected_path, label=label, receipt=receipt)
+        if (
+            evidence.get("bytes") != retained.stat().st_size
+            or evidence.get("sha256") != _sha256(retained)
+        ):
+            raise AggregateError(f"{label} evidence changed after receipt: {receipt}")
+        return retained
 
     for path in submission_paths:
         if path.is_symlink():
             raise AggregateError(f"Symlinked submission receipt is forbidden: {path}")
         row = _load_object(path)
-        relative = path.relative_to(records_root)
-        if len(relative.parts) != 3 or relative.name != "submission.json":
-            raise AggregateError(f"Malformed submission receipt location: {path}")
+        job_key, attempt_id = validate_identity(row, path, expected_kind="submission")
         if (
-            row.get("schema_version") != 1
-            or row.get("kind") != "hayatequant_paper_submission_receipt"
-            or row.get("phase") != "formal"
-            or row.get("job_key") != relative.parts[0]
-            or row.get("attempt_id") != relative.parts[1]
-            or row.get("source_commit") != expected_commit
+            row.get("kind") != "hayatequant_paper_submission_receipt"
             or row.get("terminal") is not True
             or row.get("status")
             not in {"submitted", "submission_failed", "skipped_existing"}
         ):
             raise AggregateError(f"Malformed or nonterminal formal submission receipt: {path}")
-        key = (row["job_key"], row["attempt_id"])
+        key = (job_key, attempt_id)
         if key in submissions:
             raise AggregateError(f"Duplicate formal submission receipt identity: {key}")
         submissions[key] = (path, row)
         submission_status_counts[row["status"]] = (
             submission_status_counts.get(row["status"], 0) + 1
         )
-        _receipt_file(root, row.get("scheduler_stdout"), label="scheduler stdout", receipt=path)
-        _receipt_file(root, row.get("scheduler_stderr"), label="scheduler stderr", receipt=path)
+        submission_evidence = row.get("scheduler_submission_evidence")
+        if not isinstance(submission_evidence, dict):
+            raise AggregateError(f"Submission lacks hashed scheduler streams: {path}")
+        sbatch_stdout = validate_evidence(
+            submission_evidence.get("stdout"),
+            expected_path=row.get("scheduler_stdout"),
+            label="scheduler submission stdout",
+            receipt=path,
+        )
+        validate_evidence(
+            submission_evidence.get("stderr"),
+            expected_path=row.get("scheduler_stderr"),
+            label="scheduler submission stderr",
+            receipt=path,
+        )
+        if row["status"] == "submitted":
+            slurm_id = row.get("slurm_job_id")
+            if not isinstance(slurm_id, str) or re.fullmatch(r"[0-9]+", slurm_id) is None:
+                raise AggregateError(f"Submitted formal receipt lacks numeric Slurm ID: {path}")
+            try:
+                sbatch_text = sbatch_stdout.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as exc:
+                raise AggregateError(f"Cannot read retained sbatch stdout: {path}") from exc
+            match = re.fullmatch(r"([0-9]+)(?:;[A-Za-z0-9._-]+)?\r?\n?", sbatch_text)
+            if match is None or match.group(1) != slurm_id:
+                raise AggregateError(f"Retained sbatch stdout disagrees with Slurm ID: {path}")
 
     for path in worker_paths:
         if path.is_symlink():
             raise AggregateError(f"Symlinked worker receipt is forbidden: {path}")
         row = _load_object(path)
-        relative = path.relative_to(records_root)
-        if len(relative.parts) != 3 or relative.name != "worker.json":
-            raise AggregateError(f"Malformed worker receipt location: {path}")
+        job_key, attempt_id = validate_identity(row, path, expected_kind="worker")
         if (
-            row.get("schema_version") != 1
-            or row.get("kind") != "hayatequant_paper_worker_receipt"
-            or row.get("phase") != "formal"
-            or row.get("job_key") != relative.parts[0]
-            or row.get("attempt_id") != relative.parts[1]
-            or row.get("source_commit") != expected_commit
+            row.get("kind") != "hayatequant_paper_worker_receipt"
             or row.get("terminal") is not True
             or row.get("status") not in {"succeeded", "failed"}
         ):
             raise AggregateError(f"Malformed or nonterminal formal worker receipt: {path}")
         workers.append((path, row))
-        key = (row["job_key"], row["attempt_id"])
+        key = (job_key, attempt_id)
         if key in workers_by_attempt:
             raise AggregateError(f"Duplicate formal worker receipt identity: {key}")
         workers_by_attempt[key] = (path, row)
@@ -9495,15 +9599,124 @@ def _validate_formal_job_receipts(
         ):
             raise AggregateError(f"Successful worker result changed after receipt: {path}")
 
-    missing_terminal_workers = [
+    terminal_failure_states = {
+        "BOOT_FAIL",
+        "CANCELLED",
+        "DEADLINE",
+        "FAILED",
+        "NODE_FAIL",
+        "OUT_OF_MEMORY",
+        "PREEMPTED",
+        "REVOKED",
+        "SPECIAL_EXIT",
+        "TIMEOUT",
+    }
+    for path in scheduler_paths:
+        if path.is_symlink():
+            raise AggregateError(f"Symlinked scheduler receipt is forbidden: {path}")
+        row = _load_object(path)
+        job_key, attempt_id = validate_identity(row, path, expected_kind="scheduler")
+        if (
+            row.get("kind") != "hayatequant_paper_scheduler_receipt"
+            or row.get("terminal") is not True
+            or row.get("status") != "scheduler_terminal_failure"
+        ):
+            raise AggregateError(f"Malformed scheduler terminal-failure receipt: {path}")
+        key = (job_key, attempt_id)
+        if key in schedulers_by_attempt:
+            raise AggregateError(f"Duplicate formal scheduler receipt identity: {key}")
+        if key in workers_by_attempt:
+            raise AggregateError(
+                f"Worker and scheduler receipts both exist for formal attempt: {key}"
+            )
+        schedulers_by_attempt[key] = (path, row)
+        scheduler_status_counts[row["status"]] = (
+            scheduler_status_counts.get(row["status"], 0) + 1
+        )
+        submission_entry = submissions.get(key)
+        if submission_entry is None:
+            raise AggregateError(f"Scheduler receipt has no matching submission: {path}")
+        submission_path, submission = submission_entry
+        if submission.get("status") != "submitted" or any(
+            submission.get(field) != row.get(field) for field in identity_fields
+        ):
+            raise AggregateError(
+                f"Scheduler/submission immutable identities disagree: {path} / {submission_path}"
+            )
+        slurm = row.get("slurm")
+        if (
+            not isinstance(slurm, dict)
+            or slurm.get("job_id_raw") != submission.get("slurm_job_id")
+            or slurm.get("user") != row.get("scheduler_user")
+            or slurm.get("job_name") != row.get("scheduler_job_name")
+            or slurm.get("submission_tag") != row.get("submission_tag")
+            or slurm.get("state") not in terminal_failure_states
+            or slurm.get("state") == "COMPLETED"
+            or not isinstance(slurm.get("exit_code"), str)
+        ):
+            raise AggregateError(f"Scheduler receipt is not an exact Slurm failure: {path}")
+        query_evidence = row.get("scheduler_query_evidence")
+        if not isinstance(query_evidence, dict):
+            raise AggregateError(f"Scheduler receipt lacks raw sacct evidence: {path}")
+        sacct_stdout = validate_evidence(
+            query_evidence.get("stdout"),
+            expected_path=(query_evidence.get("stdout") or {}).get("path"),
+            label="raw sacct stdout",
+            receipt=path,
+        )
+        validate_evidence(
+            query_evidence.get("stderr"),
+            expected_path=(query_evidence.get("stderr") or {}).get("path"),
+            label="raw sacct stderr",
+            receipt=path,
+        )
+        try:
+            sacct_lines = [
+                line for line in sacct_stdout.read_text(encoding="utf-8").splitlines() if line
+            ]
+        except (OSError, UnicodeError) as exc:
+            raise AggregateError(f"Cannot read raw sacct stdout: {path}") from exc
+        if len(sacct_lines) != 1:
+            raise AggregateError(f"Raw sacct evidence is not one exact allocation row: {path}")
+        sacct_fields = sacct_lines[0].split("|")
+        if sacct_fields and sacct_fields[-1] == "":
+            sacct_fields.pop()
+        expected_sacct = [
+            slurm.get("job_id_raw"),
+            slurm.get("user"),
+            slurm.get("job_name"),
+            slurm.get("state_raw"),
+            slurm.get("exit_code"),
+            slurm.get("submit_time"),
+            slurm.get("start_time"),
+            slurm.get("end_time"),
+            slurm.get("submission_tag"),
+        ]
+        if sacct_fields != expected_sacct:
+            raise AggregateError(f"Structured scheduler receipt disagrees with raw sacct row: {path}")
+
+    missing_terminal_execution = [
         (path, row)
         for key, (path, row) in submissions.items()
-        if row["status"] == "submitted" and key not in workers_by_attempt
+        if row["status"] == "submitted"
+        and key not in workers_by_attempt
+        and key not in schedulers_by_attempt
     ]
-    if missing_terminal_workers:
-        paths = ", ".join(str(path) for path, _row in missing_terminal_workers[:5])
+    if missing_terminal_execution:
+        paths = ", ".join(str(path) for path, _row in missing_terminal_execution[:5])
         raise AggregateError(
-            "Submitted formal attempts have no terminal worker receipt: " + paths
+            "Submitted formal attempts have no terminal worker or scheduler receipt: " + paths
+        )
+    unexpected_execution = [
+        path
+        for key, (path, row) in submissions.items()
+        if row["status"] != "submitted"
+        and (key in workers_by_attempt or key in schedulers_by_attempt)
+    ]
+    if unexpected_execution:
+        raise AggregateError(
+            "Non-accepted formal attempts have execution receipts: "
+            + ", ".join(str(path) for path in unexpected_execution[:5])
         )
 
     source_relatives: list[str] = []
@@ -9528,12 +9741,18 @@ def _validate_formal_job_receipts(
             )
     return {
         "schema_version": 1,
-        "scope": "repo-local submission/worker receipts for every aggregated source",
+        "scope": (
+            "repo-local submission plus exactly one worker or failure-only scheduler "
+            "receipt for every accepted attempt"
+        ),
         "source_results_validated": len(source_relatives),
         "worker_receipts": len(worker_paths),
+        "scheduler_receipts": len(scheduler_paths),
         "submission_receipts": len(submission_paths),
         "worker_status_counts": worker_status_counts,
+        "scheduler_status_counts": scheduler_status_counts,
         "submission_status_counts": submission_status_counts,
+        "generic_receipt_validation": generic_receipt_validation,
     }
 
 

@@ -29,6 +29,7 @@ WRAPPER="$HERE/run_paper_job.sh"
 INPUT_VALIDATOR="$HERE/validate_hayatequant_paper_inputs.py"
 SMOKE_GATE_VALIDATOR="$HERE/validate_hayatequant_smoke_gate.py"
 LIFECYCLE="$HERE/paper_job_lifecycle.py"
+SCHEDULER_RECONCILER="$HERE/reconcile_hayatequant_paper_jobs.py"
 
 # These defaults deliberately point at the original checkout's environments:
 # a git worktree does not contain independent virtual environments.  The
@@ -91,6 +92,7 @@ ACTIVE_SUBMISSION_RESULT=
 ACTIVE_SUBMISSION_STDOUT=
 ACTIVE_SUBMISSION_STDERR=
 ACTIVE_SUBMISSION_JOB_ID=
+ACTIVE_SUBMISSION_SIGNAL=
 
 RULER_ROOT="$DATA_ROOT/ruler_v1"
 LONGCODE_ROOT="$DATA_ROOT/LongCodeQA"
@@ -177,6 +179,56 @@ persist_active_submission() {
   [ -z "$ACTIVE_SUBMISSION_JOB_ID" ] || \
     receipt+=(--slurm-job-id "$ACTIVE_SUBMISSION_JOB_ID")
   "${receipt[@]}"
+}
+
+submitter_on_signal() {
+  local signal_name=$1 exit_code=$2
+  ACTIVE_SUBMISSION_SIGNAL=$signal_name
+  trap - HUP INT TERM
+  exit "$exit_code"
+}
+
+submitter_on_exit() {
+  local exit_code=$?
+  trap - EXIT HUP INT TERM
+  if [ -n "$ACTIVE_SUBMISSION_RECORD" ]; then
+    [ "$exit_code" -ne 0 ] || exit_code=125
+    local reason=submitter_exit
+    [ -z "$ACTIVE_SUBMISSION_SIGNAL" ] || reason="submitter_signal_$ACTIVE_SUBMISSION_SIGNAL"
+    persist_active_submission submission_interrupted "$reason" "$exit_code" \
+      >/dev/null 2>&1 || printf \
+      'ERROR: could not persist interrupted submission receipt: %s\n' \
+      "$ACTIVE_SUBMISSION_RECORD" >&2
+    ACTIVE_SUBMISSION_RECORD=
+  fi
+  exit "$exit_code"
+}
+
+trap submitter_on_exit EXIT
+trap 'submitter_on_signal hup 129' HUP
+trap 'submitter_on_signal int 130' INT
+trap 'submitter_on_signal term 143' TERM
+
+derive_submission_tag() {
+  local phase=$1 job_key=$2 attempt_id=$3 expected_result=$4
+  local canonical_run canonical_results canonical_result result_relative digest_line digest
+  canonical_run=$(realpath -m -- "$RUN_ROOT")
+  canonical_results=$(realpath -m -- "$RUN_ROOT/../../../../..")
+  canonical_result=$(realpath -m -- "$expected_result")
+  case "$canonical_result" in
+    "$canonical_run/"*) result_relative=${canonical_result#"$canonical_run/"} ;;
+    *) die "cannot derive submission tag for result outside RUN_ROOT" ;;
+  esac
+  digest_line=$(
+    printf '%s\0' \
+      hayatequant-paper-submission-v1 "$CODE_REPO_COMMIT" \
+      "${canonical_run##*/}" "$canonical_results" "$phase" "$job_key" \
+      "$attempt_id" "$result_relative" | sha256sum
+  )
+  digest=${digest_line%% *}
+  case "$digest" in ''|*[!0-9a-f]*) die "could not derive submission identity tag" ;; esac
+  [ "${#digest}" -eq 64 ] || die "could not derive submission identity tag"
+  printf 'hayatequant-%s\n' "$digest"
 }
 
 require_executable() {
@@ -587,6 +639,8 @@ submit_job() {
   else
     attempt_id="$(date -u +%Y%m%dT%H%M%SZ)-submit-$$-$SUBMISSION_SEQUENCE"
   fi
+  local submission_tag
+  submission_tag=$(derive_submission_tag "$phase" "$full_job_key" "$attempt_id" "$result")
   local attempt_dir="$RUN_ROOT/job_records/$phase/$full_job_key/$attempt_id"
   local submission_record="$attempt_dir/submission.json"
   local scheduler_stdout="$attempt_dir/sbatch.stdout"
@@ -659,6 +713,7 @@ submit_job() {
   local -a sbatch_cmd=(
     sbatch --parsable
     --job-name "$job_name"
+    --comment "$submission_tag"
     --partition "$allocation_partition"
     --nodes 1
     --ntasks 1
@@ -1541,6 +1596,7 @@ usage() {
     '  preflight    Validate all model/dataset manifests; submit nothing' \
     '  speed-node-preflight Validate SPEED_NODE identity; set REQUIRE_SPEED_NODE_IDLE=1 for timing readiness' \
     '  summarize    Coverage-check and aggregate every completed formal axis' \
+    '  reconcile    Record exact terminal Slurm failures for wrappers that never started' \
     '  formal-plan  DRYRUN-only source plan; cannot submit and does not approve smoke' \
     '  help         Show this message' \
     '' \
@@ -1585,6 +1641,15 @@ case "$command" in
     fi
     ;;
   summarize) summarize_results ;;
+  reconcile)
+    resolve_source_revision
+    validate_results_repository
+    [ -f "$SCHEDULER_RECONCILER" ] || die \
+      "missing scheduler reconciler: $SCHEDULER_RECONCILER"
+    "$PY" "$SCHEDULER_RECONCILER" \
+      --source-repo "$REPO" --run-root "$RUN_ROOT" \
+      --source-commit "$CODE_REPO_COMMIT"
+    ;;
   smoke)
     prepare_submission
     invalidate_smoke_approval

@@ -24,6 +24,11 @@ import stat
 import tempfile
 from typing import Any, Mapping, Sequence
 
+from onecomp.kvcomp.eval.paper_job_receipts import (
+    ReceiptValidationError,
+    validate_successful_result_receipts,
+)
+
 APPROVAL_STATEMENT = "I_APPROVE_THE_VALIDATED_HAYATEQUANT_SMOKE_PLAN"
 MARKER_KIND = "hayatequant_formal_smoke_approval"
 MARKER_SCHEMA_VERSION = 1
@@ -2126,6 +2131,7 @@ def validate_smoke_plan(
     if _file_record(input_manifest) != input_manifest_record:
         raise SmokeGateError("Paper input manifest changed while starting smoke validation")
     result_records = []
+    result_paths: list[Path] = []
     native_document: dict | None = None
     native_spec: Mapping[str, Any] | None = None
     for spec in SMOKE_PLAN:
@@ -2170,6 +2176,7 @@ def validate_smoke_plan(
         if _file_record(path) != result_record:
             raise SmokeGateError(f"Smoke result {spec['key']} changed while validating")
         result_records.append({"key": spec["key"], **result_record})
+        result_paths.append(path)
     if native_document is None or native_spec is None:
         raise SmokeGateError("Exact smoke plan omitted the native hybrid job")
     native_preflights = _validate_native_preflights(
@@ -2182,6 +2189,15 @@ def validate_smoke_plan(
     )
     if _file_record(input_manifest) != input_manifest_record:
         raise SmokeGateError("Paper input manifest changed during smoke validation")
+    try:
+        receipt_validation = validate_successful_result_receipts(
+            run_root,
+            phase="smoke",
+            source_paths=result_paths,
+            expected_commit=expected_commit,
+        )
+    except ReceiptValidationError as exc:
+        raise SmokeGateError(f"Smoke lifecycle receipts are not auditable: {exc}") from exc
     plan_sha256 = hashlib.sha256(
         json.dumps(SMOKE_PLAN, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
@@ -2195,6 +2211,7 @@ def validate_smoke_plan(
             "sha256": input_manifest_sha256,
         },
         "results": result_records,
+        "job_receipts": receipt_validation,
         "native_worker_preflights": native_preflights,
         "completed_job_keys": [spec["key"] for spec in SMOKE_PLAN],
     }

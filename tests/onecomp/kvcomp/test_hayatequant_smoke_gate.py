@@ -769,6 +769,103 @@ def _standard_result(spec: dict, preflight: dict) -> dict:
     return document
 
 
+def _write_success_receipts(
+    *,
+    run_root: Path,
+    spec: dict,
+    result_path: Path,
+    provenance_path: Path,
+    commit: str,
+    job_id: str,
+    attempt_id: str = "attempt-1",
+) -> None:
+    phase = "smoke"
+    job_key = f"smoke-{spec['key']}"
+    attempt_root = run_root / f"job_records/{phase}/{job_key}/{attempt_id}"
+    attempt_root.mkdir(parents=True, exist_ok=True)
+    sbatch_stdout = attempt_root / "sbatch.stdout"
+    sbatch_stderr = attempt_root / "sbatch.stderr"
+    sbatch_stdout.write_text(f"{job_id}\n", encoding="utf-8")
+    sbatch_stderr.write_text("", encoding="utf-8")
+    worker_stdout = run_root / f"logs/smoke/hq-s-{spec['key']}_{job_id}.out"
+    worker_stderr = run_root / f"logs/smoke/hq-s-{spec['key']}_{job_id}.err"
+    worker_stdout.parent.mkdir(parents=True, exist_ok=True)
+    worker_stdout.write_text("completed\n", encoding="utf-8")
+    worker_stderr.write_text("", encoding="utf-8")
+    identity = {
+        "schema_version": 2,
+        "phase": phase,
+        "job_key": job_key,
+        "attempt_id": attempt_id,
+        "source_commit": commit,
+        "run_id": run_root.name,
+        "expected_result": result_path.relative_to(run_root).as_posix(),
+        "results_worktree": str(run_root.parents[4].resolve(strict=True)),
+        "scheduler_user": "fixture-user",
+        "scheduler_job_name": f"hq-s-{spec['key']}",
+        "created_at_utc": "2026-07-16T00:00:00+00:00",
+        "updated_at_utc": "2026-07-16T01:01:00+00:00",
+        "terminal": True,
+        "stage": "fixture",
+    }
+    tag_fields = (
+        "hayatequant-paper-submission-v1",
+        identity["source_commit"],
+        identity["run_id"],
+        identity["results_worktree"],
+        identity["phase"],
+        identity["job_key"],
+        identity["attempt_id"],
+        identity["expected_result"],
+    )
+    identity["submission_tag"] = "hayatequant-" + hashlib.sha256(
+        b"".join(str(value).encode() + b"\0" for value in tag_fields)
+    ).hexdigest()
+    submission = {
+        **identity,
+        "kind": "hayatequant_paper_submission_receipt",
+        "status": "submitted",
+        "reason_code": "sbatch_accepted",
+        "exit_code": 0,
+        "slurm_job_id": job_id,
+        "scheduler_stdout": sbatch_stdout.relative_to(run_root).as_posix(),
+        "scheduler_stderr": sbatch_stderr.relative_to(run_root).as_posix(),
+        "scheduler_submission_evidence": {
+            "stdout": {
+                "path": sbatch_stdout.relative_to(run_root).as_posix(),
+                "bytes": sbatch_stdout.stat().st_size,
+                "sha256": hashlib.sha256(sbatch_stdout.read_bytes()).hexdigest(),
+            },
+            "stderr": {
+                "path": sbatch_stderr.relative_to(run_root).as_posix(),
+                "bytes": sbatch_stderr.stat().st_size,
+                "sha256": hashlib.sha256(sbatch_stderr.read_bytes()).hexdigest(),
+            },
+        },
+    }
+    worker = {
+        **identity,
+        "kind": "hayatequant_paper_worker_receipt",
+        "status": "succeeded",
+        "reason_code": "benchmark_and_result_validated",
+        "exit_code": 0,
+        "slurm_job_id": job_id,
+        "stdout_log": worker_stdout.relative_to(run_root).as_posix(),
+        "stderr_log": worker_stderr.relative_to(run_root).as_posix(),
+        "provenance": provenance_path.relative_to(run_root).as_posix(),
+        "result": {
+            "path": result_path.relative_to(run_root).as_posix(),
+            "bytes": result_path.stat().st_size,
+            "sha256": hashlib.sha256(result_path.read_bytes()).hexdigest(),
+            "json_object_validated": True,
+            "duplicate_keys_rejected": True,
+            "nonfinite_numbers_rejected": True,
+        },
+    }
+    _write(attempt_root / "submission.json", submission)
+    _write(attempt_root / "worker.json", worker)
+
+
 def _build_completed_smoke(tmp_path: Path) -> tuple[Path, Path, str, str]:
     run_root = (
         tmp_path
@@ -848,9 +945,10 @@ def _build_completed_smoke(tmp_path: Path) -> tuple[Path, Path, str, str]:
         native=True,
     )
     _write(run_root / "provenance/smoke-native-hybrid_123.json", native_preflight)
-    for spec in gate.SMOKE_PLAN:
+    for index, spec in enumerate(gate.SMOKE_PLAN):
         path = run_root / spec["path"]
         if spec["kind"] == "native":
+            provenance_path = run_root / "provenance/smoke-native-hybrid_123.json"
             arguments = dict(spec["arguments"])
             arguments["output"] = str(path)
             document = {
@@ -909,6 +1007,14 @@ def _build_completed_smoke(tmp_path: Path) -> tuple[Path, Path, str, str]:
                 envelope,
             )
         _write(path, document)
+        _write_success_receipts(
+            run_root=run_root,
+            spec=spec,
+            result_path=path,
+            provenance_path=provenance_path,
+            commit=commit,
+            job_id=str(8100 + index),
+        )
     return run_root, input_manifest, input_sha256, commit
 
 
@@ -952,14 +1058,13 @@ def test_marker_is_invalid_after_any_smoke_result_changes(tmp_path):
     # its byte identity no longer matches the approved marker.
     document["audit_note"] = "post-approval byte change"
     _write(result_path, document)
-    changed = gate.validate_smoke_plan(
-        run_root=run_root,
-        expected_commit=commit,
-        input_manifest=input_manifest,
-        input_manifest_sha256=input_sha256,
-    )
-    with pytest.raises(gate.SmokeGateError, match="stale"):
-        gate.check_marker(marker, validated_plan=changed)
+    with pytest.raises(gate.SmokeGateError, match="successful result changed"):
+        gate.validate_smoke_plan(
+            run_root=run_root,
+            expected_commit=commit,
+            input_manifest=input_manifest,
+            input_manifest_sha256=input_sha256,
+        )
 
 
 def test_tampered_scientific_smoke_config_is_rejected(tmp_path):
@@ -1181,3 +1286,151 @@ def test_native_result_must_bind_to_exactly_one_worker_preflight(tmp_path):
             input_manifest=input_manifest,
             input_manifest_sha256=input_sha256,
         )
+
+
+def _validate_completed_fixture(run_root, input_manifest, input_sha256, commit):
+    return gate.validate_smoke_plan(
+        run_root=run_root,
+        expected_commit=commit,
+        input_manifest=input_manifest,
+        input_manifest_sha256=input_sha256,
+    )
+
+
+def test_smoke_approval_rejects_wrapper_bypass_without_worker_receipt(tmp_path):
+    run_root, input_manifest, input_sha256, commit = _build_completed_smoke(tmp_path)
+    worker = run_root / "job_records/smoke/smoke-ppl/attempt-1/worker.json"
+    worker.unlink()
+    with pytest.raises(gate.SmokeGateError, match="lifecycle receipts"):
+        _validate_completed_fixture(run_root, input_manifest, input_sha256, commit)
+
+
+def test_smoke_approval_rejects_failed_worker_as_result_attestation(tmp_path):
+    run_root, input_manifest, input_sha256, commit = _build_completed_smoke(tmp_path)
+    worker = run_root / "job_records/smoke/smoke-ppl/attempt-1/worker.json"
+    document = json.loads(worker.read_text(encoding="utf-8"))
+    document["status"] = "failed"
+    document["reason_code"] = "benchmark_failed"
+    document["exit_code"] = 9
+    document.pop("result")
+    _write(worker, document)
+    with pytest.raises(gate.SmokeGateError, match="successful worker receipt"):
+        _validate_completed_fixture(run_root, input_manifest, input_sha256, commit)
+
+
+def test_smoke_approval_rejects_two_successful_attempts_for_one_result(tmp_path):
+    run_root, input_manifest, input_sha256, commit = _build_completed_smoke(tmp_path)
+    spec = gate.SMOKE_PLAN[0]
+    result = run_root / spec["path"]
+    provenance = run_root / "provenance/smoke-ppl_123.json"
+    _write_success_receipts(
+        run_root=run_root,
+        spec=spec,
+        result_path=result,
+        provenance_path=provenance,
+        commit=commit,
+        job_id="8999",
+        attempt_id="attempt-2",
+    )
+    with pytest.raises(gate.SmokeGateError, match="exactly one successful worker"):
+        _validate_completed_fixture(run_root, input_manifest, input_sha256, commit)
+
+
+def test_smoke_approval_rejects_copied_or_rebound_receipt_identity(tmp_path):
+    run_root, input_manifest, input_sha256, commit = _build_completed_smoke(tmp_path)
+    source = run_root / "job_records/smoke/smoke-ppl/attempt-1/worker.json"
+    target = run_root / "job_records/smoke/smoke-zeroshot/attempt-1/worker.json"
+    target.write_bytes(source.read_bytes())
+    with pytest.raises(gate.SmokeGateError, match="immutable identity"):
+        _validate_completed_fixture(run_root, input_manifest, input_sha256, commit)
+
+    fresh_root, fresh_manifest, fresh_sha, fresh_commit = _build_completed_smoke(
+        tmp_path / "fresh-binding"
+    )
+    worker = fresh_root / "job_records/smoke/smoke-ppl/attempt-1/worker.json"
+    rebound = json.loads(worker.read_text(encoding="utf-8"))
+    rebound["run_id"] = "copied-run"
+    rebound["results_worktree"] = "/copied/results-worktree"
+    _write(worker, rebound)
+    with pytest.raises(gate.SmokeGateError, match="immutable identity"):
+        _validate_completed_fixture(fresh_root, fresh_manifest, fresh_sha, fresh_commit)
+
+
+def test_smoke_scheduler_terminal_receipt_can_never_approve_result(tmp_path):
+    run_root, input_manifest, input_sha256, commit = _build_completed_smoke(tmp_path)
+    attempt = run_root / "job_records/smoke/smoke-ppl/attempt-1"
+    worker_path = attempt / "worker.json"
+    worker = json.loads(worker_path.read_text(encoding="utf-8"))
+    worker_path.unlink()
+    evidence_root = attempt / "scheduler_evidence"
+    evidence_root.mkdir()
+    raw_stdout = evidence_root / "sacct.stdout"
+    raw_stderr = evidence_root / "sacct.stderr"
+    slurm = {
+        "job_id_raw": worker["slurm_job_id"],
+        "user": worker["scheduler_user"],
+        "job_name": worker["scheduler_job_name"],
+        "state": "FAILED",
+        "state_raw": "FAILED",
+        "exit_code": "1:0",
+        "submit_time": "2026-07-16T00:00:00",
+        "start_time": "2026-07-16T00:00:00",
+        "end_time": "2026-07-16T00:01:00",
+        "submission_tag": worker["submission_tag"],
+    }
+    raw_stdout.write_text(
+        "|".join(
+            [
+                slurm["job_id_raw"],
+                slurm["user"],
+                slurm["job_name"],
+                slurm["state_raw"],
+                slurm["exit_code"],
+                slurm["submit_time"],
+                slurm["start_time"],
+                slurm["end_time"],
+                slurm["submission_tag"],
+            ]
+        )
+        + "|\n",
+        encoding="utf-8",
+    )
+    raw_stderr.write_text("", encoding="utf-8")
+    scheduler = {
+        key: value
+        for key, value in worker.items()
+        if key
+        not in {
+            "kind",
+            "status",
+            "reason_code",
+            "exit_code",
+            "stdout_log",
+            "stderr_log",
+            "provenance",
+            "result",
+        }
+    }
+    scheduler.update(
+        {
+            "kind": "hayatequant_paper_scheduler_receipt",
+            "status": "scheduler_terminal_failure",
+            "reason_code": "slurm_terminal_before_worker",
+            "slurm": slurm,
+            "scheduler_query_evidence": {
+                "stdout": {
+                    "path": raw_stdout.relative_to(run_root).as_posix(),
+                    "bytes": raw_stdout.stat().st_size,
+                    "sha256": hashlib.sha256(raw_stdout.read_bytes()).hexdigest(),
+                },
+                "stderr": {
+                    "path": raw_stderr.relative_to(run_root).as_posix(),
+                    "bytes": raw_stderr.stat().st_size,
+                    "sha256": hashlib.sha256(raw_stderr.read_bytes()).hexdigest(),
+                },
+            },
+        }
+    )
+    _write(attempt / "scheduler.json", scheduler)
+    with pytest.raises(gate.SmokeGateError, match="successful worker receipt"):
+        _validate_completed_fixture(run_root, input_manifest, input_sha256, commit)

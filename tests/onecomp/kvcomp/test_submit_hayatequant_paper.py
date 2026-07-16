@@ -8,6 +8,7 @@ import json
 import os
 import re
 import subprocess
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,7 @@ REPO = Path(__file__).resolve().parents[3]
 SCRIPT = REPO / "benchmark/kvcomp-codec/submit_hayatequant_paper.sh"
 WRAPPER = REPO / "benchmark/kvcomp-codec/run_paper_job.sh"
 LIFECYCLE = REPO / "benchmark/kvcomp-codec/paper_job_lifecycle.py"
+RECONCILER = REPO / "benchmark/kvcomp-codec/reconcile_hayatequant_paper_jobs.py"
 MODELS = Path("/lustre/home/frj/yuma-ichikawa/conference/models")
 PY = Path("/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/bin/python")
 PYVLLM = Path("/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv-vllm/bin/python")
@@ -612,6 +614,11 @@ def test_submitter_persists_sbatch_stdout_stderr_and_terminal_failure_receipt():
     assert '"${sbatch_cmd[@]}" >"$scheduler_stdout" 2>"$scheduler_stderr"' in source
     assert "persist_active_submission submission_failed sbatch_failed" in source
     assert "ACTIVE_SUBMISSION_RECORD=$submission_record" in source
+    assert "persist_active_submission submission_interrupted" in source
+    for signal_name in ("HUP", "INT", "TERM"):
+        assert f"trap 'submitter_on_signal {signal_name.lower()}" in source
+    assert "trap submitter_on_exit EXIT" in source
+    assert '--comment "$submission_tag"' in source
 
 
 def test_lifecycle_helper_retains_a_scheduler_submission_failure(results_worktree):
@@ -1009,3 +1016,372 @@ def test_formal_worker_rejects_missing_or_disagreeing_smoke_binding_environment(
     )
     assert disagreeing.returncode == 2
     assert "argv/environment smoke identities disagree" in disagreeing.stderr
+
+
+def _submission_fixture(
+    results_worktree: Path,
+    *,
+    run_id: str,
+    state: str = "submitted",
+    job_id: str | None = "71234",
+) -> tuple[Path, Path, Path, dict]:
+    run_root = results_worktree / RESULTS_RELATIVE_ROOT / run_id
+    phase = "formal"
+    job_key = "formal-reconcile"
+    attempt = "attempt-1"
+    expected = run_root / "results/formal/reconcile/result.json"
+    attempt_root = run_root / f"job_records/{phase}/{job_key}/{attempt}"
+    attempt_root.mkdir(parents=True)
+    stdout = attempt_root / "sbatch.stdout"
+    stderr = attempt_root / "sbatch.stderr"
+    stdout.write_text(f"{job_id}\n" if job_id is not None else "", encoding="utf-8")
+    stderr.write_text("", encoding="utf-8")
+    receipt_path = attempt_root / "submission.json"
+    common = [
+        str(PY),
+        str(LIFECYCLE),
+        "record",
+        "--source-repo",
+        str(REPO),
+        "--run-root",
+        str(run_root),
+        "--source-commit",
+        _head(),
+        "--path",
+        str(receipt_path),
+        "--kind",
+        "submission",
+        "--phase",
+        phase,
+        "--job-key",
+        job_key,
+        "--attempt-id",
+        attempt,
+        "--expected-result",
+        str(expected),
+        "--stage",
+        "submitter",
+        "--scheduler-stdout",
+        str(stdout),
+        "--scheduler-stderr",
+        str(stderr),
+    ]
+    subprocess.run(
+        [*common, "--status", "submission_started", "--reason-code", "submission_started"],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    )
+    if state == "submitted":
+        assert job_id is not None
+        subprocess.run(
+            [
+                *common,
+                "--status",
+                "submitted",
+                "--reason-code",
+                "sbatch_accepted",
+                "--exit-code",
+                "0",
+                "--slurm-job-id",
+                job_id,
+            ],
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+        )
+    elif state == "interrupted":
+        subprocess.run(
+            [
+                *common,
+                "--status",
+                "submission_interrupted",
+                "--reason-code",
+                "submitter_signal_term",
+                "--exit-code",
+                "143",
+            ],
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+        )
+    elif state != "started":
+        raise AssertionError(f"unknown test submission state {state}")
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    return run_root, expected, receipt_path, receipt
+
+
+def _fake_sacct(
+    tmp_path: Path,
+    receipt: dict,
+    *,
+    state: str,
+    job_id: str | None = None,
+    user: str | None = None,
+    job_name: str | None = None,
+    comment: str | None = None,
+    rows: int = 1,
+    returncode: int = 0,
+) -> Path:
+    executable = tmp_path / "sacct"
+    executable.parent.mkdir(parents=True, exist_ok=True)
+    submitted = datetime.fromisoformat(receipt["created_at_utc"]).strftime(
+        "%Y-%m-%dT%H:%M:%S"
+    )
+    values = (
+        job_id or receipt.get("slurm_job_id") or "71234",
+        user or receipt["scheduler_user"],
+        job_name or receipt["scheduler_job_name"],
+        state,
+        "1:0" if state not in {"PENDING", "RUNNING", "COMPLETED"} else "0:0",
+        submitted,
+        "Unknown" if state == "PENDING" else submitted,
+        "Unknown" if state in {"PENDING", "RUNNING"} else submitted,
+        comment or receipt["submission_tag"],
+    )
+    line = "|".join(values) + "|\n"
+    executable.write_text(
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        f"sys.stdout.write({(line * rows)!r})\n"
+        f"raise SystemExit({returncode})\n",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+    return executable
+
+
+def _reconcile(run_root: Path, sacct: Path):
+    return subprocess.run(
+        [
+            str(PY),
+            str(RECONCILER),
+            "--source-repo",
+            str(REPO),
+            "--run-root",
+            str(run_root),
+            "--source-commit",
+            _head(),
+            "--phase",
+            "formal",
+            "--sacct",
+            str(sacct),
+        ],
+        cwd=REPO,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+
+def test_scheduler_reconciler_writes_hashed_failure_only_receipt(
+    tmp_path, results_worktree
+):
+    run_root, _expected, submission_path, submission = _submission_fixture(
+        results_worktree, run_id="pytest-reconcile-failed"
+    )
+    completed = _reconcile(
+        run_root, _fake_sacct(tmp_path, submission, state="NODE_FAIL")
+    )
+    assert completed.returncode == 0, completed.stderr
+    scheduler_path = submission_path.with_name("scheduler.json")
+    scheduler = json.loads(scheduler_path.read_text(encoding="utf-8"))
+    assert scheduler["schema_version"] == 2
+    assert scheduler["status"] == "scheduler_terminal_failure"
+    assert scheduler["terminal"] is True
+    assert scheduler["slurm"]["state"] == "NODE_FAIL"
+    assert "result" not in scheduler
+    assert scheduler["run_id"] == run_root.name
+    assert scheduler["results_worktree"] == str(run_root.parents[4])
+    for stream in scheduler["scheduler_query_evidence"].values():
+        retained = run_root / stream["path"]
+        assert stream["bytes"] == retained.stat().st_size
+        assert stream["sha256"] == hashlib.sha256(retained.read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize("state", ["PENDING", "RUNNING"])
+def test_scheduler_reconciler_leaves_nonterminal_jobs_without_receipt(
+    tmp_path, results_worktree, state
+):
+    run_root, _expected, submission_path, submission = _submission_fixture(
+        results_worktree, run_id=f"pytest-reconcile-{state.lower()}"
+    )
+    completed = _reconcile(run_root, _fake_sacct(tmp_path, submission, state=state))
+    assert completed.returncode == 0, completed.stderr
+    assert not submission_path.with_name("scheduler.json").exists()
+    summary = json.loads(completed.stdout)
+    assert summary["counts"]["nonterminal"] == 1
+
+
+def test_scheduler_reconciler_rejects_completed_without_worker(
+    tmp_path, results_worktree
+):
+    run_root, _expected, submission_path, submission = _submission_fixture(
+        results_worktree, run_id="pytest-reconcile-completed"
+    )
+    completed = _reconcile(
+        run_root, _fake_sacct(tmp_path, submission, state="COMPLETED")
+    )
+    assert completed.returncode == 2
+    assert not submission_path.with_name("scheduler.json").exists()
+    assert "COMPLETED cannot replace" in completed.stdout
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("job_id", "99999"),
+        ("user", "wrong-user"),
+        ("job_name", "wrong-job"),
+        ("comment", "wrong-attempt-tag"),
+    ],
+)
+def test_scheduler_reconciler_rejects_wrong_authoritative_identity(
+    tmp_path, results_worktree, field, value
+):
+    run_root, _expected, submission_path, submission = _submission_fixture(
+        results_worktree, run_id=f"pytest-reconcile-wrong-{field}"
+    )
+    sacct = _fake_sacct(
+        tmp_path,
+        submission,
+        state="FAILED",
+        **{field: value},
+    )
+    completed = _reconcile(run_root, sacct)
+    assert completed.returncode == 2
+    assert not submission_path.with_name("scheduler.json").exists()
+    assert json.loads(completed.stdout)["counts"]["errors"] == 1
+
+
+def test_scheduler_reconciler_rejects_ambiguous_accounting_rows(
+    tmp_path, results_worktree
+):
+    run_root, _expected, submission_path, submission = _submission_fixture(
+        results_worktree, run_id="pytest-reconcile-ambiguous"
+    )
+    completed = _reconcile(
+        run_root, _fake_sacct(tmp_path, submission, state="FAILED", rows=2)
+    )
+    assert completed.returncode == 2
+    assert not submission_path.with_name("scheduler.json").exists()
+
+
+def test_scheduler_reconciler_rejects_result_without_worker(
+    tmp_path, results_worktree
+):
+    run_root, expected, submission_path, submission = _submission_fixture(
+        results_worktree, run_id="pytest-reconcile-fake-result"
+    )
+    expected.parent.mkdir(parents=True)
+    expected.write_text('{"untrusted": true}\n', encoding="utf-8")
+    completed = _reconcile(
+        run_root, _fake_sacct(tmp_path, submission, state="FAILED")
+    )
+    assert completed.returncode == 2
+    assert not submission_path.with_name("scheduler.json").exists()
+    assert "exists without a worker receipt" in completed.stdout
+
+
+def test_interrupted_submission_without_accepted_id_becomes_terminal_failure(
+    tmp_path, results_worktree
+):
+    run_root, _expected, submission_path, submission = _submission_fixture(
+        results_worktree,
+        run_id="pytest-reconcile-interrupted-empty",
+        state="interrupted",
+        job_id=None,
+    )
+    completed = _reconcile(
+        run_root, _fake_sacct(tmp_path, submission, state="FAILED")
+    )
+    assert completed.returncode == 0, completed.stderr
+    terminal = json.loads(submission_path.read_text(encoding="utf-8"))
+    assert terminal["status"] == "submission_failed"
+    assert terminal["reason_code"] == "scheduler_acceptance_unproven"
+    assert not submission_path.with_name("scheduler.json").exists()
+
+
+def test_interrupted_submission_recovers_only_exact_tagged_acceptance(
+    tmp_path, results_worktree
+):
+    run_root, _expected, submission_path, submission = _submission_fixture(
+        results_worktree,
+        run_id="pytest-reconcile-interrupted-recovered",
+        state="interrupted",
+    )
+    completed = _reconcile(
+        run_root, _fake_sacct(tmp_path, submission, state="PENDING")
+    )
+    assert completed.returncode == 0, completed.stderr
+    recovered = json.loads(submission_path.read_text(encoding="utf-8"))
+    assert recovered["status"] == "submitted"
+    assert recovered["reason_code"] == "sacct_recovered_acceptance"
+    assert recovered["slurm_job_id"] == "71234"
+    assert not submission_path.with_name("scheduler.json").exists()
+
+
+def test_interrupted_submission_wrong_tag_is_failed_not_recovered(
+    tmp_path, results_worktree
+):
+    run_root, _expected, submission_path, submission = _submission_fixture(
+        results_worktree,
+        run_id="pytest-reconcile-interrupted-wrong-tag",
+        state="interrupted",
+    )
+    completed = _reconcile(
+        run_root,
+        _fake_sacct(tmp_path, submission, state="FAILED", comment="wrong-tag"),
+    )
+    assert completed.returncode == 2
+    failed = json.loads(submission_path.read_text(encoding="utf-8"))
+    assert failed["status"] == "submission_failed"
+    assert failed["reason_code"] == "scheduler_identity_unproven"
+    assert not submission_path.with_name("scheduler.json").exists()
+
+
+def test_scheduler_receipt_blocks_worker_receipt_for_same_attempt(
+    tmp_path, results_worktree
+):
+    run_root, expected, submission_path, submission = _submission_fixture(
+        results_worktree, run_id="pytest-reconcile-exclusive"
+    )
+    completed = _reconcile(
+        run_root, _fake_sacct(tmp_path, submission, state="TIMEOUT")
+    )
+    assert completed.returncode == 0, completed.stderr
+    worker_path = submission_path.with_name("worker.json")
+    rejected = subprocess.run(
+        [
+            str(PY),
+            str(LIFECYCLE),
+            "record",
+            "--source-repo",
+            str(REPO),
+            "--run-root",
+            str(run_root),
+            "--source-commit",
+            _head(),
+            "--path",
+            str(worker_path),
+            "--kind",
+            "worker",
+            "--status",
+            "worker_started",
+            "--phase",
+            "formal",
+            "--job-key",
+            "formal-reconcile",
+            "--attempt-id",
+            "attempt-1",
+            "--expected-result",
+            str(expected),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert rejected.returncode == 2
+    assert "mutually exclusive" in rejected.stderr

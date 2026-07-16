@@ -7,11 +7,15 @@ repository.  The source worktree can therefore remain clean and fixed while a
 campaign is running, without relying on a later manual archive operation to
 make failed attempts auditable.
 
-The companion shell launchers use two immutable identities for every attempt:
-``phase/job-key/attempt-id/submission.json`` and ``worker.json``.  Receipts are
-updated atomically through a small, explicit state machine.  A worker may be
-marked successful only after its expected JSON result has been independently
-opened with duplicate-key and non-finite-number rejection.
+The companion shell launchers use an immutable submission receipt and exactly
+one terminal execution receipt for every accepted attempt.  Normally the
+execution receipt is ``worker.json``.  If Slurm proves that a job reached a
+terminal *non-success* state before the wrapper could start, the offline
+reconciler may instead write ``scheduler.json``.  Scheduler receipts can never
+represent success.  Receipts are updated atomically through a small, explicit
+state machine.  A worker may be marked successful only after its expected JSON
+result has been independently opened with duplicate-key and non-finite-number
+rejection.
 """
 
 from __future__ import annotations
@@ -20,6 +24,7 @@ import argparse
 import hashlib
 import json
 import os
+import pwd
 import re
 import stat
 import subprocess
@@ -30,34 +35,73 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 RESULTS_RELATIVE_ROOT = Path("papers/hayatequant_paper/experiments/results")
 COMMIT_RE = re.compile(r"[0-9a-f]{40}\Z")
 SAFE_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,159}\Z")
 RUN_ID_RE = re.compile(r"[a-z0-9][a-z0-9._-]{0,79}\Z")
 SLURM_ID_RE = re.compile(r"[0-9]+(?:[.;_+][A-Za-z0-9._+-]+)?\Z")
+SLURM_EXIT_CODE_RE = re.compile(r"[0-9]+:[0-9]+\Z")
+SLURM_TIME_RE = re.compile(
+    r"(?:Unknown|None|[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})\Z"
+)
 ALLOWED_PHASES = frozenset({"smoke", "formal"})
-ALLOWED_KINDS = frozenset({"submission", "worker"})
+ALLOWED_KINDS = frozenset({"submission", "worker", "scheduler"})
+SLURM_TERMINAL_FAILURE_STATES = frozenset(
+    {
+        "BOOT_FAIL",
+        "CANCELLED",
+        "DEADLINE",
+        "FAILED",
+        "NODE_FAIL",
+        "OUT_OF_MEMORY",
+        "PREEMPTED",
+        "REVOKED",
+        "SPECIAL_EXIT",
+        "TIMEOUT",
+    }
+)
 ALLOWED_STATUSES = {
     "submission": frozenset(
-        {"submission_started", "submitted", "submission_failed", "skipped_existing"}
+        {
+            "submission_started",
+            "submission_interrupted",
+            "submitted",
+            "submission_failed",
+            "skipped_existing",
+        }
     ),
     "worker": frozenset({"worker_started", "succeeded", "failed"}),
+    "scheduler": frozenset({"scheduler_terminal_failure"}),
 }
 ALLOWED_TRANSITIONS = {
     "submission": {
         None: frozenset({"submission_started"}),
         "submission_started": frozenset(
-            {"submitted", "submission_failed", "skipped_existing"}
+            {
+                "submission_interrupted",
+                "submitted",
+                "submission_failed",
+                "skipped_existing",
+            }
         ),
+        "submission_interrupted": frozenset({"submitted", "submission_failed"}),
     },
     "worker": {
         None: frozenset({"worker_started"}),
         "worker_started": frozenset({"succeeded", "failed"}),
     },
+    "scheduler": {None: frozenset({"scheduler_terminal_failure"})},
 }
 TERMINAL_STATUSES = frozenset(
-    {"submitted", "submission_failed", "skipped_existing", "succeeded", "failed"}
+    {
+        "submitted",
+        "submission_failed",
+        "skipped_existing",
+        "succeeded",
+        "failed",
+        "scheduler_terminal_failure",
+    }
 )
 
 
@@ -83,6 +127,44 @@ def _validate_commit(value: str) -> str:
     if COMMIT_RE.fullmatch(value) is None:
         raise LifecycleError("source commit must be exactly 40 lowercase hexadecimal digits")
     return value
+
+
+def _scheduler_user() -> str:
+    try:
+        value = pwd.getpwuid(os.geteuid()).pw_name
+    except (KeyError, OSError) as exc:
+        raise LifecycleError(f"cannot resolve the effective scheduler user: {exc}") from exc
+    return _validate_identifier(value, label="scheduler user")
+
+
+def expected_scheduler_job_name(*, phase: str, job_key: str) -> str:
+    """Return the one Slurm job name admitted for an immutable job key."""
+
+    prefix = f"{phase}-"
+    if not job_key.startswith(prefix) or job_key == prefix:
+        raise LifecycleError(
+            f"job key {job_key!r} is not namespaced by its phase {phase!r}"
+        )
+    return _validate_identifier(
+        f"hq-{phase[0]}-{job_key[len(prefix):]}", label="scheduler job name"
+    )
+
+
+def expected_submission_tag(identity: Mapping[str, Any]) -> str:
+    """Derive the Slurm comment that binds a scheduler row to one attempt."""
+
+    fields = (
+        "hayatequant-paper-submission-v1",
+        identity["source_commit"],
+        identity["run_id"],
+        identity["results_worktree"],
+        identity["phase"],
+        identity["job_key"],
+        identity["attempt_id"],
+        identity["expected_result"],
+    )
+    digest = hashlib.sha256(b"".join(str(value).encode("utf-8") + b"\0" for value in fields))
+    return f"hayatequant-{digest.hexdigest()}"
 
 
 def _git(cwd: Path, *arguments: str) -> str:
@@ -252,6 +334,32 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _regular_file_evidence(
+    path: Path, *, run_root: Path, label: str, allow_empty: bool = True
+) -> dict[str, Any]:
+    lexical = _lexical_absolute(path)
+    relative = _relative_repo_path(lexical, run_root=run_root, label=label)
+    _assert_no_existing_symlink(run_root, lexical, label=label)
+    try:
+        metadata = lexical.lstat()
+    except OSError as exc:
+        raise LifecycleError(f"{label} is not a retained regular file: {lexical}") from exc
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        raise LifecycleError(f"{label} must be a retained regular non-symlink: {lexical}")
+    if not allow_empty and metadata.st_size == 0:
+        raise LifecycleError(f"{label} must not be empty: {lexical}")
+    return {"path": relative, "bytes": metadata.st_size, "sha256": _sha256(lexical)}
+
+
+def _sbatch_job_id(path: Path) -> str | None:
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise LifecycleError(f"cannot read sbatch stdout {path}: {exc}") from exc
+    match = re.fullmatch(r"([0-9]+)(?:;[A-Za-z0-9._-]+)?\r?\n?", raw)
+    return match.group(1) if match is not None else None
+
+
 def _relative_repo_path(path: Path, *, run_root: Path, label: str) -> str:
     lexical = _lexical_absolute(path)
     try:
@@ -357,7 +465,12 @@ def write_receipt(arguments: argparse.Namespace) -> dict[str, Any]:
         "run_id": identity["run_id"],
         "expected_result": result_relative,
         "results_worktree": identity["results_worktree"],
+        "scheduler_user": _scheduler_user(),
+        "scheduler_job_name": expected_scheduler_job_name(
+            phase=phase, job_key=job_key
+        ),
     }
+    fixed_identity["submission_tag"] = expected_submission_tag(fixed_identity)
     if old is not None:
         for key, value in fixed_identity.items():
             if old.get(key) != value:
@@ -395,6 +508,126 @@ def write_receipt(arguments: argparse.Namespace) -> dict[str, Any]:
             document[field] = _relative_repo_path(
                 value, run_root=run_root, label=field.replace("_", " ")
             )
+
+    counterpart_name = "scheduler.json" if kind == "worker" else "worker.json"
+    if kind in {"worker", "scheduler"}:
+        counterpart = receipt_path.with_name(counterpart_name)
+        if counterpart.exists() or counterpart.is_symlink():
+            raise LifecycleError(
+                f"worker and scheduler execution receipts are mutually exclusive: {counterpart}"
+            )
+
+    if kind == "submission":
+        if arguments.scheduler_stdout is None or arguments.scheduler_stderr is None:
+            raise LifecycleError("submission receipts require retained scheduler stdout/stderr")
+        stdout_evidence = _regular_file_evidence(
+            arguments.scheduler_stdout,
+            run_root=run_root,
+            label="scheduler submission stdout",
+        )
+        stderr_evidence = _regular_file_evidence(
+            arguments.scheduler_stderr,
+            run_root=run_root,
+            label="scheduler submission stderr",
+        )
+        document["scheduler_submission_evidence"] = {
+            "stdout": stdout_evidence,
+            "stderr": stderr_evidence,
+        }
+        if status == "submitted" and arguments.reason_code != "ssh_worker_completed":
+            if arguments.slurm_job_id is None:
+                raise LifecycleError("a Slurm submitted receipt requires its numeric job ID")
+            observed = _sbatch_job_id(_lexical_absolute(arguments.scheduler_stdout))
+            if observed != arguments.slurm_job_id:
+                raise LifecycleError(
+                    "submitted receipt Slurm ID does not exactly match retained sbatch stdout"
+                )
+            if arguments.exit_code != 0:
+                raise LifecycleError("a submitted receipt must record scheduler exit code zero")
+        if status in {"submission_failed", "submission_interrupted"} and (
+            arguments.exit_code is None or arguments.exit_code == 0
+        ):
+            raise LifecycleError(f"{status} requires a nonzero exit code")
+
+    if kind == "scheduler":
+        if status != "scheduler_terminal_failure":
+            raise LifecycleError("scheduler receipts are restricted to terminal failure")
+        if arguments.slurm_job_id is None:
+            raise LifecycleError("scheduler receipt requires --slurm-job-id")
+        if arguments.slurm_state not in SLURM_TERMINAL_FAILURE_STATES:
+            raise LifecycleError(
+                "scheduler receipt state is not an exact terminal non-success Slurm state"
+            )
+        if arguments.slurm_state_raw != arguments.slurm_state and not (
+            arguments.slurm_state == "CANCELLED"
+            and isinstance(arguments.slurm_state_raw, str)
+            and re.fullmatch(r"CANCELLED(?: by [0-9]+)?", arguments.slurm_state_raw)
+        ):
+            raise LifecycleError("raw Slurm state does not normalize to the retained state")
+        if arguments.slurm_user != fixed_identity["scheduler_user"]:
+            raise LifecycleError("sacct user does not match the immutable submission user")
+        if arguments.slurm_job_name != fixed_identity["scheduler_job_name"]:
+            raise LifecycleError("sacct job name does not match the immutable submission job name")
+        if (
+            arguments.slurm_exit_code is None
+            or SLURM_EXIT_CODE_RE.fullmatch(arguments.slurm_exit_code) is None
+        ):
+            raise LifecycleError("scheduler receipt requires an exact Slurm ExitCode")
+        for label, value in (
+            ("submit", arguments.slurm_submit_time),
+            ("start", arguments.slurm_start_time),
+            ("end", arguments.slurm_end_time),
+        ):
+            if value is None or SLURM_TIME_RE.fullmatch(value) is None:
+                raise LifecycleError(f"scheduler receipt has malformed Slurm {label} time")
+        if arguments.scheduler_query_stdout is None or arguments.scheduler_query_stderr is None:
+            raise LifecycleError("scheduler receipt requires retained raw sacct stdout/stderr")
+        if expected_result.exists() or expected_result.is_symlink():
+            raise LifecycleError(
+                "scheduler failure cannot attest an attempt whose expected result exists"
+            )
+        submission_path = receipt_path.with_name("submission.json")
+        submission = _load_json(submission_path, label="matching submission receipt")
+        if not isinstance(submission, dict):
+            raise LifecycleError("matching submission receipt must be a JSON object")
+        immutable_fields = tuple(fixed_identity)[:-1] + ("submission_tag",)
+        # ``kind`` is intentionally different; every other identity is exact.
+        immutable_fields = tuple(field for field in immutable_fields if field != "kind")
+        if (
+            submission.get("kind") != "hayatequant_paper_submission_receipt"
+            or submission.get("status") != "submitted"
+            or submission.get("terminal") is not True
+            or submission.get("slurm_job_id") != arguments.slurm_job_id
+            or any(submission.get(field) != fixed_identity[field] for field in immutable_fields)
+        ):
+            raise LifecycleError(
+                "scheduler receipt does not match one exact accepted submission receipt"
+            )
+        document["slurm"] = {
+            "job_id_raw": arguments.slurm_job_id,
+            "user": arguments.slurm_user,
+            "job_name": arguments.slurm_job_name,
+            "state": arguments.slurm_state,
+            "state_raw": arguments.slurm_state_raw,
+            "exit_code": arguments.slurm_exit_code,
+            "submit_time": arguments.slurm_submit_time,
+            "start_time": arguments.slurm_start_time,
+            "end_time": arguments.slurm_end_time,
+            "submission_tag": fixed_identity["submission_tag"],
+        }
+        document["scheduler_query_evidence"] = {
+            "stdout": _regular_file_evidence(
+                arguments.scheduler_query_stdout,
+                run_root=run_root,
+                label="raw sacct stdout",
+                allow_empty=False,
+            ),
+            "stderr": _regular_file_evidence(
+                arguments.scheduler_query_stderr,
+                run_root=run_root,
+                label="raw sacct stderr",
+            ),
+        }
 
     if kind == "worker" and status == "succeeded":
         try:
@@ -457,6 +690,16 @@ def _parser() -> argparse.ArgumentParser:
     record.add_argument("--stderr-log", type=Path)
     record.add_argument("--scheduler-stdout", type=Path)
     record.add_argument("--scheduler-stderr", type=Path)
+    record.add_argument("--scheduler-query-stdout", type=Path)
+    record.add_argument("--scheduler-query-stderr", type=Path)
+    record.add_argument("--slurm-state")
+    record.add_argument("--slurm-state-raw")
+    record.add_argument("--slurm-user")
+    record.add_argument("--slurm-job-name")
+    record.add_argument("--slurm-exit-code")
+    record.add_argument("--slurm-submit-time")
+    record.add_argument("--slurm-start-time")
+    record.add_argument("--slurm-end-time")
     return parser
 
 
