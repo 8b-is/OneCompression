@@ -180,3 +180,38 @@ def test_graded_cache_exposes_exact_whole_cache_bit_ledger():
     assert cache.fp16_bits == (keys.numel() + values.numel()) * 16
     assert cache.stored_bits == cache._layer_bits[0]  # pylint: disable=protected-access
     assert cache.stored_bits > 0
+
+
+def test_taper_cache_prefill_and_incremental_decode_are_length_preserving():
+    """Exercise the real DynamicCache update path, not only _grade_layer.
+
+    A previous implementation could report plausible compression numbers while
+    dropping or failing to account for tokens on the non-regrade decode steps.
+    This mirrors HF's prefill (q_len > 1) followed by one-token decode calls.
+    """
+    policy = TaperKVPolicy(
+        key_bits=4,
+        value_bits=2,
+        b_min=2,
+        b_min_value=2,
+        sink_tokens=1,
+        recent_tokens=1,
+    )
+    cache = TaperKVCache(policy, requant_stride=3)
+    for q_len, expected_len in ((4, 4), (1, 5), (1, 6), (1, 7)):
+        keys = torch.randn(1, 2, q_len, 8)
+        values = torch.randn_like(keys)
+        out_k, out_v = cache.update(keys, values, 0)
+        assert out_k.shape[2] == expected_len
+        assert out_v.shape[2] == expected_len
+        assert cache.get_seq_length() == expected_len
+        assert cache.fp16_bits == (expected_len * 1 * 2 * 8 * 2 * 16)
+        assert cache.stored_bits > 0
+    assert cache.compression_ratio() > 1.0
+    cache.reset()
+    # Transformers' DynamicCache.reset() zeroes resident tensors in place and
+    # preserves their allocation/shape; the cache must not be reused as a new
+    # request without constructing a fresh cache.  Our accounting state is
+    # nevertheless fully cleared.
+    assert cache.fp16_bits == 0
+    assert cache.stored_bits == 0
