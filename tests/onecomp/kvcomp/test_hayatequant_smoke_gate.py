@@ -111,7 +111,7 @@ def _hayate_identity(method: str) -> dict:
             gate.ADAPTIVE_HQ_CODEBOOK_BUNDLE if adaptive else gate.HQ_CODEBOOK_BUNDLE
         ),
         "adaptive_bit_split": "online_stats" if adaptive else None,
-        "key_bit_fraction": 0.5 if adaptive else None,
+        "key_bit_fraction": 7 / 12 if adaptive else None,
         "key_code_bits_per_block": None if adaptive else 7,
         "value_code_bits_per_block": None if adaptive else 5,
     }
@@ -133,7 +133,11 @@ def _hayate_identity(method: str) -> dict:
             "selector_carrier_version": "value_scale_fp16_fraction_lsb_v1",
             "selector_carrier_distortion_amortization": (gate.ADAPTIVE_HQ_CARRIER_AMORTIZATION),
             "selector_incremental_stored_bits_per_encode": 0,
-            "prior_pair": [6, 6],
+            "prior_pair": [7, 5],
+            "incumbent_pair": [7, 5],
+            "switch_margin_fraction": gate.ADAPTIVE_HQ_SWITCH_MARGIN_FRACTION,
+            "switch_margin_basis": gate.ADAPTIVE_HQ_SWITCH_MARGIN_BASIS,
+            "hysteresis": gate.ADAPTIVE_HQ_HYSTERESIS,
         }
     return {
         "codec_config": config,

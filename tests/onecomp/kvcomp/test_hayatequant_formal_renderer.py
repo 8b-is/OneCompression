@@ -1183,7 +1183,7 @@ def _speed_scientific_recipe(rate: int, names: dict[str, str]) -> dict:
             "block_size": 2,
             "key_scale_mode": "nc",
             "value_scale_mode": "ls_iter",
-            "key_bit_fraction": 0.5,
+            "key_bit_fraction": (2 * rate + 1) / (4 * rate),
             "adaptive_bit_split": "online_stats",
             "n_outlier": 0,
         },

@@ -41,10 +41,14 @@ from onecomp.kvcomp.codec.turboquant import (
 from onecomp.kvcomp.codec.halo import HALOCodec
 from onecomp.kvcomp.codec.hayate import HayateQuantCodec
 from onecomp.kvcomp.codec.hayate.codec import (
+    ADAPTIVE_HQ_HYSTERESIS,
     ADAPTIVE_HQ_OBJECTIVE,
     ADAPTIVE_HQ_POLICY_VERSION,
+    ADAPTIVE_HQ_SWITCH_MARGIN_BASIS,
+    ADAPTIVE_HQ_SWITCH_MARGIN_FRACTION,
     ADAPTIVE_HQ_DISTORTION_TABLE_VERSION,
     _adaptive_datafree_relative_distortion,
+    _adaptive_hysteretic_choice,
     _adaptive_value_distortion_for_update,
     _block_codebook_on,
 )
@@ -917,7 +921,8 @@ def test_codec_benchmark_emits_only_honest_proxy_names():
     )
     if bench_dir not in sys.path:
         sys.path.insert(0, bench_dir)
-    make_registry = importlib.import_module("codec_benchmark")._codecs
+    benchmark_module = importlib.import_module("codec_benchmark")
+    make_registry = benchmark_module._codecs
     registry = make_registry(3)
 
     for candidate in (registry, make_registry(3, ablation=True)):
@@ -939,6 +944,23 @@ def test_codec_benchmark_emits_only_honest_proxy_names():
     assert hq.teacher_forced_temporal_dependency() is None
     assert not any(name.startswith("HQ-dev-") for name in registry)
     assert registry["TurboQuant-paper"].teacher_forced_temporal_dependency() is None
+    matched = registry[benchmark_module.HQ_INCREMENTAL_CONTROL_NAME]
+    singleton = registry[benchmark_module.ADAPTIVE_HQ_FIXED_PAIR_CONTROL_NAME]
+    assert matched.get_kv_config() == hq.get_kv_config()
+    assert singleton.get_resolved_kv_config(128)["adaptive_allocation"]["candidate_pairs"] == [
+        [7, 5]
+    ]
+    assert (
+        singleton.get_resolved_kv_config(128)["adaptive_allocation"]["selector_bits_per_encode"]
+        == 0
+    )
+
+    probe = torch.randn(1, 1, 2, 128)
+    distortion = benchmark_module._distortion_fields(registry["AdaptiveHQ"], probe, probe)
+    assert distortion["distortion_measurement"]["adaptive_trajectory"] is False
+    assert distortion["distortion_measurement"]["adaptive_static_selection"]["warning"] == (
+        "single_update_ctx_none_not_cache_trajectory"
+    )
 
 
 @pytest.mark.parametrize("bits", [2, 3, 4])
@@ -1178,7 +1200,8 @@ def test_hayatequant_adaptive2_recipe_is_opt_in():
     codec = build_hayate_adaptive2()
     assert codec.key_code_bits_per_block is None
     assert codec.value_code_bits_per_block is None
-    assert codec.key_bit_fraction == 0.5
+    # The named AdaptiveHQ recipe inherits fixed HQ's K5/V3 incumbent.
+    assert codec.key_bit_fraction == 5 / 8
     assert codec.max_codebook_bits == 9
 
 
@@ -1500,7 +1523,7 @@ def test_adaptive_hq_update_vector_count_can_change_the_rd_choice(monkeypatch):
 
 
 def test_adaptive_hq_real_qmc_boundary_uses_actual_update_vector_count():
-    selections = {}
+    records = {}
     for vectors in (1, 128):
         codec = build_hayate_adaptive_rate(3, encoder="exact", adaptive_stats_min_tokens=1)
         key = torch.full((1, 1, vectors, 128), math.sqrt(0.4812705))
@@ -1509,11 +1532,68 @@ def test_adaptive_hq_real_qmc_boundary_uses_actual_update_vector_count():
         assert encoded.value_q["main"]["scale"].numel() == vectors
         split = encoded.meta["adaptive_bit_split"]
         assert split["carrier_amortization_vector_count"] == vectors
-        selections[vectors] = (
-            split["key_code_bits_per_block"],
-            split["value_code_bits_per_block"],
-        )
-    assert selections == {1: (6, 6), 128: (7, 5)}
+        records[vectors] = split
+    # The one-carrier amortization still changes the raw objective ordering at
+    # this frozen boundary, but neither microscopic difference clears the
+    # predeclared 1/sqrt(128) safety margin.  Fixed HQ therefore remains the
+    # incumbent for both update sizes.
+    assert records[1]["candidate_objectives"][0]["weighted_objective"] < (
+        records[1]["candidate_objectives"][1]["weighted_objective"]
+    )
+    assert records[128]["candidate_objectives"][0]["weighted_objective"] > (
+        records[128]["candidate_objectives"][1]["weighted_objective"]
+    )
+    for split in records.values():
+        assert (split["key_code_bits_per_block"], split["value_code_bits_per_block"]) == (7, 5)
+        assert split["decision_reason"] == "fixed_hq_incumbent_within_safety_margin"
+
+
+def test_adaptive_hq_fixed_margin_and_hysteresis_are_predeclared():
+    incumbent = (7, 5)
+
+    def scores(challenger_objective, incumbent_objective=1.0):
+        return [
+            {"pair": (6, 6), "weighted_objective": challenger_objective},
+            {"pair": incumbent, "weighted_objective": incumbent_objective},
+        ]
+
+    immature, immature_meta = _adaptive_hysteretic_choice(
+        scores(0.5), incumbent, None, used_stats=False
+    )
+    assert immature["pair"] == incumbent
+    assert immature_meta["decision_reason"] == "immature_fixed_hq_incumbent"
+
+    within_band, within_meta = _adaptive_hysteretic_choice(
+        scores(1.0 - ADAPTIVE_HQ_SWITCH_MARGIN_FRACTION / 2),
+        incumbent,
+        incumbent,
+        used_stats=True,
+    )
+    assert within_band["pair"] == incumbent
+    assert within_meta["decision_reason"] == "fixed_hq_incumbent_within_safety_margin"
+
+    entered, entered_meta = _adaptive_hysteretic_choice(
+        scores(1.0 - ADAPTIVE_HQ_SWITCH_MARGIN_FRACTION - 1e-6),
+        incumbent,
+        incumbent,
+        used_stats=True,
+    )
+    assert entered["pair"] == (6, 6)
+    assert entered_meta["decision_reason"] == "enter_challenger_beyond_frozen_margin"
+
+    retained, retained_meta = _adaptive_hysteretic_choice(
+        scores(0.99), incumbent, (6, 6), used_stats=True
+    )
+    assert retained["pair"] == (6, 6)
+    assert retained_meta["decision_reason"] == "retain_strictly_better_challenger"
+
+    fallback, fallback_meta = _adaptive_hysteretic_choice(
+        scores(1.0), incumbent, (6, 6), used_stats=True
+    )
+    assert fallback["pair"] == incumbent
+    assert fallback_meta["decision_reason"] == "fallback_to_fixed_hq_incumbent"
+    assert fallback_meta["switch_margin_basis"] == ADAPTIVE_HQ_SWITCH_MARGIN_BASIS
+    assert fallback_meta["hysteresis"] == ADAPTIVE_HQ_HYSTERESIS
 
 
 def test_hayatequant_adaptive_selector_carrier_is_required_for_decode():

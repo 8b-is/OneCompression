@@ -16,6 +16,7 @@ import torch
 
 SINGLE_FORWARD_PROTOCOL = "single_forward_causal_mask_token_local_cache"
 CAUSAL_INCREMENTAL_PROTOCOL = "causal_prefix_prefill_then_token_step_targets"
+FORCED_INCREMENTAL_CONTROL_DEPENDENCY = "forced_matched_incremental_control"
 
 
 def cache_temporal_dependency(cache) -> Optional[str]:
@@ -86,7 +87,14 @@ def _forward_step(model, input_ids, cache, cache_positions=None):
 
 
 @torch.no_grad()
-def causal_teacher_forced_logits(model, input_ids, first_target_index: int, cache):
+def causal_teacher_forced_logits(
+    model,
+    input_ids,
+    first_target_index: int,
+    cache,
+    *,
+    force_incremental_control: bool = False,
+):
     """Return logits for a contiguous target suffix without future-stat leakage.
 
     ``first_target_index`` is the index in ``input_ids`` of the first target to
@@ -113,7 +121,13 @@ def causal_teacher_forced_logits(model, input_ids, first_target_index: int, cach
             "first_target_index must satisfy 1 <= first_target_index < sequence length"
         )
 
+    if not isinstance(force_incremental_control, bool):
+        raise ValueError("force_incremental_control must be a bool")
     dependency = cache_temporal_dependency(cache)
+    if dependency is None and force_incremental_control:
+        if cache is None:
+            raise ValueError("forced incremental control requires a cache instance")
+        dependency = FORCED_INCREMENTAL_CONTROL_DEPENDENCY
     if dependency is None:
         out = _forward_step(model, input_ids, cache)
         logits = out.logits[:, first_target_index - 1 : -1]

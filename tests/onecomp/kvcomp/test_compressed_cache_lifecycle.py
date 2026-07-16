@@ -457,6 +457,9 @@ def test_adaptive_hq_selector_accounting_histogram_json_and_reset():
         "hadamard_gemm",
     }
     last = layer["last_selection"]
+    assert len(last["pair"]) == 2
+    assert all(len(run["pair"]) == 2 for run in layer["selection_runs"])
+    assert all(run["pair"] in ([2, 2], [3, 1]) for run in layer["selection_runs"])
     assert last["update_tokens"] == 1
     assert last["carrier_amortization_vector_count"] == 1
     assert last["cumulative_vector_count"] == layer["cumulative"]["vector_count"]

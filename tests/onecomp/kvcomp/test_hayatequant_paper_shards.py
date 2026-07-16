@@ -166,7 +166,7 @@ def _fixture_declared_codec(method: str, rate: int) -> dict:
             "calibration": None,
             "adaptive_bit_split": (None if method == "HQ" else "online_stats"),
             "avg_bits": float(rate),
-            "key_bit_fraction": (None if method == "HQ" else 0.5),
+            "key_bit_fraction": (None if method == "HQ" else (2 * rate + 1) / (4 * rate)),
             "key_code_bits_per_block": (2 * rate + 1 if method == "HQ" else None),
             "value_code_bits_per_block": (2 * rate - 1 if method == "HQ" else None),
             "adaptive_bit_margin": 4,
@@ -2928,7 +2928,7 @@ def _speed_doc(process_index: int) -> dict:
         "block_size": 2,
         "key_scale_mode": "nc",
         "value_scale_mode": "ls_iter",
-        "key_bit_fraction": 0.5,
+        "key_bit_fraction": 7 / 12,
         "adaptive_bit_split": "online_stats",
         "n_outlier": 0,
     }

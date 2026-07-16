@@ -278,8 +278,12 @@ def hayate_adaptive2_kwargs(**overrides: Any) -> dict[str, Any]:
     bits.
     """
 
+    fixed_key_bits, fixed_value_bits = hayate_hq_code_bits(2)
     kwargs = hayate_fractional_rate_kwargs(
-        avg_bits=2, block_size=HQ_BLOCK_SIZE, key_bit_fraction=0.5, adaptive=True
+        avg_bits=2,
+        block_size=HQ_BLOCK_SIZE,
+        key_bit_fraction=fixed_key_bits / (fixed_key_bits + fixed_value_bits),
+        adaptive=True,
     )
     kwargs.update(
         {
@@ -311,7 +315,7 @@ def hayate_adaptive_rate_kwargs(
     avg_bits: float,
     *,
     block_size: int | None = None,
-    key_bit_fraction: float = 0.5,
+    key_bit_fraction: float | None = None,
     **overrides: Any,
 ) -> dict[str, Any]:
     """Keyword arguments for the paper's opt-in Adaptive HQ row.
@@ -322,9 +326,11 @@ def hayate_adaptive_rate_kwargs(
     constants before quantizing once. Its data-dependent candidate-pair
     selector occupies low fraction bits of the first existing fp16 value
     scale; the scale is reconstructed after clearing those bits, so the total
-    logical rate remains exactly matched. The default prior is neutral
-    K/V-uniform. The block size is the same short ``b=2`` used by fixed HQ at
-    every paper rate; only the causal split selector is added.
+    logical rate remains exactly matched. The immature/default incumbent is
+    the matching fixed-HQ split (K5/V3, K7/V5, or K9/V7); the symmetric pair is
+    entered only through the codec's frozen conservative margin/hysteresis.
+    The block size is the same short ``b=2`` used by fixed HQ at every paper
+    rate; only the causal split selector is added.
     """
 
     rate = _paper_rate(avg_bits)
@@ -336,6 +342,9 @@ def hayate_adaptive_rate_kwargs(
     avg = float(rate)
     if block_size is None:
         block_size = HQ_BLOCK_SIZE
+    if key_bit_fraction is None:
+        fixed_key_bits, fixed_value_bits = hayate_hq_code_bits(rate)
+        key_bit_fraction = fixed_key_bits / (fixed_key_bits + fixed_value_bits)
     kwargs = hayate_fractional_rate_kwargs(
         avg_bits=avg,
         block_size=int(block_size),

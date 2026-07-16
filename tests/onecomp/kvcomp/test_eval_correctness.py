@@ -26,6 +26,7 @@ from onecomp.kvcomp.codec.turboquant import TurboQuantCodec
 from onecomp.kvcomp.config import Budget
 from onecomp.kvcomp.eval._teacher_forcing import (
     CAUSAL_INCREMENTAL_PROTOCOL,
+    FORCED_INCREMENTAL_CONTROL_DEPENDENCY,
     SINGLE_FORWARD_PROTOCOL,
     causal_teacher_forced_logits,
 )
@@ -1398,6 +1399,81 @@ def test_ppl_switches_only_temporally_coupled_caches_to_incremental_targets():
     assert token_local_model.call_lengths == [5]
     assert token_local["teacher_forced_scoring_protocol"] == SINGLE_FORWARD_PROTOCOL
     assert token_local["teacher_forced_temporal_dependency"] is None
+
+    matched_model = Model()
+    matched = perplexity_over_text(
+        matched_model,
+        Tok(),
+        "ignored",
+        cache_factory=lambda: Cache(None),
+        max_length=5,
+        stride=5,
+        force_incremental_control=True,
+    )
+    assert matched_model.call_lengths == [1, 1, 1, 1, 1]
+    assert matched["teacher_forced_scoring_protocol"] == CAUSAL_INCREMENTAL_PROTOCOL
+    assert matched["teacher_forced_temporal_dependency"] == (FORCED_INCREMENTAL_CONTROL_DEPENDENCY)
+    assert matched["force_incremental_control"] is True
+
+
+def test_ppl_preserves_adaptive_pair_histogram_for_each_reset_window():
+    class Tok:
+        def __call__(self, _text, **_kwargs):
+            return SimpleNamespace(input_ids=torch.tensor([[0, 1, 2, 3, 0]]))
+
+    class Cache:
+        fp16_bits = 400
+        stored_bits = 100
+
+        def teacher_forced_temporal_dependency(self):
+            return "cache_local_causal_bit_allocation_statistics"
+
+        def get_adaptive_hq_provenance(self):
+            return {
+                "runtime": {
+                    "kind": "adaptive_hq",
+                    "schema_version": 1,
+                    "policy_version": "test_adaptive_policy",
+                    "aggregate": {
+                        "encoded_updates": 2,
+                        "encoded_tokens": 3,
+                        "selector_bits_total": 2,
+                        "selector_incremental_stored_bits_total": 0,
+                        "selector_carrier_version": "test_carrier",
+                        "split_histogram": {
+                            "7:5": {
+                                "pair": [7, 5],
+                                "updates": 2,
+                                "tokens": 3,
+                                "vectors": 6,
+                            }
+                        },
+                    },
+                }
+            }
+
+    class Model:
+        device = torch.device("cpu")
+
+        def __call__(self, input_ids, **_kwargs):
+            return SimpleNamespace(logits=torch.zeros((*input_ids.shape, 4)))
+
+    result = perplexity_over_text(
+        Model(), Tok(), "ignored", cache_factory=Cache, max_length=4, stride=2
+    )
+    assert result["n_windows"] == 2
+    assert len(result["adaptive_hq_window_provenance"]) == 2
+    assert [
+        row["runtime"]["split_histogram"]["7:5"]["updates"]
+        for row in result["adaptive_hq_window_provenance"]
+    ] == [2, 2]
+    aggregate = result["adaptive_hq_runtime"]
+    assert aggregate["encoded_updates"] == 4
+    assert aggregate["encoded_tokens"] == 6
+    assert aggregate["selector_bits_per_encode"] == 1
+    assert aggregate["split_histogram"] == {
+        "7:5": {"pair": [7, 5], "updates": 4, "tokens": 6, "vectors": 12}
+    }
 
 
 def test_h2o_respects_total_budget_including_sink_and_recent():

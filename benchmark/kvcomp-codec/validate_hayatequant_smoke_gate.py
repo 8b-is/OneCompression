@@ -49,13 +49,19 @@ BLOCKQUANT_TEACHER_FORCED_PROTOCOL = "causal_prefix_prefill_then_token_step_targ
 BLOCKQUANT_TEMPORAL_DEPENDENCY = "dynamic_outlier_channels_over_update_tokens"
 ADAPTIVE_HQ_TEACHER_FORCED_PROTOCOL = "causal_prefix_prefill_then_token_step_targets"
 ADAPTIVE_HQ_TEMPORAL_DEPENDENCY = "cache_local_causal_bit_allocation_statistics"
-ADAPTIVE_HQ_POLICY_VERSION = "adaptive_hq_cache_causal_safe_two_pair_rd_v5"
+ADAPTIVE_HQ_POLICY_VERSION = "adaptive_hq_cache_causal_fixed_incumbent_hysteresis_v6"
 ADAPTIVE_HQ_DISTORTION_TABLE_VERSION = (
     "source_qmc128_exact_codebook_fp16scale_safe_two_pair_update_carrier_v4"
 )
 ADAPTIVE_HQ_SELECTOR_CARRIER_VERSION = "value_scale_fp16_fraction_lsb_v1"
 ADAPTIVE_HQ_OBJECTIVE = "causal_raw_power_times_qmc_base_plus_one_carrier_per_update"
 ADAPTIVE_HQ_CARRIER_AMORTIZATION = "signed_qmc_all_scales_delta_divided_by_current_update_vectors"
+ADAPTIVE_HQ_SWITCH_MARGIN_FRACTION = 1.0 / math.sqrt(128)
+ADAPTIVE_HQ_SWITCH_MARGIN_BASIS = "one_over_sqrt_fixed_qmc_vectors_128"
+ADAPTIVE_HQ_HYSTERESIS = (
+    "enter_challenger_only_beyond_margin_retain_while_strictly_better_"
+    "fallback_to_fixed_incumbent_on_tie_or_loss"
+)
 HQ_CODEBOOK_BUNDLE = "fixed_hq_b2_v1"
 ADAPTIVE_HQ_CODEBOOK_BUNDLE = "adaptive_hq_b2_safe_v1"
 HQ_CODEBOOK_MANIFEST_SHA256 = "df02ba5fd41fd0cc3fd2d39474fcfe7a628c15eb9ea012e8c70b1ffb3dabecde"
@@ -898,7 +904,7 @@ def _validate_hayate_identity(row: Any, *, method: str, label: str) -> None:
         allocation = resolved.get("adaptive_allocation")
         if (
             config.get("adaptive_bit_split") != "online_stats"
-            or config.get("key_bit_fraction") != 0.5
+            or config.get("key_bit_fraction") != 7 / 12
             or config.get("key_code_bits_per_block") is not None
             or config.get("value_code_bits_per_block") is not None
             or not isinstance(allocation, dict)
@@ -913,7 +919,16 @@ def _validate_hayate_identity(row: Any, *, method: str, label: str) -> None:
             or allocation.get("selector_carrier_distortion_amortization")
             != ADAPTIVE_HQ_CARRIER_AMORTIZATION
             or allocation.get("selector_incremental_stored_bits_per_encode") != 0
-            or allocation.get("prior_pair") != [6, 6]
+            or allocation.get("prior_pair") != [7, 5]
+            or allocation.get("incumbent_pair") != [7, 5]
+            or not math.isclose(
+                float(allocation.get("switch_margin_fraction", math.nan)),
+                ADAPTIVE_HQ_SWITCH_MARGIN_FRACTION,
+                rel_tol=0.0,
+                abs_tol=1e-15,
+            )
+            or allocation.get("switch_margin_basis") != ADAPTIVE_HQ_SWITCH_MARGIN_BASIS
+            or allocation.get("hysteresis") != ADAPTIVE_HQ_HYSTERESIS
         ):
             raise SmokeGateError(f"{label} AdaptiveHQ causal carrier contract changed")
 

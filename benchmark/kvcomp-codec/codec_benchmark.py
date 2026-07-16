@@ -186,6 +186,8 @@ def _env_calibration(*names: str) -> str | None:
 
 _RESULT_SCHEMA_VERSION = 2
 _NON_SEMANTIC_CONFIG_KEYS = {"bits", "methods", "output_dir"}
+HQ_INCREMENTAL_CONTROL_NAME = "HQ-incremental-control"
+ADAPTIVE_HQ_FIXED_PAIR_CONTROL_NAME = "AdaptiveHQ-fixed-pair-control"
 
 
 def _semantic_config(cfg: DictConfig) -> dict:
@@ -308,7 +310,53 @@ def _ppl_fields(result: dict) -> dict:
         "ppl_compression_stored_bits": result["compression_stored_bits"],
         "ppl_teacher_forced_scoring_protocol": result["teacher_forced_scoring_protocol"],
         "ppl_teacher_forced_temporal_dependency": result["teacher_forced_temporal_dependency"],
+        "ppl_force_incremental_control": bool(result["force_incremental_control"]),
+        "adaptive_hq_runtime": result.get("adaptive_hq_runtime"),
+        "adaptive_hq_window_provenance": result.get("adaptive_hq_window_provenance", []),
     }
+
+
+@torch.no_grad()
+def _distortion_fields(codec, key, value) -> dict:
+    """Measure both roles from one joint payload and label adaptive scope.
+
+    This diagnostic is a single captured-KV update with no cache-owned causal
+    history.  It must not be interpreted as the trajectory actually exercised
+    by incremental PPL or generation, whose selector ledger is emitted by the
+    evaluation harness separately.
+    """
+
+    encoded = codec.encode(key, value)
+    decoded_key, decoded_value = codec.decode(encoded)
+
+    def relative_mse(decoded, target):
+        return float(
+            (decoded.float() - target).pow(2).sum() / target.float().pow(2).sum().clamp_min(1e-12)
+        )
+
+    fields = {
+        "distortion_key": round(relative_mse(decoded_key, key), 5),
+        "distortion_value": round(relative_mse(decoded_value, value), 5),
+        "distortion_measurement": {
+            "protocol": "single_joint_captured_kv_update",
+            "codec_context": None,
+            "cache_owned_history": False,
+            "adaptive_trajectory": False,
+        },
+    }
+    split = encoded.meta.get("adaptive_bit_split")
+    if isinstance(split, dict):
+        fields["distortion_measurement"]["adaptive_static_selection"] = {
+            "state_scope": split.get("state_scope"),
+            "used_stats": split.get("used_stats"),
+            "selected_pair": [
+                split.get("key_code_bits_per_block"),
+                split.get("value_code_bits_per_block"),
+            ],
+            "decision_reason": split.get("decision_reason"),
+            "warning": "single_update_ctx_none_not_cache_trajectory",
+        }
+    return fields
 
 
 def _codecs(bits, ablation=False, head_dim=128):
@@ -441,6 +489,27 @@ def _codecs(bits, ablation=False, head_dim=128):
         **(({"HQ": build_hayate_frontier(bits)}) if _kv_asym(bits) is not None else {}),
         **(
             ({"AdaptiveHQ": build_hayate_adaptive_rate(bits)})
+            if _kv_asym(bits) is not None
+            else {}
+        ),
+        # Explicit development controls.  They are absent from every formal
+        # method list and cannot create extra paper variants.  The first uses
+        # the exact fixed HQ codec but is scored by the matched incremental PPL
+        # path below.  The second retains AdaptiveHQ cache/provenance mechanics
+        # while freezing its singleton pair to the matching fixed-HQ split.
+        **(
+            ({HQ_INCREMENTAL_CONTROL_NAME: build_hayate_frontier(bits)})
+            if _kv_asym(bits) is not None
+            else {}
+        ),
+        **(
+            (
+                {
+                    ADAPTIVE_HQ_FIXED_PAIR_CONTROL_NAME: build_hayate_adaptive_rate(
+                        bits, adaptive_bit_margin=0
+                    )
+                }
+            )
             if _kv_asym(bits) is not None
             else {}
         ),
@@ -787,6 +856,20 @@ def main(cfg: DictConfig):
             if missing:
                 raise ValueError(f"Unknown codec method(s) for {bits} bit: {missing}")
             codecs = {name: codec for name, codec in codecs.items() if name in selected}
+        else:
+            # Matched controls are opt-in diagnostics.  Keeping them in the
+            # registry makes an explicit development command reproducible,
+            # but a legacy/default run must not silently grow two extra HQ
+            # variants or spend GPU time on rows that are not paper methods.
+            codecs = {
+                name: codec
+                for name, codec in codecs.items()
+                if name
+                not in {
+                    HQ_INCREMENTAL_CONTROL_NAME,
+                    ADAPTIVE_HQ_FIXED_PAIR_CONTROL_NAME,
+                }
+            }
         for name, codec in codecs.items():
             entry = {
                 "codec_config": codec.get_kv_config(),
@@ -796,6 +879,18 @@ def main(cfg: DictConfig):
                     "skip_layers": sorted(int(layer) for layer in skip_layers),
                 },
             }
+            if name == HQ_INCREMENTAL_CONTROL_NAME:
+                entry["development_control"] = {
+                    "reference_method": "HQ",
+                    "difference": "force_incremental_teacher_forcing_only",
+                    "formal_row": False,
+                }
+            elif name == ADAPTIVE_HQ_FIXED_PAIR_CONTROL_NAME:
+                entry["development_control"] = {
+                    "reference_method": "AdaptiveHQ",
+                    "difference": "singleton_fixed_hq_pair_no_adaptive_switch",
+                    "formal_row": False,
+                }
             if name == FIBQUANT_PAPER_METHOD:
                 entry.update(fibquant_quality_provenance(codec))
             elif name == BLOCKQUANT_PAPER_METHOD:
@@ -805,8 +900,7 @@ def main(cfg: DictConfig):
             resolved_config = getattr(codec, "get_resolved_kv_config", None)
             if callable(resolved_config):
                 entry["resolved_codec_config"] = resolved_config(D)
-            entry["distortion_key"] = round(_relmse(codec, ks, vs, role="k"), 5)
-            entry["distortion_value"] = round(_relmse(codec, ks, vs, role="v"), 5)
+            entry.update(_distortion_fields(codec, ks, vs))
             rate_stats = _stored_rate_statistics(codec, ks, vs)
             if rate_stats is not None:
                 # Preserve the exact integer numerator and denominator.  A
@@ -836,6 +930,7 @@ def main(cfg: DictConfig):
                     max_length=cfg.ppl_max_length,
                     stride=cfg.ppl_stride,
                     max_windows=cfg.ppl_windows,
+                    force_incremental_control=(name == HQ_INCREMENTAL_CONTROL_NAME),
                 )
                 entry.update(_ppl_fields(pp))
                 entry["ppl_delta_vs_fullkv"] = round(entry["ppl"] - fullkv_ppl["ppl"], 4)

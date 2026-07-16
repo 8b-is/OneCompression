@@ -70,13 +70,19 @@ QUALITY_RATE_METHODS = {
     "4": ("TurboQuant-paper", "FibQuant-paper", "HQ", "AdaptiveHQ"),
 }
 POINT_ESTIMATE_WIN_THRESHOLD = 0.90
-ADAPTIVE_HQ_POLICY_VERSION = "adaptive_hq_cache_causal_safe_two_pair_rd_v5"
+ADAPTIVE_HQ_POLICY_VERSION = "adaptive_hq_cache_causal_fixed_incumbent_hysteresis_v6"
 ADAPTIVE_HQ_DISTORTION_TABLE_VERSION = (
     "source_qmc128_exact_codebook_fp16scale_safe_two_pair_update_carrier_v4"
 )
 ADAPTIVE_HQ_SELECTOR_CARRIER_VERSION = "value_scale_fp16_fraction_lsb_v1"
 ADAPTIVE_HQ_OBJECTIVE = "causal_raw_power_times_qmc_base_plus_one_carrier_per_update"
 ADAPTIVE_HQ_CARRIER_AMORTIZATION = "signed_qmc_all_scales_delta_divided_by_current_update_vectors"
+ADAPTIVE_HQ_SWITCH_MARGIN_FRACTION = 1.0 / math.sqrt(128)
+ADAPTIVE_HQ_SWITCH_MARGIN_BASIS = "one_over_sqrt_fixed_qmc_vectors_128"
+ADAPTIVE_HQ_HYSTERESIS = (
+    "enter_challenger_only_beyond_margin_retain_while_strictly_better_"
+    "fallback_to_fixed_incumbent_on_tie_or_loss"
+)
 HQ_CODEBOOK_BUNDLE = "fixed_hq_b2_v1"
 ADAPTIVE_HQ_CODEBOOK_BUNDLE = "adaptive_hq_b2_safe_v1"
 HQ_CODEBOOK_MANIFEST_SHA256 = "df02ba5fd41fd0cc3fd2d39474fcfe7a628c15eb9ea012e8c70b1ffb3dabecde"
@@ -2783,7 +2789,11 @@ def _expected_speed_resolved_recipe(rate: int, method: str) -> dict[str, Any]:
             "pair_code_bits_per_block": total,
             "policy": "cache_causal_datafree_rd",
             "policy_version": ADAPTIVE_HQ_POLICY_VERSION,
-            "prior_pair": [2 * rate, 2 * rate],
+            "prior_pair": [2 * rate + 1, 2 * rate - 1],
+            "incumbent_pair": [2 * rate + 1, 2 * rate - 1],
+            "switch_margin_fraction": ADAPTIVE_HQ_SWITCH_MARGIN_FRACTION,
+            "switch_margin_basis": ADAPTIVE_HQ_SWITCH_MARGIN_BASIS,
+            "hysteresis": ADAPTIVE_HQ_HYSTERESIS,
             "runtime_distortion_constants": "payload_and_cache_provenance",
             "selected_pair": "payload_dependent",
             "selection_scope": "per_encode_kv_pair",
@@ -2887,7 +2897,7 @@ def _validate_speed_scientific_recipe(
             "block_size": 2,
             "key_scale_mode": "nc",
             "value_scale_mode": "ls_iter",
-            "key_bit_fraction": 0.5,
+            "key_bit_fraction": (2 * rate + 1) / (4 * rate),
             "adaptive_bit_split": "online_stats",
             "n_outlier": 0,
         },

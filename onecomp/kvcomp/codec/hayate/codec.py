@@ -175,13 +175,23 @@ from .vq import (
 from .._scale import SCALE_MODES, resolve_scale_mode, fit_scale
 from ..turboquant import _qjl_projection_on
 
-ADAPTIVE_HQ_POLICY_VERSION = "adaptive_hq_cache_causal_safe_two_pair_rd_v5"
+ADAPTIVE_HQ_POLICY_VERSION = "adaptive_hq_cache_causal_fixed_incumbent_hysteresis_v6"
 ADAPTIVE_HQ_DISTORTION_TABLE_VERSION = (
     "source_qmc128_exact_codebook_fp16scale_safe_two_pair_update_carrier_v4"
 )
 ADAPTIVE_HQ_SELECTOR_CARRIER_VERSION = "value_scale_fp16_fraction_lsb_v1"
 ADAPTIVE_HQ_OBJECTIVE = "causal_raw_power_times_qmc_base_plus_one_carrier_per_update"
 _ADAPTIVE_QMC_VECTORS = 128
+# The adaptive table is a deterministic, data-free 128-vector QMC estimate.
+# Use one nominal 1/sqrt(N) sampling scale as a *predeclared* robustness margin
+# before departing from fixed HQ.  This value follows only from the frozen QMC
+# design above; it was not fitted to a model, task, or post-hoc benchmark row.
+ADAPTIVE_HQ_SWITCH_MARGIN_FRACTION = 1.0 / math.sqrt(_ADAPTIVE_QMC_VECTORS)
+ADAPTIVE_HQ_SWITCH_MARGIN_BASIS = "one_over_sqrt_fixed_qmc_vectors_128"
+ADAPTIVE_HQ_HYSTERESIS = (
+    "enter_challenger_only_beyond_margin_retain_while_strictly_better_"
+    "fallback_to_fixed_incumbent_on_tie_or_loss"
+)
 
 
 @lru_cache(maxsize=16)
@@ -379,6 +389,85 @@ def _adaptive_value_distortion_for_update(constants: dict, update_vectors: int) 
     if not math.isfinite(effective) or effective <= 0.0:
         raise ValueError("Adaptive HQ effective value distortion must be finite and positive")
     return effective
+
+
+def _adaptive_hysteretic_choice(
+    scored: list[dict],
+    incumbent_pair: tuple[int, int],
+    previous_pair: tuple[int, int] | None,
+    *,
+    used_stats: bool,
+) -> tuple[dict, dict]:
+    """Select a two-pair AdaptiveHQ candidate with a fixed-HQ safety band.
+
+    The fixed HQ pair is always used before the causal statistic matures.  A
+    cache that currently uses fixed HQ enters the symmetric challenger only
+    when its predicted objective improves by at least the frozen QMC margin.
+    Once entered, the challenger is retained while it is *strictly* better;
+    a tie or loss immediately falls back to fixed HQ.  The unequal entry/exit
+    thresholds form the hysteresis band and avoid boundary chatter without
+    accepting a proxy-predicted degradation relative to fixed HQ.
+    """
+
+    by_pair = {tuple(row["pair"]): row for row in scored}
+    if len(by_pair) != len(scored) or incumbent_pair not in by_pair:
+        raise ValueError("AdaptiveHQ scored candidates must uniquely contain the incumbent")
+    if len(scored) not in (1, 2):
+        raise ValueError("the frozen AdaptiveHQ safety policy supports one or two candidates")
+    incumbent = by_pair[incumbent_pair]
+    incumbent_objective = float(incumbent["weighted_objective"])
+    if not math.isfinite(incumbent_objective) or incumbent_objective < 0.0:
+        raise ValueError("AdaptiveHQ incumbent objective must be finite and non-negative")
+
+    diagnostics = {
+        "incumbent_pair": [int(incumbent_pair[0]), int(incumbent_pair[1])],
+        "previous_pair": (
+            None if previous_pair is None else [int(previous_pair[0]), int(previous_pair[1])]
+        ),
+        "switch_margin_fraction": float(ADAPTIVE_HQ_SWITCH_MARGIN_FRACTION),
+        "switch_margin_basis": ADAPTIVE_HQ_SWITCH_MARGIN_BASIS,
+        "hysteresis": ADAPTIVE_HQ_HYSTERESIS,
+        "incumbent_objective": incumbent_objective,
+        "challenger_objective": None,
+        "challenger_relative_improvement": None,
+    }
+    if not used_stats:
+        diagnostics["decision_reason"] = "immature_fixed_hq_incumbent"
+        return incumbent, diagnostics
+    if len(scored) == 1:
+        diagnostics["decision_reason"] = "singleton_fixed_hq_incumbent"
+        return incumbent, diagnostics
+
+    challenger_pair = next(pair for pair in by_pair if pair != incumbent_pair)
+    challenger = by_pair[challenger_pair]
+    challenger_objective = float(challenger["weighted_objective"])
+    if not math.isfinite(challenger_objective) or challenger_objective < 0.0:
+        raise ValueError("AdaptiveHQ challenger objective must be finite and non-negative")
+    relative_improvement = (
+        0.0
+        if incumbent_objective == 0.0
+        else (incumbent_objective - challenger_objective) / incumbent_objective
+    )
+    diagnostics["challenger_objective"] = challenger_objective
+    diagnostics["challenger_relative_improvement"] = float(relative_improvement)
+
+    if previous_pair == challenger_pair and challenger_objective < incumbent_objective:
+        diagnostics["decision_reason"] = "retain_strictly_better_challenger"
+        return challenger, diagnostics
+    entry_limit = incumbent_objective * (1.0 - ADAPTIVE_HQ_SWITCH_MARGIN_FRACTION)
+    if (
+        previous_pair != challenger_pair
+        and challenger_objective < incumbent_objective
+        and challenger_objective <= entry_limit
+    ):
+        diagnostics["decision_reason"] = "enter_challenger_beyond_frozen_margin"
+        return challenger, diagnostics
+    diagnostics["decision_reason"] = (
+        "fallback_to_fixed_hq_incumbent"
+        if previous_pair == challenger_pair
+        else "fixed_hq_incumbent_within_safety_margin"
+    )
+    return incumbent, diagnostics
 
 
 @lru_cache(maxsize=16)
@@ -785,8 +874,12 @@ class HayateQuantCodec(KVCodec):
             the former high-rate ``2**(-2R)`` proxy. The default key/value
             weights are the globally frozen ``4:1`` development choice.
             Before the cumulative-token gate matures, an explicit
-            ``key_bit_fraction`` supplies the prior; otherwise the neutral
-            uniform split is used, so K10/V6 is not built into the machinery.
+            ``key_bit_fraction`` supplies the incumbent; otherwise the neutral
+            uniform split is used by the generic codec.  The named AdaptiveHQ
+            paper recipe explicitly supplies the matching fixed-HQ incumbent.
+            Departing from that incumbent requires a predeclared ``1/sqrt(128)``
+            relative-objective margin derived from the frozen QMC table size;
+            an asymmetric retain/fallback threshold provides hysteresis.
             Because this choice is data-dependent, a packed decoder needs one
             fixed-width candidate-pair selector per jointly encoded K/V
             update: ``ceil(log2(n_pairs))`` bits (zero for a singleton set).
@@ -1886,8 +1979,23 @@ class HayateQuantCodec(KVCodec):
             )
         margin = int(self.adaptive_bit_margin)
         symmetric = (total // 2, total // 2)
+        frac = 0.5 if self.key_bit_fraction is None else float(self.key_bit_fraction)
+        incumbent_key_bits = min(total - 1, max(1, int(round(total * frac))))
+        requested_incumbent = (incumbent_key_bits, total - incumbent_key_bits)
         if margin == 0:
-            return [symmetric]
+            # A singleton AdaptiveHQ control must preserve its declared prior.
+            # In particular, the formal recipe's singleton is fixed HQ itself
+            # (K5/V3, K7/V5, or K9/V7), not the symmetric challenger.
+            pairs = [requested_incumbent]
+            if any(
+                role_bits < 1 or role_bits > int(self.max_codebook_bits)
+                for role_bits in requested_incumbent
+            ):
+                raise ValueError(
+                    "the singleton AdaptiveHQ incumbent is infeasible under "
+                    f"total={total} and max_codebook_bits={self.max_codebook_bits}"
+                )
+            return pairs
         role_offset_bits = max(1, int(block_size) // 2)
         key_heavy = (symmetric[0] + role_offset_bits, symmetric[1] - role_offset_bits)
         pairs = [symmetric, key_heavy]
@@ -1998,6 +2106,10 @@ class HayateQuantCodec(KVCodec):
                 for k, v in pairs
             ],
             "prior_pair": [int(prior[0]), int(prior[1])],
+            "incumbent_pair": [int(prior[0]), int(prior[1])],
+            "switch_margin_fraction": float(ADAPTIVE_HQ_SWITCH_MARGIN_FRACTION),
+            "switch_margin_basis": ADAPTIVE_HQ_SWITCH_MARGIN_BASIS,
+            "hysteresis": ADAPTIVE_HQ_HYSTERESIS,
             "selector_bits_per_encode": int((len(pairs) - 1).bit_length()),
             "selector_incremental_stored_bits_per_encode": 0,
             "selector_carrier_version": ADAPTIVE_HQ_SELECTOR_CARRIER_VERSION,
@@ -2160,6 +2272,23 @@ class HayateQuantCodec(KVCodec):
             "cumulative_vector_count": int(cumulative["vector_count"]),
             "cumulative_key_power": float(split_meta["cumulative_key_power"]),
             "cumulative_value_power": float(split_meta["cumulative_value_power"]),
+            "incumbent_pair": copy.deepcopy(split_meta["incumbent_pair"]),
+            "previous_pair": copy.deepcopy(split_meta["previous_pair"]),
+            "switch_margin_fraction": float(split_meta["switch_margin_fraction"]),
+            "switch_margin_basis": str(split_meta["switch_margin_basis"]),
+            "hysteresis": str(split_meta["hysteresis"]),
+            "decision_reason": str(split_meta["decision_reason"]),
+            "incumbent_objective": float(split_meta["incumbent_objective"]),
+            "challenger_objective": (
+                None
+                if split_meta["challenger_objective"] is None
+                else float(split_meta["challenger_objective"])
+            ),
+            "challenger_relative_improvement": (
+                None
+                if split_meta["challenger_relative_improvement"] is None
+                else float(split_meta["challenger_relative_improvement"])
+            ),
             "value_relative_distortion_effective": float(
                 selected_objective["value_relative_distortion_effective"]
             ),
@@ -2190,7 +2319,13 @@ class HayateQuantCodec(KVCodec):
         cumulative, stats = self._adaptive_next_cumulative(state, key, value)
         key_power = float(stats["powers"]["key"])
         value_power = float(stats["powers"]["value"])
-        prior = tuple(policy["prior_pair"])
+        incumbent = tuple(policy["incumbent_pair"])
+        last_selection = state.get("last_selection")
+        previous_pair = (
+            tuple(last_selection["pair"])
+            if isinstance(last_selection, dict) and isinstance(last_selection.get("pair"), list)
+            else None
+        )
         used_stats = int(cumulative["token_count"]) >= int(self.adaptive_stats_min_tokens)
         kw, vw = float(self.key_error_weight), float(self.value_error_weight)
         update_vectors = int(stats["update"]["vectors"])
@@ -2211,19 +2346,13 @@ class HayateQuantCodec(KVCodec):
                     "weighted_objective": kw * pred_key + vw * pred_value,
                 }
             )
-        if used_stats:
-            selected = min(
-                scored,
-                key=lambda row: (
-                    row["weighted_objective"],
-                    abs(row["pair"][0] - prior[0]),
-                    row["pair"][0],
-                ),
-            )
-            best = selected["pair"]
-        else:
-            best = min(pairs, key=lambda pair: (abs(pair[0] - prior[0]), pair[0]))
-            selected = scored[pairs.index(best)]
+        selected, decision = _adaptive_hysteretic_choice(
+            scored,
+            incumbent,
+            previous_pair,
+            used_stats=used_stats,
+        )
+        best = selected["pair"]
         meta = {
             "policy": "cache_causal_datafree_rd",
             "policy_version": ADAPTIVE_HQ_POLICY_VERSION,
@@ -2252,7 +2381,10 @@ class HayateQuantCodec(KVCodec):
             "carrier_amortization_vector_count": update_vectors,
             "selection_scope": "per_encode_kv_pair",
             "state_scope": state_scope,
-            "prior_pair": list(prior),
+            # ``prior_pair`` remains as a compatibility spelling.  In v6 it is
+            # explicitly the fixed-HQ incumbent, not a neutral symmetric pair.
+            "prior_pair": list(incumbent),
+            **decision,
             "cumulative_token_count": int(cumulative["token_count"]),
             "cumulative_vector_count": int(cumulative["vector_count"]),
             "cumulative_key_power": key_power,
@@ -2927,6 +3059,10 @@ class HayateQuantCodec(KVCodec):
                     for k, v in pairs
                 ],
                 "prior_pair": [int(prior[0]), int(prior[1])],
+                "incumbent_pair": [int(prior[0]), int(prior[1])],
+                "switch_margin_fraction": float(ADAPTIVE_HQ_SWITCH_MARGIN_FRACTION),
+                "switch_margin_basis": ADAPTIVE_HQ_SWITCH_MARGIN_BASIS,
+                "hysteresis": ADAPTIVE_HQ_HYSTERESIS,
                 "selector_bits_per_encode": int((len(pairs) - 1).bit_length()),
                 "selector_incremental_stored_bits_per_encode": 0,
                 "selector_carrier_version": ADAPTIVE_HQ_SELECTOR_CARRIER_VERSION,
