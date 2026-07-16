@@ -2,16 +2,25 @@
 
 The codec recipe and the scientific role of a result are deliberately
 separate.  :mod:`onecomp.kvcomp.codec.hayate.recipes` owns the former; this
-module supplies the small, JSON-native provenance record that every formal
-quality runner must attach to the two proposal rows.
+module supplies the small, JSON-native provenance record that every completed
+primary-quality runner must attach to its result rows.  The public family has
+exactly three identities: HQ, AdaptiveHQ, and RotationHQ.  RotationHQ is kept
+out of the current primary aggregate until its separately calibrated artifact
+has passed the same complete coverage checks; this is a claim boundary, not a
+fourth method name.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from .recipes import HQ_ADAPTIVE_NAME, HQ_NAME
+from .recipes import HQ_ADAPTIVE_NAME, HQ_NAME, HQ_PUBLIC_METHODS, HQ_ROTATION_NAME
 
+# Public labels are deliberately distinct from the current two-row primary
+# aggregate.  RotationHQ requires a content-addressed, held-out calibration
+# artifact; including it before that artifact's complete rerun would turn a
+# development retry into a paper result.
+PAPER_HAYATE_METHODS = (HQ_NAME, HQ_ADAPTIVE_NAME)
 FORMAL_HAYATE_METHODS = (HQ_NAME, HQ_ADAPTIVE_NAME)
 LEGACY_HAYATE_RESULT_LABELS = ("HayateQuant-frontier",)
 
@@ -29,7 +38,8 @@ def hayate_formal_provenance(method: str) -> dict[str, Any]:
         allocation = "cache_local_layer_local_causal_online_stats"
     else:
         raise ValueError(
-            f"formal HayateQuant method must be one of {FORMAL_HAYATE_METHODS}, " f"got {method!r}"
+            f"primary formal HayateQuant method must be one of {FORMAL_HAYATE_METHODS}, "
+            f"got {method!r}; {HQ_ROTATION_NAME} requires its completed calibrated rerun"
         )
     return {
         "method_role": role,
@@ -50,12 +60,14 @@ def reject_legacy_hayate_result_label(name: str) -> None:
     if name in LEGACY_HAYATE_RESULT_LABELS:
         raise ValueError(
             f"legacy result label {name!r} is forbidden for new runs; "
-            f"use {HQ_NAME!r} or {HQ_ADAPTIVE_NAME!r}"
+            f"use one of {HQ_PUBLIC_METHODS!r}"
         )
 
 
 __all__ = [
     "FORMAL_HAYATE_METHODS",
+    "PAPER_HAYATE_METHODS",
+    "HQ_PUBLIC_METHODS",
     "LEGACY_HAYATE_RESULT_LABELS",
     "hayate_formal_provenance",
     "reject_legacy_hayate_result_label",

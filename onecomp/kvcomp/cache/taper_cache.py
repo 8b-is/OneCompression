@@ -26,7 +26,7 @@ from logging import getLogger
 
 import torch
 
-from ._graded_base import GradedQuantCache
+from ._graded_base import GradedQuantCache, fake_quant_tokens
 
 logger = getLogger(__name__)
 
@@ -89,3 +89,150 @@ class TaperKVCache(GradedQuantCache):
         vbits = taper_bits(age, total, p.sink_tokens, p.recent_tokens,
                            p.value_bits, p.b_min_value, p.ladder)
         return kbits, vbits
+
+
+def _resolve_ladder(hi_bits: int, b_min: int, ladder) -> list:
+    return list(ladder) if ladder is not None else (list(range(hi_bits, b_min - 1, -1)) or [b_min])
+
+
+def step_down_bits(bits: torch.Tensor, hi_bits: int, b_min: int, ladder=None) -> torch.Tensor:
+    """Move every width down one rung of the same descending TaperKV ladder."""
+    if bits.ndim != 1:
+        raise ValueError("bits must be a one-dimensional tensor")
+    ordered = _resolve_ladder(hi_bits, b_min, ladder)
+    ascending = torch.tensor(sorted(ordered), device=bits.device, dtype=torch.int64)
+    index = torch.searchsorted(ascending, bits.to(torch.int64))
+    lower = ascending[(index - 1).clamp(min=0)]
+    return torch.where(index > 0, lower, torch.full_like(bits, b_min)).clamp(
+        min=b_min, max=hi_bits
+    )
+
+
+def apply_byte_budget(
+    kbits: torch.Tensor,
+    vbits: torch.Tensor,
+    total: int,
+    sink_tokens: int,
+    recent_tokens: int,
+    key_bits: int,
+    value_bits: int,
+    b_min: int,
+    b_min_value: int,
+    ladder,
+    batch_heads: int,
+    dim: int,
+    max_bits: int | None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Apply one oldest-first ladder step toward a payload-only bit budget.
+
+    Metadata is intentionally absent from both the budget and this helper:
+    the policy documents a payload cap and the cache reports metadata
+    separately.  ``batch_heads`` is the product of batch and KV heads, so the
+    same cap means the same whole-layer payload even for batched generation.
+    """
+    if kbits.ndim != 1 or vbits.ndim != 1 or kbits.shape != vbits.shape:
+        raise ValueError("kbits and vbits must be same-length one-dimensional tensors")
+    if kbits.numel() != total:
+        raise ValueError("total must equal the bit-vector length")
+    if batch_heads < 1 or dim < 1:
+        raise ValueError("batch_heads and dim must be positive")
+    per_token_role = batch_heads * dim
+    total_bits = int((kbits.sum() + vbits.sum()) * per_token_role)
+    if max_bits is None or total_bits <= max_bits:
+        return kbits, vbits
+    start = min(sink_tokens, total)
+    stop = max(start, total - recent_tokens)
+    if stop <= start:
+        return kbits, vbits
+    indices = torch.arange(start, stop, device=kbits.device)
+    next_k = step_down_bits(kbits[indices], key_bits, b_min, ladder)
+    next_v = step_down_bits(vbits[indices], value_bits, b_min_value, ladder)
+    savings = ((kbits[indices] - next_k) + (vbits[indices] - next_v)) * per_token_role
+    if int(savings.sum()) <= 0:
+        return kbits, vbits
+    excess = total_bits - max_bits
+    cumulative = torch.cumsum(savings, dim=0)
+    enough = cumulative >= excess
+    count = int(torch.nonzero(enough, as_tuple=False)[0]) + 1 if bool(enough.any()) else indices.numel()
+    out_k, out_v = kbits.clone(), vbits.clone()
+    chosen = indices[:count]
+    out_k[chosen] = next_k[:count]
+    out_v[chosen] = next_v[:count]
+    return out_k, out_v
+
+
+class BudgetTaperKVCache(TaperKVCache):
+    """Budget-driven no-eviction TaperKV with exact per-update payload checks.
+
+    A true byte cap cannot wait for a later regrade.  This cache consequently
+    requires a stride of one; callers wanting a stale/cheaper age schedule
+    should use plain ``TaperKVCache`` instead of claiming a hard budget.
+    """
+
+    def __init__(self, policy, config=None, requant_stride: int = 1, **kwargs):
+        if requant_stride != 1:
+            raise ValueError("BudgetTaperKVCache requires requant_stride=1 for its payload budget")
+        super().__init__(policy, config=config, requant_stride=1, **kwargs)
+        self._prev_bits: dict[int, tuple[torch.Tensor, torch.Tensor]] = {}
+
+    def reset(self):
+        super().reset()
+        self._prev_bits.clear()
+
+    def token_bits(self, total, device, layer_idx):
+        p = self.policy
+        return (
+            torch.full((total,), p.key_bits, dtype=torch.int64, device=device),
+            torch.full((total,), p.value_bits, dtype=torch.int64, device=device),
+        )
+
+    def _grade_layer(self, keys, values, layer_idx):
+        p = self.policy
+        total = keys.shape[2]
+        batch_heads = keys.shape[0] * keys.shape[1]
+        dim = keys.shape[-1]
+        kbits, vbits = self.token_bits(total, keys.device, layer_idx)
+        previous = self._prev_bits.get(layer_idx)
+        if previous is not None:
+            previous_k, previous_v = previous
+            count = min(total, previous_k.numel(), previous_v.numel())
+            if count:
+                kbits[:count] = torch.minimum(
+                    kbits[:count], previous_k[:count].to(device=keys.device, dtype=kbits.dtype)
+                )
+                vbits[:count] = torch.minimum(
+                    vbits[:count], previous_v[:count].to(device=keys.device, dtype=vbits.dtype)
+                )
+
+        if p.max_bytes is not None:
+            while True:
+                next_k, next_v = apply_byte_budget(
+                    kbits,
+                    vbits,
+                    total,
+                    p.sink_tokens,
+                    p.recent_tokens,
+                    p.key_bits,
+                    p.value_bits,
+                    p.b_min,
+                    p.b_min_value,
+                    p.ladder,
+                    batch_heads,
+                    dim,
+                    p.max_bytes * 8,
+                )
+                if next_k is kbits and next_v is vbits:
+                    break
+                kbits, vbits = next_k, next_v
+
+        self._prev_bits[layer_idx] = (kbits.detach().clone(), vbits.detach().clone())
+        key_quantized = fake_quant_tokens(keys, kbits)
+        value_quantized = fake_quant_tokens(values, vbits)
+        per_token_role = batch_heads * dim
+        stored_bits = int(
+            kbits.sum() * per_token_role
+            + vbits.sum() * per_token_role
+            + self._meta_bits(kbits, batch_heads)
+            + self._meta_bits(vbits, batch_heads)
+        )
+        return key_quantized, value_quantized, stored_bits

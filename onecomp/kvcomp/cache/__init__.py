@@ -7,7 +7,14 @@ from .compressed_cache import CompressedDynamicCache
 from .builders import build_compressed_cache, kv_compressed_generate
 from .thinkv_cache import ThinKVCache, thinkv_attention_capture
 from ._graded_base import GradedQuantCache, fake_quant_tokens
-from .taper_cache import TaperKVCache, taper_bits
+from .taper_cache import (
+    TaperKVCache,
+    taper_bits,
+    BudgetTaperKVCache,
+    apply_byte_budget,
+    step_down_bits,
+)
+from .block_taper_cache import BlockTaperKVCache, block_taper_bits, fake_quant_blocks
 from .turbotaper_cache import TurboTaperCache
 from .pmkvq_cache import PMKVQCache
 from .streaming_evict import StreamingLLMEvictCache
@@ -23,6 +30,12 @@ __all__ = [
     "fake_quant_tokens",
     "TaperKVCache",
     "taper_bits",
+    "BudgetTaperKVCache",
+    "apply_byte_budget",
+    "step_down_bits",
+    "BlockTaperKVCache",
+    "block_taper_bits",
+    "fake_quant_blocks",
     "TurboTaperCache",
     "PMKVQCache",
     "StreamingLLMEvictCache",

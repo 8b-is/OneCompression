@@ -54,10 +54,61 @@ class TaperKVPolicy(KVPolicy):
     ladder: Optional[list] = None
     skip_layers: list = field(default_factory=list)
 
+    def __post_init__(self):
+        """Reject schedules that cannot be represented by the cache codec.
+
+        TaperKV is intentionally a parameter carrier, so these checks need to
+        live here rather than relying on a particular cache constructor.  In
+        particular, accepting a zero-bit floor would quietly turn a
+        length-preserving method into an eviction method.
+        """
+        super().__post_init__()
+
+        def positive_int(value, name, *, maximum=16):
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise ValueError(f"{name} must be an integer")
+            if value < 1 or value > maximum:
+                raise ValueError(f"{name} must be in [1, {maximum}], got {value}")
+
+        positive_int(self.key_bits, "key_bits")
+        positive_int(self.value_bits, "value_bits")
+        positive_int(self.b_min, "b_min")
+        positive_int(self.b_min_value, "b_min_value")
+        if self.value_bits > self.key_bits:
+            raise ValueError("value_bits must not exceed key_bits")
+        if self.b_min > self.key_bits:
+            raise ValueError("b_min must not exceed key_bits")
+        if self.b_min_value > self.value_bits:
+            raise ValueError("b_min_value must not exceed value_bits")
+        for value, name in (
+            (self.sink_tokens, "sink_tokens"),
+            (self.recent_tokens, "recent_tokens"),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer")
+        if self.ladder is not None:
+            if not isinstance(self.ladder, (list, tuple)) or not self.ladder:
+                raise ValueError("ladder must be a non-empty list or tuple when supplied")
+            if any(isinstance(bit, bool) or not isinstance(bit, int) for bit in self.ladder):
+                raise ValueError("ladder must contain integer bit-widths")
+            if any(bit < 1 or bit > self.key_bits for bit in self.ladder):
+                raise ValueError("ladder bit-widths must lie in [1, key_bits]")
+            if any(left <= right for left, right in zip(self.ladder, self.ladder[1:])):
+                raise ValueError("ladder must be strictly descending")
+        if not isinstance(self.skip_layers, (list, tuple)):
+            raise ValueError("skip_layers must be a list or tuple of integer layer indices")
+        if any(isinstance(layer, bool) or not isinstance(layer, int) for layer in self.skip_layers):
+            raise ValueError("skip_layers must contain integer layer indices")
+
     def target_avg_bits(self, seq_len: int) -> float:
         """Rough expected average bits (keys+values)/2 for a given length."""
         import torch  # local import; policy is light
         from ..cache.taper_cache import taper_bits
+
+        if isinstance(seq_len, bool) or not isinstance(seq_len, int) or seq_len < 0:
+            raise ValueError("seq_len must be a non-negative integer")
+        if seq_len == 0:
+            return 0.0
 
         age = torch.arange(seq_len - 1, -1, -1)
         kb = taper_bits(age, seq_len, self.sink_tokens, self.recent_tokens,
@@ -73,3 +124,129 @@ class TaperKVPolicy(KVPolicy):
             "sink_tokens": self.sink_tokens, "recent_tokens": self.recent_tokens,
             "ladder": self.ladder, "skip_layers": list(self.skip_layers),
         }
+
+
+@register_kv_policy("block_taperkv")
+@dataclass
+class BlockTaperKVPolicy(TaperKVPolicy):
+    """TaperKV constrained to a uniform packed layout per cache block.
+
+    ``quant_granularity='block'`` stores one affine scale/zero pair per
+    batch-head-block.  A trailing write block can remain fp16 until full,
+    matching the usual paged-cache residual-buffer contract.
+    """
+
+    block_size: int = 16
+    residual_fp16: bool = True
+    quant_granularity: str = "block"
+
+    def __post_init__(self):
+        super().__post_init__()
+        if isinstance(self.block_size, bool) or not isinstance(self.block_size, int):
+            raise ValueError("block_size must be an integer")
+        if self.block_size < 1:
+            raise ValueError(f"block_size must be >= 1, got {self.block_size}")
+        if not isinstance(self.residual_fp16, bool):
+            raise ValueError("residual_fp16 must be a bool")
+        if self.quant_granularity not in ("block", "token"):
+            raise ValueError(
+                "quant_granularity must be 'block' or 'token', "
+                f"got {self.quant_granularity!r}"
+            )
+
+    def target_avg_bits(self, seq_len: int) -> float:
+        """Expected payload bits under the block-uniform schedule.
+
+        This intentionally includes the fp16 residual block when enabled.  It
+        is a payload-only rate; affine metadata is reported by the live cache
+        separately and is not hidden in this convenience estimate.
+        """
+        from ..cache.block_taper_cache import block_taper_bits
+
+        if isinstance(seq_len, bool) or not isinstance(seq_len, int) or seq_len < 0:
+            raise ValueError("seq_len must be a non-negative integer")
+        if seq_len == 0:
+            return 0.0
+        kb = block_taper_bits(
+            seq_len,
+            self.block_size,
+            self.sink_tokens,
+            self.recent_tokens,
+            self.key_bits,
+            self.b_min,
+            self.ladder,
+            self.residual_fp16,
+        ).float().mean()
+        vb = block_taper_bits(
+            seq_len,
+            self.block_size,
+            self.sink_tokens,
+            self.recent_tokens,
+            self.value_bits,
+            self.b_min_value,
+            self.ladder,
+            self.residual_fp16,
+        ).float().mean()
+        return float((kb + vb) / 2)
+
+    def get_kv_config(self) -> dict:
+        cfg = super().get_kv_config()
+        cfg.update(
+            {
+                "name": "block_taperkv",
+                "block_size": self.block_size,
+                "residual_fp16": self.residual_fp16,
+                "quant_granularity": self.quant_granularity,
+            }
+        )
+        return cfg
+
+
+@register_kv_policy("budget_taperkv")
+@dataclass
+class BudgetTaperKVPolicy(TaperKVPolicy):
+    """Payload-budgeted no-eviction TaperKV policy.
+
+    ``max_bytes`` is a cap on K/V *payload* only.  Affine scale/zero metadata
+    remains explicitly counted in ``GradedQuantCache`` reporting, but cannot
+    be folded into this policy without the runtime batch/head/dimension shape.
+    """
+
+    max_bytes: Optional[int] = None
+
+    def __post_init__(self):
+        super().__post_init__()
+        if self.max_bytes is not None and (
+            isinstance(self.max_bytes, bool)
+            or not isinstance(self.max_bytes, int)
+            or self.max_bytes < 1
+        ):
+            raise ValueError("max_bytes must be a positive integer or None")
+
+    def target_avg_bits(self, seq_len: int) -> float:
+        """Return a rate only when no budget cap is active.
+
+        A byte cap cannot be converted to bits/token from sequence length
+        alone: batch size, KV heads, and head dimension change the result.
+        Refuse the ambiguous estimate rather than reporting TaperKV's static
+        age schedule for this different algorithm.
+        """
+        if self.max_bytes is not None:
+            raise ValueError(
+                "BudgetTaperKV target_avg_bits is shape-dependent; use live "
+                "cache accounting (avg_bits/mem_fraction) instead"
+            )
+        if isinstance(seq_len, bool) or not isinstance(seq_len, int) or seq_len < 0:
+            raise ValueError("seq_len must be a non-negative integer")
+        return 0.0 if seq_len == 0 else float((self.key_bits + self.value_bits) / 2)
+
+    def get_kv_config(self) -> dict:
+        cfg = super().get_kv_config()
+        cfg.update(
+            {
+                "name": "budget_taperkv",
+                "max_bytes": self.max_bytes,
+                "budget_scope": "key_value_payload_only_excludes_affine_metadata",
+            }
+        )
+        return cfg

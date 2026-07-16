@@ -4,11 +4,14 @@
 #   * **Bits**: {4, 3, 2}.  3-bit is the iso-quality operating point most
 #     KV-quant papers headline on (KIVI, TurboQuant Table 1, KVTuner Fig 4),
 #     so it is the bit width readers expect to compare HayateQuant at.
-#   * **Codecs**: the two formal proposal rows ``HQ`` and ``AdaptiveHQ`` plus
-#     independent ``TurboQuant-paper``/``FibQuant-paper`` quality baselines and
-#     the rate-3-only ``BlockQuant-paper`` fixed-seed quality row.  HQ is the
-#     exact b=2 fixed split; AdaptiveHQ keeps the same total pair budget and
-#     embeds its causal selector in an existing value scale with zero added bits.
+#   * **Codecs**: the public HQ family is exactly ``HQ``, ``AdaptiveHQ``, and
+#     ``RotationHQ``.  This primary preset runs HQ/AdaptiveHQ plus independent
+#     ``TurboQuant-paper``/``FibQuant-paper`` quality baselines and the
+#     rate-3-only ``BlockQuant-paper`` fixed-seed quality row. RotationHQ is
+#     added only by its separately calibrated, complete rerun; it is never
+#     silently substituted for HQ. HQ is the exact b=2 fixed split; AdaptiveHQ
+#     keeps the same total pair budget and embeds its causal selector in an
+#     existing value scale with zero added bits.
 #   * **Models**: Llama-3.1-8B-Instruct (the TurboQuant paper headline model)
 #     plus DeepSeek-R1-Distill-Qwen-7B and -1.5B for the reasoning regime.
 #   * **Metrics**: distortion (relMSE on real-KV), WikiText-2 PPL under

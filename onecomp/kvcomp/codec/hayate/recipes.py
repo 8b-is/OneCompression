@@ -24,6 +24,10 @@ from .codec import HayateQuantCodec
 HQ_NAME = "HQ"
 HQ_ADAPTIVE_NAME = "AdaptiveHQ"
 HQ_ROTATION_NAME = "RotationHQ"
+# These are the only user-facing HayateQuant method identities.  Component
+# controls and historical spellings below remain callable for audit/recovery,
+# but must never become a fourth paper method through a default benchmark run.
+HQ_PUBLIC_METHODS = (HQ_NAME, HQ_ADAPTIVE_NAME, HQ_ROTATION_NAME)
 HQ_PAPER_AVERAGE_RATES = (2, 3, 4)
 HQ_BLOCK_SIZE = 2
 HQ_KEY_SCALE_MODE = "nc"
@@ -387,6 +391,7 @@ def hayate_adaptive_rate_variant(
 
 __all__ = [
     "HQ_NAME",
+    "HQ_PUBLIC_METHODS",
     "HQ_PAPER_AVERAGE_RATES",
     "HQ_BLOCK_SIZE",
     "HQ_KEY_SCALE_MODE",
@@ -403,6 +408,7 @@ __all__ = [
     "HQ_FRACTIONAL_2BIT_NAME",
     "HQ_ADAPTIVE_2BIT_NAME",
     "HQ_ADAPTIVE_NAME",
+    "HQ_ROTATION_NAME",
     "hayate_hq_role_rates",
     "hayate_hq_code_bits",
     "hayate_hq_kwargs",

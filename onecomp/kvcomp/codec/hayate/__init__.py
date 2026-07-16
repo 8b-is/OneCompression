@@ -35,6 +35,8 @@ from .calibration import (
 from .recipes import (
     HQ_NAME,
     HQ_ADAPTIVE_NAME,
+    HQ_ROTATION_NAME,
+    HQ_PUBLIC_METHODS,
     HQ_PAPER_AVERAGE_RATES,
     HQ_BLOCK_SIZE,
     HQ_KEY_SCALE_MODE,
@@ -65,6 +67,8 @@ __all__ = [
     "capture_kv_samples",
     "HQ_NAME",
     "HQ_ADAPTIVE_NAME",
+    "HQ_ROTATION_NAME",
+    "HQ_PUBLIC_METHODS",
     "HQ_PAPER_AVERAGE_RATES",
     "HQ_BLOCK_SIZE",
     "HQ_KEY_SCALE_MODE",

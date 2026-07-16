@@ -65,6 +65,8 @@ from onecomp.kvcomp.codec.quality_baselines import (
 from onecomp.kvcomp.codec.hayate.recipes import (
     HQ_BLOCK_SCALE_PROXY_NAME,
     HQ_FIB_INIT_PROXY_NAME,
+    HQ_PUBLIC_METHODS,
+    HQ_ROTATION_NAME,
     build_hayate_adaptive_rate,
     build_hayate_frontier,
     canonical_hayate_method_name,
@@ -189,6 +191,18 @@ _RESULT_SCHEMA_VERSION = 2
 _NON_SEMANTIC_CONFIG_KEYS = {"bits", "methods", "output_dir"}
 HQ_INCREMENTAL_CONTROL_NAME = "HQ-incremental-control"
 ADAPTIVE_HQ_FIXED_PAIR_CONTROL_NAME = "AdaptiveHQ-fixed-pair-control"
+# The generic no-filter invocation is intentionally conservative.  All of the
+# other HayateQuant spellings in ``_codecs`` are retained for explicitly named
+# development/recovery commands, but they must not leak into a default result
+# and be mistaken for extra HQ variants.
+_DEFAULT_CODEC_METHODS = frozenset(
+    {
+        "TurboQuant-paper",
+        FIBQUANT_PAPER_METHOD,
+        BLOCKQUANT_PAPER_METHOD,
+        *HQ_PUBLIC_METHODS,
+    }
+)
 
 
 def _semantic_config(cfg: DictConfig) -> dict:
@@ -888,18 +902,14 @@ def main(cfg: DictConfig):
                 raise ValueError(f"Unknown codec method(s) for {bits} bit: {missing}")
             codecs = {name: codec for name, codec in codecs.items() if name in selected}
         else:
-            # Matched controls are opt-in diagnostics.  Keeping them in the
-            # registry makes an explicit development command reproducible,
-            # but a legacy/default run must not silently grow two extra HQ
-            # variants or spend GPU time on rows that are not paper methods.
+            # Only the named public HQ family is emitted by default.  Matched
+            # controls, old operating points, and component proxies remain in
+            # the registry solely for explicit diagnostics; default output
+            # cannot silently grow additional HQ-looking variants.
             codecs = {
                 name: codec
                 for name, codec in codecs.items()
-                if name
-                not in {
-                    HQ_INCREMENTAL_CONTROL_NAME,
-                    ADAPTIVE_HQ_FIXED_PAIR_CONTROL_NAME,
-                }
+                if name in _DEFAULT_CODEC_METHODS
             }
         for name, codec in codecs.items():
             entry = {
@@ -928,6 +938,28 @@ def main(cfg: DictConfig):
                 entry.update(blockquant_quality_provenance(codec))
             elif name in FORMAL_HAYATE_METHODS:
                 entry.update(hayate_formal_provenance(name))
+            elif name == HQ_ROTATION_NAME:
+                # RotationHQ is a named public recipe, but its calibration
+                # artifact must be completed and independently rerun before
+                # it can enter a formal aggregate.  Carry that claim boundary
+                # in any explicitly requested diagnostic result instead of
+                # making an unlabelled third HQ-looking row.
+                entry.update(
+                    {
+                        "method_role": "paper_proposal_rotation_pending_calibration_rerun",
+                        "external_quality_baseline": False,
+                        "proposal_method": True,
+                        "proposal_family": "HayateQuant",
+                        "proposal_variant": "rotation_only",
+                        "paper_comparable": False,
+                        "speed_comparison": False,
+                        "formal_aggregate_eligible": False,
+                        "formal_exclusion_reason": (
+                            "requires completed content-addressed calibration "
+                            "and complete held-out rerun"
+                        ),
+                    }
+                )
             resolved_config = getattr(codec, "get_resolved_kv_config", None)
             if callable(resolved_config):
                 entry["resolved_codec_config"] = resolved_config(D)

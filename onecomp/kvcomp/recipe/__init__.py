@@ -14,7 +14,7 @@ from .thinkv import (
     auto_configure_thinkv,
     detect_outlier_layers,
 )
-from .taperkv import TaperKVPolicy
+from .taperkv import TaperKVPolicy, BlockTaperKVPolicy, BudgetTaperKVPolicy
 from .turbotaper import TurboTaperPolicy
 from .pmkvq import PMKVQPolicy
 from .rolekv import (
@@ -42,6 +42,8 @@ __all__ = [
     "auto_configure_thinkv",
     "detect_outlier_layers",
     "TaperKVPolicy",
+    "BlockTaperKVPolicy",
+    "BudgetTaperKVPolicy",
     "TurboTaperPolicy",
     "PMKVQPolicy",
     "RolePrecisionPolicy",

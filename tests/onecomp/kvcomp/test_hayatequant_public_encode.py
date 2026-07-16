@@ -11,6 +11,10 @@ from onecomp.kvcomp.codec.hayate.codec import (
     _block_lut_on,
 )
 from onecomp.kvcomp.codec.hayate.recipes import (
+    HQ_ADAPTIVE_NAME,
+    HQ_NAME,
+    HQ_PUBLIC_METHODS,
+    HQ_ROTATION_NAME,
     build_hayate_frontier,
     hayate_adaptive_rate_kwargs,
     hayate_hq_kwargs,
@@ -21,6 +25,10 @@ from onecomp.kvcomp.codec.hayate.vq import (
     quantize_to_vq_codebook,
     quantize_via_lut,
 )
+
+
+def test_public_hayate_method_family_has_exactly_three_named_variants():
+    assert HQ_PUBLIC_METHODS == (HQ_NAME, HQ_ADAPTIVE_NAME, HQ_ROTATION_NAME)
 
 
 def _main_payload(compressed, role):
