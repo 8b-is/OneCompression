@@ -69,6 +69,7 @@ from onecomp.kvcomp.codec.hayate.recipes import (
     build_hayate_frontier,
     canonical_hayate_method_name,
     hayate_frontier_kwargs,
+    hayate_hq_kwargs,
 )
 from onecomp.kvcomp.codec.hayate.formal import (
     FORMAL_HAYATE_METHODS,
@@ -582,6 +583,29 @@ def _codecs(bits, ablation=False, head_dim=128):
             )
             if _kv_asym(bits) is not None
             and _env_calibration(f"HQ_PAIR_CALIB_{bits}BIT", "HQ_PAIR_CALIB_PATH")
+            else {}
+        ),
+        # Rotation HQ keeps the fixed HQ codebook, K/V block-code budgets,
+        # scales, and exact assignment.  Its artifact may contain learned
+        # rotations only; the codec rejects a learned-codebook artifact on
+        # this explicit-code-bit path so this row cannot quietly change the
+        # fixed HQ payload recipe.
+        **(
+            (
+                {
+                    "RotationHQ": HayateQuantCodec(
+                        **hayate_hq_kwargs(
+                            bits,
+                            calibration=_env_calibration(
+                                f"HQ_ROTATION_CALIB_{bits}BIT",
+                                "HQ_ROTATION_CALIB_PATH",
+                            ),
+                        )
+                    )
+                }
+            )
+            if _kv_asym(bits) is not None
+            and _env_calibration(f"HQ_ROTATION_CALIB_{bits}BIT", "HQ_ROTATION_CALIB_PATH")
             else {}
         ),
         **(

@@ -6,9 +6,12 @@ should live here instead of being re-spelled in every runner.  That keeps the
 definition of HQ auditable and makes future single-codec candidates compare
 against the same baseline.
 
-The paper proposal has exactly two public rows: :data:`HQ_NAME` and the opt-in
-:data:`HQ_ADAPTIVE_NAME`. ``frontier`` symbols are retained as source-level
-compatibility aliases for older callers; they do not denote another method.
+The paper proposal exposes three named rows: :data:`HQ_NAME`, the causal
+allocation option :data:`HQ_ADAPTIVE_NAME`, and the separately calibrated
+rotation-only control :data:`HQ_ROTATION_NAME`.  Rotation HQ is never a
+fallback for fixed HQ: it requires its own content-addressed per-model
+artifact. ``frontier`` symbols are retained as source-level compatibility
+aliases for older callers; they do not denote another method.
 """
 
 from __future__ import annotations
@@ -20,6 +23,7 @@ from .codec import HayateQuantCodec
 
 HQ_NAME = "HQ"
 HQ_ADAPTIVE_NAME = "AdaptiveHQ"
+HQ_ROTATION_NAME = "RotationHQ"
 HQ_PAPER_AVERAGE_RATES = (2, 3, 4)
 HQ_BLOCK_SIZE = 2
 HQ_KEY_SCALE_MODE = "nc"

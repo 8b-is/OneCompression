@@ -70,6 +70,7 @@ from onecomp.kvcomp.codec.hayate.recipes import (
     hayate_fractional2_kwargs,
     hayate_fractional2_variant,
     hayate_hq_code_bits,
+    hayate_hq_kwargs,
     hayate_hq_role_rates,
     hayate_frontier_bits,
     hayate_frontier_kwargs,
@@ -2157,6 +2158,48 @@ def test_hayatequant_calibration_config_and_outlier_guard():
         HayateQuantCodec(bits=2, calibration=cal, key_n_outlier=4)
     with pytest.raises(ValueError, match="calibration must be"):
         HayateQuantCodec(bits=2, calibration=123)
+
+
+def test_hq_explicit_code_bits_support_rotation_only_calibration():
+    """Rotation HQ must retain HQ's fixed code-and-scale payload exactly."""
+
+    from onecomp.kvcomp.codec.hayate.calibration import calibrate_hayatequant
+
+    torch.manual_seed(7)
+    x = torch.randn(1, 2, 32, 128)
+    hq = build_hayate_hq(3)
+    calibration = calibrate_hayatequant(
+        hq,
+        x.reshape(-1, 128),
+        x.reshape(-1, 128),
+        learn_codebook=False,
+        steps=2,
+        batch_vectors=32,
+        max_vectors=64,
+        device="cpu",
+        seed=7,
+    )
+    assert calibration.rot and not calibration.codebook
+    assert calibration.meta["rotation_only_fixed_payload"] is True
+    assert calibration.meta["k_code_bits_per_block"] == 7
+    assert calibration.meta["v_code_bits_per_block"] == 5
+    rotation_hq = HayateQuantCodec(**hayate_hq_kwargs(3, calibration=calibration))
+    payload = rotation_hq.encode(x, x)
+    assert payload.key_q["main"]["rot"][0] == "c"
+    assert "cb_cal" not in payload.key_q["main"]
+    key, value = rotation_hq.decode(payload)
+    assert key.shape == x.shape and value.shape == x.shape
+    assert rotation_hq._stored_bits(x, 3, "k") + rotation_hq._stored_bits(
+        x, 3, "v"
+    ) == hq._stored_bits(x, 3, "k") + hq._stored_bits(x, 3, "v")
+    with pytest.raises(ValueError, match="rotation-only"):
+        calibrate_hayatequant(
+            hq,
+            x.reshape(-1, 128),
+            x.reshape(-1, 128),
+            steps=1,
+            device="cpu",
+        )
 
 
 def test_hayatequant_invalid_value_or_outlier_bits_raise():

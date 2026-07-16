@@ -1216,10 +1216,12 @@ class HayateQuantCodec(KVCodec):
                 "explicit code_bits_per_block is currently supported only "
                 "without outlier channel splits"
             )
-        if self._has_explicit_code_bits() and self.calibration is not None:
-            raise ValueError(
-                "calibration is not supported with explicit " "code_bits_per_block yet"
-            )
+        # A rotation-only calibration is compatible with the fixed HQ
+        # K/V-asymmetric block-code contract: it replaces only the orthogonal
+        # matrix and leaves the exact data-free, explicit-code-bit codebooks
+        # and every per-token code/scale field unchanged.  A learned codebook
+        # is checked fail-closed at encode time below, after a path-backed
+        # artifact has been loaded.
         if self._adaptive_bit_split_enabled() and (
             self._n_outlier_for("k") or self._n_outlier_for("v") or self.calibration is not None
         ):
@@ -1240,14 +1242,10 @@ class HayateQuantCodec(KVCodec):
                 )
             if self.block_size != 2:
                 raise ValueError("the current formal HQ codebook bundles require block_size=2")
-            if (
-                self.calibration is not None
-                or self._n_outlier_for("k")
-                or self._n_outlier_for("v")
-            ):
+            if self._n_outlier_for("k") or self._n_outlier_for("v"):
                 raise ValueError(
-                    "a required shipped codebook bundle cannot be combined with calibration "
-                    "or outlier splits"
+                    "a required shipped codebook bundle cannot be combined with "
+                    "outlier splits"
                 )
             # Canonical HQ/AdaptiveHQ must never fall through to an online fit
             # when a committed artifact is absent, corrupt, or overridden.
@@ -1576,6 +1574,16 @@ class HayateQuantCodec(KVCodec):
         xr, rot = self._rotate(xsub, m, block_size, rotation_rate, role, layer_idx=layer_idx)
         device_str = str(xsub.device)
         cal = self._calib()
+        if cal is not None and explicit_code_bits and cal.codebook:
+            raise ValueError(
+                "explicit code_bits_per_block supports rotation-only calibration; "
+                "the loaded artifact also contains learned codebooks"
+            )
+        if cal is not None and self.required_codebook_bundle is not None and cal.codebook:
+            raise ValueError(
+                "a required fixed codebook bundle supports rotation-only calibration; "
+                "the loaded artifact also contains learned codebooks"
+            )
         cb_cal = (
             cal.codebook_on(role, bits, block_size, xsub.device)
             if cal is not None and m == cal.head_dim and not explicit_code_bits

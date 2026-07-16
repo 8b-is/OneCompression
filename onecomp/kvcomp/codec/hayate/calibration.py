@@ -746,18 +746,50 @@ def calibrate_hayatequant(
         raise ValueError("calibration currently requires n_outlier=0")
     if not (learn_rotation or learn_codebook):
         raise ValueError("nothing to learn: enable learn_rotation and/or learn_codebook")
-    from .codec import _block_codebook  # local import: avoid cycle at module load
+    if learn_codebook and codec._has_explicit_code_bits():
+        raise ValueError(
+            "learned codebooks are not supported with explicit "
+            "code_bits_per_block; request rotation-only calibration"
+        )
+    from .codec import (  # local import: avoid cycle at module load
+        _block_codebook,
+        _block_codebook_by_code_bits,
+    )
 
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     gen = torch.Generator(device="cpu").manual_seed(seed)
     cal = HayateQuantCalibration(head_dim=int(key_samples.shape[-1]))
-    cal.meta = {"steps": steps, "lr": lr, "learn_rotation": learn_rotation,
-                "learn_codebook": learn_codebook}
+    cal.meta = {
+        "steps": steps,
+        "lr": lr,
+        "learn_rotation": learn_rotation,
+        "learn_codebook": learn_codebook,
+        "rotation_only_fixed_payload": bool(
+            learn_rotation and not learn_codebook and codec._has_explicit_code_bits()
+        ),
+    }
 
     for role, samples in (("k", key_samples), ("v", value_samples)):
         bits = codec.bits if role == "k" else codec._value_bits()
         d = int(samples.shape[-1])
-        block_size = resolve_block_size(bits, codec.block_size, codec.max_codebook_bits, d)
+        explicit_code_bits = codec._code_bits_override_for(role)
+        block_size = codec._resolve_block_size_for(
+            role,
+            bits,
+            d,
+            code_bits_override=explicit_code_bits,
+        )
+        code_bits = codec._code_bits_for(role, bits, block_size)
+        rotation_rate = codec._rotation_rate_for(
+            role,
+            bits,
+            block_size,
+            code_bits_override=code_bits if explicit_code_bits is not None else None,
+        )
+        cal.meta[f"{role}_block_size"] = block_size
+        cal.meta[f"{role}_code_bits_per_block"] = code_bits
+        cal.meta[f"{role}_payload_bits_per_coordinate"] = code_bits / block_size
+        cal.meta[f"{role}_base_rotation_rate"] = rotation_rate
         x = samples.reshape(-1, d).to(device=device, dtype=torch.float32)
         if x.shape[0] > max_vectors:
             sel = torch.randperm(x.shape[0], generator=gen)[:max_vectors]
@@ -765,8 +797,14 @@ def calibrate_hayatequant(
         n_hold = max(1, int(x.shape[0] * holdout_frac))
         x_hold, x_train = x[:n_hold], x[n_hold:]
 
-        w0 = _initial_rotation(codec, d, block_size, bits, device)
-        cb = _block_codebook(bits, block_size, codec.dist, d, codec.codebook_init).to(device)
+        w0 = _initial_rotation(codec, d, block_size, rotation_rate, device)
+        cb = (
+            _block_codebook_by_code_bits(
+                code_bits, block_size, codec.dist, d, codec.codebook_init
+            )
+            if explicit_code_bits is not None
+            else _block_codebook(bits, block_size, codec.dist, d, codec.codebook_init)
+        ).to(device)
         base = _distortion(x_hold, w0, cb, block_size)
         best = {"w": None, "cb": None, "dist": base, "accepted": False}
 
