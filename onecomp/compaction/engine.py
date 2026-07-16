@@ -53,8 +53,9 @@ import re
 from collections import OrderedDict
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
+from .adapters.messages import protected_prefix_count, recent_turn_start, total_text_chars
 from .compactor import (
     DEFAULT_ACTION_REGEX,
     DEFAULT_OBSERVATION_REGEX,
@@ -106,6 +107,7 @@ class RecallOutcome:
     kind: str
     obs_id: str
     message: dict
+    evicted_obs_ids: tuple[str, ...] = ()
 
 
 @dataclass
@@ -132,7 +134,8 @@ class ArcEngineConfig:
             (bodies stay in the store).  ``0`` disables eviction.
         recall_max_chars: When > 0, a full recall longer than this is
             re-injected as a head+tail window with an elision marker,
-            bounding per-recall context cost.  ``0`` = lossless.
+            bounding its observation body (the fixed recall envelope is
+            additional).  ``0`` = lossless.
         obs_id_hex_chars: Length of minted observation ids.
         action_regex: Regex extracting the action from assistant
             messages during compaction.
@@ -172,9 +175,7 @@ class ArcEngineConfig:
         for name, value in non_negative.items():
             if not isinstance(value, int) or isinstance(value, bool) or value < 0:
                 raise ValueError(f"{name} must be a non-negative integer")
-        if not isinstance(self.obs_id_hex_chars, int) or isinstance(
-            self.obs_id_hex_chars, bool
-        ):
+        if not isinstance(self.obs_id_hex_chars, int) or isinstance(self.obs_id_hex_chars, bool):
             raise ValueError("obs_id_hex_chars must be an integer between 4 and 40")
         if not 4 <= self.obs_id_hex_chars <= 40:
             raise ValueError("obs_id_hex_chars must be between 4 and 40")
@@ -202,9 +203,7 @@ def sanitize_messages(messages: list[dict]) -> list[dict]:
     rejects fields other than ``role`` / ``content`` (the original list
     — including the tags the engine relies on — stays untouched).
     """
-    return [
-        {k: v for k, v in msg.items() if k not in PRIVATE_MESSAGE_KEYS} for msg in messages
-    ]
+    return [{k: v for k, v in msg.items() if k not in PRIVATE_MESSAGE_KEYS} for msg in messages]
 
 
 class ArcEngine:
@@ -223,7 +222,7 @@ class ArcEngine:
         )
         #: obs_ids whose *full* recall body currently lives in the
         #: buffer, in LRU order (oldest first).
-        self.in_context_obs: OrderedDict[str, None] = OrderedDict()
+        self.in_context_obs: OrderedDict[str, int] = OrderedDict()
         self.compaction_log: list[dict] = []
         self.recall_log: list[dict] = []
         self.eviction_log: list[dict] = []
@@ -231,9 +230,7 @@ class ArcEngine:
         self._recalls_in_step: int = 0
 
     @classmethod
-    def from_wal(
-        cls, wal_path: str, config: Optional[ArcEngineConfig] = None
-    ) -> "ArcEngine":
+    def from_wal(cls, wal_path: str, config: Optional[ArcEngineConfig] = None) -> "ArcEngine":
         """Restore observations from ``wal_path`` and continue appending.
 
         Recall/compaction telemetry is process-local and starts empty; the step
@@ -262,9 +259,7 @@ class ArcEngine:
     # ------------------------------------------------------------------
     def system_prompt_snippet(self) -> str:
         """The recall-protocol instructions to append to the system prompt."""
-        return SYSTEM_PROMPT_RECALL_SNIPPET.format(
-            recall_per_step=self.config.recall_per_step
-        )
+        return SYSTEM_PROMPT_RECALL_SNIPPET.format(recall_per_step=self.config.recall_per_step)
 
     # ------------------------------------------------------------------
     # Step lifecycle
@@ -313,7 +308,7 @@ class ArcEngine:
         if not isinstance(returncode, int) or isinstance(returncode, bool):
             raise ValueError("returncode must be an integer")
         return self.store.put(
-            cmd_signature=normalise_cmd_signature(command),
+            cmd_signature=normalise_cmd_signature(command, max_chars=None),
             full_content=content,
             returncode=returncode,
             created_step=self._step,
@@ -412,8 +407,12 @@ class ArcEngine:
                 tail_chars=self.config.citation_tail_chars,
             )
 
-        message: dict = {"role": "user", "content": content, "_obs_id": rec.obs_id,
-                         "_is_recall": True}
+        message: dict = {
+            "role": "user",
+            "content": content,
+            "_obs_id": rec.obs_id,
+            "_is_recall": True,
+        }
         if kind == "recall_meta":
             message["_is_recall_meta"] = True
         messages.append(message)
@@ -427,16 +426,23 @@ class ArcEngine:
                 "cmd_signature": rec.cmd_signature,
                 "n_recalls": rec.n_recalls,
                 "action": action,
+                "injected_chars": len(content),
             }
         )
 
+        evicted_obs_ids: list[str] = []
         if kind == "recall":
             # A metadata preview never evicts a full recall the LLM may
             # still need, so only full recalls touch the LRU.
-            self._touch_in_context(rec.obs_id)
-            self._evict_over_recall_budget(messages)
+            self._touch_in_context(rec.obs_id, len(content))
+            evicted_obs_ids = self._evict_over_recall_budget(messages)
 
-        return RecallOutcome(kind=kind, obs_id=rec.obs_id, message=message)
+        return RecallOutcome(
+            kind=kind,
+            obs_id=rec.obs_id,
+            message=message,
+            evicted_obs_ids=tuple(evicted_obs_ids),
+        )
 
     def find_prior_executions(self, command: str) -> list[ObsRecord]:
         """Records previously produced by an equivalent command.
@@ -445,12 +451,14 @@ class ArcEngine:
         the LLM re-runs a command whose result is already stored, and
         e.g. log it or hint at ``_recall`` instead.
         """
-        return self.store.find_by_signature(normalise_cmd_signature(command))
+        return self.store.find_by_signature(normalise_cmd_signature(command, max_chars=None))
 
     # ------------------------------------------------------------------
     # Touchpoint 3: compaction
     # ------------------------------------------------------------------
-    def compact(self, messages: list[dict], *, summary_max_chars: Optional[int] = None) -> list[dict]:
+    def compact(
+        self, messages: list[dict], *, summary_max_chars: Optional[int] = None
+    ) -> list[dict]:
         """Compact ``messages`` with the ARC citation-rich operator.
 
         Call on a context-window overflow (reactive) or ahead of one
@@ -467,7 +475,14 @@ class ArcEngine:
         ):
             raise ValueError("summary_max_chars must be a non-negative integer or None")
         cap = self.config.summary_max_chars if summary_max_chars is None else summary_max_chars
-        before = len(messages)
+        compacted = self._compact_once(messages, cap)
+        if compacted is messages:
+            return messages  # nothing to compact — keep the log clean
+        self._record_compaction(messages, compacted, cap)
+        return compacted
+
+    def _compact_once(self, messages: list[dict], cap: int) -> list[dict]:
+        """Run the pure ARC operator without mutating engine bookkeeping."""
         compacted = compact_messages_arc(
             messages,
             obs_store=self.store,
@@ -480,25 +495,39 @@ class ArcEngine:
             citation_tail_chars=self.config.citation_tail_chars,
             summary_max_chars=cap,
         )
-        if compacted is messages:
-            return messages  # nothing to compact — keep the log clean
-        evicted = self._sync_in_context(compacted)
-        self.compaction_log.append(
-            {
-                "step": self._step,
-                "before": before,
-                "after": len(compacted),
-                "summary_max_chars": cap,
-                "obs_store_size": self.store.n_records,
-                "in_context_obs": list(self.in_context_obs.keys()),
-                "evicted_by_compaction": evicted,
-            }
-        )
         return compacted
 
-    #: Chars reserved for the summary header, elision note, and entry
-    #: separators when deriving a summary cap from a total-chars budget.
-    _SUMMARY_MARGIN_CHARS = 400
+    def _record_compaction(
+        self,
+        messages: list[dict],
+        compacted: list[dict],
+        cap: int,
+        *,
+        token_counts: Optional[tuple[int, int, int]] = None,
+    ) -> None:
+        """Commit LRU/telemetry state for one selected compacted history."""
+        evicted = self._sync_in_context(compacted)
+        entry = {
+            "step": self._step,
+            "before": len(messages),
+            "after": len(compacted),
+            "before_chars": _total_chars(messages),
+            "after_chars": _total_chars(compacted),
+            "summary_max_chars": cap,
+            "obs_store_size": self.store.n_records,
+            "in_context_obs": list(self.in_context_obs.keys()),
+            "evicted_by_compaction": evicted,
+        }
+        if token_counts is not None:
+            before_tokens, after_tokens, max_tokens = token_counts
+            entry.update(
+                {
+                    "before_tokens": before_tokens,
+                    "after_tokens": after_tokens,
+                    "max_tokens": max_tokens,
+                }
+            )
+        self.compaction_log.append(entry)
 
     def enforce_char_budget(self, messages: list[dict], max_chars: int) -> list[dict]:
         """Shrink ``messages`` until its total content length fits ``max_chars``.
@@ -530,26 +559,100 @@ class ArcEngine:
         # ``recall_max_chars`` instead.)
         while len(self.in_context_obs) > 1 and _total_chars(msgs) > max_chars:
             evict_id = next(iter(self.in_context_obs))
-            self._replace_recall_with_placeholder(evict_id, msgs)
+            replaced = self._replace_recall_with_placeholder(evict_id, msgs)
             self.in_context_obs.pop(evict_id, None)
+            if not replaced:
+                self.eviction_log.append(
+                    {"step": self._step, "obs_id": evict_id, "reason": "budget_external"}
+                )
 
-        keep = self.config.keep_recent * 2
-        for attempt in range(8):
-            if _total_chars(msgs) <= max_chars:
-                break
-            head = msgs[:2]
-            tail = msgs[len(msgs) - keep :] if keep else []
-            overhead = sum(len(m.get("content", "") or "") for m in (*head, *tail))
-            cap = max(200, (max_chars - overhead - self._SUMMARY_MARGIN_CHARS) >> attempt)
-            compacted = self.compact(msgs, summary_max_chars=cap)
-            if compacted is msgs:
-                break  # nothing left to compact
-            if _total_chars(compacted) < _total_chars(msgs):
+        if _total_chars(msgs) > max_chars:
+            prefix_count = protected_prefix_count(msgs)
+            body = msgs[prefix_count:]
+            tail_start = recent_turn_start(body, self.config.keep_recent)
+            head = msgs[:prefix_count]
+            tail = body[tail_start:]
+            overhead = _total_chars([*head, *tail])
+            # The pure compactor guarantees that the summary itself is no
+            # longer than this cap.  Allocate the exact remaining character
+            # budget instead of relying on a fixed safety margin and a
+            # bounded retry count.  ``1`` is the representable floor because
+            # summary_max_chars=0 means "unbounded" in the public API.
+            cap = max(1, max_chars - overhead)
+            compacted = self._compact_once(msgs, cap)
+            if compacted is not msgs and _total_chars(compacted) < _total_chars(msgs):
+                before_compaction = msgs
                 msgs = compacted
-            elif cap <= 200:
-                break  # cap already at the floor and nothing shrank
-            # else: keep msgs; the next attempt derives a smaller cap.
+                self._record_compaction(before_compaction, msgs, cap)
         return msgs
+
+    def enforce_token_budget(
+        self,
+        messages: list[dict],
+        max_tokens: int,
+        count_tokens: Callable[[list[dict]], int],
+    ) -> list[dict]:
+        """Compact using a caller-supplied exact provider token counter.
+
+        Tokenization and image/tool overhead differ between OpenAI, Anthropic,
+        OpenHands model backends, and local tokenizers.  The core therefore
+        accepts the host's authoritative counter rather than pretending a
+        character ratio is exact.  Private ARC keys are stripped before each
+        count, matching the payload sent to strict provider APIs.
+
+        The method is best-effort only when the immutable prompt prefix plus
+        live tail already exceed ``max_tokens``.
+        """
+        if not isinstance(max_tokens, int) or isinstance(max_tokens, bool) or max_tokens < 0:
+            raise ValueError("max_tokens must be a non-negative integer")
+        if not callable(count_tokens):
+            raise ValueError("count_tokens must be callable")
+
+        def _count(candidate: list[dict]) -> int:
+            value = count_tokens(sanitize_messages(candidate))
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise ValueError("count_tokens must return a non-negative integer")
+            return value
+
+        msgs = list(messages)
+        before_tokens = _count(msgs)
+        if before_tokens <= max_tokens:
+            return msgs
+
+        while len(self.in_context_obs) > 1 and _count(msgs) > max_tokens:
+            evict_id = next(iter(self.in_context_obs))
+            replaced = self._replace_recall_with_placeholder(evict_id, msgs)
+            self.in_context_obs.pop(evict_id, None)
+            if not replaced:
+                self.eviction_log.append(
+                    {"step": self._step, "obs_id": evict_id, "reason": "budget_external"}
+                )
+
+        best = msgs
+        best_tokens = _count(best)
+        best_cap: Optional[int] = None
+        cap = self.config.summary_max_chars or max(_total_chars(msgs), 1)
+        while True:
+            candidate = self._compact_once(msgs, cap)
+            if candidate is msgs:
+                break
+            candidate_tokens = _count(candidate)
+            if candidate_tokens < best_tokens:
+                best, best_tokens, best_cap = candidate, candidate_tokens, cap
+            if candidate_tokens <= max_tokens:
+                break
+            if cap <= 1:
+                break
+            cap = max(1, cap // 2)
+
+        if best is not msgs and best_cap is not None:
+            self._record_compaction(
+                msgs,
+                best,
+                best_cap,
+                token_counts=(before_tokens, best_tokens, max_tokens),
+            )
+        return best
 
     # ------------------------------------------------------------------
     # Persistence
@@ -595,38 +698,46 @@ class ArcEngine:
         limit = self.config.recall_max_chars
         if limit <= 0 or len(content) <= limit:
             return content, 0
-        head_n = limit // 2
-        tail_n = limit - head_n
-        elided = len(content) - head_n - tail_n
-        marker = (
-            f"\n\n... [recall windowed: {elided} chars elided from the middle to "
-            f"cap context re-expansion. The full body is still stored verbatim — "
-            f"re-run the original command if you need the elided region.] ...\n\n"
+        marker_template = (
+            "\n\n... [recall windowed: {elided} chars elided; full body remains "
+            "in the ARC store] ...\n\n"
         )
+        # Solve once for marker length, then allocate the remaining budget
+        # equally to head and tail.  The returned body never exceeds the
+        # configured limit (the XML envelope is accounted separately in
+        # recall telemetry).
+        marker = marker_template.format(elided=len(content))
+        payload = max(0, limit - len(marker))
+        head_n = payload // 2
+        tail_n = payload - head_n
+        elided = len(content) - head_n - tail_n
+        marker = marker_template.format(elided=elided)
+        if len(marker) >= limit:
+            return marker[:limit], len(content)
         return content[:head_n] + marker + content[-tail_n:], elided
 
-    def _touch_in_context(self, obs_id: str) -> None:
+    def _touch_in_context(self, obs_id: str, rendered_chars: int) -> None:
         self.in_context_obs.pop(obs_id, None)
-        self.in_context_obs[obs_id] = None
+        self.in_context_obs[obs_id] = rendered_chars
 
-    def _evict_over_recall_budget(self, messages: list[dict]) -> None:
+    def _evict_over_recall_budget(self, messages: list[dict]) -> list[str]:
         budget = self.config.recall_budget_chars
         if budget <= 0:
-            return
+            return []
 
-        def total_chars() -> int:
-            return sum(
-                self.store.get(oid).char_count
-                for oid in self.in_context_obs
-                if self.store.has(oid)
-            )
-
-        while len(self.in_context_obs) > 1 and total_chars() > budget:
+        evicted: list[str] = []
+        while len(self.in_context_obs) > 1 and sum(self.in_context_obs.values()) > budget:
             evict_id = next(iter(self.in_context_obs))
-            self._replace_recall_with_placeholder(evict_id, messages)
+            replaced = self._replace_recall_with_placeholder(evict_id, messages)
             self.in_context_obs.pop(evict_id, None)
+            if not replaced:
+                self.eviction_log.append(
+                    {"step": self._step, "obs_id": evict_id, "reason": "budget_external"}
+                )
+            evicted.append(evict_id)
+        return evicted
 
-    def _replace_recall_with_placeholder(self, obs_id: str, messages: list[dict]) -> None:
+    def _replace_recall_with_placeholder(self, obs_id: str, messages: list[dict]) -> bool:
         """Collapse every live recall message for ``obs_id`` into a single
         placeholder (mutates ``messages``).
 
@@ -640,7 +751,7 @@ class ArcEngine:
             if m.get("_obs_id") == obs_id and m.get("_is_recall") and not m.get("_is_evicted")
         ]
         if not indices:
-            return
+            return False
         placeholder = (
             f"\u00a7{obs_id} (evicted from working set — issue "
             f"`_recall \u00a7{obs_id}` to re-load)"
@@ -655,6 +766,7 @@ class ArcEngine:
         for i in reversed(indices[1:]):
             del messages[i]
         self.eviction_log.append({"step": self._step, "obs_id": obs_id, "reason": "budget"})
+        return True
 
     def _sync_in_context(self, messages: list[dict]) -> list[str]:
         """Drop LRU entries whose messages no longer exist after compaction.
@@ -674,4 +786,4 @@ class ArcEngine:
 
 
 def _total_chars(messages: list[dict]) -> int:
-    return sum(len(m.get("content", "") or "") for m in messages)
+    return total_text_chars(messages)

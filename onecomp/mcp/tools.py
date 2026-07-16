@@ -17,11 +17,12 @@ Author: Yuma Ichikawa
 # pylint: disable=too-many-arguments, too-many-positional-arguments
 import os
 from dataclasses import dataclass
+from math import isfinite
 from typing import Any, Dict, List, Optional
 
+from ..utils.vram_estimator import effective_bits_per_param
 from .compaction_tools import build_compaction_tools
 from .protocol import ToolDefinition
-from ..utils.vram_estimator import effective_bits_per_param
 
 _BYTES_PER_GB = 1e9
 _FP16_BITS = 16.0
@@ -78,6 +79,7 @@ def load_model_profile(model_id: str) -> ModelProfile:
     operator sets ``ONECOMP_MCP_TRUST_REMOTE_CODE=1`` (``model_id`` comes
     from the calling agent and must be treated as untrusted input).
     """
+    _non_empty_string("model_id", model_id)
     import torch  # pylint: disable=import-outside-toplevel
     from transformers import (  # pylint: disable=import-outside-toplevel
         AutoConfig,
@@ -163,6 +165,11 @@ def estimate_memory(
         Dict with ``num_params``, ``weight_gb``, ``kv_cache_gb``,
         ``total_gb``, and the config facts used for the estimate.
     """
+    _non_empty_string("model_id", model_id)
+    if wbits is not None:
+        _bounded_positive_number("wbits", wbits, maximum=16)
+    _positive_int("context_len", context_len)
+    _positive_int("batch_size", batch_size)
     profile = load_model_profile(model_id)
     weights = _weight_memory_gb(profile.num_params, wbits, _DEFAULT_GROUPSIZE)
     kv_gb = _kv_cache_gb(profile, context_len, batch_size)
@@ -221,6 +228,11 @@ def recommend_recipe(
         ``kv_cache_precision``, the memory estimates, and a
         ``rationale`` string explaining the decision.
     """
+    _non_empty_string("model_id", model_id)
+    _positive_finite("total_vram_gb", total_vram_gb)
+    _positive_int("context_len", context_len)
+    if target not in {"quality", "memory"}:
+        raise ValueError("target must be 'quality' or 'memory'")
     profile = load_model_profile(model_id)
     budget_gb = total_vram_gb * _VRAM_RATIO
 
@@ -306,6 +318,16 @@ def quantize(
     Returns:
         Dict with the effective settings and the save directory.
     """
+    _non_empty_string("model_id", model_id)
+    _non_empty_string("save_dir", save_dir)
+    if wbits is not None:
+        _bounded_positive_number("wbits", wbits, maximum=16)
+    if total_vram_gb is not None:
+        _positive_finite("total_vram_gb", total_vram_gb)
+    if not isinstance(qep, bool):
+        raise ValueError("qep must be a boolean")
+    if not isinstance(evaluate, bool):
+        raise ValueError("evaluate must be a boolean")
     from ..runner import Runner  # pylint: disable=import-outside-toplevel
 
     Runner.auto_run(
@@ -342,6 +364,8 @@ def evaluate(model_dir: str, num_samples: int = 16) -> Dict[str, Any]:
     Returns:
         Dict with ``perplexity`` and the evaluation settings.
     """
+    _non_empty_string("model_dir", model_dir)
+    _positive_int("num_samples", num_samples)
     # pylint: disable=import-outside-toplevel
     from ..quantized_model_loader import QuantizedModelLoader
     from ..utils import calculate_perplexity
@@ -354,6 +378,36 @@ def evaluate(model_dir: str, num_samples: int = 16) -> Dict[str, Any]:
         "num_samples": num_samples,
         "dataset": "wikitext-2-raw-v1",
     }
+
+
+def _non_empty_string(name: str, value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{name} must be a non-empty string")
+    return value
+
+
+def _positive_int(name: str, value: Any) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise ValueError(f"{name} must be a positive integer")
+    return value
+
+
+def _positive_finite(name: str, value: Any) -> float:
+    if (
+        not isinstance(value, (int, float))
+        or isinstance(value, bool)
+        or not isfinite(float(value))
+        or value <= 0
+    ):
+        raise ValueError(f"{name} must be a positive finite number")
+    return float(value)
+
+
+def _bounded_positive_number(name: str, value: Any, *, maximum: float) -> float:
+    number = _positive_finite(name, value)
+    if number > maximum:
+        raise ValueError(f"{name} must be at most {maximum:g}")
+    return number
 
 
 _KV_PRECISION_CHOICES = ("auto", "fp16", "fp8")

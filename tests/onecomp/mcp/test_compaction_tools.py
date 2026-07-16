@@ -101,6 +101,21 @@ def test_record_flags_long_observations():
     assert long["char_count"] == 5000
 
 
+def test_parallel_observations_can_share_one_explicit_step():
+    sid = _start()
+    assert ct.compaction_begin_step(sid)["step"] == 1
+    first = ct.compaction_record_observation(sid, "tool a", "a", advance_step=False)
+    second = ct.compaction_record_observation(sid, "tool b", "b", advance_step=False)
+    assert first["obs_id"] != second["obs_id"]
+    assert ct.compaction_session_stats(sid)["step"] == 1
+
+
+def test_record_rejects_non_boolean_advance_step():
+    sid = _start()
+    with pytest.raises(ValueError, match="advance_step"):
+        ct.compaction_record_observation(sid, "tool", "output", advance_step=1)
+
+
 def test_compact_messages_produces_citations_and_recall_roundtrip():
     sid = _start()
     big = "SECRET=abc123\n" + "noise\n" * 800
@@ -109,7 +124,11 @@ def test_compact_messages_produces_citations_and_recall_roundtrip():
         {"role": "system", "content": "sys"},
         {"role": "user", "content": "task"},
         {"role": "assistant", "content": "```bash\ncat data.log\n```"},
-        {"role": "user", "content": f"<output>\n{big}\n</output>", "_obs_id": rec["obs_id"]},
+        {
+            "role": "user",
+            "content": f"<output>\n{big}\n</output>",
+            "_obs_id": rec["obs_id"],
+        },
         {"role": "assistant", "content": "```bash\necho done\n```"},
         {"role": "user", "content": "<output>\ndone\n</output>"},
     ]
@@ -136,7 +155,9 @@ def test_compact_messages_with_char_budget():
         {"role": "user", "content": "task"},
     ]
     for i in range(6):
-        rec = ct.compaction_record_observation(sid, command=f"cat p{i}", content=f"c{i} " * 800)
+        rec = ct.compaction_record_observation(
+            sid, command=f"cat p{i}", content=f"c{i} " * 800
+        )
         messages.append({"role": "assistant", "content": f"```bash\ncat p{i}\n```"})
         messages.append(
             {"role": "user", "content": f"c{i} " * 800, "_obs_id": rec["obs_id"]}
@@ -145,11 +166,33 @@ def test_compact_messages_with_char_budget():
     assert out["total_chars"] <= 6000
 
 
-def test_compact_messages_rejects_unsupported_content_shape():
+def test_compact_messages_accepts_provider_content_blocks():
     sid = _start()
     messages = [{"role": "user", "content": [{"type": "text", "text": "x"}]}]
-    with pytest.raises(ValueError, match=r"messages\[0\]\.content"):
-        ct.compaction_compact_messages(sid, messages)
+    out = ct.compaction_compact_messages(sid, messages)
+    assert out["total_chars"] == 1
+
+
+def test_compact_messages_accepts_openai_responses_items_without_roles():
+    sid = _start()
+    rec = ct.compaction_record_observation(
+        sid, command="shell({})", content="RESPONSES-MCP\n" + "r" * 4000
+    )
+    messages = [
+        {"role": "developer", "content": "instructions"},
+        {"role": "user", "content": "task"},
+        {"type": "function_call", "call_id": "c1", "name": "shell", "arguments": "{}"},
+        {
+            "type": "function_call_output",
+            "call_id": "c1",
+            "output": "RESPONSES-MCP\n" + "r" * 4000,
+            "_obs_id": rec["obs_id"],
+        },
+        {"type": "message", "role": "assistant", "content": "recent"},
+        {"role": "user", "content": "recent result"},
+    ]
+    out = ct.compaction_compact_messages(sid, messages)
+    assert f"§{rec['obs_id']}" in out["messages"][2]["content"]
 
 
 def test_handle_action_passthrough_and_errors():
@@ -175,7 +218,10 @@ def test_verify_value_guard():
         sid, command="cat log2", content="noise\ntrace-key: TR-REAL42\nnoise"
     )
     assert ct.compaction_verify_value(sid, "TR-REAL42")["seen"] is True
-    assert ct.compaction_verify_value(sid, "TR-REAL42", prefix="trace-key: ")["seen"] is True
+    assert (
+        ct.compaction_verify_value(sid, "TR-REAL42", prefix="trace-key: ")["seen"]
+        is True
+    )
     missing = ct.compaction_verify_value(sid, "TR-GUESSED", prefix="trace-key: ")
     assert missing["seen"] is False
     assert missing["candidate_obs_ids"]
@@ -184,7 +230,9 @@ def test_verify_value_guard():
 
 def test_recall_budget_enforced_across_calls_and_reset_by_step_boundary():
     sid = ct.compaction_start_session(recall_per_step=1)["session_id"]
-    obs_id = ct.compaction_record_observation(sid, command="cat x", content="z" * 900)["obs_id"]
+    obs_id = ct.compaction_record_observation(sid, command="cat x", content="z" * 900)[
+        "obs_id"
+    ]
 
     # 1st recall within budget; 2nd (no step boundary in between) exceeds it.
     assert ct.compaction_recall(sid, obs_id)["found"] is True
@@ -201,11 +249,56 @@ def test_recall_budget_enforced_across_calls_and_reset_by_step_boundary():
     assert ct.compaction_recall(sid, obs_id)["found"] is True
 
 
+def test_mcp_recall_reports_external_eviction_instructions():
+    sid = ct.compaction_start_session(recall_per_step=10, recall_budget_chars=1500)[
+        "session_id"
+    ]
+    first = ct.compaction_record_observation(sid, command="one", content="A" * 1000)[
+        "obs_id"
+    ]
+    second = ct.compaction_record_observation(sid, command="two", content="B" * 1000)[
+        "obs_id"
+    ]
+    assert ct.compaction_recall(sid, first)["evicted_obs_ids"] == []
+    recalled = ct.compaction_recall(sid, second)
+    assert recalled["evicted_obs_ids"] == [first]
+
+
+def test_bounded_observation_index_pages_newest_first():
+    sid = _start()
+    ids = [
+        ct.compaction_record_observation(sid, command=f"c{i}", content=str(i))["obs_id"]
+        for i in range(5)
+    ]
+    page = ct.compaction_list_observations(sid, limit=2)
+    assert [entry["obs_id"] for entry in page["observations"]] == ids[-2:][::-1]
+    assert page["next_cursor"] == 2
+
+
+def test_observation_index_filters_by_command_path():
+    sid = _start()
+    wanted = ct.compaction_record_observation(
+        sid, command="inspect src/special_target.py", content="wanted"
+    )
+    ct.compaction_record_observation(
+        sid, command="inspect logs/other.log", content="other"
+    )
+    page = ct.compaction_list_observations(sid, query="SPECIAL_target")
+    assert page["total"] == 1
+    assert page["observations"][0]["obs_id"] == wanted["obs_id"]
+
+
+def test_observation_index_rejects_non_string_query():
+    sid = _start()
+    with pytest.raises(ValueError, match="query"):
+        ct.compaction_list_observations(sid, query=1)
+
+
 def test_tools_registered_in_build_tools():
     names = {t.name for t in build_tools()}
     expected = {t.name for t in build_compaction_tools()}
     assert expected <= names
-    assert len(expected) == 9
+    assert len(expected) == 10
 
 
 def _rpc(server_input: str) -> list[dict]:
@@ -220,8 +313,12 @@ def test_end_to_end_over_jsonrpc_stdio():
         {"jsonrpc": "2.0", "id": 1, "method": "initialize"},
         {"jsonrpc": "2.0", "method": "notifications/initialized"},
         {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
-        {"jsonrpc": "2.0", "id": 3, "method": "tools/call",
-         "params": {"name": "compaction_start_session", "arguments": {}}},
+        {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {"name": "compaction_start_session", "arguments": {}},
+        },
     ]
     responses = _rpc("\n".join(json.dumps(l) for l in lines) + "\n")
     assert responses[0]["result"]["serverInfo"]["name"] == "onecomp"
@@ -232,19 +329,34 @@ def test_end_to_end_over_jsonrpc_stdio():
     sid = body["session_id"]
 
     lines2 = [
-        {"jsonrpc": "2.0", "id": 4, "method": "tools/call",
-         "params": {"name": "compaction_record_observation",
-                    "arguments": {"session_id": sid, "command": "cat x",
-                                  "content": "NEEDLE=42\n" + "n\n" * 600}}},
+        {
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "tools/call",
+            "params": {
+                "name": "compaction_record_observation",
+                "arguments": {
+                    "session_id": sid,
+                    "command": "cat x",
+                    "content": "NEEDLE=42\n" + "n\n" * 600,
+                },
+            },
+        },
     ]
     responses2 = _rpc("\n".join(json.dumps(l) for l in lines2) + "\n")
     rec = json.loads(responses2[0]["result"]["content"][0]["text"])
     assert rec["will_be_cited"] is True
 
     lines3 = [
-        {"jsonrpc": "2.0", "id": 5, "method": "tools/call",
-         "params": {"name": "compaction_recall",
-                    "arguments": {"session_id": sid, "obs_id": rec["obs_id"]}}},
+        {
+            "jsonrpc": "2.0",
+            "id": 5,
+            "method": "tools/call",
+            "params": {
+                "name": "compaction_recall",
+                "arguments": {"session_id": sid, "obs_id": rec["obs_id"]},
+            },
+        },
     ]
     responses3 = _rpc("\n".join(json.dumps(l) for l in lines3) + "\n")
     recalled = json.loads(responses3[0]["result"]["content"][0]["text"])

@@ -21,6 +21,8 @@ def resolve_store_group_codes(code_bits: int, n_key_blocks: int) -> int:
     if mode == "auto":
         if code_bits == 8:
             return 64 if n_key_blocks <= 64 else 128
+        if n_key_blocks < 4:
+            raise ValueError("6-bit Hayate key packing requires at least 4 key VQ blocks")
         if n_key_blocks >= 128:
             return 128
         if n_key_blocks >= 64:

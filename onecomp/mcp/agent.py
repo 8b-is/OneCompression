@@ -21,6 +21,7 @@ Author: Yuma Ichikawa
 # pylint: disable=too-many-instance-attributes
 from dataclasses import dataclass, field
 from logging import getLogger
+from math import isfinite
 from typing import Callable, List, Optional, Tuple
 
 from . import tools
@@ -52,6 +53,29 @@ class AutoCompressConfig:
     wbits_candidates: Tuple[int, ...] = (8, 6, 5, 4, 3, 2)
     context_len: int = 4096
     baseline_ppl: Optional[float] = None
+
+    def __post_init__(self) -> None:
+        _positive_finite("target_vram_gb", self.target_vram_gb)
+        _non_negative_finite("max_ppl_increase_pct", self.max_ppl_increase_pct)
+        if not isinstance(self.max_trials, int) or isinstance(self.max_trials, bool):
+            raise ValueError("max_trials must be a positive integer")
+        if self.max_trials <= 0:
+            raise ValueError("max_trials must be a positive integer")
+        if not isinstance(self.context_len, int) or isinstance(self.context_len, bool):
+            raise ValueError("context_len must be a positive integer")
+        if self.context_len <= 0:
+            raise ValueError("context_len must be a positive integer")
+        if not isinstance(self.wbits_candidates, tuple) or not self.wbits_candidates:
+            raise ValueError("wbits_candidates must be a non-empty tuple")
+        if any(
+            not isinstance(bits, int) or isinstance(bits, bool) or not 1 <= bits <= 16
+            for bits in self.wbits_candidates
+        ):
+            raise ValueError("wbits_candidates must contain integers between 1 and 16")
+        if tuple(sorted(set(self.wbits_candidates), reverse=True)) != self.wbits_candidates:
+            raise ValueError("wbits_candidates must be unique and strictly descending")
+        if self.baseline_ppl is not None:
+            _positive_finite("baseline_ppl", self.baseline_ppl)
 
 
 @dataclass
@@ -128,6 +152,10 @@ class AutoCompressionAgent:
                 provides the initial bit-width for the search.
                 Defaults to :func:`onecomp.mcp.tools.recommend_recipe`.
         """
+        if not isinstance(model_id, str) or not model_id.strip():
+            raise ValueError("model_id must be a non-empty string")
+        if not isinstance(config, AutoCompressConfig):
+            raise ValueError("config must be an AutoCompressConfig")
         self.model_id = model_id
         self.config = config
         self._quantize_fn = quantize_fn if quantize_fn is not None else self._default_quantize
@@ -185,7 +213,10 @@ class AutoCompressionAgent:
         snaps it to the closest candidate not exceeding it.
         """
         candidates = self.config.wbits_candidates
-        recommended = self._recommend_fn(self.model_id, self.config.target_vram_gb)
+        recommended = _positive_finite(
+            "recommended wbits",
+            self._recommend_fn(self.model_id, self.config.target_vram_gb),
+        )
         for idx, bits in enumerate(candidates):
             if bits <= recommended:
                 return idx
@@ -208,6 +239,8 @@ class AutoCompressionAgent:
             trial with the smallest estimated memory, or ``None`` if no
             trial satisfied the constraints.
         """
+        if not isinstance(save_dir, str) or not save_dir.strip():
+            raise ValueError("save_dir must be a non-empty string")
         config = self.config
         candidates = config.wbits_candidates
 
@@ -215,6 +248,7 @@ class AutoCompressionAgent:
         if baseline is None:
             baseline = self._baseline_fn(self.model_id)
             logger.info("Measured FP16 baseline perplexity: %.4f", baseline)
+        baseline = _positive_finite("baseline perplexity", baseline)
 
         trials: List[TrialResult] = []
         tried = {}
@@ -227,10 +261,12 @@ class AutoCompressionAgent:
                 break
 
             try:
-                est_gb = self._estimate_fn(self.model_id, bits)
+                est_gb = _non_negative_finite(
+                    "estimated memory", self._estimate_fn(self.model_id, bits)
+                )
                 trial_dir = f"{save_dir}-w{bits}"
                 self._quantize_fn(self.model_id, trial_dir, bits)
-                ppl = self._evaluate_fn(trial_dir)
+                ppl = _positive_finite("perplexity", self._evaluate_fn(trial_dir))
             except Exception as exc:  # pylint: disable=broad-except
                 logger.exception("Trial at %d-bit failed; stopping the search", bits)
                 trial_error = f"{type(exc).__name__}: {exc}"
@@ -336,3 +372,25 @@ def simulate_ppl_increase(wbits: int) -> float:
     a few percent at 4-bit, and rapidly growing below 3-bit.
     """
     return 100.0 * 0.45 / (2.0 ** (wbits - 2))
+
+
+def _positive_finite(name: str, value: float) -> float:
+    if (
+        not isinstance(value, (int, float))
+        or isinstance(value, bool)
+        or not isfinite(float(value))
+        or value <= 0
+    ):
+        raise ValueError(f"{name} must be a positive finite number")
+    return float(value)
+
+
+def _non_negative_finite(name: str, value: float) -> float:
+    if (
+        not isinstance(value, (int, float))
+        or isinstance(value, bool)
+        or not isfinite(float(value))
+        or value < 0
+    ):
+        raise ValueError(f"{name} must be a non-negative finite number")
+    return float(value)

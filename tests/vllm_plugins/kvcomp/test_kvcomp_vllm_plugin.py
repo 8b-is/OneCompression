@@ -224,6 +224,12 @@ def test_hayate_store_group_codes_rejects_invalid_inputs(monkeypatch):
         resolve_store_group_codes(8, 64)
 
 
+def test_hayate_six_bit_auto_rejects_too_few_blocks(monkeypatch):
+    monkeypatch.delenv("KVCOMP_VLLM_HAYATE_STORE_GROUP_CODES", raising=False)
+    with pytest.raises(ValueError, match="at least 4"):
+        resolve_store_group_codes(6, 3)
+
+
 def test_plan_for_model_hayatequant_strict_mode_requires_custom_backend(tmp_path, monkeypatch):
     codec = HayateQuantCodec(bits=3, block_size=4)
     model_path = _write_model_config(tmp_path, {"codec": codec.get_kv_config()})

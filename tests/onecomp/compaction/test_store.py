@@ -1,5 +1,10 @@
 """Tests for onecomp.compaction.store."""
 
+import stat
+
+import pytest
+
+from onecomp.compaction import store as store_module
 from onecomp.compaction.store import ObsStore
 
 
@@ -85,6 +90,20 @@ def test_wal_roundtrip(tmp_path):
     assert restored.get(rec2.obs_id).full_content == "hello world"
 
 
+def test_wal_is_owner_only(tmp_path):
+    wal = tmp_path / "private.wal"
+    with ObsStore(wal_path=wal) as store:
+        store.put(cmd_signature="cat sensitive", full_content="secret")
+    assert stat.S_IMODE(wal.stat().st_mode) == 0o600
+
+
+def test_wal_path_rejects_invalid_types():
+    with pytest.raises(ValueError, match="wal_path"):
+        ObsStore(wal_path=True)
+    with pytest.raises(ValueError, match="wal_path"):
+        ObsStore(wal_path="")
+
+
 def test_wal_replay_skips_truncated_line(tmp_path):
     wal = tmp_path / "crash.wal"
     store = ObsStore(wal_path=wal)
@@ -132,9 +151,37 @@ def test_from_wal_missing_file_returns_empty_store(tmp_path):
 
 
 def test_obs_id_hex_chars_validation():
-    import pytest
-
     with pytest.raises(ValueError):
         ObsStore(obs_id_hex_chars=3)
     with pytest.raises(ValueError):
         ObsStore(obs_id_hex_chars=41)
+
+
+def test_collision_extended_id_remains_idempotent(monkeypatch):
+    def fake_mint(_cmd, content, *, hex_chars=8):
+        suffix = "1" * 32 if content == "first" else "2" * 32
+        return ("deadbeef" + suffix)[:hex_chars]
+
+    monkeypatch.setattr(store_module, "_mint_obs_id", fake_mint)
+    store = ObsStore(obs_id_hex_chars=8)
+    first = store.put(cmd_signature="cmd", full_content="first")
+    second = store.put(cmd_signature="cmd", full_content="second")
+    repeated = store.put(cmd_signature="cmd", full_content="second")
+    assert first.obs_id == "deadbeef"
+    assert len(second.obs_id) == 12
+    assert repeated is second
+    assert store.n_records == 2
+
+
+@pytest.mark.parametrize(
+    "kwargs,match",
+    [
+        ({"cmd_signature": 1, "full_content": "x"}, "cmd_signature"),
+        ({"cmd_signature": "c", "full_content": None}, "full_content"),
+        ({"cmd_signature": "c", "full_content": "x", "created_step": -1}, "created_step"),
+        ({"cmd_signature": "c", "full_content": "x", "extra": {"bad": {1}}}, "JSON"),
+    ],
+)
+def test_store_rejects_invalid_record_domains(kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        ObsStore().put(**kwargs)

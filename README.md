@@ -35,8 +35,10 @@ Full documentation: **[https://FujitsuResearch.github.io/OneCompression/](https:
 
 `onecomp.compaction` implements ARC (Addressable Recall for Compaction): long observations are
 stored losslessly and compacted into bounded citations, then restored by stable observation ID.
-The `onecomp-mcp` stdio server exposes the same session-based operations to MCP-capable single-
-and multi-agent systems such as OpenHands. See the [MCP server guide](docs/user-guide/mcp-server.md).
+The `onecomp-mcp` stdio server exposes the same session-based store/recall operations to
+MCP-capable systems. Automatic history reduction requires a host-owned condenser or output hook;
+OneComp includes an OpenHands condenser/recall tool and PostToolUse hook adapters for Claude Code
+and Codex. See the [MCP server guide](docs/user-guide/mcp-server.md).
 
 ## Installation
 

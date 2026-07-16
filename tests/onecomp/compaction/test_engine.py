@@ -2,12 +2,7 @@
 
 import pytest
 
-from onecomp.compaction.engine import (
-    ArcEngine,
-    ArcEngineConfig,
-    RecallError,
-    sanitize_messages,
-)
+from onecomp.compaction.engine import ArcEngine, ArcEngineConfig, RecallError, sanitize_messages
 from onecomp.compaction.store import ObsStore
 
 
@@ -169,6 +164,71 @@ def test_enforce_char_budget_noop_when_already_fitting():
     out = engine.enforce_char_budget(messages, max_chars=10_000)
     assert out == messages
     assert not engine.compaction_log
+
+
+def test_enforce_token_budget_uses_host_counter_and_logs_tokens():
+    engine = ArcEngine(ArcEngineConfig(summary_max_chars=10_000))
+    messages = _base_messages()
+    for i in range(8):
+        engine.begin_step()
+        _run_turn(engine, messages, f"cat token-{i}", f"token-{i} " * 700)
+
+    def count_tokens(payload):
+        # Deterministic stand-in for a provider's exact tokenizer.
+        chars = sum(len(str(message.get("content", ""))) for message in payload)
+        return (chars + 3) // 4
+
+    before = count_tokens(sanitize_messages(messages))
+    trimmed = engine.enforce_token_budget(messages, 1_500, count_tokens)
+    after = count_tokens(sanitize_messages(trimmed))
+    assert before > 1_500
+    assert after <= 1_500
+    assert engine.compaction_log[-1]["before_tokens"] == before
+    assert engine.compaction_log[-1]["after_tokens"] == after
+
+
+def test_token_budget_candidate_search_commits_only_selected_state():
+    engine = ArcEngine(ArcEngineConfig(summary_max_chars=20_000))
+    messages = _base_messages()
+    for i in range(12):
+        engine.begin_step()
+        _run_turn(engine, messages, f"cat candidate-{i}", f"payload-{i} " * 700)
+
+    def count_tokens(payload):
+        return (sum(len(str(message.get("content", ""))) for message in payload) + 3) // 4
+
+    trimmed = engine.enforce_token_budget(messages, 2_100, count_tokens)
+    assert count_tokens(sanitize_messages(trimmed)) <= 2_100
+    # Candidate caps are exploratory.  Only the history returned to the host
+    # may update LRU bookkeeping and produce a compaction telemetry record.
+    assert len(engine.compaction_log) == 1
+    assert engine.compaction_log[0]["after_chars"] == sum(
+        len(str(message.get("content", ""))) for message in trimmed
+    )
+
+
+def test_token_budget_search_reaches_minimum_summary_for_extreme_ratio():
+    engine = ArcEngine(ArcEngineConfig(summary_max_chars=131_072))
+    messages = _base_messages()
+    for i in range(3):
+        engine.begin_step()
+        _run_turn(engine, messages, f"cat extreme-{i}", (f"payload-{i}-" * 20_000))
+
+    def count_tokens(payload):
+        return sum(len(str(message.get("content", ""))) for message in payload)
+
+    minimum = engine._compact_once(messages, 1)
+    minimum_tokens = count_tokens(sanitize_messages(minimum))
+    trimmed = engine.enforce_token_budget(messages, minimum_tokens, count_tokens)
+    assert count_tokens(sanitize_messages(trimmed)) <= minimum_tokens
+    assert engine.compaction_log[-1]["summary_max_chars"] == 1
+
+
+def test_recall_window_body_honours_configured_body_cap():
+    engine = ArcEngine(ArcEngineConfig(recall_max_chars=120))
+    body, elided = engine._window_recall_body("x" * 5_000)
+    assert len(body) <= 120
+    assert elided > 0
 
 
 def test_compact_syncs_lru_and_logs():

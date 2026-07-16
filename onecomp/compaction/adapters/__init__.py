@@ -37,6 +37,15 @@ from __future__ import annotations
 
 import re
 
+from .messages import (
+    content_to_text,
+    message_role,
+    message_text,
+    protected_prefix_count,
+    recent_turn_start,
+    total_text_chars,
+)
+
 #: Substrings/regexes seen in context-overflow errors across providers
 #: (OpenAI, Anthropic, vLLM, TGI, litellm re-wraps).  Kept permissive on
 #: purpose; framework adapters should prefer their host's typed
@@ -59,4 +68,12 @@ def matches_context_overflow(error_message: str) -> bool:
     return bool(_CONTEXT_OVERFLOW_RE.search(error_message))
 
 
-__all__ = ["matches_context_overflow"]
+__all__ = [
+    "content_to_text",
+    "matches_context_overflow",
+    "message_role",
+    "message_text",
+    "protected_prefix_count",
+    "recent_turn_start",
+    "total_text_chars",
+]

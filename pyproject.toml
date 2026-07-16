@@ -45,6 +45,8 @@ Changelog = "https://github.com/FujitsuResearch/OneCompression/blob/main/CHANGEL
 [project.scripts]
 onecomp = "onecomp.cli:main"
 onecomp-mcp = "onecomp.mcp.__main__:main"
+onecomp-arc-hook = "onecomp.compaction.adapters.hooks:hook_main"
+onecomp-arc-recall = "onecomp.compaction.adapters.hooks:recall_main"
 
 [project.optional-dependencies]
 cpu = ["torch", "torchvision"]

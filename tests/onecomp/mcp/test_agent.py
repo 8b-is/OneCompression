@@ -8,6 +8,10 @@ CPU in milliseconds.
 Copyright 2025-2026 Fujitsu Ltd.
 """
 
+import math
+
+import pytest
+
 from onecomp.mcp.agent import AutoCompressConfig, AutoCompressionAgent, simulate_ppl_increase
 
 BASELINE_PPL = 10.0
@@ -214,3 +218,32 @@ def test_simulated_error_model_is_monotone():
     increases = [simulate_ppl_increase(b) for b in (8, 6, 5, 4, 3, 2)]
     assert increases == sorted(increases)
     assert increases[0] < increases[-1]
+
+
+@pytest.mark.parametrize(
+    "kwargs,match",
+    [
+        ({"target_vram_gb": 0}, "target_vram_gb"),
+        ({"target_vram_gb": math.nan}, "target_vram_gb"),
+        ({"target_vram_gb": 1, "max_trials": 0}, "max_trials"),
+        ({"target_vram_gb": 1, "context_len": -1}, "context_len"),
+        ({"target_vram_gb": 1, "wbits_candidates": ()}, "wbits_candidates"),
+        (
+            {"target_vram_gb": 1, "wbits_candidates": (4, 8)},
+            "strictly descending",
+        ),
+        ({"target_vram_gb": 1, "baseline_ppl": 0}, "baseline_ppl"),
+    ],
+)
+def test_config_rejects_invalid_search_domains(kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        AutoCompressConfig(**kwargs)
+
+
+def test_agent_rejects_empty_model_and_save_dir():
+    config = AutoCompressConfig(target_vram_gb=1, baseline_ppl=1)
+    simulator = Simulator()
+    with pytest.raises(ValueError, match="model_id"):
+        AutoCompressionAgent("", config)
+    with pytest.raises(ValueError, match="save_dir"):
+        _make_agent(config, simulator).run("")

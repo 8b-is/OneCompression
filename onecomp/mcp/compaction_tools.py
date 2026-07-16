@@ -1,8 +1,9 @@
 """MCP tools exposing the ARC compaction engine to agent platforms.
 
-Lets any MCP-capable agent framework (OpenHands, Claude Desktop, custom
-MAS orchestrators, ...) use :class:`onecomp.compaction.ArcEngine`
-over stdio without importing onecomp.  Two usage styles are supported:
+Exposes :class:`onecomp.compaction.ArcEngine` over stdio to MCP-capable
+agent hosts.  MCP supplies storage/recall tools, but automatic context
+reduction still requires a host integration that owns and replaces the
+conversation buffer.  Two usage styles are supported:
 
 *Framework-driven* (a condenser/memory hook owns the message buffer):
     ``compaction_start_session`` once per agent, then
@@ -32,7 +33,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from ..compaction import ArcEngine, ArcEngineConfig, RecallError
+from ..compaction import ArcEngine, ArcEngineConfig, RecallError, format_citation
+from ..compaction.adapters import total_text_chars
 from .protocol import ToolDefinition
 
 #: Live sessions of this server process: session_id -> ArcEngine.
@@ -64,7 +66,9 @@ def _resolve_wal_path(wal_path: Optional[str]) -> Optional[str]:
         return None
     if not isinstance(wal_path, str) or not wal_path.strip():
         raise ValueError("wal_path must be a non-empty string when provided")
-    root = Path(os.environ.get("ONECOMP_MCP_WAL_ROOT", os.getcwd())).expanduser().resolve()
+    root = (
+        Path(os.environ.get("ONECOMP_MCP_WAL_ROOT", os.getcwd())).expanduser().resolve()
+    )
     requested = Path(wal_path).expanduser()
     resolved = (requested if requested.is_absolute() else root / requested).resolve()
     try:
@@ -178,19 +182,24 @@ def compaction_record_observation(
     command: str,
     content: str,
     returncode: int = 0,
+    advance_step: bool = True,
 ) -> Dict[str, Any]:
     """Store an executed action's output verbatim in the session store.
 
     Call after every environment execution.  The returned ``obs_id`` is
     the stable handle citations and recalls use.  Recording also marks a
     step boundary (resetting the per-step recall budget), since an
-    execution means the previous LLM response is complete.
+    execution means the previous LLM response is complete.  Set
+    ``advance_step=false`` for sibling results from one parallel tool-call
+    response, or when ``compaction_begin_step`` was already called explicitly.
 
     Args:
         session_id: Session from ``compaction_start_session``.
         command: The action that produced the observation.
         content: Raw observation body (stored losslessly).
         returncode: Exit status, if applicable.
+        advance_step: Advance/reset the ARC response-step counter before
+            recording.  Defaults to true for backward compatibility.
     """
     if not isinstance(command, str):
         raise ValueError("command must be a string")
@@ -198,15 +207,33 @@ def compaction_record_observation(
         raise ValueError("content must be a string")
     if not isinstance(returncode, int) or isinstance(returncode, bool):
         raise ValueError("returncode must be an integer")
+    if not isinstance(advance_step, bool):
+        raise ValueError("advance_step must be a boolean")
     engine = _get_engine(session_id)
-    engine.begin_step()
-    rec = engine.record_observation(command=command, content=content, returncode=returncode)
-    return {
+    if advance_step:
+        engine.begin_step()
+    rec = engine.record_observation(
+        command=command, content=content, returncode=returncode
+    )
+    out = {
         "obs_id": rec.obs_id,
         "char_count": rec.char_count,
         "line_count": rec.line_count,
         "will_be_cited": rec.char_count > engine.config.result_max_chars,
     }
+    if rec.char_count > engine.config.result_max_chars:
+        out["replacement_content"] = format_citation(
+            obs_id=rec.obs_id,
+            cmd_signature=rec.cmd_signature,
+            returncode=rec.returncode,
+            line_count=rec.line_count,
+            char_count=rec.char_count,
+            head=rec.head,
+            tail=rec.tail,
+            head_chars=engine.config.citation_head_chars,
+            tail_chars=engine.config.citation_tail_chars,
+        )
+    return out
 
 
 def compaction_compact_messages(
@@ -223,8 +250,8 @@ def compaction_compact_messages(
 
     Args:
         session_id: Session from ``compaction_start_session``.
-        messages: OpenAI-style message list (``role``/``content``; the
-            first two entries — system and task — are kept intact).
+        messages: Provider message/item list.  Leading system/developer
+            instructions and the first user task are kept intact.
         max_chars: When > 0, shrink until the total content length fits
             this budget (proactive mode).  When 0, apply one reactive
             compaction pass.
@@ -238,10 +265,19 @@ def compaction_compact_messages(
     if not isinstance(messages, list) or not all(isinstance(m, dict) for m in messages):
         raise ValueError("messages must be a list of objects ({role, content, ...})")
     for index, message in enumerate(messages):
-        if not isinstance(message.get("role"), str):
-            raise ValueError(f"messages[{index}].role must be a string")
-        if message.get("content") is not None and not isinstance(message.get("content"), str):
-            raise ValueError(f"messages[{index}].content must be a string or null")
+        role = message.get("role")
+        item_type = message.get("type") or message.get("kind")
+        if role is not None and not isinstance(role, str):
+            raise ValueError(f"messages[{index}].role must be a string when provided")
+        if role is None and not isinstance(item_type, str):
+            raise ValueError(
+                f"messages[{index}] must have a string role, type, or kind discriminator"
+            )
+        content = message.get("content")
+        if content is not None and not isinstance(content, (str, list, dict)):
+            raise ValueError(
+                f"messages[{index}].content must be text, content blocks, an object, or null"
+            )
         if "_obs_id" in message and not isinstance(message["_obs_id"], str):
             raise ValueError(f"messages[{index}]._obs_id must be a string")
     if not isinstance(max_chars, int) or isinstance(max_chars, bool) or max_chars < 0:
@@ -253,7 +289,7 @@ def compaction_compact_messages(
         out = engine.compact(messages)
     return {
         "messages": out,
-        "total_chars": sum(len(m.get("content", "") or "") for m in out),
+        "total_chars": total_text_chars(out),
         "n_messages": len(out),
     }
 
@@ -290,10 +326,13 @@ def compaction_handle_action(session_id: str, action: str) -> Dict[str, Any]:
         "kind": outcome.kind,
         "obs_id": outcome.obs_id,
         "content": outcome.message["content"],
+        "evicted_obs_ids": list(outcome.evicted_obs_ids),
     }
 
 
-def compaction_recall(session_id: str, obs_id: str, recall_kind: str = "full") -> Dict[str, Any]:
+def compaction_recall(
+    session_id: str, obs_id: str, recall_kind: str = "full"
+) -> Dict[str, Any]:
     """Recall a stored observation by id (MCP-native recall).
 
     The tool-call equivalent of the ``_recall §<id>`` /
@@ -327,6 +366,59 @@ def compaction_recall(session_id: str, obs_id: str, recall_kind: str = "full") -
         "obs_id": result["obs_id"],
         "recall_kind": result["kind"],
         "content": result["content"],
+        "evicted_obs_ids": result.get("evicted_obs_ids", []),
+    }
+
+
+def compaction_list_observations(
+    session_id: str,
+    cursor: int = 0,
+    limit: int = 20,
+    query: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Return a bounded newest-first index into the lossless store.
+
+    A strict summary cap cannot keep an unbounded number of citation handles
+    visible.  This operation lets MCP/host integrations rediscover handles
+    without dumping the entire store back into model context.  ``query``
+    case-insensitively filters command signatures, allowing the model to map a
+    requested file/command to an old bare handle before recalling its body.
+    """
+    if not isinstance(cursor, int) or isinstance(cursor, bool) or cursor < 0:
+        raise ValueError("cursor must be a non-negative integer")
+    if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100:
+        raise ValueError("limit must be an integer between 1 and 100")
+    if query is not None and not isinstance(query, str):
+        raise ValueError("query must be a string or null")
+    engine = _get_engine(session_id)
+    ids = engine.store.known_ids()
+    if query:
+        needle = query.casefold()
+        ids = [
+            obs_id
+            for obs_id in ids
+            if (record := engine.store.get(obs_id)) is not None
+            and needle in record.cmd_signature.casefold()
+        ]
+    selected_ids = list(reversed(ids))[cursor : cursor + limit]
+    page = [engine.store.get(obs_id) for obs_id in selected_ids]
+    observations = [
+        {
+            "obs_id": record.obs_id,
+            "cmd_signature": record.cmd_signature[:200],
+            "returncode": record.returncode,
+            "line_count": record.line_count,
+            "char_count": record.char_count,
+            "created_step": record.created_step,
+        }
+        for record in page
+        if record is not None
+    ]
+    next_cursor = cursor + len(page)
+    return {
+        "observations": observations,
+        "next_cursor": next_cursor if next_cursor < len(ids) else None,
+        "total": len(ids),
     }
 
 
@@ -384,13 +476,17 @@ def compaction_session_stats(session_id: str) -> Dict[str, Any]:
         "n_recalls": len(engine.recall_log),
         "n_evictions": len(engine.eviction_log),
         "in_context_obs": list(engine.in_context_obs.keys()),
-        "known_obs_ids": engine.store.known_ids(),
+        "known_obs_ids": engine.store.known_ids()[-100:],
+        "known_obs_ids_truncated": max(0, engine.store.n_records - 100),
     }
 
 
 _MESSAGES_SCHEMA = {
     "type": "array",
-    "description": "OpenAI-style message list ({role, content, [_obs_id]}).",
+    "description": (
+        "Provider message/item list. Supports role/content messages, OpenAI Responses "
+        "items, Anthropic content blocks, and optional _obs_id tags."
+    ),
     "items": {"type": "object"},
 }
 
@@ -460,6 +556,7 @@ def build_compaction_tools() -> List[ToolDefinition]:
                     "command": {"type": "string"},
                     "content": {"type": "string"},
                     "returncode": {"type": "integer", "default": 0},
+                    "advance_step": {"type": "boolean", "default": True},
                 },
                 "required": ["session_id", "command", "content"],
             },
@@ -526,6 +623,36 @@ def build_compaction_tools() -> List[ToolDefinition]:
                 "required": ["session_id", "obs_id"],
             },
             handler=compaction_recall,
+        ),
+        ToolDefinition(
+            name="compaction_list_observations",
+            description=(
+                "List a bounded newest-first page of stored observation handles "
+                "and metadata. Use this to rediscover older handles omitted by a "
+                "strict ARC summary cap without re-expanding observation bodies."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string"},
+                    "cursor": {"type": "integer", "minimum": 0, "default": 0},
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "default": 20,
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": (
+                            "Optional case-insensitive substring of the original "
+                            "command/path used to find a bare or omitted handle."
+                        ),
+                    },
+                },
+                "required": ["session_id"],
+            },
+            handler=compaction_list_observations,
         ),
         ToolDefinition(
             name="compaction_verify_value",

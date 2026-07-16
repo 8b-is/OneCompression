@@ -23,9 +23,11 @@ Three operators are provided, from lossiest to most recoverable:
 Message-buffer convention
 -------------------------
 
-``messages[0]`` is the system message and ``messages[1]`` the task; both
-are always kept intact.  Observation messages produced through the ARC
-flow carry an ``"_obs_id"`` key (see
+Leading system/developer messages and the first user task are kept intact.
+This covers OpenAI Chat and Responses items, Anthropic content blocks, and
+OpenHands-style serialised messages rather than assuming fixed list indices.
+Observation messages produced through the ARC flow carry an ``"_obs_id"``
+key (see
 :meth:`onecomp.compaction.engine.ArcEngine.make_observation_message`);
 messages without it fall back to the string-only path.  Use
 :func:`onecomp.compaction.engine.sanitize_messages` to strip private
@@ -43,22 +45,26 @@ from __future__ import annotations
 import re
 from typing import Optional
 
+from .adapters.messages import (
+    message_role,
+    message_text,
+    protected_prefix_count,
+    recent_turn_start,
+)
 from .protocol import format_citation
 from .store import ObsStore
-
 
 THOUGHT_MAX_CHARS = 300
 CMD_MAX_CHARS = 150
 RESULT_MAX_CHARS = 500
+USER_MAX_CHARS = 1000
 
 #: Default regex extracting the action body from an assistant message.
 DEFAULT_ACTION_REGEX = r"```bash\s*\n(.*?)\n```"
 #: Default regex extracting the observation body from a user message.
 DEFAULT_OBSERVATION_REGEX = r"<output>\s*(.*?)\s*</output>"
 
-SUMMARY_HEADER = (
-    "The following is a summary of your previous actions (long observations omitted):"
-)
+SUMMARY_HEADER = "The following is a summary of your previous actions (long observations omitted):"
 
 # Separator placed between summary parts; counted against the budget so
 # the cap reflects the real assembled size.
@@ -73,10 +79,9 @@ _MAX_COLLAPSED_IDS = 256
 # to id-only references, so the model knows a bare ``§<id>`` is
 # recall-able.
 _ELISION_NOTE = (
-    "Lines below that show only `\u00a7<id>` (no head/tail) are older "
-    "observations elided to keep this summary within the context budget. "
-    "They are NOT lost — issue `_recall \u00a7<id>` to restore any of them "
-    "verbatim."
+    "Older observations are elided to keep this summary within the context "
+    "budget and reduced to bare `\u00a7<id>` handles. Listed handles remain "
+    "recall-able; bodies remain lossless in the ARC store."
 )
 
 _OBS_ID_IN_TEXT_RE = re.compile(r"\u00a7([0-9a-fA-F]{4,40})")
@@ -101,6 +106,17 @@ def _compact_assistant(
             return f"{thought}\n\n```bash\n{cmd}\n```"
         return f"```bash\n{cmd}\n```"
     return thought
+
+
+def _compact_user(content: str, max_chars: int = USER_MAX_CHARS) -> str:
+    """Bound an old human follow-up while preserving both ends."""
+    if max_chars <= 0 or len(content) <= max_chars:
+        return content
+    marker = "\n... [older user message truncated by ARC] ...\n"
+    payload = max(0, max_chars - len(marker))
+    head_n = (payload * 2) // 3
+    tail_n = payload - head_n
+    return content[:head_n] + marker + content[-tail_n:]
 
 
 def compact_messages(
@@ -132,21 +148,26 @@ def compact_messages(
             summaries are dropped (the "max" baseline's L4
             information-loss point).
     """
-    body = messages[2:]
-    if len(body) <= keep_recent * 2:
+    prefix_count = protected_prefix_count(messages)
+    body = messages[prefix_count:]
+    tail_start = recent_turn_start(body, keep_recent)
+    if tail_start <= 0:
         return messages
 
-    to_compact = body[: len(body) - keep_recent * 2]
-    to_keep = body[len(body) - keep_recent * 2 :]
+    to_compact = body[:tail_start]
+    to_keep = body[tail_start:]
 
     parts: list[str] = []
     for msg in to_compact:
-        if msg.get("role") == "assistant":
-            parts.append(
-                _compact_assistant(msg.get("content", "") or "", action_regex, thought_max_chars)
-            )
-        elif msg.get("role") == "user":
-            content = (msg.get("content") or "").strip()
+        role = message_role(msg)
+        if role == "assistant":
+            parts.append(_compact_assistant(message_text(msg), action_regex, thought_max_chars))
+        elif role in {"system", "developer"}:
+            content = message_text(msg).strip()
+            if content:
+                parts.append(f"{role}: {_compact_user(content)}")
+        elif role in {"user", "tool", "function"}:
+            content = message_text(msg).strip()
             if content.startswith(SUMMARY_HEADER):
                 if inherit_prior_summary:
                     parts.append(content[len(SUMMARY_HEADER) :].strip())
@@ -154,12 +175,13 @@ def compact_messages(
             m = re.search(observation_regex, content, re.DOTALL)
             if m and len(m.group(1)) <= result_max_chars:
                 parts.append(f"result: {m.group(1)}")
+            elif role == "user" and content:
+                parts.append(f"user: {_compact_user(content)}")
 
     summary = SUMMARY_HEADER + "\n\n" + "\n\n---\n\n".join(parts) if parts else SUMMARY_HEADER
 
     return [
-        messages[0],
-        messages[1],
+        *messages[:prefix_count],
         {"role": "user", "content": summary},
         *to_keep,
     ]
@@ -206,47 +228,92 @@ def _collapsed_id_line(ids: list[str]) -> str:
     return prefix + " ".join(f"\u00a7{i}" for i in shown)
 
 
-def _apply_summary_budget(
-    entries: list[dict], summary_max_chars: int
-) -> tuple[list[str], bool]:
-    """Select the rendered form of each summary entry under a char budget.
+def _assemble_summary(parts: list[str], *, collapsed: bool, omitted_ids: int = 0) -> str:
+    """Render a summary, including truthful bounded-elision metadata."""
+    header = SUMMARY_HEADER
+    if collapsed:
+        header += "\n" + _ELISION_NOTE
+        if omitted_ids:
+            header += (
+                f" {omitted_ids} older handle(s) could not fit; use the host's "
+                "bounded observation-list operation to rediscover them."
+            )
+    body = _SUMMARY_SEP.join(parts)
+    return header + ("\n\n" + body if body else "")
 
-    The most *recent* entries are kept in their ``full`` form; once the
-    running total would exceed ``summary_max_chars`` every remaining
-    (older) entry falls back to its ``collapsed`` form (an id-only
-    reference for a citation, or ``""`` to drop an assistant thought).
-    Every collapsed observation is still in the lossless store and its
-    ``§<id>`` stays visible for ``_recall``.
 
-    Returns ``(parts, collapsed_any)``.  ``summary_max_chars <= 0``
-    disables the cap.
+def _apply_summary_budget(entries: list[dict], summary_max_chars: int) -> tuple[str, bool]:
+    """Render ``entries`` under a strict total-summary character cap.
+
+    Recent entries retain their rich form.  Demoted observations share one
+    bounded id-only line, newest first for admission and chronological in the
+    final rendering.  When even all handles cannot fit, the oldest handles are
+    omitted explicitly; their records remain in the lossless store and are
+    discoverable through a host/MCP observation-list operation.
     """
+    full_parts = [entry["full"] for entry in entries if entry["full"]]
     if summary_max_chars <= 0:
-        return [e["full"] for e in entries if e["full"]], False
+        return _assemble_summary(full_parts, collapsed=False), False
 
-    use_full = [False] * len(entries)
-    acc = 0
-    for i in range(len(entries) - 1, -1, -1):
-        cost = len(entries[i]["full"]) + (len(_SUMMARY_SEP) if acc else 0)
-        if acc + cost <= summary_max_chars:
-            use_full[i] = True
-            acc += cost
+    unbounded = _assemble_summary(full_parts, collapsed=False)
+    if len(unbounded) <= summary_max_chars:
+        return unbounded, False
+
+    # Pick a contiguous rich suffix.  Accounting uses the final collapsed
+    # header so adding the elision note can never push the result over cap.
+    rich_start = len(entries)
+    rich_suffix: list[str] = []
+    for index in range(len(entries) - 1, -1, -1):
+        candidate = (
+            [entries[index]["full"], *rich_suffix] if entries[index]["full"] else rich_suffix
+        )
+        if len(_assemble_summary(candidate, collapsed=True)) <= summary_max_chars:
+            rich_suffix = candidate
+            rich_start = index
         else:
-            # This entry does not fit; it and every older entry collapse.
             break
 
-    parts: list[str] = []
-    collapsed_any = False
-    for i, e in enumerate(entries):
-        if use_full[i]:
-            text = e["full"]
-        else:
-            text = e["collapsed"]
-            if e["full"]:  # something was actually demoted/dropped
-                collapsed_any = True
-        if text:
-            parts.append(text)
-    return parts, collapsed_any
+    while True:
+        demoted_ids: list[str] = []
+        seen: set[str] = set()
+        for entry in entries[:rich_start]:
+            for obs_id in entry.get("obs_ids", []):
+                obs_id = obs_id.lower()
+                if obs_id not in seen:
+                    seen.add(obs_id)
+                    demoted_ids.append(obs_id)
+
+        # The hard per-line ceiling is applied before the exact budget pass.
+        omitted = max(0, len(demoted_ids) - _MAX_COLLAPSED_IDS)
+        shown_ids = demoted_ids[-_MAX_COLLAPSED_IDS:]
+        rich_suffix = [entry["full"] for entry in entries[rich_start:]]
+
+        # First admit as many recent handles as the exact cap permits.
+        while shown_ids:
+            collapsed_line = _collapsed_id_line(shown_ids)
+            rendered = _assemble_summary(
+                [collapsed_line, *rich_suffix], collapsed=True, omitted_ids=omitted
+            )
+            if len(rendered) <= summary_max_chars:
+                return rendered, True
+            shown_ids.pop(0)
+            omitted += 1
+
+        collapsed_line = _collapsed_id_line(shown_ids)
+        parts = ([collapsed_line] if collapsed_line else []) + rich_suffix
+        rendered = _assemble_summary(parts, collapsed=True, omitted_ids=omitted)
+        if len(rendered) <= summary_max_chars:
+            return rendered, True
+        if rich_start < len(entries):
+            # Extremely small caps or an oversized most-recent short result:
+            # demote another rich entry and recompute its exact observation-id
+            # contribution.  Assistant text has no handle and must not inflate
+            # the omitted-handle count.
+            rich_start += 1
+            continue
+        # A pathological cap smaller than the summary header cannot preserve
+        # structure.  Honour the caller's hard bound rather than overflowing.
+        return SUMMARY_HEADER[:summary_max_chars], True
 
 
 def compact_messages_arc(
@@ -276,7 +343,8 @@ def compact_messages_arc(
     that prior summary bodies are preserved.
 
     Args:
-        messages: Full message history (first two entries kept intact).
+        messages: Full provider message/item history.  Leading instructions
+            and the first user task are kept intact.
         obs_store: The lossless observation store.  ``None`` falls back
             to the legacy drop behaviour.
         keep_recent: Number of recent turn pairs to keep uncompacted.
@@ -296,16 +364,17 @@ def compact_messages_arc(
             regardless of trajectory length.
 
     Returns:
-        A new ``list[dict]`` with the same first two messages, the
-        summary inserted as a user message at index 2, and the recent
-        ``keep_recent`` turn pairs appended verbatim.
+        A new ``list[dict]`` with the protected prompt prefix, one user-role
+        summary, and the recent ``keep_recent`` turns appended verbatim.
     """
-    body = messages[2:]
-    if len(body) <= keep_recent * 2:
+    prefix_count = protected_prefix_count(messages)
+    body = messages[prefix_count:]
+    tail_start = recent_turn_start(body, keep_recent)
+    if tail_start <= 0:
         return messages
 
-    to_compact = body[: len(body) - keep_recent * 2]
-    to_keep = body[len(body) - keep_recent * 2 :]
+    to_compact = body[:tail_start]
+    to_keep = body[tail_start:]
 
     # Each entry is ``{"full": <verbatim rendering>, "collapsed":
     # <id-only fallback or "">}``; the budget pass chooses which form to
@@ -314,21 +383,28 @@ def compact_messages_arc(
     entries: list[dict] = []
     emitted_obs_ids: set[str] = set()
 
-    def _add(full: str, collapsed: str = "") -> None:
+    def _add(full: str, obs_ids: Optional[list[str]] = None) -> None:
         if full:
-            entries.append({"full": full, "collapsed": collapsed})
+            entries.append({"full": full, "obs_ids": obs_ids or []})
 
     for msg in to_compact:
-        if msg.get("role") == "assistant":
+        role = message_role(msg)
+        if role == "assistant":
             # An assistant thought has no recall-able body: collapsed
             # form is empty (dropped when outside the budget).
-            _add(_compact_assistant(msg.get("content", "") or "", action_regex, thought_max_chars))
+            _add(_compact_assistant(message_text(msg), action_regex, thought_max_chars))
             continue
 
-        if msg.get("role") != "user":
+        if role in {"system", "developer"}:
+            content = message_text(msg).strip()
+            if content:
+                _add(f"{role}: {_compact_user(content)}")
             continue
 
-        content = (msg.get("content") or "").strip()
+        if role not in {"user", "tool", "function"}:
+            continue
+
+        content = message_text(msg).strip()
         if content.startswith(SUMMARY_HEADER):
             body_text = content[len(SUMMARY_HEADER) :].strip()
             if body_text:
@@ -338,9 +414,7 @@ def compact_messages_arc(
                     emitted_obs_ids.add(oid)
                     if oid not in inherited_ids:
                         inherited_ids.append(oid)
-                # An inherited prior summary collapses to the
-                # (recency-capped) list of obs_ids it referenced.
-                _add(body_text, _collapsed_id_line(inherited_ids))
+                _add(body_text, inherited_ids)
             continue
 
         obs_id = msg.get("_obs_id")
@@ -370,7 +444,7 @@ def compact_messages_arc(
                     tail_chars=citation_tail_chars,
                 )
             emitted_obs_ids.add(rec.obs_id.lower())
-            _add(full, f"\u00a7{rec.obs_id}")
+            _add(full, [rec.obs_id])
             continue
 
         m = re.search(observation_regex, content, re.DOTALL)
@@ -378,16 +452,15 @@ def compact_messages_arc(
             # No obs_id (store-less fallback): not recall-able, so drop
             # on budget overflow.
             _add(f"result: {m.group(1)}")
+        elif role == "user" and content:
+            # Human follow-ups are not tool observations and must not silently
+            # disappear merely because they are older than the live tail.
+            _add(f"user: {_compact_user(content)}")
 
-    parts, collapsed_any = _apply_summary_budget(entries, summary_max_chars)
-
-    summary_body = _SUMMARY_SEP.join(parts) if parts else ""
-    header = (SUMMARY_HEADER + "\n" + _ELISION_NOTE) if collapsed_any else SUMMARY_HEADER
-    summary_text = (header + "\n\n" + summary_body) if summary_body else header
+    summary_text, _collapsed_any = _apply_summary_budget(entries, summary_max_chars)
 
     return [
-        messages[0],
-        messages[1],
+        *messages[:prefix_count],
         {"role": "user", "content": summary_text},
         *to_keep,
     ]

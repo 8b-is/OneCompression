@@ -38,6 +38,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Optional
@@ -110,6 +111,8 @@ class ObsStore:
         obs_id_hex_chars: int = 8,
         wal_path: Optional[Path | str] = None,
     ) -> None:
+        if not isinstance(obs_id_hex_chars, int) or isinstance(obs_id_hex_chars, bool):
+            raise ValueError("obs_id_hex_chars must be an integer between 4 and 40")
         if obs_id_hex_chars < 4 or obs_id_hex_chars > 40:
             raise ValueError("obs_id_hex_chars must be between 4 and 40")
         self._obs_id_hex_chars = obs_id_hex_chars
@@ -123,9 +126,21 @@ class ObsStore:
         """Attach an append-only WAL after construction or replay."""
         if self._wal is not None:
             raise RuntimeError("ObsStore WAL is already open")
+        if not isinstance(wal_path, (str, os.PathLike)) or isinstance(wal_path, bool):
+            raise ValueError("wal_path must be a filesystem path")
+        if isinstance(wal_path, str) and not wal_path.strip():
+            raise ValueError("wal_path must be a non-empty filesystem path")
         path = Path(wal_path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        self._wal = path.open("a", encoding="utf-8")
+        # Observations routinely contain source, logs, and credentials.  Do
+        # not let a permissive process umask create a world-readable WAL.
+        fd = os.open(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
+        try:
+            os.chmod(path, 0o600)
+            self._wal = os.fdopen(fd, "a", encoding="utf-8")
+        except Exception:
+            os.close(fd)
+            raise
 
     @property
     def n_records(self) -> int:
@@ -315,6 +330,25 @@ class ObsStore:
         hash prefix collision with *different* content, the obs_id is
         extended until uniqueness is guaranteed.
         """
+        if not isinstance(cmd_signature, str):
+            raise ValueError("cmd_signature must be a string")
+        if not isinstance(full_content, str):
+            raise ValueError("full_content must be a string")
+        if not isinstance(returncode, int) or isinstance(returncode, bool):
+            raise ValueError("returncode must be an integer")
+        if not isinstance(created_step, int) or isinstance(created_step, bool) or created_step < 0:
+            raise ValueError("created_step must be a non-negative integer")
+        for name, value in (("head_chars", head_chars), ("tail_chars", tail_chars)):
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer")
+        if extra is not None:
+            if not isinstance(extra, dict):
+                raise ValueError("extra must be a JSON-serialisable object or None")
+            try:
+                json.dumps(extra, ensure_ascii=False)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("extra must be JSON-serialisable") from exc
+
         obs_id = _mint_obs_id(cmd_signature, full_content, hex_chars=self._obs_id_hex_chars)
         if obs_id in self._records:
             existing = self._records[obs_id]
@@ -324,8 +358,18 @@ class ObsStore:
             while extended_len < 40:
                 extended_len += 4
                 obs_id = _mint_obs_id(cmd_signature, full_content, hex_chars=extended_len)
-                if obs_id not in self._records:
+                existing = self._records.get(obs_id)
+                if existing is None:
                     break
+                # A record that previously collided at the short prefix was
+                # minted with this longer id.  Re-storing it must remain
+                # idempotent instead of extending again and creating a
+                # duplicate record on every replay/retry.
+                if (
+                    existing.cmd_signature == cmd_signature
+                    and existing.full_content == full_content
+                ):
+                    return existing
             else:  # pragma: no cover - astronomically unlikely
                 raise RuntimeError("ObsStore: could not mint unique obs_id at 40 hex chars")
 

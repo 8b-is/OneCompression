@@ -33,7 +33,6 @@ import re
 import shlex
 from typing import Optional
 
-
 RECALL_RE = re.compile(r"^\s*_recall\s+§([A-Za-z0-9]+)(?:\s+#[^\n]*)?\s*$")
 RECALL_META_RE = re.compile(r"^\s*_recall_meta\s+§([A-Za-z0-9]+)(?:\s+#[^\n]*)?\s*$")
 # Broad detector: starts with the recall verb but did NOT match the strict
@@ -103,7 +102,9 @@ def looks_like_recall_intent(cmd_body: str) -> bool:
     return parse_any_recall(cmd_body) is None
 
 
-def suggest_closest_obs_id(bad_id: str, known_ids: list[str], *, n: int = 3) -> list[str]:
+def suggest_closest_obs_id(
+    bad_id: str, known_ids: list[str], *, n: int = 3
+) -> list[str]:
     """Up to ``n`` closest matches to ``bad_id`` among ``known_ids``.
 
     Used to give a helpful error message when the LLM emits a typo'd or
@@ -143,14 +144,22 @@ def _cmd_repr(cmd: str) -> str:
     return shlex.quote(flat)
 
 
-def normalise_cmd_signature(cmd: str, *, max_chars: int = 200) -> str:
-    """Whitespace-normalised, length-capped command signature.
+def normalise_cmd_signature(cmd: str, *, max_chars: Optional[int] = 200) -> str:
+    """Whitespace-normalised command signature.
 
     Used as the key for ``ObsStore.find_by_signature`` (re-execution
-    detection) and embedded in citations.
+    detection) and as part of the observation identity.  It is unbounded by
+    when ``max_chars=None`` so two long commands that differ after character
+    200 cannot alias; citation rendering applies its own display-only cap.
     """
+    if not isinstance(cmd, str):
+        raise ValueError("cmd must be a string")
+    if max_chars is not None and (
+        not isinstance(max_chars, int) or isinstance(max_chars, bool) or max_chars < 1
+    ):
+        raise ValueError("max_chars must be a positive integer or None")
     flat = re.sub(r"\s+", " ", cmd.strip())
-    if len(flat) > max_chars:
+    if max_chars is not None and len(flat) > max_chars:
         flat = flat[: max_chars - 1] + "\u2026"
     return flat
 
@@ -282,6 +291,10 @@ appear automatically in your next observation.
 
 Constraints:
   * At most {recall_per_step} recall(s) of either kind per single response.
+  * A strict summary cap may leave a bare `§<obs_id>` without its command or
+    omit very old handles. If your host exposes a bounded observation-index
+    tool, search it by the original command/path first, then recall the id it
+    returns. Never choose among bare ids at random.
   * Recall an obs_id that you actually see in the current context. If you
     guess and the id is unknown, you will get a helpful error listing
     close matches; act on that hint, do not retry with random ids.

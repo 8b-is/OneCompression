@@ -58,6 +58,7 @@ many concurrent agents.
 | `compaction_compact_messages` | Compact a message buffer: long observations tagged with `_obs_id` become bounded, recall-able citations. `max_chars > 0` shrinks until the buffer fits. |
 | `compaction_handle_action` | Intercept a raw LLM action; serves `_recall §<id>` / `_recall_meta §<id>` from the store, passes anything else through. |
 | `compaction_recall` | MCP-native recall by `obs_id` (`full` body or bounded `meta` preview), for platforms whose LLM calls tools directly. |
+| `compaction_list_observations` | Bounded, paginated handle/metadata index with optional command/path search; does not return stored bodies. |
 | `compaction_verify_value` | Anti-confabulation guard: check that a value the agent wants to submit appeared verbatim in some observation. |
 | `compaction_session_stats` | Session telemetry: observations, compactions, recalls, evictions. |
 
@@ -75,6 +76,23 @@ owns the conversation buffer and replaces it with the `messages` returned by
 private message history; without that adapter, ARC is available as an explicit
 lossless store/recall service rather than an automatic OpenHands condenser.
 
+Do not have the model send its full conversation to
+`compaction_compact_messages`: that duplicates the very prompt cost ARC is meant to
+remove. The host/condenser should call it before constructing the provider request.
+Likewise, `evicted_obs_ids` returned by an MCP recall is an instruction to the host to
+replace those earlier recalled bodies; server-side LRU bookkeeping cannot delete a
+message already owned by an external client.
+
+### Integration support matrix
+
+| Host | Automatic replacement | Lossless recall | Important limit |
+|------|-----------------------|-----------------|-----------------|
+| OpenHands SDK | `OpenHandsArcCondenser` emits native `Condensation` events | Paired `arc_recall` and `arc_list_observations` tools share the same store | Import the optional adapter before constructing the agent; use a WAL for process-resume durability. |
+| Claude Code | `PostToolUse.updatedToolOutput` via `onecomp-arc-hook` | `onecomp-arc-recall` command in each citation | Replacement must match each built-in tool's output schema; the supplied adapter supports text/content-block outputs and Bash's structured output. |
+| Codex CLI/IDE | PostToolUse feedback replacement via `onecomp-arc-hook` | `onecomp-arc-recall` command in each citation | Current Codex hooks cover simple Bash, `apply_patch`, and MCP calls incompletely; this is not whole-history replacement. |
+| Custom OpenAI Responses/Chat host | Call `ArcEngine.compact` or `enforce_token_budget` before the request | Call `ArcEngine.handle_action`/store lookup | The host must own the input item list and provide its authoritative token counter for exact token budgets. |
+| MCP only | No | `compaction_recall` | MCP gives the model tools/context; it does not grant the server mutation access to the host's old transcript. |
+
 If a session enables `wal_path`, the path is restricted to
 `ONECOMP_MCP_WAL_ROOT` (the server's working directory by default). Set that
 environment variable to a dedicated persistence directory before starting the
@@ -83,7 +101,48 @@ LLM-controlled tool argument from appending to unrelated server files.
 Set `resume_wal=true` together with the same `wal_path` when starting a
 replacement session to restore the persisted observations.
 
-## Registering with OpenHands
+## Native OpenHands condenser
+
+The optional adapter targets the current OpenHands SDK condenser API. It records
+forgotten `ObservationEvent` bodies, returns a native `Condensation`, and registers a
+recall tool backed by the same in-process engine:
+
+```python
+from openhands.sdk import Agent, Tool
+from onecomp.compaction.adapters.openhands import OpenHandsArcCondenser
+
+condenser = OpenHandsArcCondenser(
+    max_size=120,
+    max_tokens=100_000,
+    summary_max_chars=24_000,
+    recall_max_chars=20_000,
+    wal_path="/secure/onecomp-wal/openhands-agent.jsonl",
+)
+
+agent = Agent(
+    llm=llm,
+    condenser=condenser,
+    tools=[
+        Tool(name="TerminalTool"),
+        Tool(
+            name="OpenHandsArcRecallTool",
+            params={"runtime_id": condenser.runtime_id},
+        ),
+        Tool(
+            name="OpenHandsArcListTool",
+            params={"runtime_id": condenser.runtime_id},
+        ),
+    ],
+)
+```
+
+`max_tokens` is evaluated with OpenHands' own model-aware token counter. When a
+strict summary cap leaves a bare or omitted handle, `arc_list_observations` searches
+the original command/path and supplies the id for `arc_recall`. The WAL is
+required if the agent/condenser will be serialised and restored in another process;
+without it, the lossless store is intentionally process-local.
+
+## Registering the MCP tools with OpenHands
 
 Current OpenHands releases use the FastMCP JSON configuration format. Add an
 entry to `~/.openhands/mcp.json` (or pass the equivalent `mcp_config` to an
@@ -106,6 +165,72 @@ OpenHands SDK `Agent`):
 OpenHands should then discover the OneComp tools during agent initialization.
 Use one session per agent and close it at the end of the run; separate sessions
 keep MAS agents' stores isolated even when they share one MCP server process.
+
+MCP registration alone provides explicit record/recall tools. Use the native
+condenser above when the requirement is automatic removal of forgotten events from
+the OpenHands model view.
+
+## Claude Code PostToolUse adapter
+
+Claude Code can replace a completed tool result before the model sees it. Install
+OneComp's entry points, put the environment's `bin` directory on `PATH`, and add a
+project or user hook:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Read|Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/path/to/onecomp/.venv/bin/onecomp-arc-hook --platform claude"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Set `ONECOMP_ARC_HOOK_ROOT` to a private persistence directory before starting
+Claude Code. Long results are stored there with directory/file modes 0700/0600 and
+replaced by a citation. The citation's `onecomp-arc-recall` command prints the exact
+stored JSON/text response when its middle is needed. Add additional matchers only
+after validating that the replacement has the same output shape as that tool; unknown
+structured shapes deliberately pass through unchanged.
+
+## Codex PostToolUse adapter
+
+Codex currently has no supported `updatedToolOutput` field. Its documented
+PostToolUse `decision: "block"` feedback path instead replaces a completed supported
+tool result with the hook's feedback while retaining the command's side effects. A
+minimal `~/.codex/hooks.json` entry is:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/path/to/onecomp/.venv/bin/onecomp-arc-hook --platform codex"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+This reduces covered tool outputs at ingestion, but is intentionally not advertised
+as complete Codex context replacement: current hooks do not intercept every
+`unified_exec`, web, image, or other tool result, and Pre/PostCompact cannot supply a
+replacement summary. The MCP server can still be registered with Codex for explicit
+store/recall tools, but MCP alone cannot rewrite Codex's prior private transcript.
 
 ## Registering with Cursor
 

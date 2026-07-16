@@ -11,6 +11,7 @@ Copyright 2025-2026 Fujitsu Ltd.
 """
 
 import json
+import math
 import os
 from unittest.mock import MagicMock, patch
 
@@ -202,3 +203,21 @@ def test_evaluate_loads_model_and_computes_perplexity():
     ppl.assert_called_once_with(model=fake_model, tokenizer=fake_tokenizer, max_samples=8)
     assert result["perplexity"] == 12.5
     assert result["num_samples"] == 8
+
+
+@pytest.mark.parametrize(
+    "call,match",
+    [
+        (lambda: estimate_memory("model", wbits=-1), "wbits"),
+        (lambda: estimate_memory("model", context_len=0), "context_len"),
+        (lambda: estimate_memory("model", batch_size=True), "batch_size"),
+        (lambda: recommend_recipe("model", math.nan), "total_vram_gb"),
+        (lambda: recommend_recipe("model", 8, target="fast"), "target"),
+        (lambda: quantize("model", "", wbits=4), "save_dir"),
+        (lambda: quantize("model", "out", qep=1), "qep"),
+        (lambda: evaluate("model", num_samples=0), "num_samples"),
+    ],
+)
+def test_mcp_tools_reject_invalid_domains_before_heavy_work(call, match):
+    with pytest.raises(ValueError, match=match):
+        call()
