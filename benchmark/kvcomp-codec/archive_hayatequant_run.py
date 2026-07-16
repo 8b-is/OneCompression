@@ -41,6 +41,7 @@ ALLOWED_SCOPES = (
     "manifests",
     "provenance",
     "logs",
+    "job_records",
 )
 RESULT_SCOPES = frozenset({"results/smoke", "results/formal", "results/dev"})
 MANDATORY_SCOPES = frozenset({"manifests", "provenance"})

@@ -45,6 +45,82 @@ logger = getLogger(__name__)
 
 WIKITEXT2_REVISION = "b08601e04326c79dfdd32d625aee71d232d685c3"
 WIKITEXT2_TEXT_SHA256 = "696cca6b65a171b0a358a4be6732cdfdf2dd6164a32e20fd70e3c13fc4dfae83"
+PPL_NLL_ACCUMULATION = (
+    "fp32_token_cross_entropy_per_window_fp64_sum_host_binary64_math_fsum"
+)
+PPL_WINDOW_CACHE_LIFETIME = "released_before_next_cache_factory"
+PPL_CROSS_WINDOW_TENSOR_RETENTION = (
+    "tokenized_input_ids_only; window_cache_logits_targets_losses_released; "
+    "nll_host_binary64_scalars"
+)
+
+
+def _ppl_window_plan(
+    sequence_length: int,
+    *,
+    max_length: int,
+    stride: int,
+    max_windows: Optional[int],
+) -> list[dict]:
+    """Return the exact global target-token indices scored by each window.
+
+    A causal LM cannot score global token zero.  Every later target needs its
+    predecessor in the same reset window, which is why a disjoint multi-window
+    stride is invalid: the first token of each later block has no predecessor
+    and the historical implementation silently omitted it.  ``range`` objects
+    keep this plan O(number of windows) even for the full WikiText stream while
+    still making the exact target-index set executable in regression tests.
+    """
+
+    if (
+        isinstance(sequence_length, bool)
+        or not isinstance(sequence_length, int)
+        or sequence_length < 2
+    ):
+        raise ValueError("tokenized PPL text must contain at least two tokens")
+    if stride == max_length and sequence_length > max_length and max_windows != 1:
+        raise ValueError(
+            "stride == max_length is invalid for multi-window PPL: a disjoint "
+            "reset window silently leaves its first global target unscored; "
+            "use stride < max_length (or max_windows == 1 for a one-window control)"
+        )
+
+    windows: list[dict] = []
+    previous_end = 0
+    for begin in range(0, sequence_length, stride):
+        end = min(begin + max_length, sequence_length)
+        new_suffix_length = end - previous_end
+        first_target = max(1, (end - begin) - new_suffix_length)
+        target_indices = range(begin + first_target, end)
+        windows.append(
+            {
+                "begin": begin,
+                "end": end,
+                "first_target": first_target,
+                "target_indices": target_indices,
+            }
+        )
+        previous_end = end
+        if end == sequence_length:
+            break
+        if max_windows is not None and len(windows) >= max_windows:
+            break
+
+    # This is both a construction invariant and a guard against future changes
+    # to window arithmetic: the union must be exactly [1, traversed_end), with
+    # neither duplicate nor dropped targets.
+    expected_next = 1
+    for window in windows:
+        targets = window["target_indices"]
+        if targets.start != expected_next or targets.step != 1 or targets.stop < targets.start:
+            raise RuntimeError(
+                "PPL window plan does not cover a contiguous exact target-index set: "
+                f"expected next={expected_next}, got range({targets.start}, {targets.stop})"
+            )
+        expected_next = targets.stop
+    if not windows or expected_next != windows[-1]["end"]:
+        raise RuntimeError("PPL window plan failed to cover every traversed next-token target")
+    return windows
 
 
 def _adaptive_hq_runtime_snapshot(cache: object) -> dict | None:
@@ -240,11 +316,20 @@ def perplexity_over_text(
     device = model.device
     enc = tokenizer(text, return_tensors="pt")
     input_ids = enc.input_ids.to(device)
+    del enc
     seq_len = input_ids.shape[1]
-    if seq_len < 2:
-        raise ValueError("tokenized PPL text must contain at least two tokens")
+    window_plan = _ppl_window_plan(
+        int(seq_len), max_length=max_length, stride=stride, max_windows=max_windows
+    )
 
-    nlls = []
+    # Apart from the tokenized source IDs needed to form the next slice, keep
+    # only host fp64 NLL scalars across windows.  Retaining even scalar CUDA
+    # outputs can retain allocator/storage metadata, and (more decisively) the
+    # previous cache must be deleted *before* invoking the next cache factory:
+    # assignment evaluates the right-hand side first and otherwise creates a
+    # transient two-cache peak that can OOM a full WikiText run.
+    window_nll_sums: list[float] = []
+    finite_target_ranges: list[list[int]] = []
     n_tokens = 0
     compression_mode = None
     compression_numerator: int | float = 0
@@ -257,9 +342,11 @@ def perplexity_over_text(
     temporal_dependency = None
     adaptive_runtime_mode = None
     adaptive_window_provenance = []
-    for begin in range(0, seq_len, stride):
-        end = min(begin + max_length, seq_len)
-        trg_len = end - prev_end  # number of newly-scored targets
+    for planned_window in window_plan:
+        begin = planned_window["begin"]
+        end = planned_window["end"]
+        first_target = planned_window["first_target"]
+        planned_targets = planned_window["target_indices"]
         ids = input_ids[:, begin:end]
 
         past = cache_factory() if cache_factory is not None else None
@@ -267,7 +354,6 @@ def perplexity_over_text(
         # temporally coupled codec may prefill the unscored prefix, but each
         # scored target must be predicted before that target enters the cache.
         # Token-local HQ/TQ configurations retain the fast one-forward path.
-        first_target = max(1, int(ids.shape[1]) - int(trg_len))
         logits, window_protocol, window_dependency = causal_teacher_forced_logits(
             model,
             ids,
@@ -290,6 +376,11 @@ def perplexity_over_text(
             reduction="none",
         )
         valid = tgt.numel()
+        if valid != len(planned_targets):
+            raise RuntimeError(
+                "PPL scorer diverged from its exact target-index plan: "
+                f"window=[{begin}:{end}], scored={valid}, planned={len(planned_targets)}"
+            )
         # The model probabilities are intentionally evaluated in fp32, but a
         # fp32 reduction over thousands of tokens needlessly rounds the NLL
         # numerator.  Preserve every fp32 token loss and accumulate it in fp64;
@@ -301,7 +392,8 @@ def perplexity_over_text(
         # a different denominator for each codec can make an unstable codec look
         # artificially better than FullKV.
         if valid > 0 and torch.isfinite(loss):
-            nlls.append(loss)
+            window_nll_sums.append(float(loss.item()))
+            finite_target_ranges.append([planned_targets.start, planned_targets.stop])
             n_tokens += valid
         elif valid > 0:
             n_skipped += 1
@@ -369,11 +461,15 @@ def perplexity_over_text(
                 )
         if end == seq_len:
             complete_text = True
+            del ids, past, logits, tgt, token_losses, loss
             break
-        if max_windows is not None and n_win >= max_windows:
-            break
+        # Do not rely on the next loop assignment to release ``past``: Python
+        # calls cache_factory() before rebinding the name, briefly keeping two
+        # complete KV caches alive.  The explicit release also makes the
+        # multi-window lifetime contract testable with weak references.
+        del ids, past, logits, tgt, token_losses, loss
 
-    if not nlls:
+    if not window_nll_sums:
         raise ValueError(
             "No finite-loss windows scored; perplexity is undefined "
             f"({n_skipped} non-finite windows skipped). The model/text combination "
@@ -390,10 +486,22 @@ def perplexity_over_text(
             n_skipped,
             n_win,
         )
+    # With strict overlap, the first window scores positions [1, end) and every
+    # later window scores exactly the newly introduced suffix.  Thus every
+    # finite run must have scored each traversed next-token target exactly once.
+    # Keep this executable invariant next to the denominator rather than
+    # trusting window arithmetic that a future refactor could subtly change.
+    if n_skipped == 0:
+        expected_n_tokens = sum(len(window["target_indices"]) for window in window_plan)
+        if n_tokens != expected_n_tokens:
+            raise RuntimeError(
+                "PPL target coverage is not contiguous and exact: "
+                f"scored={n_tokens}, expected={expected_n_tokens}, traversed={prev_end}"
+            )
     # Preserve the unrounded numerator as well as the mean.  Formal codec
     # comparisons use within-model NLL differences: rounding PPL before taking
     # a ratio can manufacture or erase the small deltas seen at mild rates.
-    nll_sum = torch.stack(nlls).to(dtype=torch.float64).sum()
+    nll_sum = math.fsum(window_nll_sums)
     total_nll = nll_sum / max(n_tokens, 1)
     if compression_mode is None or compression_numerator == 0.0:
         compression_ratio = 1.0
@@ -401,12 +509,24 @@ def perplexity_over_text(
         compression_ratio = float("inf")
     else:
         compression_ratio = compression_numerator / compression_denominator
+    exact_target_coverage = n_skipped == 0
     return {
-        "ppl": float(torch.exp(total_nll)),
+        "ppl": math.exp(total_nll),
         "nll": float(total_nll),
-        "nll_sum": float(nll_sum),
+        "nll_sum": nll_sum,
+        "nll_accumulation": PPL_NLL_ACCUMULATION,
         "n_tokens": n_tokens,
         "n_windows": n_win,
+        "traversed_tokens": prev_end,
+        "scored_target_index_set": f"[1,{prev_end})" if exact_target_coverage else None,
+        "scored_target_ranges": finite_target_ranges,
+        "scored_target_coverage": (
+            "contiguous_exact_once"
+            if exact_target_coverage
+            else "incomplete_nonfinite_windows_excluded"
+        ),
+        "window_cache_lifetime": PPL_WINDOW_CACHE_LIFETIME,
+        "cross_window_tensor_retention": PPL_CROSS_WINDOW_TENSOR_RETENTION,
         "n_skipped_nonfinite": n_skipped,
         "complete_text_eval": complete_text,
         "max_windows": max_windows,

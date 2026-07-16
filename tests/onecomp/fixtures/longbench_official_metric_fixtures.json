@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "upstream": {
+    "commit": "2e00731f8d0bff23dc4325161044d0ed8af94c1e",
+    "eval_path": "LongBench/eval.py",
+    "eval_sha256": "1a3acfc25d9b053e9bb75c479f7e385d0cb9989f0f7115346b7d632655967721",
+    "metrics_path": "LongBench/metrics.py",
+    "metrics_sha256": "e22e2a2662e0f7e683137fa3541f64edb6a801e9138d16d2f3459a6ab9941323",
+    "repository": "THUDM/LongBench"
+  },
+  "fixtures": [
+    {
+      "id": "qa_articles_punctuation",
+      "metric": "qa_f1_score",
+      "prediction": "The quick, brown fox",
+      "ground_truth": "quick brown fox",
+      "all_classes": null,
+      "expected": 1.0
+    },
+    {
+      "id": "qa_duplicate_token_fraction",
+      "metric": "qa_f1_score",
+      "prediction": "red blue blue",
+      "ground_truth": "red blue",
+      "all_classes": null,
+      "expected": 0.8
+    },
+    {
+      "id": "qa_both_normalize_empty",
+      "metric": "qa_f1_score",
+      "prediction": "the",
+      "ground_truth": "an",
+      "all_classes": null,
+      "expected": 0.0
+    },
+    {
+      "id": "rouge_exact",
+      "metric": "rouge_score",
+      "prediction": "the cat",
+      "ground_truth": "the cat",
+      "all_classes": null,
+      "expected": 0.999999995
+    },
+    {
+      "id": "rouge_case_sensitive",
+      "metric": "rouge_score",
+      "prediction": "The Cat",
+      "ground_truth": "the cat",
+      "all_classes": null,
+      "expected": 0.0
+    },
+    {
+      "id": "classification_released_in_place_iteration",
+      "metric": "classification_score",
+      "prediction": "foo bar foobar",
+      "ground_truth": "foobar",
+      "all_classes": ["foo", "bar", "foobar"],
+      "expected": 0.5
+    },
+    {
+      "id": "classification_multiple_guesses",
+      "metric": "classification_score",
+      "prediction": "label2 and label3",
+      "ground_truth": "label2",
+      "all_classes": ["label1", "label2", "label3"],
+      "expected": 0.5
+    },
+    {
+      "id": "classification_no_match",
+      "metric": "classification_score",
+      "prediction": "unknown",
+      "ground_truth": "label2",
+      "all_classes": ["label1", "label2", "label3"],
+      "expected": 0.0
+    },
+    {
+      "id": "retrieval_multiple_guesses",
+      "metric": "retrieval_score",
+      "prediction": "Paragraph 7, then Paragraph 8",
+      "ground_truth": "Paragraph 7",
+      "all_classes": null,
+      "expected": 0.5
+    },
+    {
+      "id": "retrieval_leading_zero_is_not_equal",
+      "metric": "retrieval_score",
+      "prediction": "answer 07",
+      "ground_truth": "Paragraph 7",
+      "all_classes": null,
+      "expected": 0.0
+    },
+    {
+      "id": "retrieval_no_number",
+      "metric": "retrieval_score",
+      "prediction": "no number",
+      "ground_truth": "Paragraph 7",
+      "all_classes": null,
+      "expected": 0.0
+    },
+    {
+      "id": "count_multiple_guesses",
+      "metric": "count_score",
+      "prediction": "7 and 8",
+      "ground_truth": "7",
+      "all_classes": null,
+      "expected": 0.5
+    },
+    {
+      "id": "count_gold_whitespace_is_not_stripped",
+      "metric": "count_score",
+      "prediction": "7 and 8",
+      "ground_truth": " 7 ",
+      "all_classes": null,
+      "expected": 0.0
+    },
+    {
+      "id": "count_no_number",
+      "metric": "count_score",
+      "prediction": "no number",
+      "ground_truth": "7",
+      "all_classes": null,
+      "expected": 0.0
+    },
+    {
+      "id": "code_skip_comment",
+      "metric": "code_sim_score",
+      "prediction": "# explanation\ncorrect_call(x)",
+      "ground_truth": "correct_call(x)",
+      "all_classes": null,
+      "expected": 1.0
+    },
+    {
+      "id": "code_skip_fence",
+      "metric": "code_sim_score",
+      "prediction": "```python\ncorrect_call(x)",
+      "ground_truth": "correct_call(x)",
+      "all_classes": null,
+      "expected": 1.0
+    },
+    {
+      "id": "code_fuzzy_ratio",
+      "metric": "code_sim_score",
+      "prediction": "correct_call(y)",
+      "ground_truth": "correct_call(x)",
+      "all_classes": null,
+      "expected": 0.93
+    }
+  ],
+  "postprocess_fixtures": [
+    {"task": "trec", "prediction": "\nlabel\nexplanation", "expected": "label"},
+    {"task": "triviaqa", "prediction": "answer\nmore", "expected": "answer"},
+    {"task": "samsum", "prediction": "summary\nmore", "expected": "summary"},
+    {"task": "qasper", "prediction": "answer\nmore", "expected": "answer\nmore"}
+  ],
+  "length_bucket_fixtures": [
+    {"length": 3999, "expected": "0-4k"},
+    {"length": 4000, "expected": "4-8k"},
+    {"length": 7999, "expected": "4-8k"},
+    {"length": 8000, "expected": "8k+"}
+  ]
+}

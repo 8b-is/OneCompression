@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import gc
 import hashlib
 import json
+import weakref
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -139,6 +141,59 @@ class _FakeModel:
 class _FakeCache:
     def mem_fraction(self):
         return 0.25
+
+
+def test_ruler_releases_cache_before_every_next_factory(tmp_path, monkeypatch):
+    model_path = tmp_path / "model"
+    model_path.mkdir()
+    model_root = tmp_path / "fake-model"
+    data_root = model_root / "256"
+    _write_task(data_root, "niah_single_1")
+    _write_manifest(model_root, data_root, model_path, ["niah_single_1"])
+    monkeypatch.setattr(
+        ruler_module,
+        "greedy_answer",
+        lambda *_args, **_kwargs: torch.tensor([[7]]),
+    )
+
+    class Cache(_FakeCache):
+        live = 0
+        peak_live = 0
+
+        def __init__(self):
+            type(self).live += 1
+            type(self).peak_live = max(type(self).peak_live, type(self).live)
+
+        def __del__(self):
+            type(self).live -= 1
+
+    references = []
+
+    def cache_factory():
+        gc.collect()
+        assert not references or references[-1]() is None
+        assert Cache.live == 0
+        cache = Cache()
+        references.append(weakref.ref(cache))
+        return cache
+
+    result = ruler_v1(
+        _FakeModel(),
+        _FakeTokenizer(model_path),
+        data_root=data_root,
+        cache_factory=cache_factory,
+        tasks=["niah_single_1"],
+        limit_per_task=3,
+    )
+    gc.collect()
+    assert len(references) == 3
+    assert all(reference() is None for reference in references)
+    assert Cache.live == 0
+    assert Cache.peak_live == 1
+    assert (
+        result.as_dict()["example_cache_lifetime"]
+        == ruler_module.PER_EXAMPLE_CACHE_LIFETIME
+    )
 
 
 def test_substring_scoring_matches_pinned_nvidia_protocol():

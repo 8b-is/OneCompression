@@ -5,7 +5,8 @@ umask 077
 
 usage() {
   printf '%s\n' \
-    'Usage: run_paper_job.sh --repo DIR --python PY --run-root DIR --job-key KEY' \
+    'Usage: run_paper_job.sh --repo DIR --python PY --run-root DIR --work-root DIR' \
+    '       --job-key KEY --attempt-id ID --stdout-log FILE --stderr-log FILE' \
     '       --model DIR --input-manifest FILE --input-manifest-sha256 HEX' \
     '       [--smoke-approval-marker FILE --smoke-approval-marker-sha256 HEX' \
     '        --smoke-validated-plan-sha256 HEX]' \
@@ -17,7 +18,11 @@ usage() {
 REPO=
 PYTHON=
 RUN_ROOT=
+WORK_ROOT=
 JOB_KEY=
+ATTEMPT_ID=
+STDOUT_LOG=
+STDERR_LOG=
 MODEL=
 INPUT_MANIFEST=
 INPUT_MANIFEST_SHA256=
@@ -31,7 +36,11 @@ while [ "$#" -gt 0 ]; do
     --repo) REPO=$2; shift 2 ;;
     --python) PYTHON=$2; shift 2 ;;
     --run-root) RUN_ROOT=$2; shift 2 ;;
+    --work-root) WORK_ROOT=$2; shift 2 ;;
     --job-key) JOB_KEY=$2; shift 2 ;;
+    --attempt-id) ATTEMPT_ID=$2; shift 2 ;;
+    --stdout-log) STDOUT_LOG=$2; shift 2 ;;
+    --stderr-log) STDERR_LOG=$2; shift 2 ;;
     --model) MODEL=$2; shift 2 ;;
     --input-manifest) INPUT_MANIFEST=$2; shift 2 ;;
     --input-manifest-sha256) INPUT_MANIFEST_SHA256=$2; shift 2 ;;
@@ -47,7 +56,9 @@ while [ "$#" -gt 0 ]; do
 done
 
 if [ -z "$REPO" ] || [ -z "$PYTHON" ] || [ -z "$RUN_ROOT" ] || \
-   [ -z "$JOB_KEY" ] || [ -z "$MODEL" ] || [ -z "$INPUT_MANIFEST" ] || \
+   [ -z "$WORK_ROOT" ] || [ -z "$JOB_KEY" ] || [ -z "$ATTEMPT_ID" ] || \
+   [ -z "$STDOUT_LOG" ] || [ -z "$STDERR_LOG" ] || \
+   [ -z "$MODEL" ] || [ -z "$INPUT_MANIFEST" ] || \
    [ -z "$INPUT_MANIFEST_SHA256" ] || [ -z "$EXPECTED_RESULT" ] || \
    [ "$#" -eq 0 ]; then
   usage >&2
@@ -65,6 +76,110 @@ if [ "${#CODE_REPO_COMMIT}" -ne 40 ]; then
     'CODE_REPO_COMMIT must be a lowercase 40-hex commit fixed at submission time' >&2
   exit 2
 fi
+case "$JOB_KEY" in
+  *[!A-Za-z0-9._-]*) printf 'Unsafe job key: %s\n' "$JOB_KEY" >&2; exit 2 ;;
+esac
+case "$ATTEMPT_ID" in
+  ''|*[!A-Za-z0-9._-]*) printf 'Unsafe attempt ID: %s\n' "$ATTEMPT_ID" >&2; exit 2 ;;
+esac
+[ -x "$PYTHON" ] || { printf 'Python executable is missing: %s\n' "$PYTHON" >&2; exit 2; }
+REPO=$(cd "$REPO" && pwd)
+LIFECYCLE="$REPO/benchmark/kvcomp-codec/paper_job_lifecycle.py"
+[ -f "$LIFECYCLE" ] || { printf 'Paper lifecycle helper is missing: %s\n' "$LIFECYCLE" >&2; exit 2; }
+RUN_ROOT=$(realpath -m -- "$RUN_ROOT")
+WORK_ROOT=$(realpath -m -- "$WORK_ROOT")
+RAW_EXPECTED_RESULT=$EXPECTED_RESULT
+EXPECTED_RESULT=$(realpath -m -- "$EXPECTED_RESULT")
+case "$JOB_KEY" in
+  smoke-*) JOB_PHASE=smoke ;;
+  formal-*) JOB_PHASE=formal ;;
+  gpu11-*) JOB_PHASE=smoke ;;
+  *) printf 'Job key has no recognized result phase: %s\n' "$JOB_KEY" >&2; exit 2 ;;
+esac
+RESULT_PHASE_ROOT=$(realpath -m -- "$RUN_ROOT/results/$JOB_PHASE")
+case "$EXPECTED_RESULT" in
+  "$RESULT_PHASE_ROOT/"*) ;;
+  *) printf 'Expected result escapes its phase root: %s\n' "$EXPECTED_RESULT" >&2; exit 2 ;;
+esac
+RUN_ID=${SLURM_JOB_ID:-local-$$}
+[ -z "${SLURM_RESTART_COUNT:-}" ] || RUN_ID+="-restart-${SLURM_RESTART_COUNT}"
+case "$RUN_ID" in
+  *[!A-Za-z0-9._-]*) printf 'Unsafe run ID: %s\n' "$RUN_ID" >&2; exit 2 ;;
+esac
+LOG_JOB_ID=${SLURM_JOB_ID:-$RUN_ID}
+LOG_JOB_NAME=${SLURM_JOB_NAME:-$JOB_KEY}
+case "$LOG_JOB_NAME" in
+  *[!A-Za-z0-9._-]*) printf 'Unsafe scheduler job name: %s\n' "$LOG_JOB_NAME" >&2; exit 2 ;;
+esac
+STDOUT_LOG=${STDOUT_LOG//%x/$LOG_JOB_NAME}
+STDOUT_LOG=${STDOUT_LOG//%j/$LOG_JOB_ID}
+STDERR_LOG=${STDERR_LOG//%x/$LOG_JOB_NAME}
+STDERR_LOG=${STDERR_LOG//%j/$LOG_JOB_ID}
+case "$STDOUT_LOG$STDERR_LOG" in
+  *%*) printf '%s\n' 'Unresolved scheduler placeholder in log path' >&2; exit 2 ;;
+esac
+STDOUT_LOG=$(realpath -m -- "$STDOUT_LOG")
+STDERR_LOG=$(realpath -m -- "$STDERR_LOG")
+case "$STDOUT_LOG" in "$RUN_ROOT/logs/$JOB_PHASE/"*) ;; *)
+  printf 'Worker stdout log escapes repo-local phase logs: %s\n' "$STDOUT_LOG" >&2; exit 2 ;;
+esac
+case "$STDERR_LOG" in "$RUN_ROOT/logs/$JOB_PHASE/"*) ;; *)
+  printf 'Worker stderr log escapes repo-local phase logs: %s\n' "$STDERR_LOG" >&2; exit 2 ;;
+esac
+PROVENANCE="$RUN_ROOT/provenance/${JOB_KEY}_${RUN_ID}.json"
+WORKER_RECORD="$RUN_ROOT/job_records/$JOB_PHASE/$JOB_KEY/$ATTEMPT_ID/worker.json"
+
+"$PYTHON" "$LIFECYCLE" validate-root \
+  --source-repo "$REPO" --run-root "$RUN_ROOT" \
+  --expected-commit "$CODE_REPO_COMMIT" >/dev/null
+mkdir -p "$(dirname "$WORKER_RECORD")" "$RUN_ROOT/provenance"
+
+WORKER_STAGE=wrapper_start
+WORKER_REASON=worker_exit
+WORKER_FINALIZED=0
+write_worker_receipt() {
+  local status=$1 reason=$2 exit_code=${3:-}
+  local -a receipt=(
+    "$PYTHON" "$LIFECYCLE" record
+    --source-repo "$REPO" --run-root "$RUN_ROOT"
+    --source-commit "$CODE_REPO_COMMIT"
+    --path "$WORKER_RECORD" --kind worker --status "$status"
+    --phase "$JOB_PHASE" --job-key "$JOB_KEY" --attempt-id "$ATTEMPT_ID"
+    --expected-result "$EXPECTED_RESULT" --stage "$WORKER_STAGE"
+    --reason-code "$reason" --provenance "$PROVENANCE"
+    --stdout-log "$STDOUT_LOG" --stderr-log "$STDERR_LOG"
+  )
+  [ -z "$exit_code" ] || receipt+=(--exit-code "$exit_code")
+  [ -z "${SLURM_JOB_ID:-}" ] || receipt+=(--slurm-job-id "$SLURM_JOB_ID")
+  "${receipt[@]}"
+}
+worker_on_exit() {
+  local exit_code=$?
+  trap - EXIT HUP INT TERM
+  if [ "$WORKER_FINALIZED" != 1 ]; then
+    [ "$exit_code" -ne 0 ] || exit_code=1
+    write_worker_receipt failed "$WORKER_REASON" "$exit_code" >/dev/null || {
+      printf 'Could not persist terminal worker failure receipt: %s\n' \
+        "$WORKER_RECORD" >&2
+      [ "$exit_code" -ne 0 ] || exit_code=125
+    }
+  fi
+  exit "$exit_code"
+}
+worker_on_signal() {
+  local signal_name=$1 exit_code=$2
+  WORKER_STAGE=signal
+  WORKER_REASON="signal_${signal_name}"
+  exit "$exit_code"
+}
+write_worker_receipt worker_started worker_invoked >/dev/null
+trap worker_on_exit EXIT
+trap 'worker_on_signal hup 129' HUP
+trap 'worker_on_signal int 130' INT
+trap 'worker_on_signal term 143' TERM
+
+WORKER_STAGE=argument_validation
+WORKER_REASON=argument_validation_failed
 case "$INPUT_MANIFEST_SHA256" in
   *[!0-9a-f]*)
     printf '%s\n' '--input-manifest-sha256 must be lowercase hexadecimal' >&2
@@ -75,9 +190,6 @@ if [ "${#INPUT_MANIFEST_SHA256}" -ne 64 ]; then
   printf '%s\n' '--input-manifest-sha256 must contain exactly 64 hexadecimal digits' >&2
   exit 2
 fi
-case "$JOB_KEY" in
-  *[!A-Za-z0-9._-]*) printf 'Unsafe job key: %s\n' "$JOB_KEY" >&2; exit 2 ;;
-esac
 case "$JOB_KEY" in
   formal-*)
     if [ -z "$SMOKE_APPROVAL_MARKER" ] || \
@@ -122,22 +234,6 @@ case "$JOB_KEY" in
     fi
     ;;
 esac
-
-REPO=$(cd "$REPO" && pwd)
-[ -x "$PYTHON" ] || { printf 'Python executable is missing: %s\n' "$PYTHON" >&2; exit 2; }
-RUN_ROOT=$(realpath -m -- "$RUN_ROOT")
-RAW_EXPECTED_RESULT=$EXPECTED_RESULT
-EXPECTED_RESULT=$(realpath -m -- "$EXPECTED_RESULT")
-case "$JOB_KEY" in
-  smoke-*) RESULT_PHASE_ROOT=$(realpath -m -- "$RUN_ROOT/results/smoke") ;;
-  formal-*) RESULT_PHASE_ROOT=$(realpath -m -- "$RUN_ROOT/results/formal") ;;
-  gpu11-*) RESULT_PHASE_ROOT=$(realpath -m -- "$RUN_ROOT/results/smoke") ;;
-  *) printf 'Job key has no recognized result phase: %s\n' "$JOB_KEY" >&2; exit 2 ;;
-esac
-case "$EXPECTED_RESULT" in
-  "$RESULT_PHASE_ROOT/"*) ;;
-  *) printf 'Expected result escapes its phase root: %s\n' "$EXPECTED_RESULT" >&2; exit 2 ;;
-esac
 if [ -L "$RAW_EXPECTED_RESULT" ] || [ -L "$EXPECTED_RESULT" ] || \
    [ -e "$EXPECTED_RESULT" ]; then
   printf 'Expected result already exists; refusing overwrite/resume race: %s\n' \
@@ -157,10 +253,29 @@ command -v sha256sum >/dev/null 2>&1 || {
   printf '%s\n' 'sha256sum is required for per-result paper-job locking' >&2
   exit 2
 }
-RESULT_LOCK_ROOT=$(realpath -m -- "$RUN_ROOT/locks/results")
+case "$WORK_ROOT" in
+  "$RUN_ROOT"|"$RUN_ROOT/"*)
+    printf '%s\n' 'WORK_ROOT must remain external to repo-local RUN_ROOT' >&2
+    exit 2
+    ;;
+esac
+case "$RUN_ROOT" in
+  "$WORK_ROOT/"*)
+    printf '%s\n' 'repo-local RUN_ROOT must not be nested below WORK_ROOT' >&2
+    exit 2
+    ;;
+esac
+RESULTS_WORKTREE_ROOT=$(realpath -m -- "$RUN_ROOT/../../../../..")
+case "$WORK_ROOT" in
+  "$RESULTS_WORKTREE_ROOT"|"$RESULTS_WORKTREE_ROOT/"*)
+    printf '%s\n' 'WORK_ROOT caches must remain external to the results Git worktree' >&2
+    exit 2
+    ;;
+esac
+RESULT_LOCK_ROOT=$(realpath -m -- "$WORK_ROOT/locks/results")
 case "$RESULT_LOCK_ROOT" in
-  "$RUN_ROOT/"*) ;;
-  *) printf 'Result lock root escapes run root: %s\n' "$RESULT_LOCK_ROOT" >&2; exit 2 ;;
+  "$WORK_ROOT/"*) ;;
+  *) printf 'Result lock root escapes work root: %s\n' "$RESULT_LOCK_ROOT" >&2; exit 2 ;;
 esac
 mkdir -p "$RESULT_LOCK_ROOT"
 RESULT_LOCK_LINE=$(printf '%s\0' "$EXPECTED_RESULT" | sha256sum)
@@ -196,14 +311,8 @@ if [ "$manifest_count" -ne 1 ]; then
     '--input-manifest must also be supplied exactly once as --dataset-file' >&2
   exit 2
 fi
-RUN_ID=${SLURM_JOB_ID:-local-$$}
-[ -z "${SLURM_RESTART_COUNT:-}" ] || RUN_ID+="-restart-${SLURM_RESTART_COUNT}"
-case "$RUN_ID" in
-  *[!A-Za-z0-9._-]*) printf 'Unsafe run ID: %s\n' "$RUN_ID" >&2; exit 2 ;;
-esac
-JOB_TMP="$RUN_ROOT/tmp/${JOB_KEY}_${RUN_ID}"
-PROVENANCE="$RUN_ROOT/provenance/${JOB_KEY}_${RUN_ID}.json"
-PAPER_HOME="$RUN_ROOT/runtime/home"
+JOB_TMP="$WORK_ROOT/tmp/${JOB_KEY}_${RUN_ID}"
+PAPER_HOME="$WORK_ROOT/runtime/home"
 mkdir -p "$JOB_TMP" "$RUN_ROOT/provenance" "$PAPER_HOME"
 
 # Defence in depth for direct/local invocations.  Slurm and the SSH launcher
@@ -226,7 +335,7 @@ export HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-1}
 export TRANSFORMERS_OFFLINE=${TRANSFORMERS_OFFLINE:-1}
 export HF_HUB_DISABLE_TELEMETRY=1
 export WANDB_MODE=disabled
-export HF_HOME=${HF_HOME:-$RUN_ROOT/data/hf_home}
+export HF_HOME=${HF_HOME:-$WORK_ROOT/data/hf_home}
 export HF_DATASETS_CACHE=${HF_DATASETS_CACHE:-$HF_HOME/datasets}
 export HOME="$PAPER_HOME"
 export TMPDIR="$JOB_TMP"
@@ -313,6 +422,8 @@ esac
 unset PAPER_SMOKE_VALIDATOR_CHECK_COMPLETED
 case "$JOB_KEY" in
   formal-*)
+    WORKER_STAGE=smoke_gate
+    WORKER_REASON=smoke_gate_failed
     SMOKE_GATE_VALIDATOR="$REPO/benchmark/kvcomp-codec/validate_hayatequant_smoke_gate.py"
     [ -f "$SMOKE_GATE_VALIDATOR" ] || {
       printf 'Formal smoke gate validator is missing: %s\n' "$SMOKE_GATE_VALIDATOR" >&2
@@ -328,6 +439,8 @@ case "$JOB_KEY" in
     ;;
 esac
 
+WORKER_STAGE=preflight
+WORKER_REASON=preflight_failed
 PREFLIGHT=(
   "$PYTHON" "$REPO/benchmark/kvcomp-codec/paper_preflight.py"
   --repo "$REPO"
@@ -369,4 +482,22 @@ printf 'paper_job command:'
 printf ' %q' "$@"
 printf '\n'
 cd "$REPO"
-exec "$@"
+WORKER_STAGE=benchmark
+WORKER_REASON=benchmark_failed
+set +e
+"$@"
+BENCHMARK_EXIT_CODE=$?
+set -e
+if [ "$BENCHMARK_EXIT_CODE" -ne 0 ]; then
+  exit "$BENCHMARK_EXIT_CODE"
+fi
+
+# A zero process status is not scientific success by itself.  The lifecycle
+# helper independently requires a regular, non-empty, strict JSON object and
+# records its exact byte count and SHA-256 before publishing success.
+WORKER_STAGE=result_validation
+WORKER_REASON=result_validation_failed
+write_worker_receipt succeeded benchmark_and_result_validated 0 >/dev/null
+WORKER_FINALIZED=1
+trap - EXIT HUP INT TERM
+exit 0

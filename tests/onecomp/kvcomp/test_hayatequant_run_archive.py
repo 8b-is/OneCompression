@@ -92,6 +92,10 @@ def _minimal_run(root: Path, *, include_optional: bool = False) -> Path:
         _json(run / "summaries/coverage.json", {"complete": True})
         log = _write(run / "logs/formal/job.out", b"formal job completed\n")
         log.chmod(0o755)
+        _json(
+            run / "job_records/formal/formal-ppl/attempt-1/submission.json",
+            {"status": "submitted", "terminal": True, "slurm_job_id": "12345"},
+        )
     return run
 
 
@@ -131,6 +135,7 @@ def test_archive_copies_allowlist_and_emits_verified_deterministic_inventory(tmp
             "manifests",
             "provenance",
             "logs",
+            "job_records",
         ),
         archive_command=("python", "archive_hayatequant_run.py", "--run-id", "formal-20260716"),
     )
@@ -140,6 +145,7 @@ def test_archive_copies_allowlist_and_emits_verified_deterministic_inventory(tmp
     paths = [record["path"] for record in records]
     assert paths == sorted(paths)
     assert paths == [
+        "job_records/formal/formal-ppl/attempt-1/submission.json",
         "logs/formal/job.out",
         "manifests/formal_smoke_approval.json",
         "manifests/paper-inputs.json",
@@ -209,6 +215,7 @@ def test_missing_optional_scopes_are_recorded_and_required_scopes_fail_closed(tm
         "results/dev",
         "summaries",
         "logs",
+        "job_records",
     ]
 
     with pytest.raises(archiver.ArchiveError, match="required source scope.*missing"):

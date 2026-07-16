@@ -32,6 +32,8 @@ from typing import Callable, Dict, List, Optional, Sequence
 import torch
 
 from .compression_accounting import (
+    PER_EXAMPLE_CACHE_LIFETIME,
+    PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION,
     aggregate_compression_sufficient_statistics,
     aggregate_mem_fraction,
     cache_compression_sufficient_statistics,
@@ -551,6 +553,10 @@ class RulerV1Result:
             "per_task": self.per_task,
             "mem_fraction": round(self.mem_fraction, 6),
             "mem_fraction_aggregation": self.mem_fraction_aggregation,
+            "example_cache_lifetime": PER_EXAMPLE_CACHE_LIFETIME,
+            "cross_iteration_tensor_retention": (
+                PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
+            ),
             "start": self.start,
             "limit_per_task": self.limit_per_task,
             "samples_per_task": RULER_V1_SAMPLES_PER_TASK,
@@ -826,6 +832,10 @@ def ruler_v1(
                     **compression,
                 }
             )
+            # All retained records above are host scalars/strings.  Release the
+            # complete cache and generation tensors before the next factory
+            # call; RHS-before-rebind would otherwise create a two-cache peak.
+            del cache, generated, ids
 
         accuracy = sum(task_scores) / len(task_scores)
         task_means[task] = accuracy

@@ -1,9 +1,13 @@
 """Regression tests for benchmark definitions and cache-accounting invariants."""
 
+import gc
 import hashlib
+import importlib
 import json
 import math
 import sys
+import weakref
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -72,6 +76,8 @@ from onecomp.kvcomp.eval.zeroshot import (
 from onecomp.kvcomp.select.h2o import H2OSelector
 from onecomp.kvcomp.recipe.thinkv import ThinKVPolicy
 
+longcodeqa_eval = importlib.import_module("onecomp.kvcomp.eval.longcodeqa")
+
 
 @pytest.mark.parametrize(
     ("gold", "generated"),
@@ -86,6 +92,127 @@ from onecomp.kvcomp.recipe.thinkv import ThinKVPolicy
 )
 def test_math_grading_handles_structured_answers(gold, generated):
     assert math_equivalent(extract_answer(generated), gold)
+
+
+def test_longbench_saved_fixtures_match_pinned_official_scorers_one_by_one():
+    fixture_path = (
+        Path(__file__).parents[1] / "fixtures" / "longbench_official_metric_fixtures.json"
+    )
+    fixture_document = json.loads(fixture_path.read_text(encoding="utf-8"))
+    assert fixture_document["schema_version"] == 1
+    assert fixture_document["upstream"] == {
+        "commit": longbench_eval.LONGBENCH_PROTOCOL_COMMIT,
+        "eval_path": "LongBench/eval.py",
+        "eval_sha256": "1a3acfc25d9b053e9bb75c479f7e385d0cb9989f0f7115346b7d632655967721",
+        "metrics_path": "LongBench/metrics.py",
+        "metrics_sha256": "e22e2a2662e0f7e683137fa3541f64edb6a801e9138d16d2f3459a6ab9941323",
+        "repository": "THUDM/LongBench",
+    }
+    metric_functions = {
+        "qa_f1_score": qa_f1_score,
+        "rouge_score": rouge_score,
+        "classification_score": longbench_eval.classification_score,
+        "retrieval_score": retrieval_score,
+        "count_score": count_score,
+        "code_sim_score": code_sim_score,
+    }
+    seen_metrics = set()
+    for fixture in fixture_document["fixtures"]:
+        seen_metrics.add(fixture["metric"])
+        kwargs = (
+            {"all_classes": fixture["all_classes"]}
+            if fixture["metric"] == "classification_score"
+            else {}
+        )
+        actual = metric_functions[fixture["metric"]](
+            fixture["prediction"], fixture["ground_truth"], **kwargs
+        )
+        assert actual == pytest.approx(fixture["expected"], abs=1e-12), fixture["id"]
+    assert seen_metrics == set(metric_functions)
+
+    for fixture in fixture_document["postprocess_fixtures"]:
+        assert (
+            _postprocess_prediction(fixture["task"], fixture["prediction"])
+            == fixture["expected"]
+        )
+    for fixture in fixture_document["length_bucket_fixtures"]:
+        assert _bucket(fixture["length"]) == fixture["expected"]
+
+
+def test_longbench_releases_cache_before_every_next_example_factory(monkeypatch):
+    rows = [
+        {
+            "context": "examples",
+            "input": "question",
+            "answers": ["label"],
+            "all_classes": ["label"],
+            "length": 100,
+        }
+        for _ in range(longbench_eval.LONGBENCH_E_TASK_COUNTS["trec"])
+    ]
+    monkeypatch.setattr(longbench_eval, "_load_task", lambda _task: rows)
+    monkeypatch.setattr(longbench_eval, "_longbench_archive", lambda: ("data.zip", "a" * 64))
+    monkeypatch.setitem(longbench_eval._METRIC, "trec", lambda pred, gold, **_kwargs: 1.0)
+    monkeypatch.setattr(
+        "onecomp.kvcomp.eval.longcontext.greedy_answer",
+        lambda *_args, **_kwargs: torch.tensor([[7]]),
+    )
+
+    class Cache:
+        live = 0
+        peak_live = 0
+
+        def __init__(self):
+            type(self).live += 1
+            type(self).peak_live = max(type(self).peak_live, type(self).live)
+
+        def __del__(self):
+            type(self).live -= 1
+
+    references = []
+
+    def cache_factory():
+        gc.collect()
+        assert not references or references[-1]() is None
+        assert Cache.live == 0
+        cache = Cache()
+        references.append(weakref.ref(cache))
+        return cache
+
+    class Tokenizer:
+        eos_token_id = 9
+
+        def __call__(self, *_args, **_kwargs):
+            return SimpleNamespace(input_ids=torch.tensor([[1, 2, 3]]))
+
+        def encode(self, text, **_kwargs):
+            assert text == "\n"
+            return [42]
+
+        def decode(self, *_args, **_kwargs):
+            return "label"
+
+    class Model:
+        config = SimpleNamespace(max_position_embeddings=4096)
+        generation_config = SimpleNamespace(eos_token_id=[7, 8])
+
+    result = longbench_eval.longbench_e(
+        Model(),
+        Tokenizer(),
+        cache_factory=cache_factory,
+        tasks=["trec"],
+        max_length=2048,
+        limit_per_task=3,
+    )
+    gc.collect()
+    assert len(references) == 3
+    assert all(reference() is None for reference in references)
+    assert Cache.live == 0
+    assert Cache.peak_live == 1
+    assert (
+        result.as_dict()["example_cache_lifetime"]
+        == longbench_eval.PER_EXAMPLE_CACHE_LIFETIME
+    )
 
 
 def test_math_grading_does_not_match_first_number_in_gold():
@@ -806,6 +933,81 @@ def test_longcodeqa_rejects_invalid_generation_eos_ids():
         _effective_eos_token_ids(model, tokenizer)
 
 
+def test_longcodeqa_releases_cache_before_every_next_example_factory(tmp_path, monkeypatch):
+    rows = [
+        {
+            "prompt": f"prompt {index}",
+            "correct_letter": "A",
+            "repo": "owner/repo",
+            "question": "question",
+        }
+        for index in range(3)
+    ]
+    monkeypatch.setattr(
+        longcodeqa_eval,
+        "load_longcodeqa",
+        lambda *_args, **_kwargs: (rows, tmp_path / "32K.json", "a" * 64),
+    )
+    monkeypatch.setattr(
+        longcodeqa_eval,
+        "_encode_prompt",
+        lambda *_args, **_kwargs: torch.tensor([[1, 2, 3]]),
+    )
+    monkeypatch.setattr(
+        longcodeqa_eval, "greedy_answer", lambda *_args, **_kwargs: torch.tensor([[7]])
+    )
+
+    class Cache:
+        live = 0
+        peak_live = 0
+
+        def __init__(self):
+            type(self).live += 1
+            type(self).peak_live = max(type(self).peak_live, type(self).live)
+
+        def __del__(self):
+            type(self).live -= 1
+
+    references = []
+
+    def cache_factory():
+        gc.collect()
+        assert not references or references[-1]() is None
+        assert Cache.live == 0
+        cache = Cache()
+        references.append(weakref.ref(cache))
+        return cache
+
+    class Tokenizer:
+        eos_token_id = 9
+
+        def decode(self, *_args, **_kwargs):
+            return "Final Answer: A"
+
+    class Model:
+        config = SimpleNamespace(max_position_embeddings=4096)
+        generation_config = SimpleNamespace(eos_token_id=[7, 8])
+
+    result = longcodeqa_eval.longcodeqa(
+        Model(),
+        Tokenizer(),
+        str(tmp_path),
+        "32K",
+        cache_factory=cache_factory,
+        max_context_tokens=4096,
+        limit=3,
+    )
+    gc.collect()
+    assert len(references) == 3
+    assert all(reference() is None for reference in references)
+    assert Cache.live == 0
+    assert Cache.peak_live == 1
+    assert (
+        result.as_dict()["example_cache_lifetime"]
+        == longcodeqa_eval.PER_EXAMPLE_CACHE_LIFETIME
+    )
+
+
 def test_longcodeqa_loader_rejects_count_correct_but_unpinned_data(tmp_path):
     rows = [
         {
@@ -930,6 +1132,76 @@ def test_zeroshot_pair_tokenization_matches_lm_eval_joined_boundary():
     ctx, cont = _encode_pair(Tok(), "ctx ", "choice")
     assert ctx.tolist() == [[1]]
     assert cont.tolist() == [[9]]  # not independently-tokenized [2, 3]
+
+
+def test_zeroshot_releases_protocol_probe_before_first_choice_factory(monkeypatch):
+    class Cache:
+        live = 0
+        peak_live = 0
+
+        def __init__(self):
+            type(self).live += 1
+            type(self).peak_live = max(type(self).peak_live, type(self).live)
+
+        def __del__(self):
+            type(self).live -= 1
+
+        def teacher_forced_temporal_dependency(self):
+            return None
+
+    references = []
+
+    def cache_factory():
+        gc.collect()
+        # Call 1 is the protocol probe.  Call 2 is the first scored choice and
+        # must observe that probe as already dead; subsequent choices must see
+        # the same one-cache-at-a-time invariant.
+        assert not references or references[-1]() is None
+        assert Cache.live == 0
+        cache = Cache()
+        references.append(weakref.ref(cache))
+        return cache
+
+    class Model:
+        device = torch.device("cpu")
+
+        def __call__(self, input_ids, *, past_key_values, **_kwargs):
+            assert past_key_values is not None
+            logits = torch.zeros((*input_ids.shape, 8), dtype=torch.float32)
+            return type("Output", (), {"logits": logits})()
+
+    monkeypatch.setattr(
+        zeroshot_eval,
+        "_load_task",
+        lambda _task: ([object()], lambda _rows: iter([("ctx", [" a", " b"], 0)])),
+    )
+    monkeypatch.setattr(
+        zeroshot_eval,
+        "_encode_pair",
+        lambda _tokenizer, _context, continuation: (
+            torch.tensor([[1, 2]]),
+            torch.tensor([[3 if continuation == " a" else 4]]),
+        ),
+    )
+
+    result = zeroshot_eval.zeroshot_accuracy(
+        Model(), object(), task="arc_easy", cache_factory=cache_factory, limit=1
+    )
+    gc.collect()
+    assert len(references) == 3  # one probe plus two independent choices
+    assert all(reference() is None for reference in references)
+    assert Cache.live == 0
+    assert Cache.peak_live == 1
+    document = result.as_dict()
+    assert (
+        document["protocol_probe_cache_lifetime"]
+        == zeroshot_eval.ZEROSHOT_PROTOCOL_PROBE_CACHE_LIFETIME
+    )
+    assert document["choice_cache_lifetime"] == zeroshot_eval.PER_EXAMPLE_CACHE_LIFETIME
+    assert (
+        document["cross_iteration_tensor_retention"]
+        == zeroshot_eval.PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
+    )
 
 
 def test_zeroshot_choice_decision_preserves_double_precision(monkeypatch):
@@ -1102,8 +1374,264 @@ def test_zeroshot_compression_accounting_fails_closed_on_representation_mixing()
 def test_ppl_rejects_gapped_or_empty_window_settings():
     with pytest.raises(ValueError, match="stride"):
         perplexity_over_text(None, None, "x", max_length=4, stride=5)
+    # Historical regression: two reset windows [0:4] and [4:8] scored global
+    # targets {1,2,3,5,6,7}, silently dropping target 4 while reporting a PPL.
+    legacy_disjoint_targets = {1, 2, 3, 5, 6, 7}
+    assert legacy_disjoint_targets != set(range(1, 8))
+    with pytest.raises(ValueError, match="first global target unscored"):
+        ppl_eval._ppl_window_plan(8, max_length=4, stride=4, max_windows=None)
     with pytest.raises(ValueError, match="max_windows"):
         perplexity_over_text(None, None, "x", max_windows=0)
+
+
+@pytest.mark.parametrize(
+    ("sequence_length", "max_length", "stride", "max_windows", "expected_by_window"),
+    [
+        # Short text and stride == max_length are valid when only one window is
+        # actually traversed.
+        (2, 4, 4, None, [[1]]),
+        (4, 4, 4, None, [[1, 2, 3]]),
+        # Strict-overlap cases exercise stride < max_length and a partial tail.
+        (5, 4, 1, None, [[1, 2, 3], [4]]),
+        (10, 4, 3, None, [[1, 2, 3], [4, 5, 6], [7, 8, 9]]),
+        (11, 6, 4, None, [[1, 2, 3, 4, 5], [6, 7, 8, 9], [10]]),
+        (23, 8, 5, None, [list(range(1, 8)), list(range(8, 13)), list(range(13, 18)), list(range(18, 23))]),
+        # A deliberately capped disjoint one-window control remains exact over
+        # the traversed prefix and cannot trigger the old dropped-boundary bug.
+        (8, 4, 4, 1, [[1, 2, 3]]),
+    ],
+)
+def test_ppl_exact_target_index_set_and_denominator_for_every_window_shape(
+    sequence_length, max_length, stride, max_windows, expected_by_window
+):
+    plan = ppl_eval._ppl_window_plan(
+        sequence_length,
+        max_length=max_length,
+        stride=stride,
+        max_windows=max_windows,
+    )
+    actual_by_window = [list(window["target_indices"]) for window in plan]
+    assert actual_by_window == expected_by_window
+    actual_flat = [index for window in actual_by_window for index in window]
+    traversed_end = plan[-1]["end"]
+    assert actual_flat == list(range(1, traversed_end))
+    assert len(actual_flat) == traversed_end - 1
+
+    class Tok:
+        def __call__(self, _text, **_kwargs):
+            return type(
+                "Encoded",
+                (),
+                {"input_ids": torch.arange(sequence_length, dtype=torch.long).unsqueeze(0) % 7},
+            )()
+
+    class Model:
+        device = torch.device("cpu")
+
+        def __call__(self, input_ids, **_kwargs):
+            logits = torch.zeros((*input_ids.shape, 7), dtype=torch.float32)
+            return type("Output", (), {"logits": logits})()
+
+    result = perplexity_over_text(
+        Model(),
+        Tok(),
+        "ignored",
+        max_length=max_length,
+        stride=stride,
+        max_windows=max_windows,
+    )
+    assert result["complete_text_eval"] is (traversed_end == sequence_length)
+    assert result["n_skipped_nonfinite"] == 0
+    assert result["n_tokens"] == len(actual_flat)
+    assert result["traversed_tokens"] == traversed_end
+    assert result["scored_target_index_set"] == f"[1,{traversed_end})"
+    assert result["scored_target_ranges"] == [
+        [indexes[0], indexes[-1] + 1] for indexes in expected_by_window
+    ]
+    assert result["scored_target_coverage"] == "contiguous_exact_once"
+    assert result["nll_sum"] == pytest.approx(len(actual_flat) * math.log(7))
+
+
+@pytest.mark.parametrize("sequence_length", [0, 1])
+def test_ppl_rejects_empty_or_one_token_text_without_a_denominator(sequence_length):
+    class Tok:
+        def __call__(self, _text, **_kwargs):
+            return SimpleNamespace(
+                input_ids=torch.arange(sequence_length, dtype=torch.long).unsqueeze(0)
+            )
+
+    class Model:
+        device = torch.device("cpu")
+
+    with pytest.raises(ValueError, match="at least two tokens"):
+        perplexity_over_text(Model(), Tok(), "ignored", max_length=4, stride=2)
+
+
+def test_ppl_multi_document_join_has_one_exact_cross_document_denominator():
+    documents = ["alpha", "beta", "gamma"]
+    joined = "\n\n".join(documents)
+    token_ids = torch.tensor([[0, 1, 2, 3, 4, 5, 6, 0]], dtype=torch.long)
+
+    class Tok:
+        def __call__(self, text, **_kwargs):
+            assert text == joined
+            return SimpleNamespace(input_ids=token_ids)
+
+    class Model:
+        device = torch.device("cpu")
+
+        def __call__(self, input_ids, **_kwargs):
+            return SimpleNamespace(logits=torch.zeros((*input_ids.shape, 7)))
+
+    plan = ppl_eval._ppl_window_plan(8, max_length=5, stride=3, max_windows=None)
+    assert [list(window["target_indices"]) for window in plan] == [
+        [1, 2, 3, 4],
+        [5, 6, 7],
+    ]
+    result = perplexity_over_text(Model(), Tok(), joined, max_length=5, stride=3)
+    assert result["n_tokens"] == 7
+    assert result["scored_target_index_set"] == "[1,8)"
+    assert result["nll_sum"] == pytest.approx(7 * math.log(7))
+
+
+def test_ppl_approximate_nonfinite_mode_never_claims_exact_target_coverage(monkeypatch):
+    losses = iter(
+        [
+            torch.ones(3, dtype=torch.float32),
+            torch.full((2,), float("nan"), dtype=torch.float32),
+        ]
+    )
+    monkeypatch.setattr(
+        torch.nn.functional,
+        "cross_entropy",
+        lambda *_args, **_kwargs: next(losses),
+    )
+
+    class Tok:
+        def __call__(self, _text, **_kwargs):
+            return SimpleNamespace(input_ids=torch.arange(6).unsqueeze(0) % 7)
+
+    class Model:
+        device = torch.device("cpu")
+
+        def __call__(self, input_ids, **_kwargs):
+            return SimpleNamespace(logits=torch.zeros((*input_ids.shape, 7)))
+
+    result = perplexity_over_text(
+        Model(), Tok(), "ignored", max_length=4, stride=2, fail_on_nonfinite=False
+    )
+    assert result["n_skipped_nonfinite"] == 1
+    assert result["n_tokens"] == 3
+    assert result["scored_target_index_set"] is None
+    assert result["scored_target_ranges"] == [[1, 4]]
+    assert result["scored_target_coverage"] == "incomplete_nonfinite_windows_excluded"
+
+
+def test_ppl_releases_each_window_cache_before_constructing_the_next_one(monkeypatch):
+    class Tok:
+        def __call__(self, _text, **_kwargs):
+            return SimpleNamespace(input_ids=torch.arange(11).unsqueeze(0) % 7)
+
+    class Cache:
+        fp16_bits = 100
+        stored_bits = 50
+        live = 0
+        peak_live = 0
+
+        def __init__(self):
+            type(self).live += 1
+            type(self).peak_live = max(type(self).peak_live, type(self).live)
+
+        def __del__(self):
+            type(self).live -= 1
+
+    references = []
+    token_loss_references = []
+
+    def cache_factory():
+        # cache_factory is the exact point at which the historical loop still
+        # retained ``past`` from the preceding iteration (RHS-before-rebind),
+        # producing a transient two-cache GPU-memory peak.
+        gc.collect()
+        assert not references or references[-1]() is None
+        assert not token_loss_references or token_loss_references[-1]() is None
+        assert Cache.live == 0
+        cache = Cache()
+        references.append(weakref.ref(cache))
+        return cache
+
+    class Model:
+        device = torch.device("cpu")
+
+        def __call__(self, input_ids, *, past_key_values, **_kwargs):
+            assert isinstance(past_key_values, Cache)
+            return SimpleNamespace(logits=torch.zeros((*input_ids.shape, 7)))
+
+    real_cross_entropy = torch.nn.functional.cross_entropy
+
+    def tracked_cross_entropy(*args, **kwargs):
+        losses = real_cross_entropy(*args, **kwargs)
+        token_loss_references.append(weakref.ref(losses))
+        return losses
+
+    monkeypatch.setattr(torch.nn.functional, "cross_entropy", tracked_cross_entropy)
+
+    result = perplexity_over_text(
+        Model(), Tok(), "ignored", cache_factory=cache_factory, max_length=5, stride=3
+    )
+    gc.collect()
+    assert result["n_windows"] == 3
+    assert len(references) == 3
+    assert all(reference() is None for reference in references)
+    assert all(reference() is None for reference in token_loss_references)
+    assert Cache.live == 0
+    assert Cache.peak_live == 1
+    assert result["nll_accumulation"] == ppl_eval.PPL_NLL_ACCUMULATION
+    assert result["window_cache_lifetime"] == ppl_eval.PPL_WINDOW_CACHE_LIFETIME
+    assert (
+        result["cross_window_tensor_retention"]
+        == ppl_eval.PPL_CROSS_WINDOW_TENSOR_RETENTION
+    )
+
+
+def test_ppl_math_fsum_matches_one_concatenated_tokenwise_fp64_reference(monkeypatch):
+    # Three windows with 3, 3, and 2 targets.  The small losses deliberately
+    # vanish under the historical fp32 window-sum + torch.stack reduction but
+    # survive conversion of each fp32 token loss to the formal fp64 numerator.
+    loss_chunks = [
+        torch.tensor([10.0, 1e-7, 1e-7], dtype=torch.float32),
+        torch.tensor([1e-7, 1e-7, 1e-7], dtype=torch.float32),
+        torch.tensor([1e-7, 1e-7], dtype=torch.float32),
+    ]
+    chunks = iter(loss_chunks)
+
+    def fixed_cross_entropy(logits, targets, *, reduction):
+        assert reduction == "none"
+        chunk = next(chunks).clone()
+        assert chunk.numel() == targets.numel() == logits.shape[0]
+        return chunk
+
+    monkeypatch.setattr(torch.nn.functional, "cross_entropy", fixed_cross_entropy)
+
+    class Tok:
+        def __call__(self, _text, **_kwargs):
+            return SimpleNamespace(input_ids=torch.arange(9).unsqueeze(0) % 7)
+
+    class Model:
+        device = torch.device("cpu")
+
+        def __call__(self, input_ids, **_kwargs):
+            return SimpleNamespace(logits=torch.zeros((*input_ids.shape, 7)))
+
+    result = perplexity_over_text(Model(), Tok(), "ignored", max_length=4, stride=3)
+    tokenwise_fp64_reference = float(torch.cat(loss_chunks).to(torch.float64).sum())
+    historical_fp32_window_stack = float(
+        torch.stack([chunk.sum() for chunk in loss_chunks]).sum()
+    )
+    assert historical_fp32_window_stack != tokenwise_fp64_reference
+    assert result["n_tokens"] == 8
+    assert result["nll_sum"] == tokenwise_fp64_reference
+    assert result["nll"] == tokenwise_fp64_reference / 8
 
 
 def test_wikitext_loader_uses_only_pinned_salesforce_source_and_join_hash(monkeypatch):

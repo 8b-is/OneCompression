@@ -37,6 +37,8 @@ from typing import Callable, List, Optional
 import torch
 
 from .compression_accounting import (
+    PER_EXAMPLE_CACHE_LIFETIME,
+    PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION,
     aggregate_compression_sufficient_statistics,
     aggregate_mem_fraction,
     cache_compression_sufficient_statistics,
@@ -265,6 +267,10 @@ class LongCodeQAResult:
             },
             "mem_fraction": round(self.mem_fraction, 6),
             "mem_fraction_aggregation": self.mem_fraction_aggregation,
+            "example_cache_lifetime": PER_EXAMPLE_CACHE_LIFETIME,
+            "cross_iteration_tensor_retention": (
+                PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
+            ),
             "max_context_tokens": self.max_context_tokens,
             "max_new_tokens": self.max_new_tokens,
             "start": self.start,
@@ -428,6 +434,9 @@ def longcodeqa(
                 **compression,
             }
         )
+        # ``records`` contains only detached host values.  Releasing here (not
+        # on the next assignment) prevents a transient two-cache GPU peak.
+        del cache, generated, ids
     n = len(selected)
     stderr, low, high = proportion_stats(hits, n)
     compression_statistics = aggregate_compression_sufficient_statistics(records)

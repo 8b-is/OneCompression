@@ -30,6 +30,30 @@ renderer = importlib.util.module_from_spec(RENDERER_SPEC)
 RENDERER_SPEC.loader.exec_module(renderer)
 
 
+def test_longbench_regrader_matches_every_saved_pinned_official_metric_fixture():
+    fixture_path = REPO_ROOT / "tests/onecomp/fixtures/longbench_official_metric_fixtures.json"
+    fixture_document = json.loads(fixture_path.read_text(encoding="utf-8"))
+    assert fixture_document["upstream"]["commit"] == shards.LONGBENCH_PROTOCOL_COMMIT
+    metric_functions = {
+        "qa_f1_score": shards._longbench_qa_f1,
+        "rouge_score": shards._longbench_rouge,
+        "classification_score": shards._longbench_classification,
+        "retrieval_score": shards._longbench_retrieval,
+        "count_score": shards._longbench_count,
+        "code_sim_score": shards._longbench_code_similarity,
+    }
+    for fixture in fixture_document["fixtures"]:
+        kwargs = (
+            {"all_classes": fixture["all_classes"]}
+            if fixture["metric"] == "classification_score"
+            else {}
+        )
+        actual = metric_functions[fixture["metric"]](
+            fixture["prediction"], fixture["ground_truth"], **kwargs
+        )
+        assert actual == pytest.approx(fixture["expected"], abs=1e-12), fixture["id"]
+
+
 def test_formal_point_gate_rejects_899_of_1000_without_rounding():
     cells = [{"complete": True, "win": index < 899} for index in range(1000)]
     summary = shards._point_estimate_pair_summary(cells, scope="quality")
@@ -795,6 +819,7 @@ def _zero_doc(start: int, stop: int, *, correct: int, overlap_seed: int = 2027) 
         "split": "test",
         "evaluator": "lm-eval-compatible@0.4.11",
         "lm_eval_protocol_commit": shards.LM_EVAL_PROTOCOL_COMMIT,
+        "lm_eval_task_metadata_version": shards.LM_EVAL_TASK_METADATA_VERSION,
         "num_fewshot": 0,
         "target_delimiter": " ",
         "apply_chat_template": False,
@@ -804,6 +829,11 @@ def _zero_doc(start: int, stop: int, *, correct: int, overlap_seed: int = 2027) 
         "compression_stored_bits": None,
         "teacher_forced_scoring_protocol": shards.PPL_TEACHER_FORCED_PROTOCOL,
         "teacher_forced_temporal_dependency": None,
+        "protocol_probe_cache_lifetime": shards.ZEROSHOT_PROTOCOL_PROBE_CACHE_LIFETIME,
+        "choice_cache_lifetime": shards.PER_EXAMPLE_CACHE_LIFETIME,
+        "cross_iteration_tensor_retention": (
+            shards.PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
+        ),
         "selection": {
             "start_valid_example": start,
             "stop_valid_example_exclusive": stop,
@@ -1045,6 +1075,7 @@ def _zero_pair_doc(start: int, stop: int, tq_correct: set[int], hq_correct: set[
                     "split": "test",
                     "evaluator": "lm-eval-compatible@0.4.11",
                     "lm_eval_protocol_commit": shards.LM_EVAL_PROTOCOL_COMMIT,
+                    "lm_eval_task_metadata_version": shards.LM_EVAL_TASK_METADATA_VERSION,
                     "num_fewshot": 0,
                     "target_delimiter": " ",
                     "apply_chat_template": False,
@@ -1054,6 +1085,13 @@ def _zero_pair_doc(start: int, stop: int, tq_correct: set[int], hq_correct: set[
                     "compression_stored_bits": (stop - start) * 400,
                     "teacher_forced_scoring_protocol": shards.PPL_TEACHER_FORCED_PROTOCOL,
                     "teacher_forced_temporal_dependency": None,
+                    "protocol_probe_cache_lifetime": (
+                        shards.ZEROSHOT_PROTOCOL_PROBE_CACHE_LIFETIME
+                    ),
+                    "choice_cache_lifetime": shards.PER_EXAMPLE_CACHE_LIFETIME,
+                    "cross_iteration_tensor_retention": (
+                        shards.PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
+                    ),
                     "selection": {
                         "start_valid_example": start,
                         "stop_valid_example_exclusive": stop,
@@ -1173,10 +1211,15 @@ def _ppl_doc(
             "ppl": ppl,
             "ppl_nll": nll,
             "ppl_nll_sum": nll * 100,
+            "ppl_nll_accumulation": shards.PPL_NLL_ACCUMULATION,
             "ppl_n_tokens": 100,
             "ppl_n_windows": 3,
             "ppl_n_skipped_nonfinite": 0,
             "ppl_complete_text_eval": True,
+            "ppl_window_cache_lifetime": shards.PPL_WINDOW_CACHE_LIFETIME,
+            "ppl_cross_window_tensor_retention": (
+                shards.PPL_CROSS_WINDOW_TENSOR_RETENTION
+            ),
             "ppl_max_windows": None,
             "ppl_source": "wikitext-2-raw-v1/test",
             "ppl_dataset_revision": shards.WIKITEXT2_REVISION,
@@ -1466,10 +1509,15 @@ def _mechanism_doc(
             "ppl": ppl,
             "ppl_nll": nll,
             "ppl_nll_sum": nll * 100,
+            "ppl_nll_accumulation": shards.PPL_NLL_ACCUMULATION,
             "ppl_n_tokens": 100,
             "ppl_n_windows": 3,
             "ppl_n_skipped_nonfinite": 0,
             "ppl_complete_text_eval": True,
+            "ppl_window_cache_lifetime": shards.PPL_WINDOW_CACHE_LIFETIME,
+            "ppl_cross_window_tensor_retention": (
+                shards.PPL_CROSS_WINDOW_TENSOR_RETENTION
+            ),
             "ppl_max_windows": None,
             "ppl_source": "wikitext-2-raw-v1/test",
             "ppl_dataset_revision": shards.WIKITEXT2_REVISION,
@@ -1534,10 +1582,15 @@ def _mechanism_doc(
             "ppl": 10.0,
             "ppl_nll": math.log(10.0),
             "ppl_nll_sum": math.log(10.0) * 100,
+            "ppl_nll_accumulation": shards.PPL_NLL_ACCUMULATION,
             "ppl_n_tokens": 100,
             "ppl_n_windows": 3,
             "ppl_n_skipped_nonfinite": 0,
             "ppl_complete_text_eval": True,
+            "ppl_window_cache_lifetime": shards.PPL_WINDOW_CACHE_LIFETIME,
+            "ppl_cross_window_tensor_retention": (
+                shards.PPL_CROSS_WINDOW_TENSOR_RETENTION
+            ),
             "ppl_max_windows": None,
             "ppl_source": "wikitext-2-raw-v1/test",
             "ppl_dataset_revision": shards.WIKITEXT2_REVISION,
@@ -1884,6 +1937,10 @@ def _long_doc(
             "pinned evaluator stores response but reads prediction text"
         ),
         "protocol_scope": shards.LONGCODE_PROTOCOL_SCOPE,
+        "example_cache_lifetime": shards.PER_EXAMPLE_CACHE_LIFETIME,
+        "cross_iteration_tensor_retention": (
+            shards.PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
+        ),
         "prompt_protocol": "released_prompt_verbatim_raw_causal_text",
         "chat_template": "none",
         "truncation": "none",
@@ -2139,6 +2196,10 @@ def _longbench_doc(task: str, scores: list[float], *, max_new: int) -> dict:
         "dataset_revision": "longbench-revision",
         "protocol_commit": "protocol-commit",
         "protocol_scope": shards.LONGBENCH_PROTOCOL_SCOPE,
+        "example_cache_lifetime": shards.PER_EXAMPLE_CACHE_LIFETIME,
+        "cross_iteration_tensor_retention": (
+            shards.PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
+        ),
         "reference_model_wrapper_exact": False,
         "data_zip_sha256": "b" * 64,
         "max_length": 32768,
@@ -3682,4 +3743,126 @@ def test_speed_aggregation_rejects_two_process_formal_design(tmp_path):
             expected_models=("model",),
             expected_rates=(3,),
             expected_compile_modes=("off",),
+        )
+
+
+def _write_repo_local_receipt_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
+    root = tmp_path / "paper-run"
+    source = root / "results/formal/ppl/model/results.json"
+    source.parent.mkdir(parents=True)
+    source.write_text('{"result": "ok"}\n', encoding="utf-8")
+    provenance = root / "provenance/formal-ppl_123.json"
+    provenance.parent.mkdir(parents=True)
+    provenance.write_text("{}\n", encoding="utf-8")
+    stdout = root / "logs/formal/hq-f-ppl_123.out"
+    stderr = root / "logs/formal/hq-f-ppl_123.err"
+    stdout.parent.mkdir(parents=True)
+    stdout.write_text("completed\n", encoding="utf-8")
+    stderr.write_text("", encoding="utf-8")
+    attempt_root = root / "job_records/formal/formal-ppl/attempt-1"
+    attempt_root.mkdir(parents=True)
+    scheduler_stdout = attempt_root / "sbatch.stdout"
+    scheduler_stderr = attempt_root / "sbatch.stderr"
+    scheduler_stdout.write_text("123\n", encoding="utf-8")
+    scheduler_stderr.write_text("", encoding="utf-8")
+    expected_relative = source.relative_to(root).as_posix()
+    identity = {
+        "schema_version": 1,
+        "phase": "formal",
+        "job_key": "formal-ppl",
+        "attempt_id": "attempt-1",
+        "source_commit": "c" * 40,
+        "run_id": "fixture",
+        "expected_result": expected_relative,
+        "results_worktree": "/fixture/results-worktree",
+        "created_at_utc": "2026-07-16T00:00:00+00:00",
+        "updated_at_utc": "2026-07-16T00:01:00+00:00",
+        "terminal": True,
+        "stage": "fixture",
+    }
+    submission = {
+        **identity,
+        "kind": "hayatequant_paper_submission_receipt",
+        "status": "submitted",
+        "reason_code": "sbatch_accepted",
+        "exit_code": 0,
+        "slurm_job_id": "123",
+        "scheduler_stdout": scheduler_stdout.relative_to(root).as_posix(),
+        "scheduler_stderr": scheduler_stderr.relative_to(root).as_posix(),
+    }
+    worker = {
+        **identity,
+        "kind": "hayatequant_paper_worker_receipt",
+        "status": "succeeded",
+        "reason_code": "benchmark_and_result_validated",
+        "exit_code": 0,
+        "slurm_job_id": "123",
+        "stdout_log": stdout.relative_to(root).as_posix(),
+        "stderr_log": stderr.relative_to(root).as_posix(),
+        "provenance": provenance.relative_to(root).as_posix(),
+        "result": {
+            "path": expected_relative,
+            "bytes": source.stat().st_size,
+            "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+            "json_object_validated": True,
+            "duplicate_keys_rejected": True,
+            "nonfinite_numbers_rejected": True,
+        },
+    }
+    _write(attempt_root / "submission.json", submission)
+    _write(attempt_root / "worker.json", worker)
+    return root, source, attempt_root / "worker.json"
+
+
+def test_formal_aggregate_requires_repo_local_success_receipts(tmp_path):
+    root, source, _ = _write_repo_local_receipt_fixture(tmp_path)
+    audit = shards._validate_formal_job_receipts(
+        root, source_paths=[source], expected_commit="c" * 40
+    )
+    assert audit["source_results_validated"] == 1
+    assert audit["worker_status_counts"] == {"succeeded": 1}
+
+
+def test_formal_aggregate_rejects_result_changed_after_success_receipt(tmp_path):
+    root, source, _ = _write_repo_local_receipt_fixture(tmp_path)
+    source.write_text('{"result": "tampered"}\n', encoding="utf-8")
+    with pytest.raises(shards.AggregateError, match="changed after receipt"):
+        shards._validate_formal_job_receipts(
+            root, source_paths=[source], expected_commit="c" * 40
+        )
+
+
+def test_formal_aggregate_rejects_nonterminal_or_missing_worker_success(tmp_path):
+    root, source, worker_path = _write_repo_local_receipt_fixture(tmp_path)
+    worker = json.loads(worker_path.read_text(encoding="utf-8"))
+    worker["status"] = "failed"
+    worker["exit_code"] = 9
+    worker.pop("result")
+    _write(worker_path, worker)
+    with pytest.raises(shards.AggregateError, match="exactly one successful worker receipt"):
+        shards._validate_formal_job_receipts(
+            root, source_paths=[source], expected_commit="c" * 40
+        )
+
+
+def test_formal_aggregate_rejects_submitted_attempt_without_terminal_worker(tmp_path):
+    root, source, worker_path = _write_repo_local_receipt_fixture(tmp_path)
+    worker_path.unlink()
+    with pytest.raises(shards.AggregateError, match="no terminal worker receipt"):
+        shards._validate_formal_job_receipts(
+            root, source_paths=[source], expected_commit="c" * 40
+        )
+
+
+def test_formal_aggregate_rejects_failed_worker_with_mismatched_submission(tmp_path):
+    root, source, worker_path = _write_repo_local_receipt_fixture(tmp_path)
+    worker = json.loads(worker_path.read_text(encoding="utf-8"))
+    worker["status"] = "failed"
+    worker["exit_code"] = 9
+    worker["slurm_job_id"] = "999"
+    worker.pop("result")
+    _write(worker_path, worker)
+    with pytest.raises(shards.AggregateError, match="Slurm identities disagree"):
+        shards._validate_formal_job_receipts(
+            root, source_paths=[source], expected_commit="c" * 40
         )

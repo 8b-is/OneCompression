@@ -40,6 +40,10 @@ from ._teacher_forcing import (
     causal_teacher_forced_logits,
     teacher_forced_protocol,
 )
+from .compression_accounting import (
+    PER_EXAMPLE_CACHE_LIFETIME,
+    PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION,
+)
 
 logger = getLogger(__name__)
 
@@ -49,7 +53,11 @@ logger = getLogger(__name__)
 # even if a release tag or task file is later moved.
 LM_EVAL_VERSION = "0.4.11"
 LM_EVAL_PROTOCOL_COMMIT = "27988a293647d5853e48edea291640b4af54740c"
+LM_EVAL_TASK_METADATA_VERSION = "1.0"
 PROTOCOL_INPUT_HASH_SCHEMA = "lm_eval_multiple_choice_prompt_v1"
+ZEROSHOT_PROTOCOL_PROBE_CACHE_LIFETIME = (
+    "released_after_protocol_dependency_snapshot_before_first_choice_factory"
+)
 
 
 @dataclass
@@ -94,6 +102,7 @@ class ZeroShotResult:
             "compression_stored_bits": self.compression_stored_bits,
             "evaluator": f"lm-eval-compatible@{LM_EVAL_VERSION}",
             "lm_eval_protocol_commit": LM_EVAL_PROTOCOL_COMMIT,
+            "lm_eval_task_metadata_version": LM_EVAL_TASK_METADATA_VERSION,
             "num_fewshot": 0,
             "target_delimiter": " ",
             "apply_chat_template": False,
@@ -101,6 +110,11 @@ class ZeroShotResult:
             "protocol_input_sha256": self.protocol_input_sha256,
             "teacher_forced_scoring_protocol": self.teacher_forced_scoring_protocol,
             "teacher_forced_temporal_dependency": self.teacher_forced_temporal_dependency,
+            "protocol_probe_cache_lifetime": ZEROSHOT_PROTOCOL_PROBE_CACHE_LIFETIME,
+            "choice_cache_lifetime": PER_EXAMPLE_CACHE_LIFETIME,
+            "cross_iteration_tensor_retention": (
+                PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
+            ),
             "correct": self.correct,
             "correct_norm": self.correct_norm,
             "selection": {
@@ -542,6 +556,11 @@ def zeroshot_accuracy(
     protocol_probe = cache_factory() if cache_factory is not None else None
     scoring_protocol = teacher_forced_protocol(protocol_probe)
     temporal_dependency = cache_temporal_dependency(protocol_probe)
+    # The probe is needed only to snapshot the immutable scoring contract.  In
+    # particular, it must not coexist with the first real choice cache: large
+    # compressed caches otherwise double the peak allocation before any task
+    # example has been scored.
+    del protocol_probe
     ds, fn = _load_task(task)
     dataset_size = len(ds)
     if (start > 0 or limit is not None) and sample_seed is not None:

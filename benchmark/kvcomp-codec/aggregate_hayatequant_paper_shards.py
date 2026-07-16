@@ -512,9 +512,25 @@ WIKITEXT2_REVISION = "b08601e04326c79dfdd32d625aee71d232d685c3"
 WIKITEXT2_TEXT_SHA256 = "696cca6b65a171b0a358a4be6732cdfdf2dd6164a32e20fd70e3c13fc4dfae83"
 PPL_MAX_LENGTH = 2048
 PPL_STRIDE = 1024
+PPL_NLL_ACCUMULATION = (
+    "fp32_token_cross_entropy_per_window_fp64_sum_host_binary64_math_fsum"
+)
+PPL_WINDOW_CACHE_LIFETIME = "released_before_next_cache_factory"
+PPL_CROSS_WINDOW_TENSOR_RETENTION = (
+    "tokenized_input_ids_only; window_cache_logits_targets_losses_released; "
+    "nll_host_binary64_scalars"
+)
+PER_EXAMPLE_CACHE_LIFETIME = "released_after_scalar_accounting_before_next_cache_factory"
+PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION = (
+    "none; retained_records_are_host_scalar_text_and_mappings_only"
+)
+ZEROSHOT_PROTOCOL_PROBE_CACHE_LIFETIME = (
+    "released_after_protocol_dependency_snapshot_before_first_choice_factory"
+)
 QUALITY_DTYPE = "bfloat16"
 QUALITY_DEVICE = "cuda:0"
 LM_EVAL_PROTOCOL_COMMIT = "27988a293647d5853e48edea291640b4af54740c"
+LM_EVAL_TASK_METADATA_VERSION = "1.0"
 ZEROSHOT_PROTOCOL_INPUT_HASH_SCHEMA = "lm_eval_multiple_choice_prompt_v1"
 PPL_TEACHER_FORCED_PROTOCOL = "single_forward_causal_mask_token_local_cache"
 CAUSAL_INCREMENTAL_TEACHER_FORCED_PROTOCOL = "causal_prefix_prefill_then_token_step_targets"
@@ -1025,17 +1041,15 @@ def _longbench_rouge(prediction: str, gold: str) -> float:
 
 
 def _longbench_classification(prediction: str, gold: str, all_classes: Any) -> float:
-    prediction = prediction.strip()
     matches = [candidate for candidate in (all_classes or []) if candidate in prediction]
-    for match in list(matches):
+    for match in matches:
         if match in gold and match != gold:
             matches.remove(match)
     return 1.0 / len(matches) if gold in matches else 0.0
 
 
 def _longbench_retrieval(prediction: str, gold: str) -> float:
-    match = re.search(r"Paragraph (\d+)", gold)
-    target = match.group(1) if match else gold.strip()
+    target = re.findall(r"Paragraph (\d+)", gold)[0]
     predicted = re.findall(r"\d+", prediction)
     return sum(value == target for value in predicted) / len(predicted) if predicted else 0.0
 
@@ -1043,7 +1057,7 @@ def _longbench_retrieval(prediction: str, gold: str) -> float:
 def _longbench_count(prediction: str, gold: str) -> float:
     predicted = re.findall(r"\d+", prediction)
     return (
-        sum(value == str(gold).strip() for value in predicted) / len(predicted)
+        sum(value == str(gold) for value in predicted) / len(predicted)
         if predicted
         else 0.0
     )
@@ -1247,6 +1261,13 @@ def _validated_ppl_numbers(
     row: Mapping[str, Any], *, label: str, expected_tokens: int | None = None
 ) -> tuple[float, float, float, int]:
     """Validate unrounded PPL, mean NLL, numerator, and token denominator."""
+    if (
+        row.get("ppl_nll_accumulation") != PPL_NLL_ACCUMULATION
+        or row.get("ppl_window_cache_lifetime") != PPL_WINDOW_CACHE_LIFETIME
+        or row.get("ppl_cross_window_tensor_retention")
+        != PPL_CROSS_WINDOW_TENSOR_RETENTION
+    ):
+        raise AggregateError(f"PPL accumulation/cache-lifetime provenance changed for {label}")
     n_tokens = _integer(row.get("ppl_n_tokens"), label=f"{label} n_tokens", minimum=1)
     if expected_tokens is not None and n_tokens != expected_tokens:
         raise AggregateError(f"PPL denominator changed for {label}")
@@ -2390,11 +2411,19 @@ def aggregate_zeroshot(
                     if (
                         result.get("evaluator") != "lm-eval-compatible@0.4.11"
                         or result.get("lm_eval_protocol_commit") != LM_EVAL_PROTOCOL_COMMIT
+                        or result.get("lm_eval_task_metadata_version")
+                        != LM_EVAL_TASK_METADATA_VERSION
                         or result.get("num_fewshot") != 0
                         or result.get("target_delimiter") != " "
                         or result.get("apply_chat_template") is not False
                         or result.get("teacher_forced_scoring_protocol") != expected_protocol
                         or result.get("teacher_forced_temporal_dependency") != expected_dependency
+                        or result.get("protocol_probe_cache_lifetime")
+                        != ZEROSHOT_PROTOCOL_PROBE_CACHE_LIFETIME
+                        or result.get("choice_cache_lifetime")
+                        != PER_EXAMPLE_CACHE_LIFETIME
+                        or result.get("cross_iteration_tensor_retention")
+                        != PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
                     ):
                         raise AggregateError(
                             f"Wrong/unpinned lm-eval zero-shot protocol for {task} in {path}"
@@ -3331,6 +3360,10 @@ def aggregate_longcodeqa(
                     or generation.get("official_reference_decoding_exact") is not False
                     or result.get("max_new_tokens") != 16
                     or config.get("longcodeqa_max_new") != 16
+                    or result.get("example_cache_lifetime")
+                    != PER_EXAMPLE_CACHE_LIFETIME
+                    or result.get("cross_iteration_tensor_retention")
+                    != PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
                 ):
                     raise AggregateError(
                         f"Wrong LongCodeQA prompt/parser/generation protocol in {path}"
@@ -5766,6 +5799,9 @@ def _validate_ruler_result(
         or ruler.get("sampling_protocol") != RULER_SAMPLING_PROTOCOL
         or ruler.get("start") != 0
         or ruler.get("limit_per_task") is not None
+        or ruler.get("example_cache_lifetime") != PER_EXAMPLE_CACHE_LIFETIME
+        or ruler.get("cross_iteration_tensor_retention")
+        != PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
     ):
         raise AggregateError(f"{label} result schema/scope is not the complete pinned protocol")
     if tuple(ruler.get("tasks") or ()) != RULER_TASKS:
@@ -6360,6 +6396,9 @@ def verify_longbench(
         if (
             value.get("protocol_scope") != LONGBENCH_PROTOCOL_SCOPE
             or value.get("reference_model_wrapper_exact") is not False
+            or value.get("example_cache_lifetime") != PER_EXAMPLE_CACHE_LIFETIME
+            or value.get("cross_iteration_tensor_retention")
+            != PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
         ):
             raise AggregateError(f"Wrong LongBench-E protocol scope in {path}")
         n = _integer(value.get("n"), label=f"{path} LongBench n", minimum=1)
@@ -9081,7 +9120,199 @@ def verify_speed(
     }
 
 
-def _cross_axis_provenance(document: Mapping[str, Any], *, axes: Sequence[str]) -> dict:
+def _receipt_file(root: Path, relative: Any, *, label: str, receipt: Path) -> Path:
+    if not isinstance(relative, str) or not relative or Path(relative).is_absolute():
+        raise AggregateError(f"{label} is not a repo-relative path in {receipt}")
+    lexical = root / relative
+    if lexical.is_symlink():
+        raise AggregateError(f"{label} is symlinked in {receipt}: {lexical}")
+    candidate = lexical.resolve(strict=False)
+    try:
+        candidate.relative_to(root)
+    except ValueError as exc:
+        raise AggregateError(f"{label} escapes RUN_ROOT in {receipt}") from exc
+    if not candidate.is_file():
+        raise AggregateError(f"{label} is not a retained regular file in {receipt}: {candidate}")
+    return candidate
+
+
+def _validate_formal_job_receipts(
+    run_root: Path,
+    *,
+    source_paths: Sequence[Path],
+    expected_commit: str,
+) -> dict[str, Any]:
+    """Require one successful worker/submission receipt for every source JSON.
+
+    Failed retry attempts remain admissible evidence, but every receipt must be
+    well formed and terminal.  A source file written by a killed, bypassed, or
+    zero-exit-but-invalid worker is therefore never accepted into a paper
+    aggregate merely because bytes happen to exist at the expected path.
+    """
+
+    root = run_root.expanduser().resolve(strict=True)
+    records_root = root / "job_records/formal"
+    if not records_root.is_dir() or records_root.is_symlink():
+        raise AggregateError(f"Formal repo-local job receipt tree is missing: {records_root}")
+    worker_paths = sorted(records_root.glob("*/*/worker.json"))
+    submission_paths = sorted(records_root.glob("*/*/submission.json"))
+    if not submission_paths:
+        raise AggregateError("Formal job receipts contain no submission records")
+
+    workers: list[tuple[Path, dict[str, Any]]] = []
+    workers_by_attempt: dict[tuple[str, str], tuple[Path, dict[str, Any]]] = {}
+    submissions: dict[tuple[str, str], tuple[Path, dict[str, Any]]] = {}
+    worker_status_counts: dict[str, int] = {}
+    submission_status_counts: dict[str, int] = {}
+    identity_fields = ("phase", "job_key", "attempt_id", "source_commit", "expected_result")
+
+    for path in submission_paths:
+        if path.is_symlink():
+            raise AggregateError(f"Symlinked submission receipt is forbidden: {path}")
+        row = _load_object(path)
+        relative = path.relative_to(records_root)
+        if len(relative.parts) != 3 or relative.name != "submission.json":
+            raise AggregateError(f"Malformed submission receipt location: {path}")
+        if (
+            row.get("schema_version") != 1
+            or row.get("kind") != "hayatequant_paper_submission_receipt"
+            or row.get("phase") != "formal"
+            or row.get("job_key") != relative.parts[0]
+            or row.get("attempt_id") != relative.parts[1]
+            or row.get("source_commit") != expected_commit
+            or row.get("terminal") is not True
+            or row.get("status")
+            not in {"submitted", "submission_failed", "skipped_existing"}
+        ):
+            raise AggregateError(f"Malformed or nonterminal formal submission receipt: {path}")
+        key = (row["job_key"], row["attempt_id"])
+        if key in submissions:
+            raise AggregateError(f"Duplicate formal submission receipt identity: {key}")
+        submissions[key] = (path, row)
+        submission_status_counts[row["status"]] = (
+            submission_status_counts.get(row["status"], 0) + 1
+        )
+        _receipt_file(root, row.get("scheduler_stdout"), label="scheduler stdout", receipt=path)
+        _receipt_file(root, row.get("scheduler_stderr"), label="scheduler stderr", receipt=path)
+
+    for path in worker_paths:
+        if path.is_symlink():
+            raise AggregateError(f"Symlinked worker receipt is forbidden: {path}")
+        row = _load_object(path)
+        relative = path.relative_to(records_root)
+        if len(relative.parts) != 3 or relative.name != "worker.json":
+            raise AggregateError(f"Malformed worker receipt location: {path}")
+        if (
+            row.get("schema_version") != 1
+            or row.get("kind") != "hayatequant_paper_worker_receipt"
+            or row.get("phase") != "formal"
+            or row.get("job_key") != relative.parts[0]
+            or row.get("attempt_id") != relative.parts[1]
+            or row.get("source_commit") != expected_commit
+            or row.get("terminal") is not True
+            or row.get("status") not in {"succeeded", "failed"}
+        ):
+            raise AggregateError(f"Malformed or nonterminal formal worker receipt: {path}")
+        workers.append((path, row))
+        key = (row["job_key"], row["attempt_id"])
+        if key in workers_by_attempt:
+            raise AggregateError(f"Duplicate formal worker receipt identity: {key}")
+        workers_by_attempt[key] = (path, row)
+        worker_status_counts[row["status"]] = worker_status_counts.get(row["status"], 0) + 1
+        _receipt_file(root, row.get("stdout_log"), label="worker stdout log", receipt=path)
+        _receipt_file(root, row.get("stderr_log"), label="worker stderr log", receipt=path)
+        submission_entry = submissions.get(key)
+        if submission_entry is None:
+            raise AggregateError(f"Worker has no matching submission receipt: {path}")
+        submission_path, submission = submission_entry
+        if submission.get("status") != "submitted":
+            raise AggregateError(
+                f"Worker is paired with a non-submitted attempt: {submission_path}"
+            )
+        if any(submission.get(field) != row.get(field) for field in identity_fields):
+            raise AggregateError(
+                f"Worker/submission immutable identities disagree: {path} / {submission_path}"
+            )
+        worker_slurm = row.get("slurm_job_id")
+        submission_slurm = submission.get("slurm_job_id")
+        if (
+            not isinstance(worker_slurm, str)
+            or not isinstance(submission_slurm, str)
+            or submission_slurm.split(";", 1)[0] != worker_slurm
+        ):
+            raise AggregateError(
+                f"Worker/submission Slurm identities disagree: {path} / {submission_path}"
+            )
+        if row["status"] == "failed":
+            if not isinstance(row.get("exit_code"), int) or row["exit_code"] == 0:
+                raise AggregateError(f"Failed worker has no nonzero exit code: {path}")
+            continue
+        _receipt_file(root, row.get("provenance"), label="worker provenance", receipt=path)
+        if row.get("exit_code") != 0:
+            raise AggregateError(f"Successful worker does not record exit code zero: {path}")
+        result = row.get("result")
+        if not isinstance(result, dict) or result.get("path") != row.get("expected_result"):
+            raise AggregateError(f"Successful worker result identity is malformed: {path}")
+        result_path = _receipt_file(
+            root, result.get("path"), label="successful worker result", receipt=path
+        )
+        if (
+            result.get("bytes") != result_path.stat().st_size
+            or result.get("sha256") != _sha256(result_path)
+            or result.get("json_object_validated") is not True
+            or result.get("duplicate_keys_rejected") is not True
+            or result.get("nonfinite_numbers_rejected") is not True
+        ):
+            raise AggregateError(f"Successful worker result changed after receipt: {path}")
+
+    missing_terminal_workers = [
+        (path, row)
+        for key, (path, row) in submissions.items()
+        if row["status"] == "submitted" and key not in workers_by_attempt
+    ]
+    if missing_terminal_workers:
+        paths = ", ".join(str(path) for path, _row in missing_terminal_workers[:5])
+        raise AggregateError(
+            "Submitted formal attempts have no terminal worker receipt: " + paths
+        )
+
+    source_relatives: list[str] = []
+    for source_path in source_paths:
+        source = source_path.expanduser().resolve(strict=True)
+        try:
+            relative = source.relative_to(root).as_posix()
+        except ValueError as exc:
+            raise AggregateError(f"Formal source is not repo-local below RUN_ROOT: {source}") from exc
+        if not relative.startswith("results/formal/"):
+            raise AggregateError(f"Formal source is outside results/formal: {source}")
+        source_relatives.append(relative)
+        matches = [
+            (path, row)
+            for path, row in workers
+            if row.get("status") == "succeeded" and row.get("expected_result") == relative
+        ]
+        if len(matches) != 1:
+            raise AggregateError(
+                f"Formal source requires exactly one successful worker receipt, got "
+                f"{len(matches)}: {source}"
+            )
+    return {
+        "schema_version": 1,
+        "scope": "repo-local submission/worker receipts for every aggregated source",
+        "source_results_validated": len(source_relatives),
+        "worker_receipts": len(worker_paths),
+        "submission_receipts": len(submission_paths),
+        "worker_status_counts": worker_status_counts,
+        "submission_status_counts": submission_status_counts,
+    }
+
+
+def _cross_axis_provenance(
+    document: Mapping[str, Any],
+    *,
+    axes: Sequence[str],
+    run_root: Path | None = None,
+) -> dict:
     """Validate one immutable input/model/dataset identity across result axes."""
     input_manifests: set[tuple[str, str]] = set()
     model_identities: dict[str, set[str]] = {}
@@ -9239,6 +9470,12 @@ def _cross_axis_provenance(document: Mapping[str, Any], *, axes: Sequence[str]) 
             "scope": "all quality axes; speed retains its separate timing-stratum gate",
             "excluded_nuisance_identity": ["GPU UUID", "host name", "Slurm job id"],
         }
+    if run_root is not None:
+        result["job_receipts"] = _validate_formal_job_receipts(
+            run_root,
+            source_paths=[Path(path) for path in sorted(validated_sources)],
+            expected_commit=next(iter(document[axis]["commit"] for axis in axes)),
+        )
     return result
 
 
@@ -9852,7 +10089,7 @@ def _point_estimate_win_gate(document: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _finalize_formal_document(document: dict) -> None:
+def _finalize_formal_document(document: dict, *, run_root: Path | None = None) -> None:
     """Set commit/completeness only after all present axes share provenance."""
     present_axes = tuple(axis for axis in FORMAL_AXIS_KEYS if axis in document)
     if not present_axes:
@@ -9870,7 +10107,9 @@ def _finalize_formal_document(document: dict) -> None:
             f"Formal benchmark axes do not share one fixed source commit: {sorted(axis_commits)}"
         )
     document["commit"] = next(iter(axis_commits))
-    document["formal_provenance"] = _cross_axis_provenance(document, axes=present_axes)
+    document["formal_provenance"] = _cross_axis_provenance(
+        document, axes=present_axes, run_root=run_root
+    )
     missing_axes = [axis for axis in FORMAL_AXIS_KEYS if axis not in document]
     incomplete_axes = []
     for axis in present_axes:
@@ -9968,7 +10207,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         document["longcodeqa"] = aggregate_longcodeqa(longcodeqa_root)
     if args.only in ("all", "speed"):
         document["speed"] = verify_speed(speed_root, expected_replicates=args.speed_replicates)
-    _finalize_formal_document(document)
+    _finalize_formal_document(document, run_root=run_root)
     _atomic_json(output.expanduser().resolve(), document)
     print(json.dumps(document, indent=2, sort_keys=True, allow_nan=False))
     print(f"wrote {output.expanduser().resolve()}")

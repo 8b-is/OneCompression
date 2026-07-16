@@ -11,6 +11,11 @@ from ..codec.hayate.codec import (
     ADAPTIVE_HQ_SELECTOR_CARRIER_VERSION,
 )
 
+PER_EXAMPLE_CACHE_LIFETIME = "released_after_scalar_accounting_before_next_cache_factory"
+PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION = (
+    "none; retained_records_are_host_scalar_text_and_mappings_only"
+)
+
 
 def _adaptive_integer(value: Any, *, label: str, minimum: int = 1) -> int:
     """Return an AdaptiveHQ provenance counter without accepting ``bool``."""

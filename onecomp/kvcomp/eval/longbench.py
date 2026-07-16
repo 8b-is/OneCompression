@@ -37,6 +37,8 @@ from typing import Callable, List, Optional
 import torch
 
 from .compression_accounting import (
+    PER_EXAMPLE_CACHE_LIFETIME,
+    PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION,
     aggregate_compression_sufficient_statistics,
     aggregate_mem_fraction,
     cache_compression_sufficient_statistics,
@@ -143,10 +145,12 @@ def rouge_score(pred: str, gold: str) -> float:
 
 
 def classification_score(pred: str, gold: str, all_classes=None) -> float:
-    pred = pred.strip()
     em = [c for c in (all_classes or []) if c in pred]
-    # Preserve the official evaluator's exact class disambiguation behaviour.
-    for match in list(em):
+    # Preserve even the released evaluator's in-place iteration semantics.
+    # The pinned TREC class vocabulary has no substring pairs, so the quirk has
+    # no effect there, but byte-for-byte algorithm parity avoids a hidden
+    # divergence if a future official archive changes the class list.
+    for match in em:
         if match in gold and match != gold:
             em.remove(match)
     return (1.0 / len(em)) if gold in em else 0.0
@@ -154,8 +158,10 @@ def classification_score(pred: str, gold: str, all_classes=None) -> float:
 
 def retrieval_score(pred: str, gold: str) -> float:
     pattern = r"Paragraph (\d+)"
-    m = re.search(pattern, gold)
-    target = m.group(1) if m else gold.strip()
+    # Released LongBench indexes the first match directly.  The pinned dataset
+    # guarantees this shape; retaining the exact fail-closed behaviour prevents
+    # a malformed reference from being assigned an invented fallback target.
+    target = re.findall(pattern, gold)[0]
     # Official LongBench accepts any emitted integer, not only one preceded by
     # the word "Paragraph", and fractionally penalises multiple guesses.
     predicted = re.findall(r"\d+", pred)
@@ -168,7 +174,7 @@ def count_score(pred: str, gold: str) -> float:
     nums = re.findall(r"\d+", pred)
     if not nums:
         return 0.0
-    return sum(n == str(gold).strip() for n in nums) / len(nums)
+    return sum(n == str(gold) for n in nums) / len(nums)
 
 
 def code_sim_score(pred: str, gold: str) -> float:
@@ -263,6 +269,10 @@ class LongBenchResult:
             "by_length_n": dict(self.by_length_n),
             "mem_fraction": round(self.mem_fraction, 4),
             "mem_fraction_aggregation": self.mem_fraction_aggregation,
+            "example_cache_lifetime": PER_EXAMPLE_CACHE_LIFETIME,
+            "cross_iteration_tensor_retention": (
+                PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
+            ),
             "limit_per_task": self.limit_per_task,
             "tasks": list(self.tasks),
             "dataset_revision": self.dataset_revision,
@@ -642,6 +652,10 @@ def longbench_e(
                     **compression,
                 }
             )
+            # Per-example records are detached host values; release the cache
+            # and generation tensors before constructing the next example's
+            # cache to avoid RHS-before-rebind's transient two-cache peak.
+            del cache, gen, ids
         if scores:
             per_task[task] = sum(scores) / len(scores)
             per_task_n[task] = len(scores)

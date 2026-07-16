@@ -31,6 +31,8 @@ from typing import Callable, List, Optional
 import torch
 
 from .compression_accounting import (
+    PER_EXAMPLE_CACHE_LIFETIME,
+    PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION,
     aggregate_compression_sufficient_statistics,
     aggregate_mem_fraction,
     cache_compression_sufficient_statistics,
@@ -217,6 +219,10 @@ class NeedleResult:
             "accuracy_ci95": [round(self.accuracy_ci95[0], 4), round(self.accuracy_ci95[1], 4)],
             "mem_fraction": round(self.mem_fraction, 4),
             "mem_fraction_aggregation": self.mem_fraction_aggregation,
+            "example_cache_lifetime": PER_EXAMPLE_CACHE_LIFETIME,
+            "cross_iteration_tensor_retention": (
+                PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
+            ),
             "compression_sufficient_statistics": self.compression_sufficient_statistics,
             "by_length": {k: round(v, 4) for k, v in self.by_length.items()},
         }
@@ -545,6 +551,7 @@ def needle_in_haystack(
                 by_len_hit[ctx][1] += 1
                 compression_records.append(cache_compression_sufficient_statistics(cache))
                 grid.append({"ctx": ctx, "depth": depth, "seed": s, "hit": ok})
+                del cache, gen, ids
     se, lo, hi = proportion_stats(hit, n)
     compression, mem_fraction, mem_fraction_aggregation = aggregate_cache_compression_records(
         compression_records
@@ -670,6 +677,7 @@ def ruler_multikey(
             by_len_hit[ctx][1] += 1
             compression_records.append(cache_compression_sufficient_statistics(cache))
             grid.append({"ctx": ctx, "num_keys": num_keys, "seed": s, "hit": ok})
+            del cache, gen, ids
     se, lo, hi = proportion_stats(hit, n)
     compression, mem_fraction, mem_fraction_aggregation = aggregate_cache_compression_records(
         compression_records

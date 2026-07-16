@@ -43,8 +43,13 @@ def _ppl_row(ppl: float, *, compressed: bool = True) -> dict:
         "ppl": ppl,
         "ppl_nll": nll,
         "ppl_nll_sum": nll * n_tokens,
+        "ppl_nll_accumulation": aggregator.PPL_NLL_ACCUMULATION,
         "ppl_n_tokens": n_tokens,
         "ppl_n_windows": 10,
+        "ppl_window_cache_lifetime": aggregator.PPL_WINDOW_CACHE_LIFETIME,
+        "ppl_cross_window_tensor_retention": (
+            aggregator.PPL_CROSS_WINDOW_TENSOR_RETENTION
+        ),
         "distortion_key": 0.01,
         "distortion_value": 0.02,
         "stored_bits_per_coord": 3.0,

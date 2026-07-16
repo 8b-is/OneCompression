@@ -208,6 +208,10 @@ def _build_formal_ruler_fixture(tmp_path: Path) -> tuple[Path, Path, Path, dict]
         "canonical_nvidia_samples_per_task": (shards.RULER_CANONICAL_NVIDIA_ROWS_PER_TASK),
         "canonical_nvidia_full_eval": False,
         "protocol_scope": shards.RULER_PROTOCOL_SCOPE,
+        "example_cache_lifetime": shards.PER_EXAMPLE_CACHE_LIFETIME,
+        "cross_iteration_tensor_retention": (
+            shards.PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
+        ),
         "reference_model_wrapper_exact": False,
         "evaluation_scope": shards.RULER_COMPLETE_EVALUATION_SCOPE,
         "input_tokens": input_summaries,

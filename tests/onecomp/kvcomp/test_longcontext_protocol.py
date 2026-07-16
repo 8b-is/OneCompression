@@ -1,11 +1,91 @@
 """Fail-closed protocol tests for the synthetic long-context evaluators."""
 
+import gc
+import weakref
 from types import SimpleNamespace
 
 import pytest
 import torch
 
 import onecomp.kvcomp.eval.longcontext as longcontext
+
+
+@pytest.mark.parametrize("evaluator", ["needle", "multikey"])
+def test_synthetic_evaluators_release_cache_before_every_next_factory(
+    evaluator, monkeypatch
+):
+    class Cache:
+        live = 0
+        peak_live = 0
+
+        def __init__(self):
+            type(self).live += 1
+            type(self).peak_live = max(type(self).peak_live, type(self).live)
+
+        def __del__(self):
+            type(self).live -= 1
+
+    references = []
+
+    def cache_factory():
+        gc.collect()
+        assert not references or references[-1]() is None
+        assert Cache.live == 0
+        cache = Cache()
+        references.append(weakref.ref(cache))
+        return cache
+
+    class Tokenizer:
+        eos_token_id = 2
+
+        def decode(self, *_args, **_kwargs):
+            return "1234"
+
+    model = SimpleNamespace(
+        config=SimpleNamespace(max_position_embeddings=16, text_config=None)
+    )
+    monkeypatch.setattr(longcontext, "_encode", lambda *_args: torch.tensor([[1, 2]]))
+    monkeypatch.setattr(
+        longcontext, "greedy_answer", lambda *_args, **_kwargs: torch.tensor([[3]])
+    )
+    if evaluator == "needle":
+        monkeypatch.setattr(
+            longcontext,
+            "make_needle_prompt",
+            lambda *_args, **_kwargs: ([{"role": "user", "content": "x"}], "1234"),
+        )
+        result = longcontext.needle_in_haystack(
+            model,
+            Tokenizer(),
+            cache_factory=cache_factory,
+            context_lens=[4],
+            depths=[0.5],
+            seeds=3,
+            max_new_tokens=1,
+        )
+    else:
+        monkeypatch.setattr(
+            longcontext,
+            "make_multikey_prompt",
+            lambda *_args, **_kwargs: ([{"role": "user", "content": "x"}], "1234"),
+        )
+        result = longcontext.ruler_multikey(
+            model,
+            Tokenizer(),
+            cache_factory=cache_factory,
+            context_lens=[4],
+            seeds=3,
+            max_new_tokens=1,
+        )
+    gc.collect()
+    assert len(references) == 3
+    assert all(reference() is None for reference in references)
+    assert Cache.live == 0
+    assert Cache.peak_live == 1
+    assert (
+        result.as_dict()["example_cache_lifetime"]
+        == longcontext.PER_EXAMPLE_CACHE_LIFETIME
+    )
 
 
 def test_chat_template_failure_never_falls_back_to_raw_tokenization():

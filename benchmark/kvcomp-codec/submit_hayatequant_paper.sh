@@ -28,6 +28,7 @@ LC="$REPO/benchmark/kvcomp-longcontext"
 WRAPPER="$HERE/run_paper_job.sh"
 INPUT_VALIDATOR="$HERE/validate_hayatequant_paper_inputs.py"
 SMOKE_GATE_VALIDATOR="$HERE/validate_hayatequant_smoke_gate.py"
+LIFECYCLE="$HERE/paper_job_lifecycle.py"
 
 # These defaults deliberately point at the original checkout's environments:
 # a git worktree does not contain independent virtual environments.  The
@@ -36,9 +37,16 @@ SMOKE_GATE_VALIDATOR="$HERE/validate_hayatequant_smoke_gate.py"
 PY=${PY:-/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/bin/python}
 PYVLLM=${PYVLLM:-/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv-vllm/bin/python}
 MODELS=${MODELS:-/lustre/home/frj/yuma-ichikawa/conference/models}
-RUN_ROOT=${RUN_ROOT:-/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715}
-HF_HOME=${HF_HOME:-$RUN_ROOT/data/hf_home}
-PINNED_HF_MANIFEST=${PINNED_HF_MANIFEST:-$RUN_ROOT/data/pinned_hf_datasets_manifest.json}
+# RUN_ROOT contains only paper evidence and must live below the tracked results
+# directory of a separate linked Git worktree.  WORK_ROOT holds mutable caches,
+# temporary compiler state, and pinned input data outside that worktree.
+RESULTS_WORKTREE=${RESULTS_WORKTREE:-/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayatequant-paper-results-worktree}
+PAPER_RUN_ID=${PAPER_RUN_ID:-hayate-iclr2027-refresh-20260716}
+RUN_ROOT=${RUN_ROOT:-$RESULTS_WORKTREE/papers/hayatequant_paper/experiments/results/$PAPER_RUN_ID}
+WORK_ROOT=${WORK_ROOT:-/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715}
+DATA_ROOT=${DATA_ROOT:-$WORK_ROOT/data}
+HF_HOME=${HF_HOME:-$DATA_ROOT/hf_home}
+PINNED_HF_MANIFEST=${PINNED_HF_MANIFEST:-$DATA_ROOT/pinned_hf_datasets_manifest.json}
 INPUT_MANIFEST=${INPUT_MANIFEST:-$RUN_ROOT/manifests/hayatequant_paper_inputs.json}
 INPUT_MANIFEST_SHA256=
 SMOKE_APPROVAL_MARKER=${SMOKE_APPROVAL_MARKER:-$RUN_ROOT/manifests/formal_smoke_approval.json}
@@ -70,15 +78,24 @@ SKIP_INPUT_PREFLIGHT=${SKIP_INPUT_PREFLIGHT:-0}
 SPEED_REPLICATES=${SPEED_REPLICATES:-5}
 EXISTING_RESULT_POLICY=${EXISTING_RESULT_POLICY:-skip}
 REQUIRE_SPEED_NODE_IDLE=${REQUIRE_SPEED_NODE_IDLE:-0}
-PAPER_HOME="$RUN_ROOT/runtime/home"
+PAPER_HOME="$WORK_ROOT/runtime/home"
 
 declare -A PLANNED_JOB_KEYS=()
 declare -A PLANNED_RESULT_PATHS=()
+SUBMISSION_SEQUENCE=0
+ACTIVE_SUBMISSION_RECORD=
+ACTIVE_SUBMISSION_PHASE=
+ACTIVE_SUBMISSION_JOB_KEY=
+ACTIVE_SUBMISSION_ATTEMPT=
+ACTIVE_SUBMISSION_RESULT=
+ACTIVE_SUBMISSION_STDOUT=
+ACTIVE_SUBMISSION_STDERR=
+ACTIVE_SUBMISSION_JOB_ID=
 
-RULER_ROOT="$RUN_ROOT/data/ruler_v1"
-LONGCODE_ROOT="$RUN_ROOT/data/LongCodeQA"
-LLAMA_LONGCODE_CONTEXT="$RUN_ROOT/data/longcodeqa_context_llama31-8b.json"
-QWEN_LONGCODE_CONTEXT="$RUN_ROOT/data/longcodeqa_context_qwen3-8b.json"
+RULER_ROOT="$DATA_ROOT/ruler_v1"
+LONGCODE_ROOT="$DATA_ROOT/LongCodeQA"
+LLAMA_LONGCODE_CONTEXT="$DATA_ROOT/longcodeqa_context_llama31-8b.json"
+QWEN_LONGCODE_CONTEXT="$DATA_ROOT/longcodeqa_context_qwen3-8b.json"
 
 # Seven-model P-main grid from the paper.
 MODEL_SPECS=(
@@ -126,12 +143,40 @@ KV_ALL_OFF=(
 )
 
 die() {
+  if [ -n "$ACTIVE_SUBMISSION_RECORD" ]; then
+    persist_active_submission submission_failed submitter_error 2 >/dev/null 2>&1 || \
+      printf 'ERROR: could not persist terminal submission failure receipt: %s\n' \
+        "$ACTIVE_SUBMISSION_RECORD" >&2
+    ACTIVE_SUBMISSION_RECORD=
+  fi
   printf 'ERROR: %s\n' "$*" >&2
   exit 2
 }
 
 warn() {
   printf 'WARNING: %s\n' "$*" >&2
+}
+
+persist_active_submission() {
+  local status=$1 reason=$2 exit_code=${3:-}
+  [ -n "$ACTIVE_SUBMISSION_RECORD" ] || return 2
+  local -a receipt=(
+    "$PY" "$LIFECYCLE" record
+    --source-repo "$REPO" --run-root "$RUN_ROOT"
+    --source-commit "$CODE_REPO_COMMIT"
+    --path "$ACTIVE_SUBMISSION_RECORD" --kind submission
+    --status "$status" --phase "$ACTIVE_SUBMISSION_PHASE"
+    --job-key "$ACTIVE_SUBMISSION_JOB_KEY"
+    --attempt-id "$ACTIVE_SUBMISSION_ATTEMPT"
+    --expected-result "$ACTIVE_SUBMISSION_RESULT"
+    --stage submitter --reason-code "$reason"
+    --scheduler-stdout "$ACTIVE_SUBMISSION_STDOUT"
+    --scheduler-stderr "$ACTIVE_SUBMISSION_STDERR"
+  )
+  [ -z "$exit_code" ] || receipt+=(--exit-code "$exit_code")
+  [ -z "$ACTIVE_SUBMISSION_JOB_ID" ] || \
+    receipt+=(--slurm-job-id "$ACTIVE_SUBMISSION_JOB_ID")
+  "${receipt[@]}"
 }
 
 require_executable() {
@@ -176,8 +221,10 @@ resolve_source_revision() {
 
 validate_static_environment() {
   local canonical_manifest_root canonical_input_manifest canonical_approval_marker
+  local canonical_run_root canonical_work_root canonical_results_worktree
   require_executable "$PY"
   require_executable "$WRAPPER"
+  [ -f "$LIFECYCLE" ] || die "missing paper job lifecycle helper: $LIFECYCLE"
   command -v realpath >/dev/null 2>&1 || die "realpath is required for result-path safety"
   [ -f "$HERE/paper_preflight.py" ] || die "missing paper_preflight.py"
   case "$SPEED_REPLICATES" in
@@ -207,6 +254,26 @@ validate_static_environment() {
   canonical_manifest_root=$(realpath -m -- "$RUN_ROOT/manifests")
   canonical_input_manifest=$(realpath -m -- "$INPUT_MANIFEST")
   canonical_approval_marker=$(realpath -m -- "$SMOKE_APPROVAL_MARKER")
+  canonical_run_root=$(realpath -m -- "$RUN_ROOT")
+  canonical_work_root=$(realpath -m -- "$WORK_ROOT")
+  canonical_results_worktree=$(realpath -m -- "$RUN_ROOT/../../../../..")
+  case "$canonical_work_root" in
+    "$canonical_run_root"|"$canonical_run_root/"*)
+      die "WORK_ROOT must remain external to the repo-local RUN_ROOT"
+      ;;
+  esac
+  case "$canonical_run_root" in
+    "$canonical_work_root/"*)
+      die "repo-local RUN_ROOT must not be nested below external WORK_ROOT"
+      ;;
+  esac
+  if [ "$DRYRUN" != 1 ]; then
+    case "$canonical_work_root" in
+      "$canonical_results_worktree"|"$canonical_results_worktree/"*)
+        die "WORK_ROOT caches must remain external to the results Git worktree"
+        ;;
+    esac
+  fi
   case "$canonical_input_manifest" in
     "$canonical_manifest_root/"*) ;;
     *) die "INPUT_MANIFEST must stay below RUN_ROOT/manifests" ;;
@@ -228,6 +295,19 @@ validate_static_environment() {
   for spec in "${MODEL_SPECS[@]}"; do
     require_model "$MODELS/${spec#*|}"
   done
+}
+
+validate_results_repository() {
+  if [ "$DRYRUN" = 1 ]; then
+    warn "dry-run does not write receipts; executable commands require a separate linked results worktree"
+    return
+  fi
+  "$PY" "$LIFECYCLE" validate-root \
+    --source-repo "$REPO" \
+    --run-root "$RUN_ROOT" \
+    --expected-commit "$CODE_REPO_COMMIT" \
+    >/dev/null || die \
+      "RUN_ROOT is not the exact repo-local run directory in a separate linked results worktree"
 }
 
 resolve_preferred_node() {
@@ -344,6 +424,10 @@ ensure_input_manifest() {
   "$PY" "$INPUT_VALIDATOR" \
     --run-root "$RUN_ROOT" \
     --models-root "$MODELS" \
+    --ruler-root "$RULER_ROOT" \
+    --longcodeqa-root "$LONGCODE_ROOT" \
+    --longcodeqa-context-manifest "llama31-8b=$LLAMA_LONGCODE_CONTEXT" \
+    --longcodeqa-context-manifest "qwen3-8b=$QWEN_LONGCODE_CONTEXT" \
     --hf-home "$HF_HOME" \
     --hf-manifest "$PINNED_HF_MANIFEST" \
     --require-hf-manifest \
@@ -362,14 +446,16 @@ ensure_input_manifest() {
 prepare_submission() {
   validate_static_environment
   resolve_source_revision
+  validate_results_repository
   resolve_preferred_node
   mkdir -p "$RUN_ROOT/logs/smoke" "$RUN_ROOT/logs/formal" \
     "$RUN_ROOT/results/smoke" "$RUN_ROOT/results/formal" \
-    "$(dirname "$INPUT_MANIFEST")" "$PAPER_HOME"
+    "$RUN_ROOT/job_records/smoke" "$RUN_ROOT/job_records/formal" \
+    "$(dirname "$INPUT_MANIFEST")" "$PAPER_HOME" "$WORK_ROOT/tmp" "$WORK_ROOT/locks"
   ensure_input_manifest
   export HF_HOME
-  printf 'PLAN repo=%s commit=%s run_root=%s hf_home=%s dryrun=%s\n' \
-    "$REPO" "$CODE_REPO_COMMIT" "$RUN_ROOT" "$HF_HOME" "$DRYRUN"
+  printf 'PLAN repo=%s commit=%s run_root=%s work_root=%s hf_home=%s dryrun=%s\n' \
+    "$REPO" "$CODE_REPO_COMMIT" "$RUN_ROOT" "$WORK_ROOT" "$HF_HOME" "$DRYRUN"
 }
 
 invalidate_smoke_approval() {
@@ -491,15 +577,33 @@ submit_job() {
   PLANNED_RESULT_PATHS["$result"]=1
 
   local job_name="hq-${phase:0:1}-$key"
+  local full_job_key="$phase-$key"
+  SUBMISSION_SEQUENCE=$((SUBMISSION_SEQUENCE + 1))
+  local attempt_id
+  if [ "$DRYRUN" = 1 ]; then
+    attempt_id="dryrun-$SUBMISSION_SEQUENCE"
+  else
+    attempt_id="$(date -u +%Y%m%dT%H%M%SZ)-submit-$$-$SUBMISSION_SEQUENCE"
+  fi
+  local attempt_dir="$RUN_ROOT/job_records/$phase/$full_job_key/$attempt_id"
+  local submission_record="$attempt_dir/submission.json"
+  local scheduler_stdout="$attempt_dir/sbatch.stdout"
+  local scheduler_stderr="$attempt_dir/sbatch.stderr"
+  local stdout_template="$RUN_ROOT/logs/$phase/%x_%j.out"
+  local stderr_template="$RUN_ROOT/logs/$phase/%x_%j.err"
   local -a worker=(
     "$WRAPPER"
     --repo "$REPO"
     --python "$PY"
     --run-root "$RUN_ROOT"
-    --job-key "$phase-$key"
+    --work-root "$WORK_ROOT"
+    --job-key "$full_job_key"
+    --attempt-id "$attempt_id"
     --input-manifest "$INPUT_MANIFEST"
     --input-manifest-sha256 "$INPUT_MANIFEST_SHA256"
     --expected-result "$result"
+    --stdout-log "$stdout_template"
+    --stderr-log "$stderr_template"
   )
   if [ "$phase" = formal ]; then
     [ -n "$SMOKE_APPROVAL_MARKER_SHA256" ] && \
@@ -561,8 +665,8 @@ submit_job() {
     --mem "$mem"
     --time "$wall"
     --chdir "$REPO"
-    --output "$RUN_ROOT/logs/$phase/%x_%j.out"
-    --error "$RUN_ROOT/logs/$phase/%x_%j.err"
+    --output "$stdout_template"
+    --error "$stderr_template"
     --export "$export_spec"
   )
   if [ "$phase" = formal ] && [[ "$key" = speed-* ]]; then
@@ -606,11 +710,29 @@ submit_job() {
     return
   fi
 
+  mkdir -p "$attempt_dir"
+  : >"$scheduler_stdout"
+  : >"$scheduler_stderr"
+  chmod 600 "$scheduler_stdout" "$scheduler_stderr"
+  ACTIVE_SUBMISSION_RECORD=$submission_record
+  ACTIVE_SUBMISSION_PHASE=$phase
+  ACTIVE_SUBMISSION_JOB_KEY=$full_job_key
+  ACTIVE_SUBMISSION_ATTEMPT=$attempt_id
+  ACTIVE_SUBMISSION_RESULT=$result
+  ACTIVE_SUBMISSION_STDOUT=$scheduler_stdout
+  ACTIVE_SUBMISSION_STDERR=$scheduler_stderr
+  ACTIVE_SUBMISSION_JOB_ID=
+  persist_active_submission submission_started submission_started || die \
+    "could not create repo-local submission receipt for $phase/$key"
+
   if [ -L "$result" ]; then
     die "refusing symlinked result path for $phase/$key: $result"
   fi
   if [ -e "$result" ]; then
     if [ "$EXISTING_RESULT_POLICY" = skip ]; then
+      persist_active_submission skipped_existing result_already_exists || die \
+        "could not finalize skipped submission receipt for $phase/$key"
+      ACTIVE_SUBMISSION_RECORD=
       warn "skipping existing result without overwriting: $result"
       return
     fi
@@ -623,12 +745,29 @@ submit_job() {
       "job $job_name is already queued/running as ${queued//$'\n'/,}; refusing duplicate"
   fi
 
-  local job_id
-  if ! job_id=$("${sbatch_cmd[@]}"); then
+  local job_id sbatch_status
+  if "${sbatch_cmd[@]}" >"$scheduler_stdout" 2>"$scheduler_stderr"; then
+    sbatch_status=0
+  else
+    sbatch_status=$?
+  fi
+  if [ "$sbatch_status" -ne 0 ]; then
+    sed -n '1,80p' "$scheduler_stderr" >&2 || true
+    persist_active_submission submission_failed sbatch_failed "$sbatch_status" || die \
+      "could not finalize sbatch failure receipt for $phase/$key"
+    ACTIVE_SUBMISSION_RECORD=
     die "sbatch failed for $phase/$key; remaining submissions were stopped"
   fi
+  job_id=$(tr -d '\r\n' <"$scheduler_stdout")
+  job_id=${job_id%%;*}
+  case "$job_id" in
+    ''|*[!0-9]*) die "sbatch returned an invalid job ID for $phase/$key" ;;
+  esac
+  ACTIVE_SUBMISSION_JOB_ID=$job_id
+  persist_active_submission submitted sbatch_accepted 0 || die \
+    "could not finalize submitted receipt for $phase/$key"
+  ACTIVE_SUBMISSION_RECORD=
   if [ "$phase" = formal ] && [[ "$key" = speed-* ]]; then
-    job_id=${job_id%%;*}
     case "$job_id" in
       ''|*[!0-9]*) die "sbatch returned an invalid speed predecessor job ID: $job_id" ;;
     esac
@@ -1126,9 +1265,23 @@ run_ssh_worker() {
   done
   [ "${1:-}" = -- ] || die "internal SSH worker separator missing"
   shift
+  SUBMISSION_SEQUENCE=$((SUBMISSION_SEQUENCE + 1))
+  local attempt_id
+  if [ "$DRYRUN" = 1 ]; then
+    attempt_id="dryrun-ssh-$SUBMISSION_SEQUENCE"
+  else
+    attempt_id="$(date -u +%Y%m%dT%H%M%SZ)-ssh-$$-$SUBMISSION_SEQUENCE"
+  fi
+  local full_job_key="gpu11-$key"
+  local attempt_dir="$RUN_ROOT/job_records/smoke/$full_job_key/$attempt_id"
+  local submission_record="$attempt_dir/submission.json"
+  local scheduler_stdout="$attempt_dir/ssh.stdout"
+  local scheduler_stderr="$attempt_dir/ssh.stderr"
+  local log="$RUN_ROOT/logs/smoke/gpu11-${key}.log"
   local -a worker=(
     "$WRAPPER" --repo "$REPO" --python "$python" --run-root "$RUN_ROOT"
-    --job-key "gpu11-$key" --input-manifest "$INPUT_MANIFEST"
+    --work-root "$WORK_ROOT" --job-key "$full_job_key" --attempt-id "$attempt_id"
+    --stdout-log "$log" --stderr-log "$log" --input-manifest "$INPUT_MANIFEST"
     --input-manifest-sha256 "$INPUT_MANIFEST_SHA256"
     --expected-result "$result" --model "$model"
   )
@@ -1151,7 +1304,7 @@ run_ssh_worker() {
   [ -z "${CUDA_HOME:-}" ] || remote+=("CUDA_HOME=$CUDA_HOME")
   [ -z "${LANG:-}" ] || remote+=("LANG=$LANG")
   remote+=("CUDA_VISIBLE_DEVICES=$GPU11_DEVICE" "${worker[@]}")
-  local remote_line log="$RUN_ROOT/logs/smoke/gpu11-${key}.log"
+  local remote_line
   printf -v remote_line '%q ' "${remote[@]}"
   remote_line=${remote_line% }
   printf -v remote_line '%s > %q 2>&1' "$remote_line" "$log"
@@ -1162,7 +1315,37 @@ run_ssh_worker() {
     printf 'WORKER'; printf ' %q' "${worker[@]}"; printf '\n'
     return
   fi
-  ssh -o BatchMode=yes -o ConnectTimeout=10 "$GPU11_SSH_HOST" "$remote_line"
+  mkdir -p "$attempt_dir"
+  : >"$scheduler_stdout"
+  : >"$scheduler_stderr"
+  chmod 600 "$scheduler_stdout" "$scheduler_stderr"
+  ACTIVE_SUBMISSION_RECORD=$submission_record
+  ACTIVE_SUBMISSION_PHASE=smoke
+  ACTIVE_SUBMISSION_JOB_KEY=$full_job_key
+  ACTIVE_SUBMISSION_ATTEMPT=$attempt_id
+  ACTIVE_SUBMISSION_RESULT=$result
+  ACTIVE_SUBMISSION_STDOUT=$scheduler_stdout
+  ACTIVE_SUBMISSION_STDERR=$scheduler_stderr
+  ACTIVE_SUBMISSION_JOB_ID=
+  persist_active_submission submission_started submission_started >/dev/null || die \
+    "could not create repo-local SSH submission receipt for $key"
+  local ssh_status
+  if ssh -o BatchMode=yes -o ConnectTimeout=10 "$GPU11_SSH_HOST" "$remote_line" \
+      >"$scheduler_stdout" 2>"$scheduler_stderr"; then
+    ssh_status=0
+  else
+    ssh_status=$?
+  fi
+  if [ "$ssh_status" -ne 0 ]; then
+    sed -n '1,80p' "$scheduler_stderr" >&2 || true
+    persist_active_submission submission_failed ssh_failed "$ssh_status" >/dev/null || die \
+      "could not finalize SSH failure receipt for $key"
+    ACTIVE_SUBMISSION_RECORD=
+    die "SSH worker failed for $key"
+  fi
+  persist_active_submission submitted ssh_worker_completed 0 >/dev/null || die \
+    "could not finalize SSH submission receipt for $key"
+  ACTIVE_SUBMISSION_RECORD=
   printf 'SSH_COMPLETE key=%s result=%s log=%s\n' "$key" "$result" "$log"
 }
 
@@ -1361,12 +1544,17 @@ usage() {
     '' \
     'Fixed defaults:' \
     "  RUN_ROOT=$RUN_ROOT" \
+    "  RESULTS_WORKTREE=$RESULTS_WORKTREE" \
+    "  WORK_ROOT=$WORK_ROOT" \
+    "  DATA_ROOT=$DATA_ROOT" \
     "  PY=$PY" \
     "  PYVLLM=$PYVLLM" \
     "  HF_HOME=$HF_HOME" \
     "  PINNED_HF_MANIFEST=$PINNED_HF_MANIFEST" \
     '' \
     'Approval: run smoke, inspect it, then set FORMAL_SMOKE_APPROVAL to the documented fixed statement and run approve-smoke.' \
+    'RUN_ROOT must be papers/hayatequant_paper/experiments/results/RUN_ID in a separate linked Git worktree at the exact source commit.' \
+    'Create it with: git worktree add --detach "$RESULTS_WORKTREE" "$(git rev-parse HEAD)"; caches stay in WORK_ROOT.' \
     'Controls: PARTITIONS, PREFERRED_NODE, SPEED_NODE, DRYRUN=1; formal SPEED_REPLICATES is fixed at 5.' \
     'Formal speed policy: idle SPEED_NODE, batch-8gpu all-GRES allocation, exclusive=user, afterok serial chain; full-plan quality jobs exclude it.' \
     'SSH fallback: GPU11_SSH_HOST, GPU11_DEVICE, GPU11_RUN_TAG.' \

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fcntl
 import hashlib
+import json
 import os
 import re
 import subprocess
@@ -14,9 +15,58 @@ import pytest
 REPO = Path(__file__).resolve().parents[3]
 SCRIPT = REPO / "benchmark/kvcomp-codec/submit_hayatequant_paper.sh"
 WRAPPER = REPO / "benchmark/kvcomp-codec/run_paper_job.sh"
+LIFECYCLE = REPO / "benchmark/kvcomp-codec/paper_job_lifecycle.py"
 MODELS = Path("/lustre/home/frj/yuma-ichikawa/conference/models")
 PY = Path("/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/bin/python")
 PYVLLM = Path("/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv-vllm/bin/python")
+RESULTS_RELATIVE_ROOT = Path("papers/hayatequant_paper/experiments/results")
+
+
+@pytest.fixture(scope="module")
+def results_worktree(tmp_path_factory):
+    parent = tmp_path_factory.mktemp("paper-results-worktree")
+    checkout = parent / "checkout"
+    subprocess.run(
+        ["git", "-C", str(REPO), "worktree", "add", "--detach", str(checkout), "HEAD"],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        yield checkout
+    finally:
+        subprocess.run(
+            ["git", "-C", str(REPO), "worktree", "remove", "--force", str(checkout)],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+
+def _worker_repository_args(
+    run_root: Path, *, attempt: str, phase: str = "smoke"
+) -> list[str]:
+    return [
+        "--work-root",
+        str(run_root.parents[4].parent / "mutable-work"),
+        "--attempt-id",
+        attempt,
+        "--stdout-log",
+        str(run_root / f"logs/{phase}/worker.out"),
+        "--stderr-log",
+        str(run_root / f"logs/{phase}/worker.err"),
+    ]
+
+
+def _head() -> str:
+    return subprocess.run(
+        ["git", "-C", str(REPO), "rev-parse", "HEAD"],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    ).stdout.strip()
 
 
 def _plan(command: str, tmp_path: Path, **extra: str) -> str:
@@ -518,8 +568,225 @@ def test_worker_requires_full_pinned_identity_and_scrubs_named_credentials(tmp_p
     assert "Usage:" in completed.stderr
 
 
-def test_worker_rejects_result_that_appeared_while_pending(tmp_path):
-    run_root = tmp_path / "run"
+def test_submitter_persists_sbatch_stdout_stderr_and_terminal_failure_receipt():
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert '"${sbatch_cmd[@]}" >"$scheduler_stdout" 2>"$scheduler_stderr"' in source
+    assert "persist_active_submission submission_failed sbatch_failed" in source
+    assert "ACTIVE_SUBMISSION_RECORD=$submission_record" in source
+
+
+def test_lifecycle_helper_retains_a_scheduler_submission_failure(results_worktree):
+    run_root = results_worktree / RESULTS_RELATIVE_ROOT / "pytest-sbatch-failure"
+    expected = run_root / "results/smoke/never-started.json"
+    attempt = "sbatch-failure-attempt"
+    record = run_root / f"job_records/smoke/smoke-sbatch/{attempt}/submission.json"
+    stdout = record.parent / "sbatch.stdout"
+    stderr = record.parent / "sbatch.stderr"
+    record.parent.mkdir(parents=True)
+    stdout.write_text("", encoding="utf-8")
+    stderr.write_text("scheduler rejected request\n", encoding="utf-8")
+    common = [
+        str(PY),
+        str(LIFECYCLE),
+        "record",
+        "--source-repo",
+        str(REPO),
+        "--run-root",
+        str(run_root),
+        "--source-commit",
+        _head(),
+        "--path",
+        str(record),
+        "--kind",
+        "submission",
+        "--phase",
+        "smoke",
+        "--job-key",
+        "smoke-sbatch",
+        "--attempt-id",
+        attempt,
+        "--expected-result",
+        str(expected),
+        "--stage",
+        "submitter",
+        "--scheduler-stdout",
+        str(stdout),
+        "--scheduler-stderr",
+        str(stderr),
+    ]
+    subprocess.run(
+        [*common, "--status", "submission_started", "--reason-code", "submission_started"],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    )
+    subprocess.run(
+        [
+            *common,
+            "--status",
+            "submission_failed",
+            "--reason-code",
+            "sbatch_failed",
+            "--exit-code",
+            "17",
+        ],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    )
+    receipt = json.loads(record.read_text(encoding="utf-8"))
+    assert receipt["status"] == "submission_failed"
+    assert receipt["reason_code"] == "sbatch_failed"
+    assert receipt["exit_code"] == 17
+    assert receipt["terminal"] is True
+
+
+def test_lifecycle_helper_rejects_source_worktree_as_result_root():
+    run_root = REPO / RESULTS_RELATIVE_ROOT / "pytest-forbidden-source-worktree"
+    completed = subprocess.run(
+        [
+            str(PY),
+            str(LIFECYCLE),
+            "validate-root",
+            "--source-repo",
+            str(REPO),
+            "--run-root",
+            str(run_root),
+            "--expected-commit",
+            _head(),
+        ],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert completed.returncode == 2
+    assert "separate linked Git worktree" in completed.stderr
+
+
+@pytest.mark.parametrize(
+    ("suffix", "payload"),
+    [
+        ("duplicate", '{"value": 1, "value": 2}\n'),
+        ("nonfinite", '{"value": NaN}\n'),
+        ("array", "[]\n"),
+        ("empty", ""),
+    ],
+)
+def test_lifecycle_helper_never_marks_invalid_result_successful(
+    results_worktree, suffix, payload
+):
+    run_root = results_worktree / RESULTS_RELATIVE_ROOT / f"pytest-invalid-{suffix}"
+    expected = run_root / "results/smoke/result.json"
+    expected.parent.mkdir(parents=True)
+    expected.write_text(payload, encoding="utf-8")
+    attempt = "invalid-result-attempt"
+    record = run_root / f"job_records/smoke/smoke-invalid/{attempt}/worker.json"
+    common = [
+        str(PY),
+        str(LIFECYCLE),
+        "record",
+        "--source-repo",
+        str(REPO),
+        "--run-root",
+        str(run_root),
+        "--source-commit",
+        _head(),
+        "--path",
+        str(record),
+        "--kind",
+        "worker",
+        "--phase",
+        "smoke",
+        "--job-key",
+        "smoke-invalid",
+        "--attempt-id",
+        attempt,
+        "--expected-result",
+        str(expected),
+        "--stage",
+        "result-validation",
+    ]
+    subprocess.run(
+        [*common, "--status", "worker_started", "--reason-code", "worker_invoked"],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    )
+    completed = subprocess.run(
+        [
+            *common,
+            "--status",
+            "succeeded",
+            "--reason-code",
+            "benchmark_and_result_validated",
+            "--exit-code",
+            "0",
+        ],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert completed.returncode == 2
+    receipt = json.loads(record.read_text(encoding="utf-8"))
+    assert receipt["status"] == "worker_started"
+    assert receipt["terminal"] is False
+
+
+def test_worker_preflight_failure_is_terminal_and_repo_local(tmp_path, results_worktree):
+    run_root = results_worktree / RESULTS_RELATIVE_ROOT / "pytest-preflight-failure"
+    manifest = run_root / "manifests/inputs.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text("{}\n", encoding="utf-8")
+    result = run_root / "results/smoke/result.json"
+    completed = subprocess.run(
+        [
+            "bash",
+            str(WRAPPER),
+            "--repo",
+            str(REPO),
+            "--python",
+            str(PY),
+            "--run-root",
+            str(run_root),
+            *_worker_repository_args(run_root, attempt="preflight-attempt"),
+            "--job-key",
+            "smoke-preflight",
+            "--model",
+            str(MODELS / "Qwen3-0.6B"),
+            "--input-manifest",
+            str(manifest),
+            "--input-manifest-sha256",
+            "0" * 64,
+            "--expected-result",
+            str(result),
+            "--dataset-file",
+            str(manifest),
+            "--",
+            "/bin/true",
+        ],
+        cwd=REPO,
+        env={**os.environ, "CODE_REPO_COMMIT": _head()},
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert completed.returncode != 0
+    receipt_path = (
+        run_root
+        / "job_records/smoke/smoke-preflight/preflight-attempt/worker.json"
+    )
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert receipt["status"] == "failed"
+    assert receipt["stage"] == "preflight"
+    assert receipt["reason_code"] == "preflight_failed"
+    assert receipt["exit_code"] != 0
+
+
+def test_worker_rejects_result_that_appeared_while_pending(tmp_path, results_worktree):
+    run_root = results_worktree / RESULTS_RELATIVE_ROOT / "pytest-worker-race"
     result = run_root / "results/smoke/already-there.json"
     result.parent.mkdir(parents=True)
     result.write_text("{}\n", encoding="utf-8")
@@ -536,6 +803,7 @@ def test_worker_rejects_result_that_appeared_while_pending(tmp_path):
             str(PY),
             "--run-root",
             str(run_root),
+            *_worker_repository_args(run_root, attempt="race-attempt"),
             "--job-key",
             "smoke-race",
             "--model",
@@ -552,7 +820,7 @@ def test_worker_rejects_result_that_appeared_while_pending(tmp_path):
             "/bin/true",
         ],
         cwd=REPO,
-        env={**os.environ, "CODE_REPO_COMMIT": "a" * 40},
+        env={**os.environ, "CODE_REPO_COMMIT": _head()},
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -560,17 +828,20 @@ def test_worker_rejects_result_that_appeared_while_pending(tmp_path):
     )
     assert completed.returncode == 2
     assert "refusing overwrite/resume race" in completed.stderr
+    receipt = run_root / "job_records/smoke/smoke-race/race-attempt/worker.json"
+    assert json.loads(receipt.read_text(encoding="utf-8"))["status"] == "failed"
 
 
-def test_worker_result_lock_rejects_concurrent_writer(tmp_path):
-    run_root = (tmp_path / "run").resolve()
+def test_worker_result_lock_rejects_concurrent_writer(tmp_path, results_worktree):
+    run_root = (results_worktree / RESULTS_RELATIVE_ROOT / "pytest-worker-lock").resolve()
     result = (run_root / "results/smoke/concurrent.json").resolve()
     manifest = run_root / "manifests/inputs.json"
     manifest.parent.mkdir(parents=True)
     manifest.write_text("{}\n", encoding="utf-8")
     lock_id = hashlib.sha256(str(result).encode("utf-8") + b"\0").hexdigest()
-    lock_path = run_root / "locks/results" / f"{lock_id}.lock"
-    lock_path.parent.mkdir(parents=True)
+    work_root = run_root.parents[4].parent / "mutable-work"
+    lock_path = work_root / "locks/results" / f"{lock_id}.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
     with lock_path.open("w", encoding="utf-8") as lock_stream:
         fcntl.flock(lock_stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
         completed = subprocess.run(
@@ -583,6 +854,7 @@ def test_worker_result_lock_rejects_concurrent_writer(tmp_path):
                 str(PY),
                 "--run-root",
                 str(run_root),
+                *_worker_repository_args(run_root, attempt="lock-attempt"),
                 "--job-key",
                 "smoke-concurrent",
                 "--model",
@@ -599,7 +871,7 @@ def test_worker_result_lock_rejects_concurrent_writer(tmp_path):
                 "/bin/true",
             ],
             cwd=REPO,
-            env={**os.environ, "CODE_REPO_COMMIT": "a" * 40},
+            env={**os.environ, "CODE_REPO_COMMIT": _head()},
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -607,10 +879,16 @@ def test_worker_result_lock_rejects_concurrent_writer(tmp_path):
         )
     assert completed.returncode == 2
     assert "already owns the result lock" in completed.stderr
+    receipt = run_root / "job_records/smoke/smoke-concurrent/lock-attempt/worker.json"
+    assert json.loads(receipt.read_text(encoding="utf-8"))["reason_code"] == (
+        "argument_validation_failed"
+    )
 
 
-def test_formal_worker_rejects_missing_or_disagreeing_smoke_binding_environment(tmp_path):
-    run_root = tmp_path / "run"
+def test_formal_worker_rejects_missing_or_disagreeing_smoke_binding_environment(
+    tmp_path, results_worktree
+):
+    run_root = results_worktree / RESULTS_RELATIVE_ROOT / "pytest-formal-binding"
     manifest = run_root / "manifests/inputs.json"
     manifest.parent.mkdir(parents=True)
     manifest.write_text("{}\n", encoding="utf-8")
@@ -626,6 +904,7 @@ def test_formal_worker_rejects_missing_or_disagreeing_smoke_binding_environment(
         str(PY),
         "--run-root",
         str(run_root),
+        *_worker_repository_args(run_root, attempt="missing-binding", phase="formal"),
         "--job-key",
         "formal-binding-test",
         "--model",
@@ -647,7 +926,7 @@ def test_formal_worker_rejects_missing_or_disagreeing_smoke_binding_environment(
         "--",
         "/bin/true",
     ]
-    base_env = {**os.environ, "CODE_REPO_COMMIT": "a" * 40}
+    base_env = {**os.environ, "CODE_REPO_COMMIT": _head()}
     for variable in (
         "PAPER_SMOKE_APPROVAL_MARKER",
         "PAPER_SMOKE_APPROVAL_MARKER_SHA256",
@@ -665,6 +944,11 @@ def test_formal_worker_rejects_missing_or_disagreeing_smoke_binding_environment(
     )
     assert missing.returncode == 2
     assert "environment omitted" in missing.stderr
+    missing_receipt = (
+        run_root
+        / "job_records/formal/formal-binding-test/missing-binding/worker.json"
+    )
+    assert json.loads(missing_receipt.read_text(encoding="utf-8"))["status"] == "failed"
 
     disagreeing_env = {
         **base_env,
@@ -672,8 +956,11 @@ def test_formal_worker_rejects_missing_or_disagreeing_smoke_binding_environment(
         "PAPER_SMOKE_APPROVAL_MARKER_SHA256": "f" * 64,
         "PAPER_SMOKE_VALIDATED_PLAN_SHA256": "2" * 64,
     }
+    disagreeing_argv = list(argv)
+    attempt_index = disagreeing_argv.index("--attempt-id") + 1
+    disagreeing_argv[attempt_index] = "disagreeing-binding"
     disagreeing = subprocess.run(
-        argv,
+        disagreeing_argv,
         cwd=REPO,
         env=disagreeing_env,
         text=True,
