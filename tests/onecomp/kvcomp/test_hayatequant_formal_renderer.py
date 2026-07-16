@@ -1555,14 +1555,35 @@ def test_renderer_is_deterministic_and_emits_every_formal_axis(tmp_path):
     second = renderer.render(aggregate, tmp_path / "second")
     assert first[0].read_bytes() == second[0].read_bytes()
     assert first[1].read_bytes() == second[1].read_bytes()
+    assert first[2].read_bytes() == second[2].read_bytes()
 
     macros = first[0].read_text(encoding="utf-8")
     tables = first[1].read_text(encoding="utf-8")
+    main_results = first[2].read_text(encoding="utf-8")
     aggregate_sha256 = hashlib.sha256(aggregate.read_bytes()).hexdigest()
     assert rf"\newcommand{{\HayateFormalCommitHex}}{{{COMMIT}}}" in macros
     assert rf"\newcommand{{\HayateFormalAggregateSHAHex}}{{{aggregate_sha256}}}" in macros
     assert rf"\newcommand{{\HayateFormalTablesCommitHex}}{{{COMMIT}}}" in tables
     assert rf"\newcommand{{\HayateFormalTablesAggregateSHAHex}}{{{aggregate_sha256}}}" in tables
+    assert rf"\newcommand{{\HayateFormalMainCommitHex}}{{{COMMIT}}}" in main_results
+    assert (
+        rf"\newcommand{{\HayateFormalMainAggregateSHAHex}}{{{aggregate_sha256}}}"
+        in main_results
+    )
+    assert r"\begin{figure*}[t]" in main_results
+    assert r"\label{fig:formal-quality-summary}" in main_results
+    assert r"\label{tab:formal-main-seven-model-quality}" in main_results
+    assert r"\label{tab:formal-main-quality}" in main_results
+    assert r"\label{tab:formal-main-gates}" in main_results
+    assert "GM PPL ratio (proposal/TQ)" in main_results
+    assert r"ZS-Mean $\Delta$ (percentage points)" in main_results
+    assert main_results.index(r"\HayateValidateFormalMainIdentity") < main_results.index(
+        r"\begin{figure*}[t]"
+    )
+    assert main_results.index(r"\begin{figure*}[t]") < main_results.index(
+        r"\begin{table*"
+    )
+    assert r"\begin{figure*}[t]" not in tables
     assert (
         rf"\newcommand{{\HayateCodebookManifestSHA}}{{{renderer.HQ_CODEBOOK_MANIFEST_SHA256}}}"
         in macros
@@ -1656,9 +1677,9 @@ def test_renderer_is_deterministic_and_emits_every_formal_axis(tmp_path):
     assert "robustness supplement" in tables
     assert "descriptive only" in tables
     assert "directional" in tables
-    assert "statistically significant" not in macros + tables
-    assert "HQ faster" not in macros + tables
-    assert "HQ slower" not in macros + tables
+    assert "statistically significant" not in macros + main_results + tables
+    assert "HQ faster" not in macros + main_results + tables
+    assert "HQ slower" not in macros + main_results + tables
     assert renderer.LONGBENCH_TOTAL == 3668
     assert "3,668 examples per method" in tables
 
@@ -1681,7 +1702,7 @@ def test_renderer_is_deterministic_and_emits_every_formal_axis(tmp_path):
         "formal-speed-memory-representations",
     }
     assert all(rf"\label{{tab:{label}}}" in tables for label in expected_labels)
-    lowered = (macros + tables).lower()
+    lowered = (macros + main_results + tables).lower()
     assert "placeholder" not in lowered
     assert "fallback" not in lowered
     assert "27.910" not in tables
@@ -1737,7 +1758,7 @@ def test_complete_negative_result_renders_but_suppresses_superiority_claim(tmp_p
 
     aggregate = tmp_path / "complete_negative.json"
     _write(aggregate, document)
-    macros_path, _ = renderer.render(aggregate, tmp_path / "rendered")
+    macros_path, _, _ = renderer.render(aggregate, tmp_path / "rendered")
     macros = macros_path.read_text(encoding="utf-8")
     assert r"\newcommand{\HayatePointEstimateWinGatePassed}{false}" in macros
     assert r"\newcommand{\HayateDirectionalSuperiorityClaimAllowed}{false}" in macros
@@ -1786,12 +1807,16 @@ def test_cross_include_identity_is_content_addressed(tmp_path):
     assert first_sha != second_sha
     first_macros = first_paths[0].read_text(encoding="utf-8")
     first_tables = first_paths[1].read_text(encoding="utf-8")
+    first_main = first_paths[2].read_text(encoding="utf-8")
     second_macros = second_paths[0].read_text(encoding="utf-8")
     second_tables = second_paths[1].read_text(encoding="utf-8")
+    second_main = second_paths[2].read_text(encoding="utf-8")
     assert rf"\newcommand{{\HayateFormalAggregateSHAHex}}{{{first_sha}}}" in first_macros
     assert rf"\newcommand{{\HayateFormalTablesAggregateSHAHex}}{{{first_sha}}}" in first_tables
+    assert rf"\newcommand{{\HayateFormalMainAggregateSHAHex}}{{{first_sha}}}" in first_main
     assert rf"\newcommand{{\HayateFormalAggregateSHAHex}}{{{second_sha}}}" in second_macros
     assert rf"\newcommand{{\HayateFormalTablesAggregateSHAHex}}{{{second_sha}}}" in second_tables
+    assert rf"\newcommand{{\HayateFormalMainAggregateSHAHex}}{{{second_sha}}}" in second_main
 
 
 @pytest.mark.parametrize(

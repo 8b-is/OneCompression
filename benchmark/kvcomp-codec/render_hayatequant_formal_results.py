@@ -9,7 +9,7 @@ present, complete, and tied to one clean-source commit, then re-derives the
 headline PPL and corrected zero-shot point estimates, checkpoint win counts,
 and robustness intervals, together with the mechanism control.
 
-The command writes two deterministic includes and does not edit ``main.tex``::
+The command writes three deterministic includes and does not edit ``main.tex``::
 
     python benchmark/kvcomp-codec/render_hayatequant_formal_results.py \
       --aggregate /path/to/coverage_checked_aggregates.json \
@@ -18,7 +18,10 @@ The command writes two deterministic includes and does not edit ``main.tex``::
 Outputs:
   * ``hayatequant_formal_macros.tex`` -- primary point estimates, win counts,
     and interval-gated robustness statements.
-  * ``hayatequant_formal_tables.tex`` -- complete formal result tables.
+  * ``hayatequant_formal_main.tex`` -- an aggregate-derived summary figure and
+    compact main-paper result tables.
+  * ``hayatequant_formal_tables.tex`` -- the complete formal result tables for
+    the appendix.
 
 No generation timestamp or host path is embedded, so identical aggregate bytes
 produce identical LaTeX bytes on every machine.
@@ -4657,6 +4660,275 @@ def _table(
     )
 
 
+def _plot_bounds(values: Sequence[float], reference: float) -> tuple[float, float]:
+    """Return deterministic linear plot bounds containing data and parity."""
+
+    if not values or any(not math.isfinite(value) for value in values):
+        raise RenderError("Formal summary figure received non-finite or empty data")
+    lower = min(reference, *values)
+    upper = max(reference, *values)
+    span = upper - lower
+    padding = max(span * 0.12, 0.02 if reference == 1.0 else 0.1)
+    return lower - padding, upper + padding
+
+
+def _plot_y(value: float, lower: float, upper: float, *, height: float = 3.1) -> float:
+    if not lower < upper or not lower <= value <= upper:
+        raise RenderError("Formal summary figure has invalid plot bounds")
+    return height * (value - lower) / (upper - lower)
+
+
+def _summary_panel(
+    *,
+    origin_x: float,
+    title: str,
+    y_label: str,
+    values: Mapping[str, Sequence[float]],
+    reference: float,
+    digits: int,
+) -> list[str]:
+    """Render one dependency-free TikZ line panel from validated values."""
+
+    if set(values) != set(PROPOSAL_METHODS):
+        raise RenderError("Formal summary figure proposal set changed")
+    if any(len(values[proposal]) != len(RATES) for proposal in PROPOSAL_METHODS):
+        raise RenderError("Formal summary figure rate coverage changed")
+    flattened = [float(value) for proposal in PROPOSAL_METHODS for value in values[proposal]]
+    lower, upper = _plot_bounds(flattened, reference)
+    x_positions = (0.8, 2.6, 4.4)
+    colors = {"HQ": "blue!70!black", "AdaptiveHQ": "orange!90!black"}
+    marks = {"HQ": "*", "AdaptiveHQ": "square*"}
+    label_anchors = {"HQ": "south", "AdaptiveHQ": "north"}
+    lines = [
+        rf"\begin{{scope}}[shift={{({origin_x:.3f},0)}}]",
+        r"\draw[->] (0.45,0) -- (4.85,0) node[below right] {average bits};",
+        r"\draw[->] (0.45,0) -- (0.45,3.55);",
+        rf"\node[font=\bfseries] at (2.65,4.05) {{{title}}};",
+        rf"\node[rotate=90] at (-0.55,1.65) {{{y_label}}};",
+        rf"\node[anchor=east] at (0.38,0) {{{_fmt(lower, digits)}}};",
+        rf"\node[anchor=east] at (0.38,3.10) {{{_fmt(upper, digits)}}};",
+    ]
+    reference_y = _plot_y(reference, lower, upper)
+    lines.extend(
+        [
+            rf"\draw[densely dashed,gray] (0.45,{reference_y:.4f}) -- (4.75,{reference_y:.4f});",
+            rf"\node[anchor=east,text=gray] at (0.38,{reference_y:.4f}) {{{_fmt(reference, digits)}}};",
+        ]
+    )
+    for x, rate in zip(x_positions, RATES):
+        lines.append(rf"\draw ({x:.3f},0.06) -- ({x:.3f},-0.06) node[below] {{{rate}}};")
+    for proposal in PROPOSAL_METHODS:
+        points = [
+            (x, _plot_y(float(value), lower, upper))
+            for x, value in zip(x_positions, values[proposal])
+        ]
+        coordinates = " ".join(f"({x:.4f},{y:.4f})" for x, y in points)
+        lines.append(
+            rf"\draw[{colors[proposal]},thick] plot[mark={marks[proposal]}] coordinates {{{coordinates}}};"
+        )
+        for (x, y), value in zip(points, values[proposal]):
+            lines.append(
+                rf"\node[anchor={label_anchors[proposal]},text={colors[proposal]},"
+                rf"font=\tiny] at ({x:.4f},{y:.4f}) {{{_fmt(float(value), digits)}}};"
+            )
+    lines.extend(
+        [
+            r"\draw[blue!70!black,thick] (0.70,3.58) -- (1.10,3.58) node[right,text=black] {HQ};",
+            r"\draw[orange!90!black,thick] (2.45,3.58) -- (2.85,3.58) node[right,text=black] {Adaptive HQ};",
+            r"\end{scope}",
+        ]
+    )
+    return lines
+
+
+def _formal_summary_figure(data: Mapping[str, Any]) -> str:
+    """Build the coverage-checked quality figure without optional plot packages."""
+
+    ppl_values = {
+        proposal: [
+            _number(data["ppl"]["primary"][proposal][rate]["ratio"], "summary PPL ratio")
+            for rate in RATES
+        ]
+        for proposal in PROPOSAL_METHODS
+    }
+    zero_values = {
+        proposal: [
+            100.0
+            * _number(
+                data["zeroshot"]["primary"][proposal][rate]["delta"],
+                "summary zero-shot delta",
+            )
+            for rate in RATES
+        ]
+        for proposal in PROPOSAL_METHODS
+    }
+    lines = [
+        r"\begin{figure*}[t]",
+        r"\centering",
+        r"\begin{tikzpicture}[font=\scriptsize]",
+    ]
+    lines.extend(
+        _summary_panel(
+            origin_x=0.0,
+            title=r"WikiText-2 quality",
+            y_label=r"GM PPL ratio (proposal/TQ)",
+            values=ppl_values,
+            reference=1.0,
+            digits=3,
+        )
+    )
+    lines.extend(
+        _summary_panel(
+            origin_x=7.0,
+            title=r"Five-task zero-shot quality",
+            y_label=r"ZS-Mean $\Delta$ (percentage points)",
+            values=zero_values,
+            reference=0.0,
+            digits=2,
+        )
+    )
+    lines.extend(
+        [
+            r"\end{tikzpicture}",
+            r"\caption{\textbf{Coverage-checked fixed-panel quality summary.} Left: geometric mean of within-checkpoint proposal/TurboQuant Algorithm-1-MSE WikiText-2 PPL ratios; lower is better and the dashed line is parity. Right: proposal-minus-TurboQuant ZS-Mean in percentage points; higher is better and the dashed line is parity. Points are descriptive estimates for the seven preselected, family-correlated checkpoints. Exact per-checkpoint values, win/tie/loss counts, and simultaneous family-wise intervals are retained in the coverage-checked audit ledger. The figure is generated from the same complete aggregate and makes no model-population claim.}",
+            r"\label{fig:formal-quality-summary}",
+            r"\end{figure*}",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def build_main_results(data: Mapping[str, Any], aggregate_sha256: str) -> str:
+    """Build compact main-paper figures/tables from the validated aggregate."""
+
+    quality_rows = []
+    for proposal in PROPOSAL_METHODS:
+        for rate in RATES:
+            ppl = data["ppl"]["primary"][proposal][rate]
+            zero = data["zeroshot"]["primary"][proposal][rate]
+            quality_rows.append(
+                f"{proposal} & {rate} & {_fmt(ppl['ratio'], 4)} & "
+                f"{_fmt(ppl['relative_percent'], 2)}\\% & "
+                f"{ppl['wins']}/{ppl['ties']}/{ppl['losses']} & "
+                f"{_fmt(100.0 * zero['delta'], 3)} & "
+                f"{zero['wins']}/{zero['ties']}/{zero['losses']}"
+            )
+
+    per_model_rows = []
+    for model in PAPER_MODELS:
+        ppl_rates = data["ppl"]["models"][model]["rates"]
+        zero_rates = data["zeroshot"]["models"][model]["rates"]
+        for rate in RATES:
+            ppl_methods = ppl_rates[rate]
+            zero_methods = zero_rates[rate]
+            per_model_rows.append(
+                f"{_tex(DISPLAY_MODELS[model])} & {rate} & "
+                f"{_fmt(_number(ppl_methods['TurboQuant-paper']['ppl'], 'main TQ PPL'), 2)} & "
+                f"{_fmt(_number(ppl_methods['HQ']['ppl'], 'main HQ PPL'), 2)} & "
+                f"{_fmt(_number(ppl_methods['AdaptiveHQ']['ppl'], 'main AdaptiveHQ PPL'), 2)} & "
+                f"{_fmt(100.0 * _number(zero_methods['TurboQuant-paper']['avg_primary_score'], 'main TQ ZS'), 2)} & "
+                f"{_fmt(100.0 * _number(zero_methods['HQ']['avg_primary_score'], 'main HQ ZS'), 2)} & "
+                f"{_fmt(100.0 * _number(zero_methods['AdaptiveHQ']['avg_primary_score'], 'main AdaptiveHQ ZS'), 2)}"
+            )
+    for rate in RATES:
+        ppl_values = {
+            method: [
+                _number(data["ppl"]["models"][model]["rates"][rate][method]["ppl"], "main aggregate PPL")
+                for model in PAPER_MODELS
+            ]
+            for method in ("TurboQuant-paper", "HQ", "AdaptiveHQ")
+        }
+        zero_values = {
+            method: [
+                _number(
+                    data["zeroshot"]["models"][model]["rates"][rate][method]["avg_primary_score"],
+                    "main aggregate ZS",
+                )
+                for model in PAPER_MODELS
+            ]
+            for method in ("TurboQuant-paper", "HQ", "AdaptiveHQ")
+        }
+        per_model_rows.append(
+            f"Aggregate & {rate} & "
+            + " & ".join(
+                _fmt(math.exp(math.fsum(math.log(value) for value in ppl_values[method]) / len(PAPER_MODELS)), 2)
+                for method in ("TurboQuant-paper", "HQ", "AdaptiveHQ")
+            )
+            + " & "
+            + " & ".join(
+                _fmt(100.0 * math.fsum(zero_values[method]) / len(PAPER_MODELS), 2)
+                for method in ("TurboQuant-paper", "HQ", "AdaptiveHQ")
+            )
+        )
+
+    gate_summaries = data["point_estimate_win_gate"]["proposal_baseline_summaries"]
+    gate_rows = []
+    for proposal in PROPOSAL_METHODS:
+        tq_quality = gate_summaries[proposal]["TurboQuant-paper"]
+        fib_quality = gate_summaries[proposal]["FibQuant-paper"]
+        tq_speed = gate_summaries[proposal]["TurboQuant-paper-speed"]
+        passed = tq_quality["passed"] and fib_quality["passed"] and tq_speed["passed"]
+        gate_rows.append(
+            f"{proposal} & {tq_quality['wins']}/{tq_quality['expected_cells']} & "
+            f"{fib_quality['wins']}/{fib_quality['expected_cells']} & "
+            f"{tq_speed['wins']}/{tq_speed['expected_cells']} & "
+            f"{'pass' if passed else 'fail'}"
+        )
+
+    pieces = [
+        "% AUTO-GENERATED. DO NOT EDIT.",
+        "% Compact main-paper results from coverage_checked_aggregates.json only.",
+        f"% Aggregate SHA-256: {aggregate_sha256}",
+        _macro("HayateFormalMainCommitHex", data["commit"]),
+        _macro("HayateFormalMainAggregateSHAHex", aggregate_sha256),
+        r"\HayateValidateFormalMainIdentity",
+        "",
+        _formal_summary_figure(data),
+        "",
+        _table(
+            r"Seven-model quality grid in the main-paper layout. PPL is WikiText-2 "
+            r"perplexity and ZS is the unweighted mean of the five declared task "
+            r"metrics, both shown as point estimates. The Aggregate PPL row is a "
+            r"geometric mean and the Aggregate ZS row is an arithmetic mean. HQ is "
+            r"the fixed recipe and Adaptive HQ is the causal allocation option. "
+            r"FibQuant and BlockQuant, including their protocol qualifications, are "
+            r"retained in the audit ledger rather than crowded into the main grid.",
+            "tab:formal-main-seven-model-quality",
+            "lcrrrrrr",
+            r"model & bits & TQ PPL & HQ PPL & Adaptive HQ PPL & TQ ZS & HQ ZS & Adaptive HQ ZS",
+            per_model_rows,
+        ),
+        "",
+        _table(
+            r"Coverage-checked fixed-panel quality summary. PPL is the geometric "
+            r"mean of within-checkpoint proposal/TQ Algorithm-1-MSE ratios; lower "
+            r"is better. ZS-Mean is the proposal-minus-TQ paired delta in percentage "
+            r"points; higher is better. W/T/L uses the seven fixed checkpoints and "
+            r"unrounded values. Simultaneous intervals and all per-checkpoint values "
+            r"are retained in the coverage-checked audit ledger.",
+            "tab:formal-main-quality",
+            "lcccccc",
+            r"proposal & bits & PPL ratio & PPL change & PPL W/T/L & ZS $\Delta$ pp & ZS W/T/L",
+            quality_rows,
+        ),
+        "",
+        _table(
+            r"Predeclared strict point-estimate gate. Each entry is wins/required "
+            r"matched cells before display rounding; ties, losses, missing cells, and "
+            r"protocol mismatches are non-wins. Pass requires at least 90\%. "
+            r"BlockQuant is retained in the audit ledger but excluded here because "
+            r"its identity-bit-counted source operating point is not payload-matched. "
+            r"The speed column compares only like-labelled HQ or Adaptive-HQ and TQ "
+            r"implementation categories; it is not a packed-serving claim.",
+            "tab:formal-main-gates",
+            "lcccc",
+            r"proposal & quality vs TQ & quality vs FibQuant & speed vs TQ & all three",
+            gate_rows,
+        ),
+    ]
+    return "\n\n".join(pieces) + "\n"
+
+
 def build_macros(data: Mapping[str, Any], aggregate_sha256: str) -> str:
     turboquant_scope = data["method_scopes"]["TurboQuant-paper"]
     fibquant_scope = data["method_scopes"]["FibQuant-paper"]
@@ -5574,7 +5846,7 @@ def _atomic_text(path: Path, text: str) -> None:
 
 def render(
     aggregate: Path, output_dir: Path, *, prefix: str = "hayatequant_formal"
-) -> tuple[Path, Path]:
+) -> tuple[Path, Path, Path]:
     """Validate completely, then atomically replace each deterministic include."""
     if not SAFE_PREFIX.fullmatch(prefix):
         raise RenderError("prefix must match [a-z][a-z0-9_]*")
@@ -5584,13 +5856,16 @@ def render(
     data = validate_aggregate(document)
     aggregate_sha = _sha256(aggregate)
     macros = build_macros(data, aggregate_sha)
+    main_results = build_main_results(data, aggregate_sha)
     tables = build_tables(data, aggregate_sha)
     output_dir = output_dir.expanduser().resolve()
     macro_path = output_dir / f"{prefix}_macros.tex"
+    main_path = output_dir / f"{prefix}_main.tex"
     table_path = output_dir / f"{prefix}_tables.tex"
     _atomic_text(macro_path, macros)
+    _atomic_text(main_path, main_results)
     _atomic_text(table_path, tables)
-    return macro_path, table_path
+    return macro_path, table_path, main_path
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -5600,10 +5875,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--prefix", default="hayatequant_formal")
     args = parser.parse_args(argv)
     try:
-        macro_path, table_path = render(args.aggregate, args.output_dir, prefix=args.prefix)
+        macro_path, table_path, main_path = render(
+            args.aggregate, args.output_dir, prefix=args.prefix
+        )
     except RenderError as exc:
         parser.error(str(exc))
     print(f"wrote {macro_path}")
+    print(f"wrote {main_path}")
     print(f"wrote {table_path}")
     return 0
 

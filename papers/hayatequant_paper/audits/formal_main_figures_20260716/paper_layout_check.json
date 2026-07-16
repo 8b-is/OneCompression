@@ -1,0 +1,27 @@
+{
+  "audit_date": "2026-07-16",
+  "paper_files": {
+    "prep_tex_sha256": "319a229a341e5f90bb8751bee994b77d66ef0df910ac822bbf10914e397f8d0f",
+    "main_tex_sha256_after_compaction": "b2091b7768cf029e55032e3d89dfa765f47ed4918afb245301ddd67eab86f719"
+  },
+  "checks": [
+    {
+      "name": "draft_latex_build_without_generated_results",
+      "status": "passed",
+      "command": "latexmk -pdf -interaction=nonstopmode -halt-on-error -outdir=<temporary> main.tex"
+    },
+    {
+      "name": "submission_latex_build_with_complete_synthetic_fixture",
+      "status": "passed",
+      "command": "pdflatex -interaction=nonstopmode -halt-on-error -output-directory=<temporary> \\def\\HayateSubmissionMode{1}\\input{main.tex}",
+      "fixture_scope": "renderer test fixture only; not an experimental result"
+    },
+    {
+      "name": "formal_renderer_main_figure_and_cross_include_identity",
+      "status": "passed",
+      "command": "pytest -q tests/onecomp/kvcomp/test_hayatequant_formal_renderer.py -k 'renderer_is_deterministic_and_emits_every_formal_axis or cross_include_identity_is_content_addressed'",
+      "passed": 2,
+      "deselected": 84
+    }
+  ]
+}
