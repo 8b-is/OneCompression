@@ -42,6 +42,7 @@ from vllm_plugins.kvcomp.native_turboquant import (
     resolve_turboquant_preset,
     turboquant_engine_kwargs,
 )
+from vllm_plugins.kvcomp.taper_config import TaperVLLMRecipe
 
 
 class _FakeEngineArgs:
@@ -130,8 +131,10 @@ def test_apply_to_engine_args_hayatequant_block_size_1_fails_closed(tmp_path):
     assert engine_args.kv_cache_dtype == "auto"
 
 
-def test_apply_to_engine_args_taperkv_policy_fails_closed_without_custom_backend(tmp_path):
-    """A serialized adaptive TaperKV policy must never become uncompressed vLLM."""
+def test_apply_to_engine_args_taperkv_policy_installs_explicit_reference_backend(tmp_path, monkeypatch):
+    """TapeKV uses an explicit backend; it never degrades to plain FullKV."""
+    from vllm_plugins.kvcomp import vllm_plugin
+
     model_path = _write_model_config(
         tmp_path,
         {
@@ -145,9 +148,51 @@ def test_apply_to_engine_args_taperkv_policy_fails_closed_without_custom_backend
         },
     )
     engine_args = _FakeEngineArgs(model=model_path)
-    with pytest.raises(RuntimeError, match="cannot run through native vLLM"):
-        apply_to_engine_args(engine_args)
+    installed = {}
+    monkeypatch.setattr(
+        vllm_plugin,
+        "_install_taper_native_backend",
+        lambda plan, _logger: installed.update(plan.taper_config) or True,
+    )
+    apply_to_engine_args(engine_args)
     assert engine_args.kv_cache_dtype == "auto"
+    assert installed["policy_name"] == "taperkv"
+    assert installed["implementation"] == "fp16_reference_fake_quant"
+
+
+def test_block_taper_vllm_recipe_is_validated_and_bare_kwargs_are_rejected():
+    """The semantic backend has no silent ``kv_cache_dtype='auto'`` shortcut."""
+    from vllm_plugins.kvcomp.mapping import engine_kwargs_from_kv_config, plan_from_kv_config
+
+    policy = {
+        "name": "block_taperkv",
+        "key_bits": 8,
+        "value_bits": 4,
+        "b_min": 2,
+        "b_min_value": 2,
+        "block_size": 16,
+        "residual_fp16": True,
+    }
+    plan = plan_from_kv_config({"policy": policy})
+    assert plan.native_supported and not plan.needs_custom_backend and plan.taper_native
+    assert plan.taper_config == TaperVLLMRecipe.from_policy(policy).to_mapping()
+    with pytest.raises(RuntimeError, match="general plugin"):
+        engine_kwargs_from_kv_config({"policy": policy})
+
+
+def test_taper_vllm_recipe_rejects_non_boolean_block_residual():
+    with pytest.raises(ValueError, match="residual_fp16"):
+        TaperVLLMRecipe.from_policy(
+            {
+                "name": "block_taperkv",
+                "key_bits": 8,
+                "value_bits": 4,
+                "b_min": 2,
+                "b_min_value": 2,
+                "block_size": 16,
+                "residual_fp16": "false",
+            }
+        )
 
 
 @pytest.mark.parametrize("bits", [2, 3, 4])

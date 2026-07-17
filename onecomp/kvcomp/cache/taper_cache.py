@@ -43,16 +43,19 @@ def taper_bits(age: torch.Tensor, total: int, sink_tokens: int, recent_tokens: i
     is_sink = age >= (total - sink_tokens)
     is_recent = age < recent_tokens
     mid = ~(is_sink | is_recent)
-    if mid.any():
-        if ladder is None:
-            ladder = list(range(hi_bits, b_min - 1, -1)) or [b_min]
-        nb = len(ladder)
-        a = age[mid].float()
-        lo, hi = recent_tokens, max(recent_tokens + 1, total - sink_tokens)
-        frac = ((a - lo) / max(1.0, (hi - lo))).clamp(0, 1 - 1e-6)
-        band = (frac * nb).long().clamp(0, nb - 1)
-        ladder_t = torch.tensor(ladder, device=age.device, dtype=torch.int64)
-        bits[mid] = ladder_t[band]
+    if ladder is None:
+        ladder = list(range(hi_bits, b_min - 1, -1)) or [b_min]
+    # Do not branch on ``mid.any()``: on CUDA that scalar conversion inserts a
+    # host synchronisation into every cache update.  Computing the candidate
+    # bands for the protected sink/recent entries too is cheap and ``where``
+    # retains their high precision without a device-to-host round trip.
+    nb = len(ladder)
+    a = age.float()
+    lo, hi = recent_tokens, max(recent_tokens + 1, total - sink_tokens)
+    frac = ((a - lo) / max(1.0, (hi - lo))).clamp(0, 1 - 1e-6)
+    band = (frac * nb).long().clamp(0, nb - 1)
+    ladder_t = torch.tensor(ladder, device=age.device, dtype=torch.int64)
+    bits = torch.where(mid, ladder_t[band], bits)
     # An explicitly-supplied ``ladder`` may hold values outside this role's
     # [b_min, hi_bits] range (e.g. a key ladder reused for values).  Clamp so no
     # token exceeds this role's high bit-width (preserving KVTuner K>=V) or drops

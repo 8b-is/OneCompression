@@ -287,6 +287,12 @@ class KVCompVLLMPlan:
     # faithful HayateQuant result and is labelled accordingly in notes.
     hayate_native: bool = False
     hayate_config: dict = field(default_factory=dict)
+    # TapeKV has a deliberately explicit vLLM *semantic* backend.  It uses
+    # vLLM's ordinary FP16/BF16 paged allocation and fake-quantizes logical KV
+    # values before attention, so it is valid for inference/quality validation
+    # but never a packed-memory or throughput deployment result.
+    taper_native: bool = False
+    taper_config: dict = field(default_factory=dict)
     # Boundary / outlier layers vLLM should keep in full precision; mapped onto
     # ``--kv-cache-dtype-skip-layers`` so the codec's ``skip_layers`` are honoured
     # instead of silently dropped.
@@ -415,6 +421,50 @@ def plan_from_kv_config(
             f"Selector '{selector.get('name')}' (token eviction) needs the custom "
             "attention backend; native kv_cache_dtype cannot evict tokens."
         )
+
+    # TapeKV is now available through an explicit reference FlashAttention
+    # backend.  Do this before the generic adaptive-policy rejection below:
+    # a generic vLLM dtype would still be incorrect, but the backend carries
+    # the actual age schedule.  It intentionally accepts only the standalone
+    # affine TapeKV policies; composing a second codec or eviction selector
+    # would silently change the algorithm, so those configurations remain
+    # fail-closed.
+    if policy_name in ("taperkv", "block_taperkv") and not plan.needs_custom_backend:
+        if codec is not None:
+            plan.needs_custom_backend = True
+            plan.notes.append(
+                "TapeKV vLLM reference backend is affine-policy only; a separate "
+                f"codec '{plan.codec_name}' is not silently composed with it."
+            )
+        else:
+            try:
+                from vllm_plugins.kvcomp.taper_config import TaperVLLMRecipe
+
+                recipe = TaperVLLMRecipe.from_policy(policy)
+            except (TypeError, ValueError) as exc:
+                plan.needs_custom_backend = True
+                plan.notes.append(
+                    f"Invalid TapeKV vLLM policy; refusing an uncompressed fallback: {exc}"
+                )
+            else:
+                plan.kv_cache_dtype = "auto"
+                plan.native_supported = True
+                plan.taper_native = True
+                plan.taper_config = recipe.to_mapping()
+                plan.skip_layers = list(recipe.skip_layers)
+                plan.notes.append(
+                    "TapeKV will use the explicit vLLM reference backend: the "
+                    "age-dependent affine fake-quantisation is applied before "
+                    "FlashAttention, while the physical paged cache remains the "
+                    "model dtype. Do not report this path as packed-memory or "
+                    "throughput compression."
+                )
+                if requested_kv_cache_dtype != "auto":
+                    plan.warnings.append(
+                        f"Requested kv_cache_dtype='{requested_kv_cache_dtype}' is ignored: "
+                        "TapeKV reference semantics require the model-dtype cache."
+                    )
+                return plan
 
     # Per-token adaptive recipes (ThinKV graded eviction, TaperKV graded
     # quantization) are not a single kv_cache_dtype and need the custom backend.
@@ -736,5 +786,11 @@ def engine_kwargs_from_kv_config(
         raise RuntimeError(
             "KV compression recipe cannot be represented by native vLLM engine "
             f"kwargs: {detail}"
+        )
+    if plan.taper_native:
+        raise RuntimeError(
+            "TapeKV vLLM inference requires the onecomp_kvcomp general plugin "
+            "(it installs an attention backend); do not launch it from bare "
+            "engine kwargs. The backend is FP16-reference semantics only."
         )
     return plan.engine_kwargs()

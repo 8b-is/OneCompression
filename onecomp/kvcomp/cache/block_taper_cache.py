@@ -60,12 +60,20 @@ def block_taper_bits(
     return parts[0] if len(parts) == 1 else torch.cat(parts)
 
 
-def fake_quant_blocks(x: torch.Tensor, bits: torch.Tensor, block_size: int) -> torch.Tensor:
+def fake_quant_blocks(
+    x: torch.Tensor,
+    bits: torch.Tensor,
+    block_size: int,
+    *,
+    known_bit_widths: tuple[int, ...] | None = None,
+) -> torch.Tensor:
     """Fake-quantize each batch-head-block with one affine scale/zero pair.
 
     ``x`` must be ``(batch, heads, tokens, head_dim)``.  Full blocks must have
     uniform widths; rejecting a non-uniform vector prevents a caller from
     accidentally reporting a paged layout while quantizing a different one.
+    ``known_bit_widths`` is an optional static policy width set used by the
+    live cache to avoid a CUDA-to-host ``unique().tolist()`` synchronisation.
     """
     if x.ndim != 4:
         raise ValueError("x must have shape (batch, heads, tokens, head_dim)")
@@ -88,11 +96,21 @@ def fake_quant_blocks(x: torch.Tensor, bits: torch.Tensor, block_size: int) -> t
         if bool((full != full[:, :1]).any()):
             raise ValueError("bits must be uniform within every full block")
         block_bits = full[:, 0]
-        for bit_width in torch.unique(block_bits).tolist():
+        # ``torch.unique(...).tolist()`` synchronises CUDA for every cache
+        # regrade.  Policy schedules are static, so the live cache supplies
+        # their finite CPU-side width set and avoids that device->host round
+        # trip.  Keep the generic fallback for external callers with arbitrary
+        # per-block bit vectors.
+        widths = torch.unique(block_bits).tolist() if known_bit_widths is None else known_bit_widths
+        for bit_width in widths:
             bit_width = int(bit_width)
+            if bit_width < 1 or bit_width > 16:
+                raise ValueError("known_bit_widths entries must lie in [1, 16]")
             if bit_width >= 16:
                 continue
             block_indices = torch.nonzero(block_bits == bit_width, as_tuple=False).flatten()
+            if block_indices.numel() == 0:
+                continue
             selected = (
                 block_indices[:, None] * block_size
                 + torch.arange(block_size, device=x.device)[None, :]
@@ -173,8 +191,18 @@ class BlockTaperKVCache(TaperKVCache):
         if self.policy.quant_granularity != "block":
             return super()._grade_layer(keys, values, layer_idx)
         kbits, vbits = self.token_bits(keys.shape[2], keys.device, layer_idx)
-        key_quantized = fake_quant_blocks(keys, kbits, self.policy.block_size)
-        value_quantized = fake_quant_blocks(values, vbits, self.policy.block_size)
+        # The schedule is policy-defined; pass its possible widths so the CUDA
+        # hot path does not materialise ``torch.unique(...).tolist()`` on the
+        # host once per layer/update.  The inclusive ranges also cover clipped
+        # user ladders and preserve the old generic operator's exact result.
+        key_widths = tuple(range(self.policy.b_min, self.policy.key_bits + 1))
+        value_widths = tuple(range(self.policy.b_min_value, self.policy.value_bits + 1))
+        key_quantized = fake_quant_blocks(
+            keys, kbits, self.policy.block_size, known_bit_widths=key_widths
+        )
+        value_quantized = fake_quant_blocks(
+            values, vbits, self.policy.block_size, known_bit_widths=value_widths
+        )
         batch_heads = keys.shape[0] * keys.shape[1]
         per_token_role = batch_heads * keys.shape[-1]
         stored_bits = int(

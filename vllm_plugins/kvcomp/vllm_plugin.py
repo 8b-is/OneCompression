@@ -12,8 +12,12 @@ Scope of this plugin (agreed scaffold):
   :class:`onecomp.runner.Runner`.
 * Map the **FP8** codec onto vLLM's *native* ``kv_cache_dtype`` (the recommended
   baseline), via :func:`vllm_plugins.kvcomp.mapping.engine_kwargs_from_kv_config`.
-* For low-bit / eviction recipes, fail closed when the experimental custom
-  attention backend is required (never start an uncompressed look-alike run).
+* Run standalone affine TapeKV through an explicit, FP16/BF16-reference
+  FlashAttention backend.  The backend is marked non-packed and is excluded
+  from memory/throughput claims.
+* For every other low-bit / eviction recipe, fail closed when the experimental
+  custom attention backend is required (never start an uncompressed look-alike
+  run).
 
 ``vllm`` is imported lazily inside the registration hook so that importing this
 module (e.g. in the smoke test) does not require vLLM to be installed.
@@ -36,6 +40,7 @@ from vllm_plugins.kvcomp.mapping import (
 _PLUGIN_NAME = "onecomp_kvcomp"
 _HAYATE_NATIVE_CONFIG_ENV = "KVCOMP_VLLM_HAYATE_NATIVE_CONFIG"
 _HAYATE_FULL_NATIVE_CONFIG_ENV = "KVCOMP_VLLM_HAYATE_FULL_NATIVE_CONFIG"
+_TAPER_NATIVE_CONFIG_ENV = "KVCOMP_VLLM_TAPER_CONFIG"
 
 
 def _get_logger():
@@ -130,6 +135,11 @@ def apply_to_engine_args(engine_args, model_path: Optional[str] = None):
         # A serialized historical hybrid is an explicit, different backend;
         # it must not coexist with a manual full-HQ override.
         os.environ.pop(_HAYATE_FULL_NATIVE_CONFIG_ENV, None)
+    if not plan.taper_native:
+        # The registry override delegates to ordinary FlashAttention without a
+        # payload (see taper_native.py), so clearing this process-scoped recipe
+        # prevents it being applied to a subsequently constructed model.
+        os.environ.pop(_TAPER_NATIVE_CONFIG_ENV, None)
     for msg in plan.notes:
         logger.info("[kvcomp] %s", msg)
     for msg in plan.warnings:
@@ -139,6 +149,16 @@ def apply_to_engine_args(engine_args, model_path: Optional[str] = None):
         raise RuntimeError(
             "Serialized KV compression recipe cannot run through native vLLM: " f"{detail}"
         )
+    if plan.taper_native:
+        _install_taper_native_backend(plan, logger)
+        # Shared prefix blocks are intentionally disabled: independently
+        # regrading two sequences which alias a prefix page would mutate a
+        # page according to whichever request ran last.  This is a correctness
+        # requirement of the reference backend, not a performance knob.
+        if hasattr(engine_args, "enable_prefix_caching"):
+            engine_args.enable_prefix_caching = False
+        logger.info("[kvcomp] enabled TapeKV FP16-reference semantic backend")
+        return engine_args
     if plan.native_supported and plan.kv_cache_dtype != "auto":
         if not _vllm_accepts_dtype(plan.kv_cache_dtype):
             raise RuntimeError(
@@ -165,6 +185,7 @@ _PATCHED = False
 _HAYATE_NATIVE_INSTALLED = False
 _HAYATE_FULL_NATIVE_INSTALLED = False
 _HAYATE_FULL_SPEC_PATCHED = False
+_TAPER_NATIVE_INSTALLED = False
 
 
 def _install_hayate_full_cache_spec_hook() -> bool:
@@ -319,6 +340,53 @@ def _install_hayate_native_backend(plan: KVCompVLLMPlan, logger) -> bool:
     return True
 
 
+def _register_taper_native_backend(logger) -> bool:
+    """Register the explicit TapeKV semantic backend in this vLLM process."""
+    global _TAPER_NATIVE_INSTALLED
+    payload = os.environ.get(_TAPER_NATIVE_CONFIG_ENV)
+    if not payload:
+        return False
+    try:
+        config = json.loads(payload)
+        from vllm_plugins.kvcomp.taper_config import (  # pylint: disable=import-outside-toplevel
+            TaperVLLMRecipe,
+        )
+
+        TaperVLLMRecipe.from_mapping(config)
+    except Exception as exc:
+        raise RuntimeError("invalid TapeKV native config; refusing registration") from exc
+    if _TAPER_NATIVE_INSTALLED:
+        return True
+    try:
+        from vllm.v1.attention.backends.registry import (  # pylint: disable=import-outside-toplevel
+            AttentionBackendEnum,
+            register_backend,
+        )
+
+        register_backend(
+            AttentionBackendEnum.FLASH_ATTN,
+            "vllm_plugins.kvcomp.taper_native.TaperKVNativeBackend",
+        )
+        _TAPER_NATIVE_INSTALLED = True
+        logger.info("[kvcomp] registered TapeKV FP16-reference FlashAttention backend")
+        return True
+    except Exception as exc:  # pragma: no cover - depends on installed vLLM
+        raise RuntimeError(
+            "Could not register requested TapeKV vLLM reference backend; refusing "
+            "to run an uncompressed look-alike"
+        ) from exc
+
+
+def _install_taper_native_backend(plan: KVCompVLLMPlan, logger) -> bool:
+    """Export a validated TapeKV recipe and install its required backend."""
+    if not plan.taper_native:
+        return False
+    os.environ[_TAPER_NATIVE_CONFIG_ENV] = json.dumps(plan.taper_config, sort_keys=True)
+    if not _register_taper_native_backend(logger):
+        raise RuntimeError("TapeKV vLLM plan did not install its required backend")
+    return True
+
+
 def _install_engine_args_hook(logger) -> bool:
     """Wrap ``EngineArgs.create_engine_config`` to auto-apply the KV-comp plan.
 
@@ -375,12 +443,14 @@ def register_vllm_plugin():
         if _register_hayate_full_native_backend(logger):
             _install_hayate_full_cache_spec_hook()
         _register_hayate_native_backend(logger)
+        _register_taper_native_backend(logger)
         _install_engine_args_hook(logger)
         logger.info(
             "Registered OneComp KV compression plugin '%s' (FP8 and supported "
             "HayateQuant native block-VQ auto-applied to kv_cache_dtype; "
-            "remaining low-bit/eviction recipes require the HF cache path or "
-            "the experimental attention backend).",
+            "TapeKV reference semantics, and supported HayateQuant native "
+            "block-VQ auto-applied; remaining low-bit/eviction recipes require "
+            "the HF cache path or an experimental attention backend).",
             _PLUGIN_NAME,
         )
     except Exception as exc:  # pragma: no cover - vLLM internals changed

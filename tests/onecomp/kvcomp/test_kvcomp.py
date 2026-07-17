@@ -3303,7 +3303,8 @@ def test_vllm_mapping_eviction_only_and_policy():
     # Eviction selector, no codec -> custom backend, dtype unchanged.
     p = plan_from_kv_config({"selector": {"name": "snapkv"}})
     assert p.needs_custom_backend and p.kv_cache_dtype == "auto" and p.codec_name is None
-    # Non-static adaptive policy needs the custom backend even with FP8 codec.
+    # A second codec is not silently composed with TapeKV's affine reference
+    # backend, so this adaptive composition remains fail-closed.
     p2 = plan_from_kv_config(
         {"residual_window": 0, "codec": {"name": "fp8"}, "policy": {"name": "taperkv"}}
     )
