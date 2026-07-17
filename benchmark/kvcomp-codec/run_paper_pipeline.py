@@ -62,6 +62,9 @@ def _base(args: argparse.Namespace, script: str, output: Path) -> list[str]:
         cmd.append("--dry-run")
     if args.run_local:
         cmd.append("--run-local")
+    cmd += ["--partition", args.partition, "--cpus", str(args.cpus), "--mem", args.mem, "--time", args.time]
+    if args.gpus is not None and script.endswith("hayatequant_cross_model.py"):
+        cmd += ["--gpus", str(args.gpus)]
     return cmd
 
 
@@ -100,6 +103,11 @@ def main() -> None:
     ap.add_argument("--python", type=Path)
     ap.add_argument("--run-local", action="store_true", help="Run child drivers locally; otherwise they submit Slurm jobs")
     ap.add_argument("--dry-run", action="store_true", help="Print child commands without launching them")
+    ap.add_argument("--partition", default="batch-1gpu")
+    ap.add_argument("--gpus", type=int, default=1)
+    ap.add_argument("--cpus", type=int, default=8)
+    ap.add_argument("--mem", default="180G")
+    ap.add_argument("--time", default="06:00:00")
     args = ap.parse_args()
     args.python = resolve_python(args.python)
     if args.models_root:

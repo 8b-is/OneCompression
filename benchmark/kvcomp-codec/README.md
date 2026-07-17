@@ -121,9 +121,9 @@ or AdaptiveHQ formal rows.
 
 ## Portable layout and paper pipeline
 
-The public HQ surface is deliberately limited to `HQ`, `AdaptiveHQ`, and
-`RotationHQ`; development candidates and historical `frontier` spellings are
-read-only compatibility paths.  Recipe definitions live in
+The public HQ surface is deliberately limited to `HQ`, `HQ-Frontier`,
+`AdaptiveHQ`, and `RotationHQ`; historical `HayateQuant-*` spellings are not
+emitted. Recipe definitions live in
 `onecomp/kvcomp/codec/hayate/recipes.py`, codec backends in the adjacent
 `codec.py`/`vq.py` modules, and benchmark orchestration in the drivers below.
 `benchmark/kvcomp_common/paths.py` is the only shared path resolver: models

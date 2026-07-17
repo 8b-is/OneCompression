@@ -101,6 +101,7 @@ from onecomp.kvcomp.codec.hayate.formal import (
 from onecomp.kvcomp.codec.hayate.recipes import (
     build_hayate_adaptive_rate,
     build_hayate_hq,
+    build_hayate_hq_frontier,
 )
 
 
@@ -151,7 +152,9 @@ def _require_formal_generation_accounting(method: str, entry: dict[str, Any]) ->
         "FibQuant-paper",
         "BlockQuant-paper",
         "HQ",
+        "HQ-Frontier",
         "AdaptiveHQ",
+        "RotationHQ",
     }
     if method not in formal_methods:
         return
@@ -604,8 +607,14 @@ def build_methods(cfg: DictConfig, model, tok):
                     f"{label} formal variants accept only {{label,bits}}; "
                     f"unexpected override(s): {sorted(v)}"
                 )
-            builder = build_hayate_hq if label == "HQ" else build_hayate_adaptive_rate
-            codec = builder(bits, skip_layers=skip)
+            if label == "HQ":
+                codec = build_hayate_hq(bits, skip_layers=skip)
+            elif label == "HQ-Frontier":
+                codec = build_hayate_hq_frontier(bits, skip_layers=skip)
+            elif label == "RotationHQ":
+                codec = build_hayate_hq(bits, rotation_mode="dense", skip_layers=skip)
+            else:
+                codec = build_hayate_adaptive_rate(bits, skip_layers=skip)
             provenance = hayate_formal_provenance(label)
         else:
             codec = build_codec("hayatequant", skip_layers=skip, **v)

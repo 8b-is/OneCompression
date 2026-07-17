@@ -4,8 +4,9 @@
 #   * **Bits**: {4, 3, 2}.  3-bit is the iso-quality operating point most
 #     KV-quant papers headline on (KIVI, TurboQuant Table 1, KVTuner Fig 4),
 #     so it is the bit width readers expect to compare HayateQuant at.
-#   * **Codecs**: the public HQ family is exactly ``HQ``, ``AdaptiveHQ``, and
-#     ``RotationHQ``.  This primary preset runs HQ/AdaptiveHQ plus independent
+#   * **Codecs**: the public HQ family is exactly ``HQ``, ``HQ-Frontier``,
+#     ``AdaptiveHQ``, and ``RotationHQ``.  This primary preset runs all four
+#     plus independent
 #     ``TurboQuant-paper``/``FibQuant-paper`` quality baselines and the
 #     rate-3-only ``BlockQuant-paper`` fixed-seed quality row. RotationHQ is
 #     added only by its separately calibrated, complete rerun; it is never
@@ -45,7 +46,7 @@ bits: [4, 3, 2]
 
 # Optional method filter. Empty means run the full codec registry; paper
 # This default is itself formal and contains no proxy/development labels.
-methods: [TurboQuant-paper, FibQuant-paper, BlockQuant-paper, HQ, AdaptiveHQ]
+methods: [TurboQuant-paper, FibQuant-paper, BlockQuant-paper, HQ, HQ-Frontier, AdaptiveHQ, RotationHQ]
 
 # Real-KV capture: 2048 tokens covers the typical inference regime.
 capture_tokens: 2048

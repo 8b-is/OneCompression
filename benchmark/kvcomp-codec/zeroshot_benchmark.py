@@ -66,7 +66,9 @@ DEFAULT_METHODS = (
     FIBQUANT_PAPER_METHOD,
     BLOCKQUANT_PAPER_METHOD,
     "HQ",
+    "HQ-Frontier",
     "AdaptiveHQ",
+    "RotationHQ",
 )
 
 

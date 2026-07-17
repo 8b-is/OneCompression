@@ -34,6 +34,7 @@ from .calibration import (
 )
 from .recipes import (
     HQ_NAME,
+    HQ_FRONTIER_NAME,
     HQ_ADAPTIVE_NAME,
     HQ_ROTATION_NAME,
     HQ_PUBLIC_METHODS,
@@ -58,6 +59,9 @@ from .recipes import (
     build_hayate_frontier,
     build_hayate_hq,
     hayate_frontier_variant,
+    hayate_hq_frontier_kwargs,
+    build_hayate_hq_frontier,
+    hayate_hq_frontier_variant,
 )
 
 __all__ = [
@@ -66,6 +70,7 @@ __all__ = [
     "calibrate_hayatequant",
     "capture_kv_samples",
     "HQ_NAME",
+    "HQ_FRONTIER_NAME",
     "HQ_ADAPTIVE_NAME",
     "HQ_ROTATION_NAME",
     "HQ_PUBLIC_METHODS",
@@ -90,4 +95,7 @@ __all__ = [
     "build_hayate_frontier",
     "build_hayate_hq",
     "hayate_frontier_variant",
+    "hayate_hq_frontier_kwargs",
+    "build_hayate_hq_frontier",
+    "hayate_hq_frontier_variant",
 ]

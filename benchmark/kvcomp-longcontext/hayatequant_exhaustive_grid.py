@@ -20,7 +20,11 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from onecomp.kvcomp.codec.hayate.recipes import hayate_frontier_variant
+from onecomp.kvcomp.codec.hayate.recipes import (
+    hayate_adaptive_rate_variant,
+    hayate_frontier_variant,
+    hayate_hq_frontier_variant,
+)
 from benchmark.kvcomp_common.paths import resolve_model_ref, resolve_output_root, resolve_python
 
 
@@ -52,8 +56,8 @@ MODEL_MAP = {m.key: m for m in MODELS}
 MODEL_MAP.update({m.path_name: m for m in MODELS})
 
 
-def _frontier_variant(bits: int, label: str) -> dict[str, Any]:
-    return hayate_frontier_variant(bits, label=label)
+def _frontier_variant(bits: int, label: str, **overrides: Any) -> dict[str, Any]:
+    return hayate_frontier_variant(bits, label=label, **overrides)
 
 
 def _fmt_value(value: Any) -> str:
@@ -77,10 +81,20 @@ def _variants(spec: ModelSpec, bits: list[int]) -> tuple[list[str], list[dict[st
     hayate: list[dict[str, Any]] = []
     for b in bits:
         tq = f"TurboQuant-{b}bit"
-        hq = f"HQ-frontier-{b}bit"
-        methods.extend([tq, hq])
+        hq = f"HQ-{b}bit"
+        frontier = f"HQ-Frontier-{b}bit"
+        adaptive = f"AdaptiveHQ-{b}bit"
+        rotation = f"RotationHQ-{b}bit"
+        methods.extend([tq, hq, frontier, adaptive, rotation])
         turbo.append({"label": tq, "bits": b, "dist": "beta"})
-        hayate.append(_frontier_variant(b, hq))
+        hayate.extend(
+            [
+                _frontier_variant(b, hq),
+                hayate_hq_frontier_variant(b, frontier),
+                hayate_adaptive_rate_variant(b, adaptive),
+                _frontier_variant(b, rotation, rotation_mode="dense"),
+            ]
+        )
     return methods, turbo, hayate
 
 

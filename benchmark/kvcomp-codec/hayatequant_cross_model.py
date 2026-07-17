@@ -268,10 +268,10 @@ def _fmt(value: float | None, ndigits: int = 2) -> str:
 def _summarize(args: argparse.Namespace) -> None:
     rows: list[str] = []
     rows.append(
-        "| Model | 2b TQ | 2b HQ Fib-init proxy | 2b HQ Block-scale proxy | 2b HayateQuant | 2b AdaptiveHQ | 3b TQ | 3b HQ Fib-init proxy | 3b HQ Block-scale proxy | 3b HayateQuant | 3b AdaptiveHQ | 4b TQ | 4b HQ Fib-init proxy | 4b HQ Block-scale proxy | 4b HayateQuant | 4b AdaptiveHQ | 3b dist(K) gain |"
+        "| Model | 2b TQ | 2b HQ | 2b HQ-Frontier | 2b AdaptiveHQ | 2b RotationHQ | 3b TQ | 3b HQ | 3b HQ-Frontier | 3b AdaptiveHQ | 3b RotationHQ | 4b TQ | 4b HQ | 4b HQ-Frontier | 4b AdaptiveHQ | 4b RotationHQ | 3b dist(K) gain |"
     )
     rows.append(
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
     )
     for path in _iter_result_files(args.output_root):
         data = json.loads(path.read_text())
@@ -279,35 +279,33 @@ def _summarize(args: argparse.Namespace) -> None:
         if not args.include_extra_results and model not in _paper_model_names():
             continue
         tq2 = _ppl(data, "2", "TurboQuant-paper")
-        fib2 = _ppl(data, "2", HQ_FIB_INIT_PROXY_NAME)
-        bq2 = _ppl(data, "2", HQ_BLOCK_SCALE_PROXY_NAME)
         hq2 = _ppl(data, "2", args.hq_method)
+        frontier2 = _ppl(data, "2", "HQ-Frontier")
         ahq2 = _ppl(data, "2", args.adaptive_method)
+        rot2 = _ppl(data, "2", "RotationHQ")
         tq3 = _ppl(data, "3", "TurboQuant-paper")
-        fib3 = _ppl(data, "3", HQ_FIB_INIT_PROXY_NAME)
-        bq3 = _ppl(data, "3", HQ_BLOCK_SCALE_PROXY_NAME)
         hq3 = _ppl(data, "3", args.hq_method)
+        frontier3 = _ppl(data, "3", "HQ-Frontier")
         ahq3 = _ppl(data, "3", args.adaptive_method)
+        rot3 = _ppl(data, "3", "RotationHQ")
         tq4 = _ppl(data, "4", "TurboQuant-paper")
-        fib4 = _ppl(data, "4", HQ_FIB_INIT_PROXY_NAME)
-        bq4 = _ppl(data, "4", HQ_BLOCK_SCALE_PROXY_NAME)
         hq4 = _ppl(data, "4", args.hq_method)
+        frontier4 = _ppl(data, "4", "HQ-Frontier")
         ahq4 = _ppl(data, "4", args.adaptive_method)
+        rot4 = _ppl(data, "4", "RotationHQ")
         tq3_d = _dist_k(data, "3", "TurboQuant-paper")
         hq3_d = _dist_k(data, "3", args.hq_method)
         gain = None if tq3_d in (None, 0) or hq3_d is None else 100.0 * (1.0 - hq3_d / tq3_d)
         rows.append(
-            f"| {model} | {_fmt(tq2)} | {_fmt(fib2)} | {_fmt(bq2)} | {_fmt(hq2)} | {_fmt(ahq2)} "
-            f"| {_fmt(tq3)} | {_fmt(fib3)} "
-            f"| {_fmt(bq3)} | {_fmt(hq3)} | {_fmt(ahq3)} | {_fmt(tq4)} "
-            f"| {_fmt(fib4)} | {_fmt(bq4)} | {_fmt(hq4)} | {_fmt(ahq4)} "
+            f"| {model} | {_fmt(tq2)} | {_fmt(hq2)} | {_fmt(frontier2)} | {_fmt(ahq2)} | {_fmt(rot2)} "
+            f"| {_fmt(tq3)} | {_fmt(hq3)} | {_fmt(frontier3)} | {_fmt(ahq3)} | {_fmt(rot3)} | {_fmt(tq4)} "
+            f"| {_fmt(hq4)} | {_fmt(frontier4)} | {_fmt(ahq4)} | {_fmt(rot4)} "
             f"| {_fmt(gain, 1)}% |"
         )
     rows += [
         "",
-        "Legacy compatibility: historical JSON keys `FibQuant` and `BlockQuant` "
-        "are read as aliases for the two HQ proxy columns; new runs never emit "
-        "those external-method-looking keys.",
+        "Only HQ, HQ-Frontier, AdaptiveHQ, and RotationHQ are emitted as HayateQuant variants; "
+        "development proxies are excluded from paper summaries.",
     ]
     text = "\n".join(rows)
     print(text)
@@ -346,7 +344,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--summary-out", type=Path)
     ap.add_argument(
         "--hq-method",
-        default="HayateQuant-frontier",
+        default="HQ",
         help="Fixed implementation method reported as HQ in the paper tables.",
     )
     ap.add_argument(

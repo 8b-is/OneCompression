@@ -293,7 +293,7 @@ def _summarize(args: argparse.Namespace) -> None:
         if incomplete:
             raise SystemExit("Incomplete zero-shot results:\n" + "\n".join(incomplete))
     rows = [
-        "| Model | Tasks | 2b TQ | 2b HQ Fib-init proxy | 2b HQ Block-scale proxy | 2b HayateQuant | 2b AdaptiveHQ | delta | 3b TQ | 3b HQ Fib-init proxy | 3b HQ Block-scale proxy | 3b HayateQuant | 3b AdaptiveHQ | delta | 4b TQ | 4b HQ Fib-init proxy | 4b HQ Block-scale proxy | 4b HayateQuant | 4b AdaptiveHQ | delta |",
+        "| Model | Tasks | 2b TQ | 2b HQ-Frontier | 2b RotationHQ | 2b HQ | 2b AdaptiveHQ | delta | 3b TQ | 3b HQ-Frontier | 3b RotationHQ | 3b HQ | 3b AdaptiveHQ | delta | 4b TQ | 4b HQ-Frontier | 4b RotationHQ | 4b HQ | 4b AdaptiveHQ | delta |",
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     tq2_vals: list[float] = []
@@ -317,18 +317,18 @@ def _summarize(args: argparse.Namespace) -> None:
             continue
         task_count = len(payload.get("tasks") or [])
         tq2 = _method(payload, "2", "TurboQuant-paper")
-        fib2 = _method(payload, "2", HQ_FIB_INIT_PROXY_NAME)
-        bq2 = _method(payload, "2", HQ_BLOCK_SCALE_PROXY_NAME)
+        fib2 = _method(payload, "2", "HQ-Frontier")
+        bq2 = _method(payload, "2", "RotationHQ")
         hq2 = _method(payload, "2", args.hq_method)
         ahq2 = _method(payload, "2", args.adaptive_method)
         tq3 = _method(payload, "3", "TurboQuant-paper")
-        fib3 = _method(payload, "3", HQ_FIB_INIT_PROXY_NAME)
-        bq3 = _method(payload, "3", HQ_BLOCK_SCALE_PROXY_NAME)
+        fib3 = _method(payload, "3", "HQ-Frontier")
+        bq3 = _method(payload, "3", "RotationHQ")
         hq3 = _method(payload, "3", args.hq_method)
         ahq3 = _method(payload, "3", args.adaptive_method)
         tq4 = _method(payload, "4", "TurboQuant-paper")
-        fib4 = _method(payload, "4", HQ_FIB_INIT_PROXY_NAME)
-        bq4 = _method(payload, "4", HQ_BLOCK_SCALE_PROXY_NAME)
+        fib4 = _method(payload, "4", "HQ-Frontier")
+        bq4 = _method(payload, "4", "RotationHQ")
         hq4 = _method(payload, "4", args.hq_method)
         ahq4 = _method(payload, "4", args.adaptive_method)
 
@@ -386,8 +386,7 @@ def _summarize(args: argparse.Namespace) -> None:
         )
     rows += [
         "",
-        "Legacy compatibility: historical JSON keys `FibQuant` and `BlockQuant` "
-        "are read only as aliases for the HQ proxy columns.",
+        "Only HQ, HQ-Frontier, AdaptiveHQ, and RotationHQ are emitted as HayateQuant variants.",
     ]
     text = "\n".join(rows)
     print(text)
@@ -421,12 +420,10 @@ def parse_args() -> argparse.Namespace:
         nargs="+",
         default=[
             "TurboQuant-paper",
-            HQ_FIB_INIT_PROXY_NAME,
-            HQ_BLOCK_SCALE_PROXY_NAME,
-            "HayateQuant-selected",
-            "HayateQuant-frontier",
-            "HayateQuant-auto",
+            "HQ",
+            "HQ-Frontier",
             "AdaptiveHQ",
+            "RotationHQ",
         ],
     )
     ap.add_argument("--include-fullkv", action="store_true")
@@ -447,7 +444,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--summary-out", type=Path)
     ap.add_argument(
         "--hq-method",
-        default="HayateQuant-frontier",
+        default="HQ",
         help="Fixed implementation method reported as HQ in the paper tables.",
     )
     ap.add_argument(

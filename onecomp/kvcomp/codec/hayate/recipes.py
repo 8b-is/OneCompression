@@ -6,12 +6,9 @@ should live here instead of being re-spelled in every runner.  That keeps the
 definition of HQ auditable and makes future single-codec candidates compare
 against the same baseline.
 
-The paper proposal exposes three named rows: :data:`HQ_NAME`, the causal
-allocation option :data:`HQ_ADAPTIVE_NAME`, and the separately calibrated
-rotation-only control :data:`HQ_ROTATION_NAME`.  Rotation HQ is never a
-fallback for fixed HQ: it requires its own content-addressed per-model
-artifact. ``frontier`` symbols are retained as source-level compatibility
-aliases for older callers; they do not denote another method.
+The paper benchmark exposes four named rows: fixed HQ, the stronger
+frontier operating point, AdaptiveHQ, and RotationHQ.  These are distinct
+recipes; old ``HayateQuant-*`` spellings are not emitted by new runs.
 """
 
 from __future__ import annotations
@@ -22,12 +19,11 @@ from typing import Any
 from .codec import HayateQuantCodec
 
 HQ_NAME = "HQ"
+HQ_FRONTIER_NAME = "HQ-Frontier"
 HQ_ADAPTIVE_NAME = "AdaptiveHQ"
 HQ_ROTATION_NAME = "RotationHQ"
-# These are the only user-facing HayateQuant method identities.  Component
-# controls and historical spellings below remain callable for audit/recovery,
-# but must never become a fourth paper method through a default benchmark run.
-HQ_PUBLIC_METHODS = (HQ_NAME, HQ_ADAPTIVE_NAME, HQ_ROTATION_NAME)
+# These are the only user-facing HayateQuant identities.
+HQ_PUBLIC_METHODS = (HQ_NAME, HQ_FRONTIER_NAME, HQ_ADAPTIVE_NAME, HQ_ROTATION_NAME)
 HQ_PAPER_AVERAGE_RATES = (2, 3, 4)
 HQ_BLOCK_SIZE = 2
 HQ_KEY_SCALE_MODE = "nc"
@@ -35,9 +31,8 @@ HQ_VALUE_SCALE_MODE = "ls_iter"
 HQ_CODEBOOK_BUNDLE = "fixed_hq_b2_v1"
 HQ_ADAPTIVE_CODEBOOK_BUNDLE = "adaptive_hq_b2_safe_v1"
 
-# Compatibility aliases. New benchmark output uses HQ_NAME, never the old
-# ``HayateQuant-frontier`` result label.
-HQ_FRONTIER_NAME = HQ_NAME
+# Scale constants for the fixed HQ recipe.  The frontier row has its own
+# integer K/V split and UB key scale below.
 HQ_FRONTIER_KEY_SCALE_MODE = HQ_KEY_SCALE_MODE
 HQ_FRONTIER_VALUE_SCALE_MODE = HQ_VALUE_SCALE_MODE
 HQ_FRONTIER_SCALE_KWARGS = MappingProxyType(
@@ -135,7 +130,11 @@ def hayate_frontier_bits(avg_bits: int | float) -> tuple[float, float] | None:
 
 
 def hayate_frontier_kwargs(avg_bits: int | float, **overrides: Any) -> dict[str, Any]:
-    """Compatibility alias for :func:`hayate_hq_kwargs`."""
+    """Return the legacy callable fixed-HQ recipe.
+
+    The function name is retained for internal callers; it is not a result
+    label.  New benchmark rows use :data:`HQ_NAME` explicitly.
+    """
 
     return hayate_hq_kwargs(avg_bits, **overrides)
 
@@ -168,7 +167,7 @@ def build_hayate_hq(avg_bits: int | float, **overrides: Any) -> HayateQuantCodec
 
 
 def build_hayate_frontier(avg_bits: int | float, **overrides: Any) -> HayateQuantCodec:
-    """Compatibility alias for :func:`build_hayate_hq`."""
+    """Construct fixed HQ for internal callers that still use this helper."""
 
     return build_hayate_hq(avg_bits, **overrides)
 
@@ -180,6 +179,40 @@ def hayate_frontier_variant(
 
     variant = {"label": label or HQ_NAME}
     variant.update(hayate_hq_kwargs(avg_bits, **overrides))
+    return variant
+
+
+def hayate_hq_frontier_kwargs(avg_bits: int | float, **overrides: Any) -> dict[str, Any]:
+    """Keyword arguments for the second, integer K/V frontier operating point."""
+
+    rate = _paper_rate(avg_bits)
+    if rate is None:
+        raise ValueError(f"HQ-Frontier is defined only for rates 2, 3, and 4; got {avg_bits!r}")
+    key_bits, value_bits = int(rate) + 1, int(rate) - 1
+    kwargs: dict[str, Any] = {
+        "bits": key_bits,
+        "value_bits": value_bits,
+        "avg_bits": float(rate),
+        "key_scale_mode": "ub",
+        "value_scale_mode": HQ_VALUE_SCALE_MODE,
+        "rotation_mode": "auto",
+        "encoder": "exact",
+    }
+    kwargs.update(overrides)
+    return kwargs
+
+
+def build_hayate_hq_frontier(avg_bits: int | float, **overrides: Any) -> HayateQuantCodec:
+    """Construct the distinct HQ-Frontier operating point."""
+
+    return HayateQuantCodec(**hayate_hq_frontier_kwargs(avg_bits, **overrides))
+
+
+def hayate_hq_frontier_variant(
+    avg_bits: int, label: str | None = None, **overrides: Any
+) -> dict[str, Any]:
+    variant = {"label": label or HQ_FRONTIER_NAME}
+    variant.update(hayate_hq_frontier_kwargs(avg_bits, **overrides))
     return variant
 
 
@@ -391,6 +424,7 @@ def hayate_adaptive_rate_variant(
 
 __all__ = [
     "HQ_NAME",
+    "HQ_FRONTIER_NAME",
     "HQ_PUBLIC_METHODS",
     "HQ_PAPER_AVERAGE_RATES",
     "HQ_BLOCK_SIZE",
@@ -398,7 +432,6 @@ __all__ = [
     "HQ_VALUE_SCALE_MODE",
     "HQ_CODEBOOK_BUNDLE",
     "HQ_ADAPTIVE_CODEBOOK_BUNDLE",
-    "HQ_FRONTIER_NAME",
     "HQ_FRONTIER_KEY_SCALE_MODE",
     "HQ_FRONTIER_VALUE_SCALE_MODE",
     "HQ_FRONTIER_SCALE_KWARGS",
@@ -419,6 +452,9 @@ __all__ = [
     "build_hayate_frontier",
     "build_hayate_hq",
     "hayate_frontier_variant",
+    "hayate_hq_frontier_kwargs",
+    "build_hayate_hq_frontier",
+    "hayate_hq_frontier_variant",
     "hayate_fractional_rate_kwargs",
     "build_hayate_fractional_rate",
     "hayate_fractional_rate_variant",
