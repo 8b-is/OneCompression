@@ -20,11 +20,19 @@ from onecomp.kvcomp.codec.hayate.recipes import (
     hayate_hq_kwargs,
 )
 from onecomp.kvcomp.codec.hayate.vq import (
+    _kmeans,
     build_vq_lut,
     quantize_exact_pre,
     quantize_to_vq_codebook,
     quantize_via_lut,
 )
+
+
+def test_kmeans_handles_bounded_fit_set_smaller_than_codebook():
+    """Production fits may use a bounded sample set with K larger than N."""
+    centroids, sse = _kmeans(torch.randn(8, 4), k=64, iters=2, seed=0)
+    assert centroids.shape == (64, 4)
+    assert torch.isfinite(torch.tensor(sse))
 
 
 def test_public_hayate_method_family_has_exactly_four_named_variants():

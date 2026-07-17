@@ -296,7 +296,12 @@ def _kmeans(
     device = samples.device
     if init is None:
         gen = torch.Generator(device="cpu").manual_seed(seed)
-        perm = torch.randperm(n, generator=gen)[:k]
+        perm = torch.randperm(n, generator=gen)
+        if k > n:
+            # Forgy needs a deterministic initial centroid for every codeword
+            # even when a bounded synthetic fit set is smaller than K.
+            perm = perm.repeat((k + n - 1) // n)
+        perm = perm[:k]
         centroids = samples[perm].clone()
     else:
         centroids = init.to(device=device, dtype=samples.dtype).clone()
@@ -322,8 +327,15 @@ def _kmeans(
             # ||x - c||^2 = ||x||^2 - 2*(x.c - 0.5||c||^2) = sq - 2*score.
             own_dist = sq.squeeze(1) - 2 * scores.gather(1, assign.unsqueeze(1)).squeeze(1)
             n_empty = int(empty.sum())
-            worst_idx = torch.topk(own_dist, k=min(n_empty, n)).indices
-            new_centroids[empty] = samples[worst_idx[: int(empty.sum())]]
+            # A large codebook can legitimately have more dead clusters than
+            # available fit samples (the production paper jobs hit this for
+            # high-dimensional model activations).  Reuse the worst points
+            # cyclically instead of attempting an impossible one-to-one
+            # assignment, which previously raised a shape-mismatch error.
+            worst_idx = torch.topk(own_dist, k=min(n_empty, n), largest=True).indices
+            if n_empty > n:
+                worst_idx = worst_idx.repeat((n_empty + n - 1) // n)
+            new_centroids[empty] = samples[worst_idx[:n_empty]]
         if torch.allclose(new_centroids, centroids, atol=1e-6):
             centroids = new_centroids
             break
