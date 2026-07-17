@@ -305,7 +305,24 @@ class FullHayateQuantNativeImpl(TurboQuantAttentionImpl):
                 query, kv_cache, attn_metadata, Pi, centroids, PiT, layer
             )
         bsz, hq, d = query.shape
+        # The upstream TurboQuant backend keeps a fixed 32-way split for
+        # CUDA-graph compatibility.  HQ's packed decode is also correct with
+        # fewer reduction tiles, and short-context decode otherwise launches
+        # many programs that immediately return.  vLLM exposes a CPU mirror of
+        # sequence lengths, so selecting a bounded power-of-work split here
+        # costs no device synchronisation.  Long contexts retain the upstream
+        # cap; a missing CPU mirror conservatively falls back to the fixed
+        # value.
         splits = self.max_num_kv_splits
+        dynamic_splits = os.environ.get("KVCOMP_HQ_DYNAMIC_SPLITS", "1").lower()
+        seq_lens_cpu = getattr(attn_metadata, "seq_lens_cpu", None)
+        if (
+            dynamic_splits not in {"0", "false", "off", "no"}
+            and seq_lens_cpu is not None
+            and int(seq_lens_cpu.numel()) > 0
+        ):
+            max_seq_len = int(seq_lens_cpu.max().item())
+            splits = min(self.max_num_kv_splits, max(1, math.ceil(max_seq_len / 256)))
         mid = rotated = lse = None
         if is_workspace_manager_initialized():
             mid, rotated, lse = current_workspace_manager().get_simultaneous(
