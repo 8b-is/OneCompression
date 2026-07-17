@@ -46,11 +46,10 @@ from hayatequant_cross_model import (  # noqa: E402
     DEFAULT_MODELS_ROOT,
     ModelSpec,
 )
+from benchmark.kvcomp_common.paths import resolve_model_ref, resolve_output_root, resolve_python  # noqa: E402
 
 ZEROSHOT_BENCH = THIS_DIR / "zeroshot_benchmark.py"
-DEFAULT_OUTPUT_ROOT = Path(
-    "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/" "kvcomp_hayatequant/zeroshot_v1"
-)
+DEFAULT_OUTPUT_ROOT = None
 
 EXTRA_SMOKE_MODELS = {
     "qwen3-0.6b": ModelSpec("qwen3-0.6b", "Qwen3-0.6B", "Qwen/Qwen3-0.6B", "Qwen3-0.6B"),
@@ -75,17 +74,23 @@ def _resolve_specs(names: list[str] | None) -> list[ModelSpec]:
             specs.append(ALL_ZERO_SPECS[name])
         else:
             p = Path(name)
-            if p.exists() or "/" in name:
+            if p.exists():
                 specs.append(ModelSpec(p.name, str(p), None, p.name))
+            elif name.startswith(("/", "~", ".")):
+                specs.append(ModelSpec(p.name, str(p), None, p.name))
+            elif "/" in name:
+                specs.append(ModelSpec(name.replace("/", "-"), name, name, name))
             else:
                 known = ", ".join(sorted(ALL_ZERO_SPECS))
                 raise SystemExit(f"Unknown model {name!r}. Known keys: {known}")
     return specs
 
 
-def _model_path(spec: ModelSpec, models_root: Path) -> Path:
-    p = Path(spec.path_name)
-    return p if p.is_absolute() else models_root / p
+def _model_ref(spec: ModelSpec, models_root: Path | None) -> str:
+    local = resolve_model_ref(spec.path_name, models_root)
+    if Path(local).exists():
+        return local
+    return spec.hf_id if models_root is None and spec.hf_id else local
 
 
 def _bench_cmd(args: argparse.Namespace, model_path: Path) -> list[str]:
@@ -132,15 +137,19 @@ def _bench_cmd(args: argparse.Namespace, model_path: Path) -> list[str]:
 def _launch(args: argparse.Namespace) -> None:
     args.output_root.mkdir(parents=True, exist_ok=True)
     for spec in _resolve_specs(args.models):
-        model_path = _model_path(spec, args.models_root)
-        if not model_path.exists():
-            raise SystemExit(f"Missing model directory for {spec.key}: {model_path}")
+        model_ref = _model_ref(spec, args.models_root)
+        model_path = Path(model_ref)
+        if not model_path.exists() and model_ref != spec.hf_id:
+            raise SystemExit(
+                f"Missing model directory for {spec.key}: {model_ref}. "
+                "Pass --models-root with external weights or use a Hugging Face id."
+            )
         if args.run_local:
-            _run(_bench_cmd(args, model_path), dry_run=args.dry_run, cwd=REPO_ROOT)
+            _run(_bench_cmd(args, Path(model_ref)), dry_run=args.dry_run, cwd=REPO_ROOT)
             continue
         logs = args.output_root / "logs"
         logs.mkdir(parents=True, exist_ok=True)
-        bench_cmd = " ".join(shlex.quote(x) for x in _bench_cmd(args, model_path))
+        bench_cmd = " ".join(shlex.quote(x) for x in _bench_cmd(args, Path(model_ref)))
         wrap = (
             f"cd {shlex.quote(str(REPO_ROOT))}; "
             "export TOKENIZERS_PARALLELISM=false; "
@@ -391,14 +400,14 @@ def _summarize(args: argparse.Namespace) -> None:
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser()
     ap.add_argument("--models", nargs="*")
-    ap.add_argument("--models-root", type=Path, default=DEFAULT_MODELS_ROOT)
+    ap.add_argument("--models-root", type=Path, default=DEFAULT_MODELS_ROOT, help="External model directory (optional).")
     ap.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     ap.add_argument(
         "--output-suffix",
         default="",
         help="Optional filename suffix passed to zeroshot_benchmark.py.",
     )
-    ap.add_argument("--python", type=Path, default=REPO_ROOT / ".venv" / "bin" / "python")
+    ap.add_argument("--python", type=Path, default=None)
     ap.add_argument("--device", default="cuda:0")
     ap.add_argument("--dtype", default="bfloat16")
     ap.add_argument("--bits", nargs="+", default=["2", "3", "4"])
@@ -463,6 +472,9 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    args.models_root = args.models_root.expanduser().resolve() if args.models_root else None
+    args.output_root = resolve_output_root(args.output_root, default_relative="results/hayatequant/zeroshot")
+    args.python = resolve_python(args.python)
     if args.summarize:
         _summarize(args)
         return

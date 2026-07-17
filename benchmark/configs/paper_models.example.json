@@ -1,0 +1,7 @@
+{
+  "models": [
+    {"key": "qwen3-0.6b", "ref": "Qwen/Qwen3-0.6B"},
+    {"key": "qwen3-4b", "ref": "Qwen/Qwen3-4B"},
+    {"key": "r1-qwen-1.5b", "ref": "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"}
+  ]
+}

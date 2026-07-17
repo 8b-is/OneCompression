@@ -35,16 +35,20 @@ SCHEDULER_RECONCILER="$HERE/reconcile_hayatequant_paper_jobs.py"
 # a git worktree does not contain independent virtual environments.  The
 # wrapper prepends REPO to PYTHONPATH and paper_preflight.py rejects an import
 # from any other checkout.
-PY=${PY:-/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/bin/python}
-PYVLLM=${PYVLLM:-/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv-vllm/bin/python}
-MODELS=${MODELS:-/lustre/home/frj/yuma-ichikawa/conference/models}
+PY=${PY:-$REPO/.venv/bin/python}
+PYVLLM=${PYVLLM:-$REPO/.venv-vllm/bin/python}
+MODELS=${MODELS:-${MODELS_ROOT:-}}
+if [ -z "$MODELS" ]; then
+  echo "Set MODELS (or MODELS_ROOT) to an external model directory; onecomp does not store weights." >&2
+  exit 2
+fi
 # RUN_ROOT contains only paper evidence and must live below the tracked results
 # directory of a separate linked Git worktree.  WORK_ROOT holds mutable caches,
 # temporary compiler state, and pinned input data outside that worktree.
-RESULTS_WORKTREE=${RESULTS_WORKTREE:-/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayatequant-paper-results-worktree}
+RESULTS_WORKTREE=${RESULTS_WORKTREE:-$REPO}
 PAPER_RUN_ID=${PAPER_RUN_ID:-hayate-iclr2027-refresh-20260716}
 RUN_ROOT=${RUN_ROOT:-$RESULTS_WORKTREE/papers/hayatequant_paper/experiments/results/$PAPER_RUN_ID}
-WORK_ROOT=${WORK_ROOT:-/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715}
+WORK_ROOT=${WORK_ROOT:-$REPO/.cache/hayatequant-paper}
 DATA_ROOT=${DATA_ROOT:-$WORK_ROOT/data}
 HF_HOME=${HF_HOME:-$DATA_ROOT/hf_home}
 PINNED_HF_MANIFEST=${PINNED_HF_MANIFEST:-$DATA_ROOT/pinned_hf_datasets_manifest.json}

@@ -119,6 +119,33 @@ Optional SpinQuant-style calibration and K/V-asymmetric operating points remain
 available as opt-in ablations. They are not folded into the fixed data-free HQ
 or AdaptiveHQ formal rows.
 
+## Portable layout and paper pipeline
+
+The public HQ surface is deliberately limited to `HQ`, `AdaptiveHQ`, and
+`RotationHQ`; development candidates and historical `frontier` spellings are
+read-only compatibility paths.  Recipe definitions live in
+`onecomp/kvcomp/codec/hayate/recipes.py`, codec backends in the adjacent
+`codec.py`/`vq.py` modules, and benchmark orchestration in the drivers below.
+`benchmark/kvcomp_common/paths.py` is the only shared path resolver: models
+are never copied into onecomp and may be local paths, an external
+`--models-root` entry, or a Hugging Face id.
+
+For a reproducible multi-axis run, provide an external JSON manifest and keep
+all generated evidence in a chosen output root:
+
+```bash
+.venv/bin/python benchmark/kvcomp-codec/run_paper_pipeline.py \
+  --manifest benchmark/configs/paper_models.example.json \
+  --models-root "$MODELS_ROOT" --output-root "$RESULTS_ROOT" \
+  --run-local
+```
+
+Use `--dry-run` first (or omit `--run-local` to submit the child jobs to
+Slurm).  The `codec`, `zeroshot`, and `longcontext` stages cover the paper
+quality/retrieval/reasoning axes; `--stages render --aggregate <json>` emits
+the validated LaTeX figure/table includes without embedding machine paths.
+The example manifest contains references only, not model weights.
+
 ## Run
 
 **Standard run:**

@@ -46,13 +46,11 @@ from onecomp.kvcomp.codec.hayate.recipes import (  # noqa: E402
     HQ_FIB_INIT_PROXY_NAME,
     hayate_result_method_candidates,
 )
+from benchmark.kvcomp_common.paths import resolve_model_ref, resolve_output_root, resolve_python  # noqa: E402
 
 CODEC_BENCH = REPO_ROOT / "benchmark" / "kvcomp-codec" / "codec_benchmark.py"
-DEFAULT_MODELS_ROOT = Path("/lustre/home/frj/yuma-ichikawa/conference/models")
-DEFAULT_OUTPUT_ROOT = Path(
-    "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/"
-    "kvcomp_hayatequant/results_cross_model_v1"
-)
+DEFAULT_MODELS_ROOT = None
+DEFAULT_OUTPUT_ROOT = None
 
 
 @dataclass(frozen=True)
@@ -139,7 +137,14 @@ def _resolve_specs(names: list[str] | None) -> list[ModelSpec]:
     for name in names:
         if os.sep in name or name.startswith("."):
             p = Path(name)
-            specs.append(ModelSpec(p.name, str(p), None, p.name))
+            if p.exists():
+                specs.append(ModelSpec(p.name, str(p), None, p.name))
+            elif name.startswith(("/", "~", ".")):
+                specs.append(ModelSpec(p.name, str(p), None, p.name))
+            else:
+                # A slash-containing non-local value is a valid Hugging Face
+                # repository id; weights remain outside this repository.
+                specs.append(ModelSpec(name.replace("/", "-"), name, name, name))
         elif name in ALL_SPECS:
             specs.append(ALL_SPECS[name])
         else:
@@ -148,9 +153,15 @@ def _resolve_specs(names: list[str] | None) -> list[ModelSpec]:
     return specs
 
 
-def _model_path(spec: ModelSpec, models_root: Path) -> Path:
-    p = Path(spec.path_name)
-    return p if p.is_absolute() else models_root / p
+def _model_ref(spec: ModelSpec, models_root: Path | None) -> str:
+    """Return a local external path when available, otherwise a HF id."""
+
+    local = resolve_model_ref(spec.path_name, models_root)
+    if Path(local).exists():
+        return local
+    if models_root is None and spec.hf_id:
+        return spec.hf_id
+    return local
 
 
 def _benchmark_cmd(args: argparse.Namespace, spec: ModelSpec, model_path: Path) -> list[str]:
@@ -196,19 +207,25 @@ def _submit_sbatch(args: argparse.Namespace, spec: ModelSpec, model_path: Path) 
 def _launch(args: argparse.Namespace) -> None:
     args.output_root.mkdir(parents=True, exist_ok=True)
     for spec in _resolve_specs(args.models):
-        model_path = _model_path(spec, args.models_root)
-        if not model_path.exists():
-            if args.download_missing:
-                _download_model(spec, model_path, args.dry_run)
-            else:
+        model_ref = _model_ref(spec, args.models_root)
+        model_path = Path(model_ref)
+        if not model_path.exists() and args.download_missing:
+            if args.models_root is None or not spec.hf_id:
                 raise SystemExit(
-                    f"Missing model directory for {spec.key}: {model_path}. "
-                    "Pass --download-missing for public models or choose another path."
+                    f"Cannot download {spec.key!r} without --models-root and a registered hf id."
                 )
+            model_path = args.models_root / spec.path_name
+            _download_model(spec, model_path, args.dry_run)
+            model_ref = str(model_path)
+        elif not model_path.exists() and model_ref != spec.hf_id:
+            raise SystemExit(
+                f"Missing model directory for {spec.key}: {model_ref}. "
+                "Pass --models-root with external weights or use a Hugging Face id."
+            )
         if args.run_local:
-            _run(_benchmark_cmd(args, spec, model_path), dry_run=args.dry_run, cwd=REPO_ROOT)
+            _run(_benchmark_cmd(args, spec, Path(model_ref)), dry_run=args.dry_run, cwd=REPO_ROOT)
         else:
-            _submit_sbatch(args, spec, model_path)
+            _submit_sbatch(args, spec, Path(model_ref))
 
 
 def _iter_result_files(root: Path) -> Iterable[Path]:
@@ -303,9 +320,9 @@ def _summarize(args: argparse.Namespace) -> None:
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser()
     ap.add_argument("--models", nargs="*", help="Model keys, path names, or absolute model paths.")
-    ap.add_argument("--models-root", type=Path, default=DEFAULT_MODELS_ROOT)
+    ap.add_argument("--models-root", type=Path, default=DEFAULT_MODELS_ROOT, help="External model directory (optional).")
     ap.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
-    ap.add_argument("--python", type=Path, default=REPO_ROOT / ".venv" / "bin" / "python")
+    ap.add_argument("--python", type=Path, default=None)
     ap.add_argument("--config-name", default="paper_hayatequant")
     ap.add_argument(
         "--override", action="append", default=[], help="Extra Hydra override, e.g. ppl_windows=16"
@@ -353,6 +370,9 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    args.models_root = args.models_root.expanduser().resolve() if args.models_root else None
+    args.output_root = resolve_output_root(args.output_root, default_relative="results/hayatequant/cross_model")
+    args.python = resolve_python(args.python)
     if args.summarize:
         _summarize(args)
         return
