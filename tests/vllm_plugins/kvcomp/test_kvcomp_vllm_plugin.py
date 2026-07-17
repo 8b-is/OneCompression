@@ -195,6 +195,18 @@ def test_taper_vllm_recipe_rejects_non_boolean_block_residual():
         )
 
 
+def test_explicit_taper_recipe_is_preserved_for_manual_fresh_process_launch(tmp_path, monkeypatch):
+    """A model without a serialized block must not erase an explicit smoke recipe."""
+    from vllm_plugins.kvcomp import vllm_plugin
+
+    model_path = _write_model_config(tmp_path, {})
+    payload = '{"implementation":"fp16_reference_fake_quant"}'
+    monkeypatch.setenv(vllm_plugin._TAPER_NATIVE_CONFIG_ENV, payload)
+    monkeypatch.setenv(vllm_plugin._TAPER_NATIVE_EXPLICIT_ENV, "1")
+    apply_to_engine_args(_FakeEngineArgs(model=model_path))
+    assert os.environ[vllm_plugin._TAPER_NATIVE_CONFIG_ENV] == payload
+
+
 @pytest.mark.parametrize("bits", [2, 3, 4])
 def test_apply_to_engine_args_hayatequant_default_auto_fails_closed(tmp_path, bits):
     """Default block-VQ cannot silently become FullKV or key-only native HQ.

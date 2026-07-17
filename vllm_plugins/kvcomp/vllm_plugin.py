@@ -41,6 +41,11 @@ _PLUGIN_NAME = "onecomp_kvcomp"
 _HAYATE_NATIVE_CONFIG_ENV = "KVCOMP_VLLM_HAYATE_NATIVE_CONFIG"
 _HAYATE_FULL_NATIVE_CONFIG_ENV = "KVCOMP_VLLM_HAYATE_FULL_NATIVE_CONFIG"
 _TAPER_NATIVE_CONFIG_ENV = "KVCOMP_VLLM_TAPER_CONFIG"
+# Dedicated launchers can opt into a TapeKV recipe even when the base model
+# has no serialized kv_compression_config.  This is intentionally separate
+# from the recipe payload so ordinary model-to-model transitions still clear
+# stale state; it is only appropriate for a fresh-process smoke/validation run.
+_TAPER_NATIVE_EXPLICIT_ENV = "KVCOMP_VLLM_TAPER_CONFIG_EXPLICIT"
 
 
 def _get_logger():
@@ -135,7 +140,7 @@ def apply_to_engine_args(engine_args, model_path: Optional[str] = None):
         # A serialized historical hybrid is an explicit, different backend;
         # it must not coexist with a manual full-HQ override.
         os.environ.pop(_HAYATE_FULL_NATIVE_CONFIG_ENV, None)
-    if not plan.taper_native:
+    if not plan.taper_native and not os.environ.get(_TAPER_NATIVE_EXPLICIT_ENV):
         # The registry override delegates to ordinary FlashAttention without a
         # payload (see taper_native.py), so clearing this process-scoped recipe
         # prevents it being applied to a subsequently constructed model.

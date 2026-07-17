@@ -68,6 +68,10 @@ def main() -> int:
         taper_config=recipe.to_mapping(),
     )
     vllm_plugin._install_taper_native_backend(plan, vllm_plugin._get_logger())
+    # The model itself is intentionally unmodified.  Preserve the explicit
+    # recipe in spawned EngineCore workers, where the automatic model-config
+    # hook would otherwise (correctly for ordinary models) clear stale state.
+    os.environ["KVCOMP_VLLM_TAPER_CONFIG_EXPLICIT"] = "1"
 
     from vllm import LLM, SamplingParams
 
