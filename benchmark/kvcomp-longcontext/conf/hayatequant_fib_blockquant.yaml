@@ -23,7 +23,9 @@ methods:
   - FibQuant-paper
   - BlockQuant-paper
   - HQ
+  - HQ-Frontier
   - AdaptiveHQ
+  - RotationHQ
 
 turboquant_variants:
   - {label: TurboQuant-paper, bits: 3, dist: beta, rotation_mode: dense}
@@ -36,7 +38,9 @@ blockquant_variants:
 
 hayatequant_variants:
   - {label: HQ, bits: 3}
+  - {label: HQ-Frontier, bits: 3}
   - {label: AdaptiveHQ, bits: 3}
+  - {label: RotationHQ, bits: 3}
 
 uniform_bits: []
 kivi_bits: []
