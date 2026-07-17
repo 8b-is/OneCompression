@@ -8,7 +8,7 @@ defaults:
   - benchmark_longcontext
   - _self_
 
-model_path: /lustre/home/frj/yuma-ichikawa/conference/models/Qwen3-4B
+model_path: ???  # supply an external local path or Hugging Face id
 attn_implementation: sdpa
 output_dir: ${hydra:runtime.cwd}/results_paper1/hayatequant_exhaustive_grid
 

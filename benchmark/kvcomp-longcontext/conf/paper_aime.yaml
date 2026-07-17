@@ -56,7 +56,7 @@ max_new_aime: 32768           # ThinKV paper protocol
 # The bundled HumanEval-shaped JSONL contains public-example assertions and is
 # only a smoke test, not official LiveCodeBench. Keep it out of paper runs.
 run_livecodebench: false
-lcb_problems_path: /lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/data/lcb_functional.jsonl
+lcb_problems_path: ${oc.env:KVCOMP_LCB_PROBLEMS,???}
 lcb_limit: 50
 lcb_k: 1
 # Reasoning models (R1-Distill, QwQ) emit long <think> blocks before the

@@ -10,7 +10,7 @@ defaults:
   - benchmark_longcontext
   - _self_
 
-model_path: /lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct
+model_path: ???  # supply an external local path or Hugging Face id
 attn_implementation: sdpa
 output_dir: ${hydra:runtime.cwd}/results_paper1/hayatequant_fib_blockquant
 
@@ -58,7 +58,7 @@ ruler_seeds: 5
 # A task subset/finite limit is always labelled an incomplete protocol smoke run.
 # The `official_ruler_*` names are retained for config compatibility only.
 run_official_ruler_v1: false
-official_ruler_data_root: /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/8192
+official_ruler_data_root: ${oc.env:KVCOMP_RULER_DATA_ROOT,???}
 official_ruler_manifest_path: null
 official_ruler_tasks: []
 official_ruler_max_context: 8192
@@ -74,7 +74,7 @@ longbench_limit: null       # complete official split
 # each length bracket is submitted as its own recoverable paper job. The runner
 # refuses silent prompt truncation when a bracket exceeds the model context.
 run_longcodeqa: false
-longcodeqa_data_root: /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/LongCodeQA
+longcodeqa_data_root: ${oc.env:KVCOMP_LONGCODEQA_ROOT,???}
 longcodeqa_revision: 989d5eff750d65a72c522e47f8f745ef2e22906b
 longcodeqa_brackets: [32K]
 longcodeqa_max_context: null
