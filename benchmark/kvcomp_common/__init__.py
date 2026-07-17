@@ -6,5 +6,6 @@ from .paths import (
     resolve_output_root,
     resolve_python,
 )
+from .manifest import load_model_manifest
 
-__all__ = ["repo_root", "resolve_model_ref", "resolve_output_root", "resolve_python"]
+__all__ = ["repo_root", "resolve_model_ref", "resolve_output_root", "resolve_python", "load_model_manifest"]

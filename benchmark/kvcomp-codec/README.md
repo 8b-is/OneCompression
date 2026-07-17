@@ -186,7 +186,7 @@ srun --gres=gpu:1 .venv/bin/python codec_benchmark.py --config-name paper_hayate
 # same eight models as the main PPL table; ARC-Easy, ARC-Challenge, PIQA,
 # HellaSwag, and WinoGrande; reports mean acc/acc_norm for TQ and HQ variants
 .venv/bin/python benchmark/kvcomp-codec/hayatequant_zeroshot.py --submit \
-    --output-root /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/kvcomp_hayatequant/zeroshot_v1
+    --models-root "$MODELS_ROOT" --output-root "$RESULTS_ROOT/zeroshot"
 
 # quick smoke test only; do not use --limit for final paper numbers
 .venv/bin/python benchmark/kvcomp-codec/hayatequant_zeroshot.py --run-local \
@@ -194,7 +194,7 @@ srun --gres=gpu:1 .venv/bin/python codec_benchmark.py --config-name paper_hayate
 
 # summarize completed zeroshot_*.json files
 .venv/bin/python benchmark/kvcomp-codec/hayatequant_zeroshot.py --summarize \
-    --output-root /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/kvcomp_hayatequant/zeroshot_v1
+    --output-root "$RESULTS_ROOT/zeroshot"
 ```
 
 **Native vLLM kernel smoke** (`hayatequant_vllm_native_smoke.py`):

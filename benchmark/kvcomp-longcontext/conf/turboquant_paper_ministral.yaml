@@ -9,7 +9,8 @@
 # establish a win.  Current claims require the coverage-checked formal launcher
 # and renderer under benchmark/kvcomp-codec/.
 #
-# Download once (if absent) into /home/frj/yuma-ichikwa1/models, then run:
+# Supply an external model path with ``model_path=...``; weights are not stored
+# in this repository.
 #   srun --gres=gpu:1 .../python -u kv_benchmark.py \
 #       --config-name turboquant_paper_ministral
 # or override the path:
@@ -21,6 +22,6 @@ defaults:
   - _self_
 
 # Ministral-8B-Instruct-2410 (head_dim=128, power-of-two -> fast Hadamard rotation).
-model_path: /home/frj/yuma-ichikwa1/models/Ministral-8B-Instruct-2410
+model_path: ???  # external local path or Hugging Face id
 
 output_dir: ${hydra:runtime.cwd}/results_paper1/retrieval_minis

@@ -38,10 +38,10 @@ from onecomp.kvcomp.eval.paper_job_receipts import (
     validate_successful_result_receipts,
 )
 
-DEFAULT_RUN_ROOT = Path(
-    "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/" "hayate_iclr2027_refresh_20260715"
-)
 REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_RUN_ROOT = Path(
+    os.environ.get("KVCOMP_RUN_ROOT", str(REPO_ROOT / "results" / "hayatequant" / "formal"))
+)
 
 PAPER_MODELS = (
     "Llama-2-7b-hf",

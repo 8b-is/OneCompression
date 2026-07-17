@@ -36,10 +36,13 @@ from model_weight_manifest import (
     verify_model_weights,
 )
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_RUN_ROOT = Path(
-    "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/" "hayate_iclr2027_refresh_20260715"
+    os.environ.get("KVCOMP_RUN_ROOT", str(REPO_ROOT / "results" / "hayatequant" / "formal"))
 )
-DEFAULT_MODELS_ROOT = Path("/lustre/home/frj/yuma-ichikawa/conference/models")
+DEFAULT_MODELS_ROOT = (
+    Path(os.environ["KVCOMP_MODELS_ROOT"]) if os.environ.get("KVCOMP_MODELS_ROOT") else None
+)
 
 DEFAULT_MODEL_PATHS = {
     "llama2-7b": "Llama-2-7b-hf",
@@ -1345,6 +1348,8 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
+    if args.models_root is None:
+        parser.error("--models-root or KVCOMP_MODELS_ROOT is required; model weights are external")
     run_root = _resolved(args.run_root)
     models_root = _resolved(args.models_root)
     output = args.output or run_root / "manifests" / "hayatequant_paper_inputs.json"

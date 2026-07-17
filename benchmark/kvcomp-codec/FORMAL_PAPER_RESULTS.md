@@ -10,7 +10,7 @@ First produce the complete aggregate with
 `aggregate_hayatequant_paper_shards.py --only all`. Then run:
 
 ```bash
-PY=${PY:-/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/bin/python}
+PY=${PY:-${REPO_ROOT:-.}/.venv/bin/python}
 "$PY" benchmark/kvcomp-codec/render_hayatequant_formal_results.py \
   --aggregate /absolute/path/coverage_checked_aggregates.json \
   --output-dir /absolute/path/generated

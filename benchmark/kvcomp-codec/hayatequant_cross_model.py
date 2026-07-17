@@ -41,11 +41,7 @@ from typing import Iterable
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from onecomp.kvcomp.codec.hayate.recipes import (  # noqa: E402
-    HQ_BLOCK_SCALE_PROXY_NAME,
-    HQ_FIB_INIT_PROXY_NAME,
-    hayate_result_method_candidates,
-)
+from onecomp.kvcomp.codec.hayate.recipes import hayate_result_method_candidates  # noqa: E402
 from benchmark.kvcomp_common.paths import resolve_model_ref, resolve_output_root, resolve_python  # noqa: E402
 
 CODEC_BENCH = REPO_ROOT / "benchmark" / "kvcomp-codec" / "codec_benchmark.py"

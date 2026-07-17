@@ -21,19 +21,23 @@
 set -euo pipefail
 
 # Adjust ROOT to your cluster path ──────────────────────────────────────────
-ROOT=/lustre/home/frj/yuma-ichikawa/conference
-PY=$ROOT/onecomp-lab/.venv/bin/python
-LC=$ROOT/onecomp-lab/benchmark/kvcomp-longcontext
-LOGS=$ROOT/onecomp-lab/benchmark/kvcomp-longcontext/paper/logs
-WORK="$( cd "$( dirname "${BASH_SOURCE[0]}" )/../../../" && pwd )"   # onecomp-lab/
+WORK="$( cd "$( dirname "${BASH_SOURCE[0]}" )/../../../" && pwd )"
+PY=${PY:-$WORK/.venv/bin/python}
+LC=$WORK/benchmark/kvcomp-longcontext
+LOGS=${LOGS:-$LC/paper/logs}
+MODELS=${MODELS:-${MODELS_ROOT:-}}
+if [ -z "$MODELS" ]; then
+  echo "Set MODELS or MODELS_ROOT to external model weights." >&2
+  exit 2
+fi
 
 mkdir -p "$LOGS"
 
 # Model paths ────────────────────────────────────────────────────────────────
-LLAMA=$ROOT/models/llama-3.1-8b-instruct
-R1L8=$ROOT/models/DeepSeek-R1-Distill-Llama-8B
-R1Q7=$ROOT/models/DeepSeek-R1-Distill-Qwen-7B
-MINIS=$ROOT/models/Ministral-8B-Instruct-2410
+LLAMA=$MODELS/llama-3.1-8b-instruct
+R1L8=$MODELS/DeepSeek-R1-Distill-Llama-8B
+R1Q7=$MODELS/DeepSeek-R1-Distill-Qwen-7B
+MINIS=$MODELS/Ministral-8B-Instruct-2410
 
 # SLURM submission helper ────────────────────────────────────────────────────
 sub() {

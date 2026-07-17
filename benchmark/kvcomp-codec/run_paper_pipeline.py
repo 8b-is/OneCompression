@@ -16,40 +16,23 @@ Examples::
 from __future__ import annotations
 
 import argparse
-import json
 import shlex
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
+from benchmark.kvcomp_common.manifest import load_model_manifest  # noqa: E402
 from benchmark.kvcomp_common.paths import resolve_output_root, resolve_python  # noqa: E402
-
-
-def _load_manifest(path: Path) -> list[dict[str, Any]]:
-    payload = json.loads(path.read_text())
-    models = payload.get("models", payload) if isinstance(payload, dict) else payload
-    if not isinstance(models, list) or not models:
-        raise ValueError(f"Manifest {path} must contain a non-empty 'models' list")
-    out: list[dict[str, Any]] = []
-    for item in models:
-        if isinstance(item, str):
-            out.append({"key": item, "ref": item})
-        elif isinstance(item, dict) and item.get("ref"):
-            out.append({"key": item.get("key", str(item["ref"])), "ref": item["ref"]})
-        else:
-            raise ValueError(f"Invalid model entry in {path}: {item!r}")
-    return out
 
 
 def _models(args: argparse.Namespace) -> list[str]:
     if args.models:
         return list(args.models)
     if args.manifest:
-        return [str(item["ref"]) for item in _load_manifest(args.manifest)]
+        return [item["ref"] for item in load_model_manifest(args.manifest)]
     raise SystemExit("Provide --models or --manifest; model weights are external to onecomp.")
 
 
@@ -87,6 +70,13 @@ def _commands(args: argparse.Namespace) -> list[list[str]]:
             "--aggregate", str(args.aggregate),
             "--output-dir", str(root / "figures_tables"),
         ])
+    if "production-render" in stages:
+        commands.append([
+            str(args.python), "-u",
+            str(REPO_ROOT / "benchmark/kvcomp-codec/render_hayatequant_production.py"),
+            "--results-root", str(root),
+            "--output-dir", str(root / "production_figures_tables"),
+        ])
     if not commands:
         raise SystemExit("No stages selected")
     return commands
@@ -98,7 +88,7 @@ def main() -> None:
     ap.add_argument("--models", nargs="*", help="External model paths or Hugging Face ids")
     ap.add_argument("--models-root", type=Path, help="Optional external directory containing model paths")
     ap.add_argument("--output-root", type=Path)
-    ap.add_argument("--stages", nargs="+", choices=["codec", "zeroshot", "longcontext", "render"], default=["codec", "zeroshot", "longcontext"])
+    ap.add_argument("--stages", nargs="+", choices=["codec", "zeroshot", "longcontext", "render", "production-render"], default=["codec", "zeroshot", "longcontext"])
     ap.add_argument("--aggregate", type=Path, help="Validated aggregate JSON for the render stage")
     ap.add_argument("--python", type=Path)
     ap.add_argument("--run-local", action="store_true", help="Run child drivers locally; otherwise they submit Slurm jobs")

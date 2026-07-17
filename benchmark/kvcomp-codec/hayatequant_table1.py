@@ -9,6 +9,7 @@ both WikiText-2 PPL and five-task zero-shot evaluation.
 from __future__ import annotations
 
 import argparse
+import os
 import shlex
 import subprocess
 from pathlib import Path
@@ -18,8 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CROSS_MODEL = REPO_ROOT / "benchmark" / "kvcomp-codec" / "hayatequant_cross_model.py"
 ZEROSHOT = REPO_ROOT / "benchmark" / "kvcomp-codec" / "hayatequant_zeroshot.py"
 DEFAULT_OUTPUT_ROOT = Path(
-    "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/"
-    "kvcomp_hayatequant/table1_runs"
+    os.environ.get("KVCOMP_OUTPUT_ROOT", str(REPO_ROOT / "results" / "hayatequant" / "table1"))
 )
 
 

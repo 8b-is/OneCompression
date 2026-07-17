@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 from pathlib import Path
 from statistics import mean
 from typing import Any
@@ -31,8 +32,7 @@ from onecomp.kvcomp.codec.hayate.recipes import (
 )
 
 DEFAULT_RUN_ROOT = Path(
-    "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/"
-    "kvcomp_hayatequant/paper_final_20260709"
+    os.environ.get("KVCOMP_RUN_ROOT", str(Path(__file__).resolve().parents[2] / "results" / "hayatequant" / "legacy-audit"))
 )
 
 METHODS = {

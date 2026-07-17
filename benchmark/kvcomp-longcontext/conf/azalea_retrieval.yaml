@@ -5,7 +5,7 @@ defaults:
   - benchmark_longcontext
   - _self_
 
-model_path: /home/frj/yuma-ichikwa1/models/Qwen--Qwen3-0.6B
+model_path: ???  # external local path or Hugging Face id
 device: cpu
 dtype: float32
 attn_implementation: sdpa

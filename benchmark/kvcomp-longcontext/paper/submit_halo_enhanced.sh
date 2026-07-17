@@ -39,7 +39,11 @@ LOGS="$HERE/logs"
 mkdir -p "$LOGS"
 
 PY=${PY:-$REPO/.venv/bin/python}
-MODELS=${MODELS:-/lustre/home/frj/yuma-ichikawa/conference/models}
+MODELS=${MODELS:-${MODELS_ROOT:-}}
+if [ -z "$MODELS" ]; then
+  echo "Set MODELS or MODELS_ROOT to external model weights." >&2
+  exit 2
+fi
 PART=${PART:-batch-1gpu}
 EXCLUDE=${EXCLUDE:-}
 

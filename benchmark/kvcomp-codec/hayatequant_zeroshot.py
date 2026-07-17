@@ -35,11 +35,7 @@ REPO_ROOT = THIS_DIR.parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(THIS_DIR))
 
-from onecomp.kvcomp.codec.hayate.recipes import (  # noqa: E402
-    HQ_BLOCK_SCALE_PROXY_NAME,
-    HQ_FIB_INIT_PROXY_NAME,
-    hayate_result_method_candidates,
-)
+from onecomp.kvcomp.codec.hayate.recipes import hayate_result_method_candidates  # noqa: E402
 from hayatequant_cross_model import (  # noqa: E402
     ALL_SPECS,
     DEFAULT_MODELS,

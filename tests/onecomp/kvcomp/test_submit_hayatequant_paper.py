@@ -211,12 +211,12 @@ def test_formal_plan_has_complete_unique_matrix_and_every_job_uses_wrapper(forma
     assert formal_plan.count("--gres gpu:nvidia_b200:8") == 12
 
 
-def test_fixed_five_replicate_formal_plan_has_exactly_969_unique_jobs(tmp_path):
+def test_fixed_five_replicate_formal_plan_has_exactly_1185_unique_jobs(tmp_path):
     plan = _plan("formal-plan", tmp_path, SPEED_REPLICATES="5")
     jobs = re.findall(r"^JOB phase=formal key=(\S+) result=(\S+)", plan, re.M)
-    assert len(jobs) == 969
-    assert len({key for key, _ in jobs}) == 969
-    assert len({result for _, result in jobs}) == 969
+    assert len(jobs) == 1185
+    assert len({key for key, _ in jobs}) == 1185
+    assert len({result for _, result in jobs}) == 1185
     speed = [key for key, _ in jobs if key.startswith("speed-")]
     assert len(speed) == 60
     assert plan.count("--nodelist DRYRUN-SAME-B200-NODE") == 60
@@ -227,7 +227,7 @@ def test_fixed_five_replicate_formal_plan_has_exactly_969_unique_jobs(tmp_path):
     assert plan.count("--mem 2400G") == 60
     assert plan.count("--dependency afterok:") == 59
     assert plan.count("--kill-on-invalid-dep=yes") == 60
-    assert plan.count("--exclude DRYRUN-SAME-B200-NODE") == 909
+    assert plan.count("--exclude DRYRUN-SAME-B200-NODE") == 1125
 
 
 def test_formal_plan_uses_only_canonical_comparisons_and_full_protocols(formal_plan):
@@ -239,7 +239,7 @@ def test_formal_plan_uses_only_canonical_comparisons_and_full_protocols(formal_p
     assert "blockquant_variants=\\[\\{label:BlockQuant-paper\\,bits:3\\}\\]" in formal_plan
     assert (
         "methods=\\[TurboQuant-paper\\,FibQuant-paper\\,BlockQuant-paper\\,"
-        "HQ\\,AdaptiveHQ\\]" in formal_plan
+        "HQ\\,HQ-Frontier\\,AdaptiveHQ\\,RotationHQ\\]" in formal_plan
     )
     assert "ppl_windows=null" in formal_plan
     assert "official_ruler_limit=null" in formal_plan
@@ -265,7 +265,7 @@ def test_formal_plan_quantizes_every_layer_and_token_under_one_recipe(formal_pla
         formal_plan,
         re.M,
     )
-    assert len(blocks) == 921
+    assert len(blocks) == 1137
     for key, worker in blocks:
         if key.startswith("zs-"):
             assert "--no-skip-outliers" in worker
@@ -295,7 +295,7 @@ def test_zeroshot_intervals_cover_hellaswag_without_overlap(formal_plan):
 
 def test_longcodeqa_is_context_validated_and_row_sharded(formal_plan):
     keys = re.findall(r"^JOB phase=formal key=(longcode-\S+)", formal_plan, re.M)
-    assert len(keys) == 336
+    assert len(keys) == 448
     assert "longcodeqa_context_llama31-8b.json" in formal_plan
     assert "longcodeqa_context_qwen3-8b.json" in formal_plan
     assert "+longcodeqa_brackets=\\[128K\\]" in formal_plan
@@ -307,7 +307,7 @@ def test_longcodeqa_is_context_validated_and_row_sharded(formal_plan):
 
 def test_longbench_is_exactly_one_complete_official_task_per_job(formal_plan):
     keys = re.findall(r"^JOB phase=formal key=(longbench-\S+)", formal_plan, re.M)
-    assert len(keys) == 156
+    assert len(keys) == 208
     assert any("-qasper-n224-" in key for key in keys)
     assert any("-multifieldqa_en-n150-" in key for key in keys)
     assert any("-multi_news-n294-" in key for key in keys)
@@ -321,7 +321,7 @@ def test_longbench_is_exactly_one_complete_official_task_per_job(formal_plan):
 
 def test_math500_exact_row_intervals_cover_dataset(formal_plan):
     keys = re.findall(r"^JOB phase=formal key=(math500-\S+)", formal_plan, re.M)
-    assert len(keys) == 120
+    assert len(keys) == 160
     starts = sorted(
         {int(match.group(1)) for key in keys if (match := re.search(r"-s(\d+)$", key))}
     )
@@ -341,7 +341,7 @@ def test_default_formal_plan_pins_only_speed_to_one_b200_stratum_and_exports_no_
     assert formal_plan.count("--exclusive=user") == 12
     assert formal_plan.count("--dependency afterok:") == 11
     assert formal_plan.count("--kill-on-invalid-dep=yes") == 12
-    assert formal_plan.count("--exclude DRYRUN-SAME-B200-NODE") == 909
+    assert formal_plan.count("--exclude DRYRUN-SAME-B200-NODE") == 1125
     assert (
         formal_plan.count("policy=full_8gpu_allocation_afterok_serial quality_jobs=excluded") == 1
     )

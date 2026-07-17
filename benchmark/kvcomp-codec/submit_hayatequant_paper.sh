@@ -49,7 +49,9 @@ fi
 RESULTS_WORKTREE=${RESULTS_WORKTREE:-$REPO}
 PAPER_RUN_ID=${PAPER_RUN_ID:-hayate-iclr2027-refresh-20260716}
 RUN_ROOT=${RUN_ROOT:-$RESULTS_WORKTREE/papers/hayatequant_paper/experiments/results/$PAPER_RUN_ID}
-WORK_ROOT=${WORK_ROOT:-$REPO/.cache/hayatequant-paper}
+# Mutable caches must not land in the results worktree.  Keep the default
+# outside the checkout; callers can still provide a job-local WORK_ROOT.
+WORK_ROOT=${WORK_ROOT:-${TMPDIR:-/tmp}/hayatequant-paper-${USER:-user}}
 DATA_ROOT=${DATA_ROOT:-$WORK_ROOT/data}
 HF_HOME=${HF_HOME:-$DATA_ROOT/hf_home}
 PINNED_HF_MANIFEST=${PINNED_HF_MANIFEST:-$DATA_ROOT/pinned_hf_datasets_manifest.json}
