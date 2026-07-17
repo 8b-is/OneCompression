@@ -1,0 +1,11 @@
+{
+  "models": [
+    {"key": "llama2-7b", "ref": "Llama-2-7b-hf"},
+    {"key": "llama31-8b", "ref": "llama-3.1-8b-instruct"},
+    {"key": "qwen3-4b", "ref": "Qwen3-4B"},
+    {"key": "qwen3-8b", "ref": "Qwen3-8B"},
+    {"key": "r1-llama-8b", "ref": "DeepSeek-R1-Distill-Llama-8B"},
+    {"key": "r1-qwen-7b", "ref": "DeepSeek-R1-Distill-Qwen-7B"},
+    {"key": "r1-qwen-1.5b", "ref": "DeepSeek-R1-Distill-Qwen-1.5B"}
+  ]
+}
