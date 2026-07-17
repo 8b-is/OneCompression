@@ -183,16 +183,32 @@ def hayate_frontier_variant(
 
 
 def hayate_hq_frontier_kwargs(avg_bits: int | float, **overrides: Any) -> dict[str, Any]:
-    """Keyword arguments for the second, integer K/V frontier operating point."""
+    """Keyword arguments for the second fixed HQ frontier operating point.
+
+    This recipe must not pass through the generic ``avg_bits`` UI without an
+    explicit block budget: that UI defaults to a four-coordinate block and
+    would turn the 4-bit point into a 20-bit (``2**20``) codebook.  Besides
+    being impractical, that made a production run fail only after model/PPL
+    work had completed.  Keep the frontier's stronger key allocation on the
+    same audited two-coordinate block contract as HQ instead.
+    """
 
     rate = _paper_rate(avg_bits)
     if rate is None:
         raise ValueError(f"HQ-Frontier is defined only for rates 2, 3, and 4; got {avg_bits!r}")
-    key_bits, value_bits = int(rate) + 1, int(rate) - 1
+    # K/V payload rates are (r+1, r-1) bpc, stored as fixed whole-block
+    # widths.  The largest point is K10/V6 (K=1024), which is deliberately
+    # bounded and feasible for the exact research encoder.
+    key_code_bits, value_code_bits = 2 * int(rate) + 2, 2 * int(rate) - 2
     kwargs: dict[str, Any] = {
-        "bits": key_bits,
-        "value_bits": value_bits,
+        "bits": int(rate),
+        "value_bits": int(rate),
         "avg_bits": float(rate),
+        "block_size": HQ_BLOCK_SIZE,
+        "key_code_bits_per_block": key_code_bits,
+        "value_code_bits_per_block": value_code_bits,
+        "max_codebook_bits": 10,
+        "dist": "gaussian",
         "key_scale_mode": "ub",
         "value_scale_mode": HQ_VALUE_SCALE_MODE,
         "rotation_mode": "auto",

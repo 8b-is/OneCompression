@@ -1090,6 +1090,22 @@ def test_hayate_summarizers_read_legacy_proxy_keys_without_emitting_them():
     assert cross._entry(canonical, "3", HQ_FIB_INIT_PROXY_NAME)["ppl"] == 6.0
 
 
+def test_cross_model_summary_rejects_partial_paper_matrix():
+    import importlib
+    import os
+    import sys
+
+    bench_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "benchmark", "kvcomp-codec")
+    )
+    if bench_dir not in sys.path:
+        sys.path.insert(0, bench_dir)
+    cross = importlib.import_module("hayatequant_cross_model")
+    spec = cross.ModelSpec("tiny", "Tiny", None, "Tiny")
+    with pytest.raises(SystemExit, match="Incomplete codec paper matrix"):
+        cross._require_complete_matrix([{"model": "Tiny", "results": {}}], [spec])
+
+
 def test_hayatequant_fractional2_recipe_is_opt_in():
     kwargs = hayate_fractional2_kwargs()
     assert kwargs == {

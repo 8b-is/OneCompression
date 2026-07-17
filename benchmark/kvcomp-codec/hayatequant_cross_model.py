@@ -257,6 +257,34 @@ def _paper_model_names() -> set[str]:
     return names
 
 
+def _require_complete_matrix(payloads: list[dict], specs: list[ModelSpec]) -> None:
+    """Reject a partial paper matrix instead of rendering missing cells as ``--``."""
+    required = ("TurboQuant-paper", "FibQuant-paper", "HQ", "HQ-Frontier", "AdaptiveHQ", "RotationHQ")
+    by_model: dict[str, dict] = {}
+    for payload in payloads:
+        model = str(payload.get("model") or "")
+        if model:
+            by_model[model] = payload
+    failures: list[str] = []
+    for spec in specs:
+        payload = next(
+            (by_model[name] for name in (spec.path_name, spec.key, spec.display) if name in by_model),
+            None,
+        )
+        if payload is None:
+            failures.append(f"{spec.display}: missing results JSON")
+            continue
+        for bits in ("2", "3", "4"):
+            expected = list(required)
+            if bits == "3":
+                expected.append("BlockQuant-paper")
+            missing = [method for method in expected if _entry(payload, bits, method) is None]
+            if missing:
+                failures.append(f"{spec.display} {bits}bit: missing {', '.join(missing)}")
+    if failures:
+        raise SystemExit("Incomplete codec paper matrix:\n" + "\n".join(failures))
+
+
 def _fmt(value: float | None, ndigits: int = 2) -> str:
     return "--" if value is None else f"{value:.{ndigits}f}"
 
@@ -269,8 +297,10 @@ def _summarize(args: argparse.Namespace) -> None:
     rows.append(
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
     )
-    for path in _iter_result_files(args.output_root):
-        data = json.loads(path.read_text())
+    payloads = [json.loads(path.read_text()) for path in _iter_result_files(args.output_root)]
+    if args.require_complete:
+        _require_complete_matrix(payloads, _resolve_specs(args.models))
+    for data in payloads:
         model = data.get("model") or path.stem.replace("results_", "")
         if not args.include_extra_results and model not in _paper_model_names():
             continue
@@ -338,6 +368,11 @@ def parse_args() -> argparse.Namespace:
         help="Summarize existing JSON results instead of launching jobs.",
     )
     ap.add_argument("--summary-out", type=Path)
+    ap.add_argument(
+        "--require-complete",
+        action="store_true",
+        help="Fail summary generation unless every requested model/method/rate result is present.",
+    )
     ap.add_argument(
         "--hq-method",
         default="HQ",

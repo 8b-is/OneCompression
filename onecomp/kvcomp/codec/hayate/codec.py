@@ -192,6 +192,10 @@ ADAPTIVE_HQ_HYSTERESIS = (
     "enter_challenger_only_beyond_margin_retain_while_strictly_better_"
     "fallback_to_fixed_incumbent_on_tie_or_loss"
 )
+# The exact/LUT implementation is audited through 2**15 entries.  Larger
+# codebooks are not a benign quality knob: they can turn a typo in a rate UI
+# into an infeasible first-use Lloyd fit or an OOM after a long model run.
+MAX_AUDITED_CODEBOOK_BITS = 15
 
 
 @lru_cache(maxsize=16)
@@ -253,8 +257,10 @@ def _block_codebook_by_code_bits(
     contract.
     """
     code_bits = int(code_bits)
-    if code_bits < 1:
-        raise ValueError(f"code_bits must be positive, got {code_bits}")
+    if not 1 <= code_bits <= MAX_AUDITED_CODEBOOK_BITS:
+        raise ValueError(
+            f"code_bits must be in 1..{MAX_AUDITED_CODEBOOK_BITS}, got {code_bits}"
+        )
     if block_size == 1:
         return _scalar_codebook(code_bits, dist, m).unsqueeze(-1)
     if dist == "beta":
@@ -997,7 +1003,6 @@ class HayateQuantCodec(KVCodec):
             if not 0.0 < frac < 1.0:
                 raise ValueError(f"key_bit_fraction must be in (0, 1), got {frac!r}")
             center = min(total - 1, max(1, int(round(total * frac))))
-            self.max_codebook_bits = max(self.max_codebook_bits, center, total - center)
             return
         key_explicit = self.key_code_bits_per_block
         value_explicit = self.value_code_bits_per_block
@@ -1038,7 +1043,6 @@ class HayateQuantCodec(KVCodec):
         value_bits = total - key_bits
         self.key_code_bits_per_block = key_bits
         self.value_code_bits_per_block = value_bits
-        self.max_codebook_bits = max(self.max_codebook_bits, key_bits, value_bits)
 
     def validate_params(self):
         if self.block_size is not None and (
@@ -1052,6 +1056,11 @@ class HayateQuantCodec(KVCodec):
         ):
             raise ValueError(
                 f"max_codebook_bits must be a positive int, got {self.max_codebook_bits!r}"
+            )
+        if self.max_codebook_bits > MAX_AUDITED_CODEBOOK_BITS:
+            raise ValueError(
+                f"max_codebook_bits={self.max_codebook_bits} exceeds the audited limit "
+                f"{MAX_AUDITED_CODEBOOK_BITS}"
             )
         if not (
             isinstance(self.hadamard_gemm_max_dim, int)

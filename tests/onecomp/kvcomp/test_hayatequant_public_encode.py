@@ -16,6 +16,7 @@ from onecomp.kvcomp.codec.hayate.recipes import (
     HQ_PUBLIC_METHODS,
     HQ_ROTATION_NAME,
     build_hayate_frontier,
+    build_hayate_hq_frontier,
     hayate_adaptive_rate_kwargs,
     hayate_hq_kwargs,
 )
@@ -33,6 +34,20 @@ def test_kmeans_handles_bounded_fit_set_smaller_than_codebook():
     centroids, sse = _kmeans(torch.randn(8, 4), k=64, iters=2, seed=0)
     assert centroids.shape == (64, 4)
     assert torch.isfinite(torch.tensor(sse))
+
+
+@pytest.mark.parametrize("rate, expected", [(2, (6, 2)), (3, (8, 4)), (4, (10, 6))])
+def test_hq_frontier_has_explicit_audited_two_coordinate_codebooks(rate, expected):
+    codec = build_hayate_hq_frontier(rate)
+    cfg = codec.get_kv_config()
+    assert cfg["block_size"] == 2
+    assert (cfg["key_code_bits_per_block"], cfg["value_code_bits_per_block"]) == expected
+    assert cfg["max_codebook_bits"] == 10
+
+
+def test_hayate_rejects_unaudited_codebook_size_before_workload_execution():
+    with pytest.raises(ValueError, match="audited limit"):
+        HayateQuantCodec(max_codebook_bits=16)
 
 
 def test_public_hayate_method_family_has_exactly_four_named_variants():
