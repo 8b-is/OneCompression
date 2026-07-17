@@ -1,5 +1,28 @@
 # KV codec: HayateQuant vs TurboQuant / HALO (speed-quality)
 
+## Paper target coverage
+
+The current seven-model PPL and five-task zero-shot matrices cover the raw
+cells needed by the Hayate paper's Table 1 and the quality panels of Figure 1.
+Use `hayatequant_table1.py` to launch the paired PPL/zero-shot drivers. The
+formal shard aggregator rejects missing model/rate/method cells, and the formal
+renderer recomputes the seven-model PPL geometric means and zero-shot arithmetic
+means from sufficient statistics.
+
+The Figure 1 serving panel must come from the faithful packed full-HQ vLLM
+backend and a matched TurboQuant run. Public-codec or fake-quant timing is not a
+packed-serving substitute. `hayatequant_vllm_full_native_fair_speed.py` and the
+full-native generation/smoke launchers provide the relevant data plane, but no
+complete formal aggregate is committed in this repository.
+
+Table 2 calibration is not currently reproducible as one frozen formal matrix.
+Calibration builders and development PPL scripts exist, but they do not yet
+define the paper's exact three-model, 2/3-bit HQ-DF versus HQ-DF+calibration
+artifact/training/evaluation protocol in the coverage-checked aggregator. Do
+not present the development calibration outputs as Table 2. A formal Table 2
+driver must pin calibration text, artifact hashes, model revisions, and causal
+PPL denominators before those cells are claimable.
+
 Main experiment for the data-free rotated KV codecs, the analogue of the
 weight-side `benchmark/<model>-<recipe>/` runs.
 

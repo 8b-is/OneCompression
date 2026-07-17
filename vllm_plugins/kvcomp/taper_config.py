@@ -13,7 +13,6 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 
-
 _SUPPORTED_POLICIES = {"taperkv", "block_taperkv"}
 
 
@@ -43,6 +42,7 @@ class TaperVLLMRecipe:
     recent_tokens: int = 64
     ladder: tuple[int, ...] | None = None
     skip_layers: tuple[int, ...] = ()
+    requant_stride: int = 16
     block_size: int | None = None
     residual_fp16: bool = True
     quant_granularity: str = "block"
@@ -63,31 +63,84 @@ class TaperVLLMRecipe:
             object.__setattr__(self, name, _integer(getattr(self, name), name, minimum=0))
         ladder = self.ladder
         if ladder is not None:
-            ladder = tuple(_integer(value, "ladder entry", minimum=1, maximum=self.key_bits)
-                           for value in ladder)
+            ladder = tuple(
+                _integer(value, "ladder entry", minimum=1, maximum=self.key_bits)
+                for value in ladder
+            )
             if not ladder or any(left <= right for left, right in zip(ladder, ladder[1:])):
                 raise ValueError("ladder must be a non-empty strictly descending sequence")
             object.__setattr__(self, "ladder", ladder)
         skip = tuple(_integer(value, "skip_layers entry", minimum=0) for value in self.skip_layers)
-        object.__setattr__(self, "skip_layers", skip)
+        object.__setattr__(self, "skip_layers", tuple(dict.fromkeys(skip)))
+        object.__setattr__(
+            self,
+            "requant_stride",
+            _integer(self.requant_stride, "requant_stride", minimum=1),
+        )
         if self.policy_name == "block_taperkv":
-            object.__setattr__(self, "block_size", _integer(self.block_size, "block_size", minimum=1))
+            object.__setattr__(
+                self, "block_size", _integer(self.block_size, "block_size", minimum=1)
+            )
             if not isinstance(self.residual_fp16, bool):
                 raise ValueError("residual_fp16 must be a bool")
             if self.quant_granularity not in {"block", "token"}:
                 raise ValueError("quant_granularity must be 'block' or 'token'")
         if self.hayate_config is not None:
-            if not isinstance(self.hayate_config, dict) or self.hayate_config.get("name") != "hayatequant":
+            if (
+                not isinstance(self.hayate_config, dict)
+                or self.hayate_config.get("name") != "hayatequant"
+            ):
                 raise ValueError("hayate_config must be a serialized HayateQuant codec mapping")
+            if self.hayate_config.get("calibration"):
+                raise ValueError(
+                    "calibrated HayateQuant cannot be reconstructed from the serialized "
+                    "calibration digest in a vLLM worker"
+                )
+            if self.hayate_config.get("adaptive_bit_split") not in (
+                None,
+                "",
+                "off",
+                "none",
+                False,
+            ):
+                raise ValueError(
+                    "adaptive HayateQuant is request-local and cannot be composed "
+                    "with batched vLLM TapeKV"
+                )
+            outlier_fields = (
+                "n_outlier",
+                "key_n_outlier",
+                "value_n_outlier",
+            )
+            if any(int(self.hayate_config.get(name) or 0) > 0 for name in outlier_fields):
+                raise ValueError(
+                    "dynamic HayateQuant outlier selection cannot be composed with "
+                    "batched vLLM TapeKV"
+                )
+            if str(self.hayate_config.get("encoder") or "auto").lower() not in {
+                "exact",
+                "lut",
+            }:
+                raise ValueError(
+                    "HayateQuant+TapeKV requires an explicit exact or lut encoder"
+                )
+            object.__setattr__(self, "hayate_config", dict(self.hayate_config))
             object.__setattr__(self, "implementation", "hayatequant_then_taper_fp16_reference")
         elif self.implementation != "fp16_reference_fake_quant":
             raise ValueError("only the explicit FP16 reference TapeKV backend is supported")
 
     @classmethod
-    def from_policy(cls, policy: dict[str, Any], hayate_config: dict[str, Any] | None = None) -> "TaperVLLMRecipe":
+    def from_policy(
+        cls, policy: dict[str, Any], hayate_config: dict[str, Any] | None = None
+    ) -> "TaperVLLMRecipe":
         if not isinstance(policy, dict):
             raise ValueError("TapeKV policy must be a mapping")
         name = str(policy.get("name", ""))
+        block_size = policy.get("block_size")
+        default_stride = block_size if name == "block_taperkv" else 16
+        requested_stride = policy.get("requant_stride")
+        policy_skip = tuple(policy.get("skip_layers") or ())
+        codec_skip = tuple((hayate_config or {}).get("skip_layers") or ())
         return cls(
             policy_name=name,
             key_bits=policy.get("key_bits", 8),
@@ -97,8 +150,9 @@ class TaperVLLMRecipe:
             sink_tokens=policy.get("sink_tokens", 4),
             recent_tokens=policy.get("recent_tokens", 64),
             ladder=None if policy.get("ladder") is None else tuple(policy["ladder"]),
-            skip_layers=tuple(policy.get("skip_layers") or ()),
-            block_size=policy.get("block_size"),
+            skip_layers=tuple(dict.fromkeys((*policy_skip, *codec_skip))),
+            requant_stride=(default_stride if requested_stride is None else requested_stride),
+            block_size=block_size,
             residual_fp16=policy.get("residual_fp16", True),
             quant_granularity=str(policy.get("quant_granularity", "block")),
             hayate_config=hayate_config,

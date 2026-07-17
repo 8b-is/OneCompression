@@ -138,7 +138,7 @@ class BlockTaperKVCache(TaperKVCache):
 
     def __init__(self, policy, config=None, requant_stride: int | None = None, **kwargs):
         if requant_stride is None:
-            requant_stride = policy.block_size
+            requant_stride = policy.requant_stride or policy.block_size
         super().__init__(policy, config=config, requant_stride=requant_stride, **kwargs)
 
     def token_bits(self, total, device, layer_idx):

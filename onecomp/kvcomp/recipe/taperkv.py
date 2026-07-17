@@ -53,6 +53,7 @@ class TaperKVPolicy(KVPolicy):
     recent_tokens: int = 64
     ladder: Optional[list] = None
     skip_layers: list = field(default_factory=list)
+    requant_stride: Optional[int] = None
 
     def __post_init__(self):
         """Reject schedules that cannot be represented by the cache codec.
@@ -99,6 +100,12 @@ class TaperKVPolicy(KVPolicy):
             raise ValueError("skip_layers must be a list or tuple of integer layer indices")
         if any(isinstance(layer, bool) or not isinstance(layer, int) for layer in self.skip_layers):
             raise ValueError("skip_layers must contain integer layer indices")
+        if self.requant_stride is not None and (
+            isinstance(self.requant_stride, bool)
+            or not isinstance(self.requant_stride, int)
+            or self.requant_stride < 1
+        ):
+            raise ValueError("requant_stride must be a positive integer or None")
 
     def target_avg_bits(self, seq_len: int) -> float:
         """Rough expected average bits (keys+values)/2 for a given length."""
@@ -123,6 +130,7 @@ class TaperKVPolicy(KVPolicy):
             "b_min": self.b_min, "b_min_value": self.b_min_value,
             "sink_tokens": self.sink_tokens, "recent_tokens": self.recent_tokens,
             "ladder": self.ladder, "skip_layers": list(self.skip_layers),
+            "requant_stride": self.requant_stride,
         }
 
 

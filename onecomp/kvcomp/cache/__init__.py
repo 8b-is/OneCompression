@@ -15,6 +15,7 @@ from .taper_cache import (
     step_down_bits,
 )
 from .block_taper_cache import BlockTaperKVCache, block_taper_bits, fake_quant_blocks
+from .hayate_taper_cache import HayateBlockTaperKVCache, HayateTaperKVCache
 from .turbotaper_cache import TurboTaperCache
 from .pmkvq_cache import PMKVQCache
 from .streaming_evict import StreamingLLMEvictCache
@@ -34,6 +35,8 @@ __all__ = [
     "apply_byte_budget",
     "step_down_bits",
     "BlockTaperKVCache",
+    "HayateTaperKVCache",
+    "HayateBlockTaperKVCache",
     "block_taper_bits",
     "fake_quant_blocks",
     "TurboTaperCache",

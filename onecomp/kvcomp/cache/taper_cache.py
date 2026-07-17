@@ -79,7 +79,9 @@ class TaperKVCache(GradedQuantCache):
             decode steps (1 = every step; larger = cheaper, staler).
     """
 
-    def __init__(self, policy, config=None, requant_stride: int = 16, **kwargs):
+    def __init__(self, policy, config=None, requant_stride: int | None = None, **kwargs):
+        if requant_stride is None:
+            requant_stride = policy.requant_stride or 16
         super().__init__(config=config, skip_layers=policy.skip_layers,
                          requant_stride=requant_stride, **kwargs)
         self.policy = policy

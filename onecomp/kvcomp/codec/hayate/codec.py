@@ -894,6 +894,9 @@ class HayateQuantCodec(KVCodec):
             reconstruction.  It therefore sacrifices that word's scale
             precision rather than increasing the logical data-plane rate.
             This is opt-in and never changes the canonical HQ/frontier path.
+        vllm_mode: Optional explicit serving backend selection persisted in
+            ``kv_compression_config``. The HF codec ignores this field. The
+            vLLM mapper validates it and fails closed on incompatible recipes.
     """
 
     flag_calibration: bool = False
@@ -931,6 +934,10 @@ class HayateQuantCodec(KVCodec):
     value_error_weight: float = 1.0
     key_code_bits_per_block: int = None
     value_code_bits_per_block: int = None
+    # Optional serving selection persisted with the codec. The HF codec does
+    # not interpret it; the vLLM mapper validates the requested backend and
+    # fails closed when the serialized recipe cannot be represented.
+    vllm_mode: str = None
     key_axis: str = "token"
     value_axis: str = "token"
 
@@ -1045,6 +1052,10 @@ class HayateQuantCodec(KVCodec):
         self.value_code_bits_per_block = value_bits
 
     def validate_params(self):
+        if self.vllm_mode is not None and (
+            not isinstance(self.vllm_mode, str) or not self.vllm_mode.strip()
+        ):
+            raise ValueError("vllm_mode must be a non-empty string or None")
         if self.block_size is not None and (
             not isinstance(self.block_size, int) or isinstance(self.block_size, bool)
         ):
@@ -2839,6 +2850,7 @@ class HayateQuantCodec(KVCodec):
                 "value_error_weight": self.value_error_weight,
                 "key_code_bits_per_block": self.key_code_bits_per_block,
                 "value_code_bits_per_block": self.value_code_bits_per_block,
+                "vllm_mode": self.vllm_mode,
                 "use_qjl": self.use_qjl,
             }
         )

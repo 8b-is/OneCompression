@@ -15,6 +15,9 @@ Scope of this plugin (agreed scaffold):
 * Run standalone affine TapeKV through an explicit, FP16/BF16-reference
   FlashAttention backend.  The backend is marked non-packed and is excluded
   from memory/throughput claims.
+* Run explicitly selected fixed-rate full HayateQuant through its faithful
+  packed key/value backend, and compose HayateQuant with TapeKV in the
+  reference backend's defined one-time-HQ-then-age-regrade order.
 * For every other low-bit / eviction recipe, fail closed when the experimental
   custom attention backend is required (never start an uncompressed look-alike
   run).
@@ -130,7 +133,7 @@ def apply_to_engine_args(engine_args, model_path: Optional[str] = None):
     # block-VQ settings. A model with no kv_compression_config is left alone:
     # the standalone native smoke/generation harness configures the override
     # manually and intentionally has no serialized block.
-    if plan.codec_name is not None and not plan.hayate_native:
+    if plan.codec_name is not None and not (plan.hayate_native or plan.hayate_full_native):
         os.environ.pop(_HAYATE_NATIVE_CONFIG_ENV, None)
         # A manually requested full-HQ backend is likewise scoped to its fresh
         # engine process.  Never let its process-global TURBOQUANT override
@@ -140,6 +143,8 @@ def apply_to_engine_args(engine_args, model_path: Optional[str] = None):
         # A serialized historical hybrid is an explicit, different backend;
         # it must not coexist with a manual full-HQ override.
         os.environ.pop(_HAYATE_FULL_NATIVE_CONFIG_ENV, None)
+    elif plan.hayate_full_native:
+        os.environ.pop(_HAYATE_NATIVE_CONFIG_ENV, None)
     if not plan.taper_native and not os.environ.get(_TAPER_NATIVE_EXPLICIT_ENV):
         # The registry override delegates to ordinary FlashAttention without a
         # payload (see taper_native.py), so clearing this process-scoped recipe
@@ -162,6 +167,10 @@ def apply_to_engine_args(engine_args, model_path: Optional[str] = None):
         # requirement of the reference backend, not a performance knob.
         if hasattr(engine_args, "enable_prefix_caching"):
             engine_args.enable_prefix_caching = False
+        if hasattr(engine_args, "enforce_eager"):
+            engine_args.enforce_eager = True
+        if hasattr(engine_args, "attention_backend"):
+            engine_args.attention_backend = "FLASH_ATTN"
         logger.info("[kvcomp] enabled TapeKV FP16-reference semantic backend")
         return engine_args
     if plan.native_supported and plan.kv_cache_dtype != "auto":
@@ -171,7 +180,9 @@ def apply_to_engine_args(engine_args, model_path: Optional[str] = None):
                 f"{plan.kv_cache_dtype!r}; upgrade vLLM or use the faithful HF "
                 "cache path"
             )
-        if plan.hayate_native:
+        if plan.hayate_full_native:
+            _install_hayate_full_native_backend(plan, logger)
+        elif plan.hayate_native:
             _install_hayate_native_backend(plan, logger)
         engine_args.kv_cache_dtype = plan.kv_cache_dtype
         if plan.calculate_kv_scales and hasattr(engine_args, "calculate_kv_scales"):
@@ -333,6 +344,20 @@ def _register_hayate_native_backend(logger) -> bool:
             "refusing to run the byte-compatible TurboQuant preset without "
             "block-VQ"
         ) from exc
+
+
+def _install_hayate_full_native_backend(plan: KVCompVLLMPlan, logger) -> bool:
+    """Install the faithful packed full-HQ backend from a serialized plan."""
+    if not plan.hayate_full_native:
+        return False
+    os.environ[_HAYATE_FULL_NATIVE_CONFIG_ENV] = json.dumps(
+        plan.hayate_full_config, sort_keys=True
+    )
+    if not _register_hayate_full_native_backend(logger):
+        raise RuntimeError("full-HQ native plan did not install its required backend")
+    if not _install_hayate_full_cache_spec_hook():
+        raise RuntimeError("full-HQ native plan did not install its cache-spec hook")
+    return True
 
 
 def _install_hayate_native_backend(plan: KVCompVLLMPlan, logger) -> bool:

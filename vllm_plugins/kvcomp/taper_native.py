@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any
 
 import torch
@@ -22,19 +23,25 @@ from vllm.v1.attention.backends.flash_attn import FlashAttentionBackend, FlashAt
 
 from vllm_plugins.kvcomp.taper_config import TaperVLLMRecipe
 
-
 TAPER_CONFIG_ENV = "KVCOMP_VLLM_TAPER_CONFIG"
+_RECIPE_MARKER: str | None = None
+_RECIPE: TaperVLLMRecipe | None = None
 
 
 def taper_native_recipe() -> TaperVLLMRecipe:
+    global _RECIPE_MARKER, _RECIPE
     raw = os.environ.get(TAPER_CONFIG_ENV)
     if not raw:
         raise RuntimeError("TapeKV backend selected without KVCOMP_VLLM_TAPER_CONFIG")
+    if raw == _RECIPE_MARKER and _RECIPE is not None:
+        return _RECIPE
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise RuntimeError("invalid JSON in KVCOMP_VLLM_TAPER_CONFIG") from exc
-    return TaperVLLMRecipe.from_mapping(payload)
+    _RECIPE = TaperVLLMRecipe.from_mapping(payload)
+    _RECIPE_MARKER = raw
+    return _RECIPE
 
 
 class TaperKVNativeBackend(FlashAttentionBackend):
@@ -54,7 +61,22 @@ class TaperKVNativeImpl(FlashAttentionImpl):
             value = getattr(layer, name, None)
             if isinstance(value, int):
                 return value
+        layer_name = getattr(layer, "layer_name", None)
+        if isinstance(layer_name, str):
+            matches = re.findall(r"(?:^|\.)(?:layers|h)\.(\d+)(?:\.|$)", layer_name)
+            if matches:
+                return int(matches[-1])
         return None
+
+    @classmethod
+    def _layer_selection(cls, layer: Any, recipe: TaperVLLMRecipe) -> tuple[int | None, bool]:
+        layer_idx = cls._layer_index(layer)
+        if layer_idx is None and recipe.skip_layers:
+            raise RuntimeError(
+                "TapeKV cannot honor skip_layers because the vLLM layer index "
+                "could not be resolved"
+            )
+        return layer_idx, layer_idx in recipe.skip_layers
 
     def _hayate_codec(self, recipe: TaperVLLMRecipe):
         """Lazily cache the immutable HQ reference codec per attention impl."""
@@ -70,10 +92,80 @@ class TaperKVNativeImpl(FlashAttentionImpl):
             self._taper_hayate_marker = marker
         return self._taper_hayate_codec
 
+    def _hayate_roundtrip(self, key, value, recipe, layer_idx):
+        codec = self._hayate_codec(recipe)
+        if codec is None:
+            return key, value
+        state = getattr(self, "_taper_hayate_state", None)
+        if state is None:
+            state = {}
+            self._taper_hayate_state = state
+        context = {
+            "layer_idx": layer_idx,
+            "cache_state": state.setdefault(layer_idx, {}),
+        }
+        key_hat, value_hat, _ = codec.fake_quant_roundtrip(
+            key.transpose(0, 1).unsqueeze(0),
+            value.transpose(0, 1).unsqueeze(0),
+            ctx=context,
+        )
+        return (
+            key_hat.squeeze(0).transpose(0, 1).to(dtype=key.dtype),
+            value_hat.squeeze(0).transpose(0, 1).to(dtype=value.dtype),
+        )
+
+    @staticmethod
+    def _quantize_new_tokens(key, value, recipe):
+        if recipe.policy_name == "block_taperkv" and recipe.residual_fp16:
+            return key, value
+        key_bits = torch.full(
+            (key.shape[0],), recipe.key_bits, dtype=torch.int64, device=key.device
+        )
+        value_bits = torch.full(
+            (value.shape[0],), recipe.value_bits, dtype=torch.int64, device=value.device
+        )
+        key_hat = fake_quant_tokens(key.transpose(0, 1).unsqueeze(0), key_bits)
+        value_hat = fake_quant_tokens(value.transpose(0, 1).unsqueeze(0), value_bits)
+        return (
+            key_hat.squeeze(0).transpose(0, 1).to(dtype=key.dtype),
+            value_hat.squeeze(0).transpose(0, 1).to(dtype=value.dtype),
+        )
+
+    def do_kv_cache_update(self, layer, key, value, kv_cache, slot_mapping):
+        """Apply HQ once to arriving KV, then let upstream scatter it."""
+        if not os.environ.get(TAPER_CONFIG_ENV):
+            return super().do_kv_cache_update(layer, key, value, kv_cache, slot_mapping)
+        recipe = taper_native_recipe()
+        layer_idx, skipped = self._layer_selection(layer, recipe)
+        if skipped:
+            self._taper_pending_slots = None
+            return super().do_kv_cache_update(layer, key, value, kv_cache, slot_mapping)
+
+        key, value = self._hayate_roundtrip(key, value, recipe, layer_idx)
+        self._taper_pending_slots = slot_mapping
+        return super().do_kv_cache_update(layer, key, value, kv_cache, slot_mapping)
+
+    def _quantize_pending_slots(self, kv_cache: torch.Tensor, recipe: TaperVLLMRecipe) -> None:
+        slots = getattr(self, "_taper_pending_slots", None)
+        if slots is None or slots.numel() == 0:
+            return
+        slots = slots[slots >= 0]
+        if slots.numel() == 0:
+            return
+        slots = slots.to(dtype=torch.long)
+        key_cache, value_cache = kv_cache.unbind(1)
+        flat_keys = key_cache.flatten(0, 1)
+        flat_values = value_cache.flatten(0, 1)
+        keys = flat_keys.index_select(0, slots)
+        values = flat_values.index_select(0, slots)
+        keys, values = self._quantize_new_tokens(keys, values, recipe)
+        flat_keys.index_copy_(0, slots, keys)
+        flat_values.index_copy_(0, slots, values)
+
     def _requantize_cache(self, kv_cache: torch.Tensor, attn_metadata, layer: Any) -> None:
         recipe = taper_native_recipe()
-        layer_idx = self._layer_index(layer)
-        if layer_idx is not None and layer_idx in recipe.skip_layers:
+        _layer_idx, skipped = self._layer_selection(layer, recipe)
+        if skipped:
             return
         if kv_cache.ndim != 5 or kv_cache.shape[1] != 2:
             raise RuntimeError(
@@ -85,7 +177,9 @@ class TaperKVNativeImpl(FlashAttentionImpl):
         block_table = attn_metadata.block_table
         seq_lens = attn_metadata.seq_lens
         if block_table is None or seq_lens is None:
-            raise RuntimeError("TapeKV vLLM reference backend needs block_table and seq_lens metadata")
+            raise RuntimeError(
+                "TapeKV vLLM reference backend needs block_table and seq_lens metadata"
+            )
         page_size = kv_cache.shape[2]
         # seq_lens are tiny metadata tensors.  Bringing only this metadata to
         # CPU is intentional: it avoids data-dependent GPU control flow and
@@ -100,59 +194,126 @@ class TaperKVNativeImpl(FlashAttentionImpl):
             page_ids = block_table[request_index, :n_pages]
             if page_ids.numel() != n_pages or bool((page_ids < 0).any().item()):
                 raise RuntimeError("invalid paged KV block table in TapeKV reference backend")
-            keys = key_cache[page_ids].reshape(-1, key_cache.shape[-2], key_cache.shape[-1])[:total]
-            values = value_cache[page_ids].reshape(-1, value_cache.shape[-2], value_cache.shape[-1])[:total]
+            page_ids = page_ids.to(dtype=torch.long)
+            key_pages = key_cache.index_select(0, page_ids)
+            value_pages = value_cache.index_select(0, page_ids)
+            keys = key_pages.reshape(-1, key_cache.shape[-2], key_cache.shape[-1])[:total]
+            values = value_pages.reshape(-1, value_cache.shape[-2], value_cache.shape[-1])[:total]
             # Cache is [tokens, heads, dim]; the OneComp cache helpers use
             # [batch, heads, tokens, dim].  Reuse those canonical operators so
             # policy semantics cannot drift between HF and vLLM validation.
             source_k = keys.transpose(0, 1).unsqueeze(0)
             source_v = values.transpose(0, 1).unsqueeze(0)
-            codec = self._hayate_codec(recipe)
-            if codec is not None:
-                # Explicit composition order: HQ reconstructs each logical KV
-                # vector first; TapeKV then applies its age-dependent affine
-                # regrade.  This is a quality/reference path only--the paged
-                # allocation remains model dtype and is never a packed-HQ claim.
-                source_k, source_v, _ = codec.fake_quant_roundtrip(
-                    source_k, source_v, ctx={"layer_idx": layer_idx}
-                )
             if recipe.policy_name == "block_taperkv" and recipe.quant_granularity == "block":
-                kbits = block_taper_bits(total, recipe.block_size, recipe.sink_tokens,
-                    recipe.recent_tokens, recipe.key_bits, recipe.b_min, recipe.ladder,
-                    recipe.residual_fp16, device=keys.device)
-                vbits = block_taper_bits(total, recipe.block_size, recipe.sink_tokens,
-                    recipe.recent_tokens, recipe.value_bits, recipe.b_min_value, recipe.ladder,
-                    recipe.residual_fp16, device=values.device)
-                quant_k = fake_quant_blocks(source_k, kbits, recipe.block_size)
-                quant_v = fake_quant_blocks(source_v, vbits, recipe.block_size)
+                kbits = block_taper_bits(
+                    total,
+                    recipe.block_size,
+                    recipe.sink_tokens,
+                    recipe.recent_tokens,
+                    recipe.key_bits,
+                    recipe.b_min,
+                    recipe.ladder,
+                    recipe.residual_fp16,
+                    device=keys.device,
+                )
+                vbits = block_taper_bits(
+                    total,
+                    recipe.block_size,
+                    recipe.sink_tokens,
+                    recipe.recent_tokens,
+                    recipe.value_bits,
+                    recipe.b_min_value,
+                    recipe.ladder,
+                    recipe.residual_fp16,
+                    device=values.device,
+                )
+                quant_k = fake_quant_blocks(
+                    source_k,
+                    kbits,
+                    recipe.block_size,
+                    known_bit_widths=tuple(range(recipe.b_min, recipe.key_bits + 1)),
+                )
+                quant_v = fake_quant_blocks(
+                    source_v,
+                    vbits,
+                    recipe.block_size,
+                    known_bit_widths=tuple(range(recipe.b_min_value, recipe.value_bits + 1)),
+                )
             else:
                 age = torch.arange(total - 1, -1, -1, device=keys.device)
-                kbits = taper_bits(age, total, recipe.sink_tokens, recipe.recent_tokens,
-                    recipe.key_bits, recipe.b_min, recipe.ladder)
-                vbits = taper_bits(age, total, recipe.sink_tokens, recipe.recent_tokens,
-                    recipe.value_bits, recipe.b_min_value, recipe.ladder)
+                kbits = taper_bits(
+                    age,
+                    total,
+                    recipe.sink_tokens,
+                    recipe.recent_tokens,
+                    recipe.key_bits,
+                    recipe.b_min,
+                    recipe.ladder,
+                )
+                vbits = taper_bits(
+                    age,
+                    total,
+                    recipe.sink_tokens,
+                    recipe.recent_tokens,
+                    recipe.value_bits,
+                    recipe.b_min_value,
+                    recipe.ladder,
+                )
                 quant_k = fake_quant_tokens(source_k, kbits)
                 quant_v = fake_quant_tokens(source_v, vbits)
-            key_pages = key_cache[page_ids].clone()
-            value_pages = value_cache[page_ids].clone()
             key_pages.reshape(-1, key_cache.shape[-2], key_cache.shape[-1])[:total].copy_(
                 quant_k.squeeze(0).transpose(0, 1).to(key_pages.dtype)
             )
             value_pages.reshape(-1, value_cache.shape[-2], value_cache.shape[-1])[:total].copy_(
                 quant_v.squeeze(0).transpose(0, 1).to(value_pages.dtype)
             )
-            key_cache[page_ids] = key_pages
-            value_cache[page_ids] = value_pages
+            key_cache.index_copy_(0, page_ids, key_pages)
+            value_cache.index_copy_(0, page_ids, value_pages)
 
-    def forward(self, layer, query, key, value, kv_cache, attn_metadata, output,
-                output_scale=None, output_block_scale=None):
+    def forward(
+        self,
+        layer,
+        query,
+        key,
+        value,
+        kv_cache,
+        attn_metadata,
+        output,
+        output_scale=None,
+        output_block_scale=None,
+    ):
         # The FlashAttention registry is process-global.  A later ordinary
         # engine in the same interpreter may clear the TapeKV payload; in that
         # case preserve upstream FlashAttention rather than failing or applying
         # an old recipe to the wrong model.
         if attn_metadata is not None and os.environ.get(TAPER_CONFIG_ENV):
-            self._requantize_cache(kv_cache, attn_metadata, layer)
+            if attn_metadata.use_cascade:
+                raise RuntimeError(
+                    "TapeKV vLLM reference backend does not support cascade attention"
+                )
+            if getattr(self, "dcp_world_size", 1) > 1:
+                raise RuntimeError(
+                    "TapeKV vLLM reference backend does not support decode context parallelism"
+                )
+            recipe = taper_native_recipe()
+            _layer_idx, skipped = self._layer_selection(layer, recipe)
+            since = getattr(self, "_taper_since", 0) + 1
+            self._taper_since = since
+            max_query_len = int(attn_metadata.max_query_len)
+            regrade = max_query_len > 1 or since % recipe.requant_stride == 0
+            if not skipped and regrade:
+                self._requantize_cache(kv_cache, attn_metadata, layer)
+            elif not skipped:
+                self._quantize_pending_slots(kv_cache, recipe)
+            self._taper_pending_slots = None
         return super().forward(
-            layer, query, key, value, kv_cache, attn_metadata, output,
-            output_scale=output_scale, output_block_scale=output_block_scale,
+            layer,
+            query,
+            key,
+            value,
+            kv_cache,
+            attn_metadata,
+            output,
+            output_scale=output_scale,
+            output_block_scale=output_block_scale,
         )

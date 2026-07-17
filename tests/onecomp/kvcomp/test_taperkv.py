@@ -1,5 +1,7 @@
 """Correctness contracts for TaperKV and the Fujimoto-derived variants."""
 
+from types import SimpleNamespace
+
 import pytest
 import torch
 
@@ -8,11 +10,16 @@ from onecomp.kvcomp import (
     BlockTaperKVPolicy,
     BudgetTaperKVCache,
     BudgetTaperKVPolicy,
+    KVCompressionConfig,
     TaperKVCache,
     TaperKVPolicy,
+    HayateTaperKVCache,
     build_policy,
     list_policies,
 )
+from onecomp.kvcomp.cache.builders import build_compressed_cache
+from onecomp.kvcomp.cache.turbotaper_cache import TurboTaperCache
+from onecomp.kvcomp.recipe.turbotaper import TurboTaperPolicy
 from onecomp.kvcomp.cache.block_taper_cache import block_taper_bits, fake_quant_blocks
 from onecomp.kvcomp.cache.taper_cache import apply_byte_budget
 from onecomp.kvcomp.codec._quant_primitives import fake_quantize_affine
@@ -42,6 +49,61 @@ def test_taper_policy_rejects_invalid_schedule(kwargs):
         TaperKVPolicy(**kwargs)
 
 
+@pytest.mark.parametrize("stride", [0, -1, True, 1.5])
+def test_taper_policy_rejects_invalid_requant_stride(stride):
+    with pytest.raises(ValueError, match="requant_stride"):
+        TaperKVPolicy(requant_stride=stride)
+
+
+def test_hayate_taper_applies_hayate_once_per_arriving_token_and_unions_skips():
+    class AddOneHayate:
+        name = "hayatequant"
+        skip_layers = [2]
+
+        def __init__(self):
+            self.calls = []
+
+        def fake_quant_roundtrip(self, key, value, ctx):
+            self.calls.append((key.shape[2], ctx["layer_idx"]))
+            return key + 1, value + 1, 16
+
+    policy = TaperKVPolicy(
+        key_bits=16,
+        value_bits=16,
+        b_min=16,
+        b_min_value=16,
+        sink_tokens=0,
+        recent_tokens=0,
+        skip_layers=[1],
+        requant_stride=2,
+    )
+    codec = AddOneHayate()
+    cache = HayateTaperKVCache(policy, codec)
+    first = torch.zeros(1, 1, 2, 3)
+    first_k, _ = cache.update(first, first, 0)
+    assert torch.equal(first_k, torch.ones_like(first))
+    second = torch.full((1, 1, 1, 3), 2.0)
+    second_k, _ = cache.update(second, second, 0)
+    assert torch.equal(second_k[:, :, :2], torch.ones_like(first))
+    assert torch.equal(second_k[:, :, -1:], torch.full_like(second, 3.0))
+    assert codec.calls == [(2, 0), (1, 0)]
+    assert cache.skip_layers == {1, 2}
+
+
+def test_generic_cache_builder_preserves_taper_policy_subclasses():
+    model = SimpleNamespace(config=None)
+    budget = build_compressed_cache(
+        model,
+        KVCompressionConfig(policy=BudgetTaperKVPolicy(max_bytes=128)),
+    )
+    turbo = build_compressed_cache(
+        model,
+        KVCompressionConfig(policy=TurboTaperPolicy()),
+    )
+    assert isinstance(budget, BudgetTaperKVCache)
+    assert isinstance(turbo, TurboTaperCache)
+
+
 def test_taper_policy_zero_length_has_defined_rate():
     assert TaperKVPolicy().target_avg_bits(0) == 0.0
     assert BlockTaperKVPolicy().target_avg_bits(0) == 0.0
@@ -60,9 +122,7 @@ def test_block_quantization_uses_one_affine_pair_per_batch_head_block():
     # final flattened dimension is the only formulation that gives a separate
     # affine pair to each block rather than sharing each coordinate across
     # different blocks.
-    x = torch.tensor(
-        [[[[0.0, 1.0], [2.0, 3.0], [10.0, 14.0], [18.0, 22.0]]]], dtype=torch.float32
-    )
+    x = torch.tensor([[[[0.0, 1.0], [2.0, 3.0], [10.0, 14.0], [18.0, 22.0]]]], dtype=torch.float32)
     bits = torch.tensor([2, 2, 2, 2], dtype=torch.int64)
     actual = fake_quant_blocks(x, bits, block_size=2)
     expected = fake_quantize_affine(x.reshape(1, 1, 2, 4), 2, axis="channel").reshape_as(x)

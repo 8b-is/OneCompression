@@ -23,8 +23,8 @@
 > | **main experiment `benchmark/kvcomp-longcontext/`** (Full/uniform/evict/ThinKV/PM-KVQ/TaperKV, iso-memory) | done | llama-3.1-8b, R1-Distill-Qwen-7B/1.5B |
 > | **main experiment `benchmark/kvcomp-codec/`** (HayateQuant vs TurboQuant/HALO: distortion/PPL/overhead) | done | llama-8b / Qwen-1.5B |
 > | Runner `kv_config` -> `config.json` dual-config | done | `03` |
-> | vLLM plugin: FP8 -> native `kv_cache_dtype` mapping + entry-point (`vllm.general_plugins`) | done | `10` |
-> | Custom AttentionBackend for low-bit/eviction in vLLM, LongBench, Triton kernels, ILP bit allocation | todo | roadmap |
+> | vLLM plugin: FP8 mapping, faithful packed fixed-HQ, TapeKV semantic reference, HQ+TapeKV composition | done | `tests/vllm_plugins/kvcomp` |
+> | Packed TapeKV and token-eviction vLLM backends, LongBench, ILP bit allocation | todo | roadmap |
 >
 > Verification is in-repo and self-contained: the unit suite `tests/onecomp/kvcomp/test_kvcomp.py` plus the CPU-only array-level proofs under `benchmark/kvcomp-longcontext/paper/tests/` (`verify_halo_asym_scale.py`, `verify_halo_outlier.py`, `taper_schedule.py`). Benchmark models follow the competing papers (TurboQuant: Llama-3.1-8B-Instruct + Ministral-8B; ThinKV/PM-KVQ: DeepSeek-R1-Distill family). Gemma is intentionally excluded — no KV-cache-compression baseline reports Gemma KV-cache results.
 >
@@ -617,20 +617,16 @@ Proposal (two stages to reduce risk):
 
 | | weight (existing) | KV (new) |
 |---|---|---|
-| entry point | `vllm.general_plugins` (`pyproject.toml`) | `vllm.platform_plugins` (TurboQuant style) |
-| mechanism | `register_quantization_config` → `get_quant_method` → Linear swap | `Platform.get_attn_backend_cls` → `AttentionBackend`/`AttentionImpl` |
+| entry point | `vllm.general_plugins` (`pyproject.toml`) | `vllm.general_plugins` (`pyproject.toml`) |
+| mechanism | `register_quantization_config` → `get_quant_method` → Linear swap | engine-args hook + explicit `AttentionBackend` registration |
 | touches | `LinearBase` | `Attention.forward` / KV cache layout |
 | combined use | — | **possible simultaneously** (separate subsystems; only a `kv_cache_dtype` conflict warns) |
 
-```toml
-# proposed pyproject.toml addition
-[project.entry-points."vllm.platform_plugins"]
-kvcomp = "vllm_plugins.kvcomp.platform:KVCompPlatform"
-```
-
 Direction: **measure correctly in HF first, then vLLM** (as the existing weight path also goes
-HF→vLLM). Simple FP8 leverages vLLM's native `kv_cache_dtype` as a baseline; INT4/eviction/ThinKV
-are offered experimentally via an `AttentionBackend` swap.
+HF→vLLM). FP8 leverages vLLM's native `kv_cache_dtype`; fixed HQ owns a packed
+key/value data plane. TapeKV uses an explicitly labelled model-dtype semantic
+backend until a packed paged-cache kernel exists. INT4/eviction/ThinKV remain
+fail-closed rather than running an uncompressed look-alike.
 
 Native `kv_cache_dtype` applies one storage type to every resident token; it cannot reproduce
 OneComp's `residual_window` contract (the newest N tokens remain full precision). Therefore the

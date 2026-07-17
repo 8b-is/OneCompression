@@ -39,11 +39,25 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--sink-tokens", type=int, default=4)
     parser.add_argument("--recent-tokens", type=int, default=64)
     parser.add_argument("--block-size", type=int, default=16)
+    parser.add_argument("--requant-stride", type=int, default=None)
+    parser.add_argument(
+        "--hayate-bits",
+        type=int,
+        choices=(2, 3, 4),
+        default=None,
+        help="Apply HayateQuant once to arriving KV before TapeKV (disabled by default)",
+    )
+    parser.add_argument("--hayate-value-bits", type=int, choices=(2, 3, 4), default=None)
+    parser.add_argument("--hayate-block-size", type=int, default=2)
+    parser.add_argument("--hayate-encoder", choices=("exact", "lut"), default="exact")
     return parser
 
 
 def main() -> int:
     args = _parser().parse_args()
+    venv_bin = Path(sys.executable).parent
+    os.environ["PATH"] = f"{venv_bin}:{os.environ.get('PATH', '')}"
+    os.environ.setdefault("VLLM_PLUGINS", "kvcomp")
     # Do not import vLLM before the explicit registry installation: EngineCore
     # children receive this environment payload and the general plugin repeats
     # registration in their fresh interpreter.
@@ -58,10 +72,21 @@ def main() -> int:
         "b_min_value": args.value_floor,
         "sink_tokens": args.sink_tokens,
         "recent_tokens": args.recent_tokens,
+        "requant_stride": args.requant_stride,
     }
     if args.policy == "block_taperkv":
         policy.update({"block_size": args.block_size, "residual_fp16": True})
-    recipe = TaperVLLMRecipe.from_policy(policy)
+    hayate_config = None
+    if args.hayate_bits is not None:
+        from onecomp.kvcomp.codec.hayate import HayateQuantCodec
+
+        hayate_config = HayateQuantCodec(
+            bits=args.hayate_bits,
+            value_bits=args.hayate_value_bits or args.hayate_bits,
+            block_size=args.hayate_block_size,
+            encoder=args.hayate_encoder,
+        ).get_kv_config()
+    recipe = TaperVLLMRecipe.from_policy(policy, hayate_config=hayate_config)
     plan = vllm_plugin.KVCompVLLMPlan(
         native_supported=True,
         taper_native=True,
@@ -80,9 +105,14 @@ def main() -> int:
         kv_cache_dtype="auto",
         enable_prefix_caching=False,
         enforce_eager=True,
+        attention_backend="FLASH_ATTN",
         max_model_len=args.max_model_len,
+        max_num_batched_tokens=args.max_model_len,
+        gpu_memory_utilization=0.5,
     )
-    result = llm.generate([args.prompt], SamplingParams(temperature=0.0, max_tokens=args.max_tokens))
+    result = llm.generate(
+        [args.prompt], SamplingParams(temperature=0.0, max_tokens=args.max_tokens)
+    )
     text = result[0].outputs[0].text
     receipt = {
         "schema_version": 1,
@@ -102,7 +132,9 @@ def main() -> int:
         "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(receipt, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    args.output.write_text(
+        json.dumps(receipt, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
     print(json.dumps(receipt, indent=2, ensure_ascii=False))
     return 0
 

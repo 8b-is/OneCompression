@@ -24,6 +24,7 @@ from types import ModuleType
 import pytest
 
 from onecomp.kvcomp.codec.hayate import HayateQuantCodec
+from onecomp.kvcomp.config import KVCompressionConfig
 from onecomp.kvcomp.codec.turboquant import TurboQuantCodec
 from onecomp.kvcomp.codec.halo import HALOCodec
 from vllm_plugins.kvcomp.vllm_plugin import (
@@ -54,6 +55,9 @@ class _FakeEngineArgs:
         self.kv_cache_dtype = kv_cache_dtype
         self.calculate_kv_scales = False
         self.kv_cache_dtype_skip_layers = None
+        self.enable_prefix_caching = True
+        self.enforce_eager = False
+        self.attention_backend = None
 
 
 def _write_model_config(tmp_path, kv_compression_config):
@@ -131,7 +135,9 @@ def test_apply_to_engine_args_hayatequant_block_size_1_fails_closed(tmp_path):
     assert engine_args.kv_cache_dtype == "auto"
 
 
-def test_apply_to_engine_args_taperkv_policy_installs_explicit_reference_backend(tmp_path, monkeypatch):
+def test_apply_to_engine_args_taperkv_policy_installs_explicit_reference_backend(
+    tmp_path, monkeypatch
+):
     """TapeKV uses an explicit backend; it never degrades to plain FullKV."""
     from vllm_plugins.kvcomp import vllm_plugin
 
@@ -158,6 +164,9 @@ def test_apply_to_engine_args_taperkv_policy_installs_explicit_reference_backend
     assert engine_args.kv_cache_dtype == "auto"
     assert installed["policy_name"] == "taperkv"
     assert installed["implementation"] == "fp16_reference_fake_quant"
+    assert engine_args.enable_prefix_caching is False
+    assert engine_args.enforce_eager is True
+    assert engine_args.attention_backend == "FLASH_ATTN"
 
 
 def test_block_taper_vllm_recipe_is_validated_and_bare_kwargs_are_rejected():
@@ -193,6 +202,151 @@ def test_taper_vllm_recipe_rejects_non_boolean_block_residual():
                 "residual_fp16": "false",
             }
         )
+
+
+def test_taper_recipe_unions_hayate_skips_and_resolves_stride():
+    recipe = TaperVLLMRecipe.from_policy(
+        {
+            "name": "block_taperkv",
+            "block_size": 8,
+            "skip_layers": [1, 3],
+        },
+        hayate_config={"name": "hayatequant", "encoder": "exact", "skip_layers": [3, 5]},
+    )
+    assert recipe.skip_layers == (1, 3, 5)
+    assert recipe.requant_stride == 8
+    with pytest.raises(ValueError, match="requant_stride"):
+        TaperVLLMRecipe.from_policy({"name": "taperkv", "requant_stride": 0})
+
+
+def test_taper_recipe_rejects_unloadable_hayate_calibration():
+    with pytest.raises(ValueError, match="calibrated HayateQuant"):
+        TaperVLLMRecipe.from_policy(
+            {"name": "taperkv"},
+            hayate_config={"name": "hayatequant", "calibration": "digest-only"},
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("adaptive_bit_split", "online_stats", "request-local"),
+        ("n_outlier", 4, "outlier selection"),
+        ("encoder", "auto", "explicit exact or lut"),
+    ],
+)
+def test_taper_recipe_rejects_request_shape_dependent_hayate(field, value, message):
+    config = {"name": "hayatequant", "encoder": "exact", field: value}
+    with pytest.raises(ValueError, match=message):
+        TaperVLLMRecipe.from_policy({"name": "taperkv"}, hayate_config=config)
+
+
+def test_faithful_full_hq_mapping_requires_plugin_and_is_explicit():
+    from vllm_plugins.kvcomp.mapping import engine_kwargs_from_kv_config, plan_from_kv_config
+
+    codec = {
+        "name": "hayatequant",
+        "bits": 3,
+        "value_bits": 3,
+        "block_size": 2,
+        "avg_bits": 3,
+        "encoder": "exact",
+        "key_scale_mode": "nc",
+        "value_scale_mode": "ls_iter",
+        "vllm_mode": "full_native",
+    }
+    plan = plan_from_kv_config({"codec": codec, "residual_window": 0})
+    assert plan.native_supported and not plan.needs_custom_backend
+    assert plan.hayate_full_native and not plan.hayate_native
+    assert plan.kv_cache_dtype == "turboquant_3bit_nc"
+    assert plan.hayate_full_config["avg_bits"] == 3
+    with pytest.raises(RuntimeError, match="general plugin"):
+        engine_kwargs_from_kv_config({"codec": codec, "residual_window": 0})
+
+
+def test_full_hq_mapping_rejects_shape_dependent_auto_encoder():
+    from vllm_plugins.kvcomp.mapping import plan_from_kv_config
+
+    plan = plan_from_kv_config(
+        {
+            "codec": {
+                "name": "hayatequant",
+                "bits": 3,
+                "block_size": 2,
+                "avg_bits": 3,
+                "encoder": "auto",
+                "vllm_mode": "full_native",
+            },
+            "residual_window": 0,
+        }
+    )
+    assert plan.needs_custom_backend and not plan.hayate_full_native
+    assert "explicitly 'exact' or 'lut'" in "; ".join(plan.notes)
+
+
+def test_full_hq_mapping_requires_serialized_lut_geometry():
+    from vllm_plugins.kvcomp.mapping import plan_from_kv_config
+
+    plan = plan_from_kv_config(
+        {
+            "codec": {
+                "name": "hayatequant",
+                "bits": 3,
+                "block_size": 2,
+                "avg_bits": 3,
+                "encoder": "lut",
+                "vllm_mode": "full_native",
+            },
+            "residual_window": 0,
+        }
+    )
+    assert plan.needs_custom_backend and not plan.hayate_full_native
+    assert "serialized lut_bins and lut_candidates" in "; ".join(plan.notes)
+
+
+def test_hayate_vllm_mode_survives_saved_config_roundtrip():
+    from vllm_plugins.kvcomp.mapping import plan_from_kv_config
+
+    original = KVCompressionConfig(
+        codec=HayateQuantCodec(
+            avg_bits=3,
+            block_size=2,
+            key_bit_fraction=7 / 12,
+            encoder="exact",
+            vllm_mode="full_native",
+        ),
+        residual_window=0,
+    )
+    restored = KVCompressionConfig.from_dict(original.to_dict())
+    assert restored.codec.vllm_mode == "full_native"
+    plan = plan_from_kv_config(restored.to_dict())
+    assert plan.hayate_full_native
+    assert plan.hayate_full_config["key_code_bits_per_block"] == 7
+    assert plan.hayate_full_config["value_code_bits_per_block"] == 5
+
+
+def test_apply_saved_full_hq_installs_backend_and_dtype(tmp_path, monkeypatch):
+    from vllm_plugins.kvcomp import vllm_plugin
+
+    codec = HayateQuantCodec(
+        avg_bits=3,
+        block_size=2,
+        key_bit_fraction=7 / 12,
+        encoder="exact",
+        vllm_mode="full_native",
+    )
+    model_path = _write_model_config(tmp_path, {"codec": codec.get_kv_config()})
+    engine_args = _FakeEngineArgs(model_path)
+    installed = []
+    monkeypatch.setattr(
+        vllm_plugin,
+        "_install_hayate_full_native_backend",
+        lambda plan, _logger: installed.append(plan.hayate_full_config) or True,
+    )
+    monkeypatch.setattr(vllm_plugin, "_vllm_accepts_dtype", lambda _dtype: True)
+    apply_to_engine_args(engine_args)
+    assert engine_args.kv_cache_dtype == "turboquant_3bit_nc"
+    assert installed[0]["key_code_bits_per_block"] == 7
 
 
 def test_explicit_taper_recipe_is_preserved_for_manual_fresh_process_launch(tmp_path, monkeypatch):

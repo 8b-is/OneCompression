@@ -97,6 +97,13 @@ def _implementation_contract(variant: str) -> dict:
             "native_hybrid_is_full_hayatequant": False,
             "canonical_hayatequant_frontier_recipe": False,
         }
+    if variant == "saved":
+        return {
+            "implementation_label": "saved_kv_compression_config_auto_selected",
+            "selection_source": "model config.json via onecomp_kvcomp general plugin",
+            "native_hybrid_is_full_hayatequant": None,
+            "canonical_hayatequant_frontier_recipe": None,
+        }
     if variant == "turboquant":
         return {
             "implementation_label": "vllm_native_turboquant_symmetric_scalar_kv",
@@ -196,7 +203,7 @@ def _build_llm(args: argparse.Namespace):
             raise ValueError("upstream-TQ-trigger dtype exists only for HQ rates 3/4")
         kv_cache_dtype = _dtype_for(args.bits)
         _configure_full_hayate(args.bits, args.codebook_init)
-    elif args.variant != "auto":
+    elif args.variant not in {"auto", "saved"}:
         raise ValueError(f"unknown variant: {args.variant}")
 
     return LLM(
@@ -280,7 +287,7 @@ def run(args: argparse.Namespace) -> dict:
         "formal_quality_benchmark": False,
         "formal_counterbalanced_speed_benchmark": False,
         "timing_scope": "one synchronized variant process; use fair-speed for claims",
-        "bits": None if args.variant == "auto" else args.bits,
+        "bits": None if args.variant in {"auto", "saved"} else args.bits,
         "model_path": str(args.model_path),
         "vllm_plugins": os.environ.get("VLLM_PLUGINS"),
         "hayate_native_config": hayate_cfg,
@@ -312,7 +319,9 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--model-path", type=Path, required=True)
     ap.add_argument("--output", type=Path, required=True)
     ap.add_argument(
-        "--variant", choices=["auto", "turboquant", "hayate", "hayate_full"], required=True
+        "--variant",
+        choices=["auto", "saved", "turboquant", "hayate", "hayate_full"],
+        required=True,
     )
     ap.add_argument("--bits", type=int, choices=(3, 4), default=3)
     ap.add_argument("--key-scale-mode", choices=["nc", "ub", "ip"], default="nc")

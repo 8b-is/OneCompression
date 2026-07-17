@@ -91,6 +91,13 @@ _HAYATEQUANT_NATIVE_MODES = {
     "hayate",
     "hayate_native",
 }
+_HAYATEQUANT_FULL_NATIVE_MODES = {
+    "full",
+    "full_native",
+    "faithful_native",
+    "packed",
+    "packed_native",
+}
 _HAYATEQUANT_SCALAR_FALLBACK_MODES = {
     "scalar",
     "scalar_fallback",
@@ -287,6 +294,10 @@ class KVCompVLLMPlan:
     # faithful HayateQuant result and is labelled accordingly in notes.
     hayate_native: bool = False
     hayate_config: dict = field(default_factory=dict)
+    # Faithful fixed-rate packed HQ owns both key and value cache layouts.
+    # It is distinct from ``hayate_native``, the historical key-only hybrid.
+    hayate_full_native: bool = False
+    hayate_full_config: dict = field(default_factory=dict)
     # TapeKV has a deliberately explicit vLLM *semantic* backend.  It uses
     # vLLM's ordinary FP16/BF16 paged allocation and fake-quantizes logical KV
     # values before attention, so it is valid for inference/quality validation
@@ -384,7 +395,9 @@ def plan_from_kv_config(
     policy = kv_config.get("policy") or None
     policy_name = policy.get("name") if policy else None
     plan.codec_name = codec.get("name") if codec else None
-    taper_hayate_combo = policy_name in ("taperkv", "block_taperkv") and plan.codec_name == "hayatequant"
+    taper_hayate_combo = (
+        policy_name in ("taperkv", "block_taperkv") and plan.codec_name == "hayatequant"
+    )
 
     # ``KVCompressionConfig.residual_window`` means that the newest N tokens
     # stay in full precision.  A native vLLM ``kv_cache_dtype`` is uniform over
@@ -405,7 +418,11 @@ def plan_from_kv_config(
             f"{raw_residual_window!r}; expected a non-negative integer. "
             "Native vLLM mapping is disabled rather than guessing."
         )
-    elif residual_window > 0 and (codec is not None or policy_name == "rolekv") and not taper_hayate_combo:
+    elif (
+        residual_window > 0
+        and (codec is not None or policy_name == "rolekv")
+        and not taper_hayate_combo
+    ):
         plan.needs_custom_backend = True
         plan.notes.append(
             f"residual_window={residual_window} keeps the newest tokens in full "
@@ -554,7 +571,94 @@ def plan_from_kv_config(
         if key_scale_mode is None:
             unsupported_native.append(f"key_scale_mode={codec.get('key_scale_mode')!r}")
 
-        if (
+        if mode in _HAYATEQUANT_FULL_NATIVE_MODES:
+            full_supported_markers = {
+                "avg_bits",
+                "key_code_bits_per_block",
+                "value_code_bits_per_block",
+            }
+            full_unsupported = [
+                item for item in unsupported_native if item not in full_supported_markers
+            ]
+            encoder = str(codec.get("encoder") or "auto").strip().lower()
+            if encoder not in {"exact", "lut"}:
+                full_unsupported.append("encoder must be explicitly 'exact' or 'lut'")
+            elif encoder == "lut" and (
+                codec.get("lut_bins") is None or codec.get("lut_candidates") is None
+            ):
+                full_unsupported.append(
+                    "encoder='lut' requires serialized lut_bins and lut_candidates"
+                )
+            full_config = {
+                "dist": codec.get("dist") or "gaussian",
+                "codebook_init": codec.get("codebook_init") or "auto",
+                "rotation_mode": codec.get("rotation_mode") or "auto",
+                "key_scale_mode": codec.get("key_scale_mode") or "nc",
+                "value_scale_mode": codec.get("value_scale_mode") or "ls_iter",
+                "assignment_mode": encoder,
+                "lut_bins": codec.get("lut_bins"),
+                "lut_candidates": codec.get("lut_candidates"),
+                "seed": int(codec.get("seed") or 0),
+                "max_codebook_bits": int(codec.get("max_codebook_bits") or 9),
+            }
+            role_fields = (
+                codec.get("key_code_bits_per_block"),
+                codec.get("value_code_bits_per_block"),
+                codec.get("block_size"),
+            )
+            if role_fields[0] is not None or role_fields[1] is not None:
+                if any(value is None for value in role_fields):
+                    full_unsupported.append(
+                        "explicit role code bits require key/value fields and block_size"
+                    )
+                else:
+                    full_config.update(
+                        {
+                            "key_code_bits_per_block": int(role_fields[0]),
+                            "key_block_size": int(role_fields[2]),
+                            "value_code_bits_per_block": int(role_fields[1]),
+                            "value_block_size": int(role_fields[2]),
+                        }
+                    )
+            elif codec.get("avg_bits") is not None:
+                full_config.update({"avg_bits": int(codec["avg_bits"]), "recipe": "hq"})
+            else:
+                full_unsupported.append("avg_bits or explicit role code bits")
+            try:
+                from vllm_plugins.kvcomp.hayate_full_config import (
+                    full_hq_native_recipe_from_mapping,
+                )
+
+                full_recipe = full_hq_native_recipe_from_mapping(full_config)
+                full_rate = int(full_recipe.average_rate)
+                if full_recipe.average_rate != full_rate or full_rate not in (3, 4):
+                    full_unsupported.append(
+                        "packed vLLM generation currently requires average rate 3 or 4"
+                    )
+            except (TypeError, ValueError) as exc:
+                full_unsupported.append(str(exc))
+                full_rate = 0
+            if full_unsupported:
+                plan.needs_custom_backend = True
+                plan.native_supported = False
+                plan.notes.append(
+                    "Faithful packed full-HQ mode cannot represent this recipe: "
+                    + ", ".join(full_unsupported)
+                )
+            else:
+                preset = f"turboquant_{full_rate}bit_nc"
+                _set_native(
+                    preset,
+                    "HayateQuant will use OneComp's faithful packed fixed-HQ vLLM "
+                    f"backend at average rate {full_rate}; both key and value use "
+                    "the serialized block-VQ recipe.",
+                )
+                plan.hayate_full_native = True
+                plan.hayate_full_config = {
+                    key: value for key, value in full_config.items() if value is not None
+                }
+                plan.skip_layers = [int(x) for x in (codec.get("skip_layers") or [])]
+        elif (
             mode in _HAYATEQUANT_NATIVE_MODES
             and preset is not None
             and kb in (3, 4)
@@ -620,6 +724,7 @@ def plan_from_kv_config(
                 mode not in _HAYATEQUANT_SCALAR_FALLBACK_MODES
                 and mode not in _HAYATEQUANT_NATIVE_MODES
                 and mode not in _HAYATEQUANT_STRICT_MODES
+                and mode not in _HAYATEQUANT_FULL_NATIVE_MODES
             ):
                 plan.warnings.append(
                     f"Unknown HayateQuant vLLM mode '{mode}'; treating it as "
@@ -790,10 +895,9 @@ def engine_kwargs_from_kv_config(
             "KV compression recipe cannot be represented by native vLLM engine "
             f"kwargs: {detail}"
         )
-    if plan.taper_native:
+    if plan.taper_native or plan.hayate_full_native:
         raise RuntimeError(
-            "TapeKV vLLM inference requires the onecomp_kvcomp general plugin "
-            "(it installs an attention backend); do not launch it from bare "
-            "engine kwargs. The backend is FP16-reference semantics only."
+            "This KV recipe requires the onecomp_kvcomp general plugin to install "
+            "its attention backend; do not launch it from bare engine kwargs."
         )
     return plan.engine_kwargs()
