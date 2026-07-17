@@ -12,7 +12,8 @@
 # * Quality comparisons additionally include independent exact-search FibQuant
 #   and BlockQuant rows under stable `*-paper` keys.  Neither is submitted to
 #   codec/decode/inference speed comparisons because this repo has no packed
-#   serving kernel for either baseline. Formal proposal rows remain HQ/AHQ only.
+#   serving kernel for either baseline. Formal proposal rows are HQ,
+#   HQ-Frontier, AdaptiveHQ, and RotationHQ.
 # * TurboQuant-paper is scoped to the Algorithm-1 MSE baseline and is not
 #   labelled a reproduction of the under-specified mixed-precision Table-1
 #   recipe. Proxy implementations are not external-baseline rows.
@@ -127,7 +128,9 @@ LONG_METHOD_SPECS=(
   "fibquant-paper|FibQuant-paper"
   "blockquant-paper|BlockQuant-paper"
   "hq|HQ"
+  "hq-frontier|HQ-Frontier"
   "adaptivehq|AdaptiveHQ"
+  "rotationhq|RotationHQ"
 )
 
 # Construct the exact long-context recipes from the neutral base config.  This
@@ -135,7 +138,7 @@ LONG_METHOD_SPECS=(
 TURBO_VARIANTS='turboquant_variants=[{label:TurboQuant-paper,bits:3,dist:beta,rotation_mode:dense}]'
 FIBQUANT_VARIANTS='fibquant_variants=[{label:FibQuant-paper,bits:3}]'
 BLOCKQUANT_VARIANTS='blockquant_variants=[{label:BlockQuant-paper,bits:3}]'
-HAYATE_VARIANTS='hayatequant_variants=[{label:HQ,bits:3},{label:AdaptiveHQ,bits:3}]'
+HAYATE_VARIANTS='hayatequant_variants=[{label:HQ,bits:3},{label:HQ-Frontier,bits:3},{label:AdaptiveHQ,bits:3},{label:RotationHQ,bits:3}]'
 
 KV_ALL_OFF=(
   run_needle=false
@@ -867,7 +870,7 @@ submit_ppl_formal() {
       # BlockQuant-paper is intentionally requested in the shared config but
       # codec_benchmark emits it only at its sole declared rate-3 operating
       # point; the rate-2/rate-4 formal cells therefore do not exist.
-      'methods=[TurboQuant-paper,FibQuant-paper,BlockQuant-paper,HQ,AdaptiveHQ]'
+      'methods=[TurboQuant-paper,FibQuant-paper,BlockQuant-paper,HQ,HQ-Frontier,AdaptiveHQ,RotationHQ]'
       'bits=[2,3,4]'
       run_ppl=true
       ppl_windows=null
@@ -975,9 +978,9 @@ submit_zeroshot_formal() {
         # BlockQuant exists only at its paper-declared rate-3 matrix slot;
         # neither external exact-search baseline enters a speed job.
         for bit in 2 3 4; do
-          local -a quality_methods=(TurboQuant-paper FibQuant-paper HQ AdaptiveHQ)
+          local -a quality_methods=(TurboQuant-paper FibQuant-paper HQ HQ-Frontier AdaptiveHQ RotationHQ)
           if [ "$bit" -eq 3 ]; then
-            quality_methods=(TurboQuant-paper FibQuant-paper BlockQuant-paper HQ AdaptiveHQ)
+            quality_methods=(TurboQuant-paper FibQuant-paper BlockQuant-paper HQ HQ-Frontier AdaptiveHQ RotationHQ)
           fi
           suffix="b${bit}-${task}-s${start}-n${limit}"
           result="$RUN_ROOT/results/formal/zeroshot/zeroshot_${model_name}_${suffix}.json"
@@ -1452,7 +1455,7 @@ submit_smoke() {
   cmd=(
     "$PY" -u "$HERE/codec_benchmark.py" --config-name paper_hayatequant
     "model_path=$small" "output_dir=$out"
-    'methods=[TurboQuant-paper,FibQuant-paper,BlockQuant-paper,HQ,AdaptiveHQ]' 'bits=[3]'
+    'methods=[TurboQuant-paper,FibQuant-paper,BlockQuant-paper,HQ,HQ-Frontier,AdaptiveHQ,RotationHQ]' 'bits=[3]'
     capture_tokens=128 timing_seq=128 timing_iters=2
     run_ppl=true ppl_windows=2 ppl_max_length=512 ppl_stride=256
     skip_outliers=false sink_tokens=0 recent_tokens=0
@@ -1465,7 +1468,7 @@ submit_smoke() {
     "$PY" -u "$HERE/zeroshot_benchmark.py"
     --model-path "$small" --output-root "$RUN_ROOT/results/smoke/zeroshot"
     --output-suffix smoke --bits 3 --tasks piqa
-    --methods FullKV TurboQuant-paper FibQuant-paper BlockQuant-paper HQ AdaptiveHQ
+    --methods FullKV TurboQuant-paper FibQuant-paper BlockQuant-paper HQ HQ-Frontier AdaptiveHQ RotationHQ
     --include-fullkv
     --limit 4 --sample-seed 2027
     --sink-tokens 0 --recent-tokens 0 --no-skip-outliers
@@ -1479,7 +1482,7 @@ submit_smoke() {
   cmd=(
     "$PY" -u "$LC/kv_benchmark.py" --config-name benchmark_longcontext
     "model_path=$llama" "output_dir=$out"
-    'methods=[FullKV,TurboQuant-paper,FibQuant-paper,BlockQuant-paper,HQ,AdaptiveHQ]'
+    'methods=[FullKV,TurboQuant-paper,FibQuant-paper,BlockQuant-paper,HQ,HQ-Frontier,AdaptiveHQ,RotationHQ]'
     "$TURBO_VARIANTS" "$FIBQUANT_VARIANTS" "$BLOCKQUANT_VARIANTS" "$HAYATE_VARIANTS"
     'uniform_bits=[]' 'kivi_bits=[]' 'halo_variants=[]' 'codec_variants=[]'
     thinkv.auto_configure=false "${KV_ALL_OFF[@]}"
@@ -1500,7 +1503,7 @@ submit_smoke() {
   cmd=(
     "$PY" -u "$LC/kv_benchmark.py" --config-name benchmark_longcontext
     "model_path=$llama" "output_dir=$out"
-    'methods=[FullKV,TurboQuant-paper,FibQuant-paper,BlockQuant-paper,HQ,AdaptiveHQ]'
+    'methods=[FullKV,TurboQuant-paper,FibQuant-paper,BlockQuant-paper,HQ,HQ-Frontier,AdaptiveHQ,RotationHQ]'
     "$TURBO_VARIANTS" "$FIBQUANT_VARIANTS" "$BLOCKQUANT_VARIANTS" "$HAYATE_VARIANTS"
     'uniform_bits=[]' 'kivi_bits=[]' 'halo_variants=[]' 'codec_variants=[]'
     thinkv.auto_configure=false "${KV_ALL_OFF[@]}"
@@ -1517,7 +1520,7 @@ submit_smoke() {
   cmd=(
     "$PY" -u "$LC/kv_benchmark.py" --config-name benchmark_longcontext
     "model_path=$small" "output_dir=$out"
-    'methods=[FullKV,TurboQuant-paper,FibQuant-paper,BlockQuant-paper,HQ,AdaptiveHQ]'
+    'methods=[FullKV,TurboQuant-paper,FibQuant-paper,BlockQuant-paper,HQ,HQ-Frontier,AdaptiveHQ,RotationHQ]'
     "$TURBO_VARIANTS" "$FIBQUANT_VARIANTS" "$BLOCKQUANT_VARIANTS" "$HAYATE_VARIANTS"
     'uniform_bits=[]' 'kivi_bits=[]' 'halo_variants=[]' 'codec_variants=[]'
     thinkv.auto_configure=false "${KV_ALL_OFF[@]}"
@@ -1537,7 +1540,7 @@ submit_smoke() {
   cmd=(
     "$PY" -u "$LC/kv_benchmark.py" --config-name benchmark_longcontext
     "model_path=$llama" "output_dir=$out"
-    'methods=[FullKV,TurboQuant-paper,FibQuant-paper,BlockQuant-paper,HQ,AdaptiveHQ]'
+    'methods=[FullKV,TurboQuant-paper,FibQuant-paper,BlockQuant-paper,HQ,HQ-Frontier,AdaptiveHQ,RotationHQ]'
     "$TURBO_VARIANTS" "$FIBQUANT_VARIANTS" "$BLOCKQUANT_VARIANTS" "$HAYATE_VARIANTS"
     'uniform_bits=[]' 'kivi_bits=[]' 'halo_variants=[]' 'codec_variants=[]'
     thinkv.auto_configure=false "${KV_ALL_OFF[@]}"

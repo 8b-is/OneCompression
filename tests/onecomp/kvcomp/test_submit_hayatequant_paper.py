@@ -188,11 +188,12 @@ def test_formal_commands_fail_closed_without_validated_smoke_approval(tmp_path):
 def test_formal_plan_has_complete_unique_matrix_and_every_job_uses_wrapper(formal_plan):
     jobs = re.findall(r"^JOB phase=(\S+) key=(\S+) result=(\S+) model=(\S+)$", formal_plan, re.M)
     workers = re.findall(r"^WORKER (.+)$", formal_plan, re.M)
-    # 7 PPL + 2 mechanism + 252 zero-shot + 36 RULER + 156 task-level
-    # LongBench + 120 MATH + 336 LongCodeQA + 12 fair-speed (replicates=1).
+    # Four public HQ rows add the frontier and rotation cells to the previous
+    # two-row matrix: 7 PPL + 2 mechanism + 420 zero-shot + 60 RULER +
+    # 208 task-level LongBench + 160 MATH + 448 LongCodeQA + 12 fair-speed.
     # FibQuant and BlockQuant share each PPL/zero-shot model load but have
     # separate long-axis quality jobs; both are absent from fair-speed.
-    assert len(jobs) == 921
+    assert len(jobs) == 1137
     assert len(workers) == len(jobs)
     assert all(phase == "formal" for phase, *_ in jobs)
     keys = [key for _, key, _, _ in jobs]
@@ -206,7 +207,7 @@ def test_formal_plan_has_complete_unique_matrix_and_every_job_uses_wrapper(forma
     assert all("--expected-result" in line for line in workers)
     assert formal_plan.count("--output") >= len(jobs)
     assert "%x_%j.out" in formal_plan and "%x_%j.err" in formal_plan
-    assert formal_plan.count("--gres gpu:nvidia_b200:1") == 909
+    assert formal_plan.count("--gres gpu:nvidia_b200:1") == 1125
     assert formal_plan.count("--gres gpu:nvidia_b200:8") == 12
 
 
