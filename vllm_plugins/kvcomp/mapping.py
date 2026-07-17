@@ -384,6 +384,7 @@ def plan_from_kv_config(
     policy = kv_config.get("policy") or None
     policy_name = policy.get("name") if policy else None
     plan.codec_name = codec.get("name") if codec else None
+    taper_hayate_combo = policy_name in ("taperkv", "block_taperkv") and plan.codec_name == "hayatequant"
 
     # ``KVCompressionConfig.residual_window`` means that the newest N tokens
     # stay in full precision.  A native vLLM ``kv_cache_dtype`` is uniform over
@@ -404,7 +405,7 @@ def plan_from_kv_config(
             f"{raw_residual_window!r}; expected a non-negative integer. "
             "Native vLLM mapping is disabled rather than guessing."
         )
-    elif residual_window > 0 and (codec is not None or policy_name == "rolekv"):
+    elif residual_window > 0 and (codec is not None or policy_name == "rolekv") and not taper_hayate_combo:
         plan.needs_custom_backend = True
         plan.notes.append(
             f"residual_window={residual_window} keeps the newest tokens in full "
@@ -430,7 +431,7 @@ def plan_from_kv_config(
     # would silently change the algorithm, so those configurations remain
     # fail-closed.
     if policy_name in ("taperkv", "block_taperkv") and not plan.needs_custom_backend:
-        if codec is not None:
+        if codec is not None and plan.codec_name != "hayatequant":
             plan.needs_custom_backend = True
             plan.notes.append(
                 "TapeKV vLLM reference backend is affine-policy only; a separate "
@@ -440,7 +441,9 @@ def plan_from_kv_config(
             try:
                 from vllm_plugins.kvcomp.taper_config import TaperVLLMRecipe
 
-                recipe = TaperVLLMRecipe.from_policy(policy)
+                recipe = TaperVLLMRecipe.from_policy(
+                    policy, hayate_config=codec if plan.codec_name == "hayatequant" else None
+                )
             except (TypeError, ValueError) as exc:
                 plan.needs_custom_backend = True
                 plan.notes.append(

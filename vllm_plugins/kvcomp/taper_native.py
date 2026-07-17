@@ -56,6 +56,20 @@ class TaperKVNativeImpl(FlashAttentionImpl):
                 return value
         return None
 
+    def _hayate_codec(self, recipe: TaperVLLMRecipe):
+        """Lazily cache the immutable HQ reference codec per attention impl."""
+        if recipe.hayate_config is None:
+            return None
+        marker = json.dumps(recipe.hayate_config, sort_keys=True)
+        if getattr(self, "_taper_hayate_marker", None) != marker:
+            from onecomp.kvcomp.codec.hayate import HayateQuantCodec
+
+            allowed = HayateQuantCodec.__dataclass_fields__
+            kwargs = {key: value for key, value in recipe.hayate_config.items() if key in allowed}
+            self._taper_hayate_codec = HayateQuantCodec(**kwargs)
+            self._taper_hayate_marker = marker
+        return self._taper_hayate_codec
+
     def _requantize_cache(self, kv_cache: torch.Tensor, attn_metadata, layer: Any) -> None:
         recipe = taper_native_recipe()
         layer_idx = self._layer_index(layer)
@@ -93,6 +107,15 @@ class TaperKVNativeImpl(FlashAttentionImpl):
             # policy semantics cannot drift between HF and vLLM validation.
             source_k = keys.transpose(0, 1).unsqueeze(0)
             source_v = values.transpose(0, 1).unsqueeze(0)
+            codec = self._hayate_codec(recipe)
+            if codec is not None:
+                # Explicit composition order: HQ reconstructs each logical KV
+                # vector first; TapeKV then applies its age-dependent affine
+                # regrade.  This is a quality/reference path only--the paged
+                # allocation remains model dtype and is never a packed-HQ claim.
+                source_k, source_v, _ = codec.fake_quant_roundtrip(
+                    source_k, source_v, ctx={"layer_idx": layer_idx}
+                )
             if recipe.policy_name == "block_taperkv" and recipe.quant_granularity == "block":
                 kbits = block_taper_bits(total, recipe.block_size, recipe.sink_tokens,
                     recipe.recent_tokens, recipe.key_bits, recipe.b_min, recipe.ladder,

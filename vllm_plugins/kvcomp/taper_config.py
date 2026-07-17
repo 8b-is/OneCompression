@@ -47,6 +47,7 @@ class TaperVLLMRecipe:
     residual_fp16: bool = True
     quant_granularity: str = "block"
     implementation: str = "fp16_reference_fake_quant"
+    hayate_config: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if self.policy_name not in _SUPPORTED_POLICIES:
@@ -75,11 +76,15 @@ class TaperVLLMRecipe:
                 raise ValueError("residual_fp16 must be a bool")
             if self.quant_granularity not in {"block", "token"}:
                 raise ValueError("quant_granularity must be 'block' or 'token'")
-        if self.implementation != "fp16_reference_fake_quant":
+        if self.hayate_config is not None:
+            if not isinstance(self.hayate_config, dict) or self.hayate_config.get("name") != "hayatequant":
+                raise ValueError("hayate_config must be a serialized HayateQuant codec mapping")
+            object.__setattr__(self, "implementation", "hayatequant_then_taper_fp16_reference")
+        elif self.implementation != "fp16_reference_fake_quant":
             raise ValueError("only the explicit FP16 reference TapeKV backend is supported")
 
     @classmethod
-    def from_policy(cls, policy: dict[str, Any]) -> "TaperVLLMRecipe":
+    def from_policy(cls, policy: dict[str, Any], hayate_config: dict[str, Any] | None = None) -> "TaperVLLMRecipe":
         if not isinstance(policy, dict):
             raise ValueError("TapeKV policy must be a mapping")
         name = str(policy.get("name", ""))
@@ -96,6 +101,7 @@ class TaperVLLMRecipe:
             block_size=policy.get("block_size"),
             residual_fp16=policy.get("residual_fp16", True),
             quant_granularity=str(policy.get("quant_granularity", "block")),
+            hayate_config=hayate_config,
         )
 
     @classmethod
