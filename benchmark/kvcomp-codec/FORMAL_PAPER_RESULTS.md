@@ -41,12 +41,13 @@ Python/package/CUDA/B200/semantic-`ONECOMP_*` stratum across all quality rows
 Partial `--only` aggregates are explicitly incomplete. The renderer accepts
 only this complete producer schema.
 
-The frozen campaign contains 969 unique result paths: 909 quality jobs and 60
+The frozen five-replicate campaign contains 1206 unique result paths: 1139
+single-GPU quality shards, seven dependency-bound CPU PPL merges, and 60
 fresh-process timing jobs, after an exact eight-job smoke gate. For each
 proposal/baseline pair the matched TQ and FibQuant quality ledger has 164 cells;
 the unmatched BlockQuant descriptive ledger has 80 cells per proposal. Each
 proposal's TQ speed point ledger has 60 cells. The simultaneous timing/memory
-gate has 132 endpoints across both proposals.
+gate has 264 endpoints across all four proposals.
 
 The renderer also recomputes paper-facing statistics from the aggregate's
 sufficient statistics. This catches a manually copied or stale summary even
@@ -153,7 +154,7 @@ simultaneous-interval robustness supplement:
   nominal intervals; every per-row speed claim macro remains fixed to
   `descriptive ratio only; no directional speed claim`.
 - The only admissible complete speed/measured-memory statement is a separate
-  predeclared primary-mode gate over all 132 stochastic endpoints (two proposals,
+  predeclared primary-mode gate over all 264 stochastic endpoints (four proposals,
   two models, three rates, ten timing endpoints plus one allocated-memory endpoint). It uses
   one-sided 95% Bonferroni Student-t lower bounds over five fresh processes,
   additionally requires public unpacked payload tensor bytes to be no larger

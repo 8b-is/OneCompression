@@ -93,9 +93,10 @@ The fixed HQ proposal uses `block_size=2`, Gaussian source codebooks, exact
 full-codebook assignment, key NC, value LS-reassign/refit, and block-code pairs
 K5/V3, K7/V5, and K9/V7 at average rates 2, 3, and 4. These settings come from
 `hayate_hq_kwargs`; benchmark configs must not depend on constructor defaults.
-The old `HayateQuant-frontier` K=`r+1`/V=`r-1`, key-UB recipe remains only a
-legacy appendix ablation. AdaptiveHQ is the sole opt-in proposal and selects
-causally between the predeclared symmetric and fixed-HQ pairs at the same rate.
+HQ-Frontier is the separately named fixed K=`r+1`/V=`r-1`, key-UB proposal.
+AdaptiveHQ selects causally between the predeclared symmetric and fixed-HQ
+pairs at the same rate, while RotationHQ retains fixed HQ's payload and uses a
+globally fixed dense data-free rotation.
 
 ## Is optional calibration a delta?
 

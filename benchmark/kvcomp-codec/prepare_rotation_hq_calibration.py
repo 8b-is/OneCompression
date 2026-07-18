@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Materialize a pinned, evaluation-disjoint Rotation-HQ calibration text.
+"""Materialize pinned text for the legacy calibrated-rotation component control.
 
-Rotation HQ is a calibrated control, so its text must be recorded separately
-from WikiText-2 test PPL.  This helper freezes a deterministic prefix of the
-WikiText-2 raw *train* split and writes both the text and a content-addressed
-manifest.  It never reads the test split.
+The current formal ``RotationHQ`` proposal is data-free and uses a globally
+fixed dense rotation; it does not consume this artifact. This retained helper
+serves only the separately labelled calibrated-rotation component analysis. It
+freezes a deterministic prefix of the WikiText-2 raw *train* split, writes the
+text and a content-addressed manifest, and never reads the test split.
 """
 
 from __future__ import annotations
@@ -84,7 +85,8 @@ def main() -> None:
     text_bytes = calibration_text.encode("utf-8")
     manifest = {
         "schema_version": 1,
-        "kind": "rotation_hq_wikitext2_train_calibration",
+        "kind": "calibrated_rotation_component_control_wikitext2_train",
+        "formal_rotation_hq_input": False,
         "source": {
             "repo": DATASET_REPO,
             "config": DATASET_CONFIG,
@@ -102,7 +104,10 @@ def main() -> None:
         },
         "evaluation_exclusion": {
             "forbidden_split": "test",
-            "statement": "No WikiText-2 test text is used for Rotation HQ calibration.",
+            "statement": (
+                "No WikiText-2 test text is used; this artifact is not an input "
+                "to the formal data-free RotationHQ row."
+            ),
         },
         "files": {"calibration_text": str(text_path)},
     }

@@ -30,9 +30,10 @@ weight-side `benchmark/<model>-<recipe>/` runs.
 folded rotation, and role-aware scales.  The paper's fixed **HQ** recipe uses
 `block_size=2`, Gaussian source codebooks, exact full-codebook assignment,
 key NC scaling, value LS-reassign/refit scaling, and integer block-code pairs
-K5/V3, K7/V5, and K9/V7 at average rates 2, 3, and 4.  The old
-`HayateQuant-frontier` K=`r+1`/V=`r-1` UB recipe is a legacy appendix ablation,
-not the formal method.  **AdaptiveHQ** is the only opt-in proposal row.
+K5/V3, K7/V5, and K9/V7 at average rates 2, 3, and 4. **HQ-Frontier** is the
+separately named fixed K=`r+1`/V=`r-1` UB proposal. **AdaptiveHQ** is the causal
+allocation proposal, and **RotationHQ** is the dense-rotation proposal; none is
+silently substituted for the fixed HQ row.
 The `HayateQuant-scalar-matched` row is the causal scalar control: source law,
 rotation, scale equation, encoder, and rate match `TurboQuant-paper`, with only
 the L2-versus-RMS parameterization of the signed-fp16 scale allowed to produce
@@ -48,8 +49,8 @@ downstream superiority; all claims come from the coverage-checked formal runs.
 | **BlockQuant-paper** | exact finite-sphere block-VQ, dynamic top-32 key split | per-part Gaussian-QR dense rotation | UB / BSM | fixed-seed external quality-only baseline at the paper KV point |
 | HALO (auto) | scalar Lloyd-Max | cheapest GEMM | NC / ls_iter | prior best (superseded) |
 | **HQ** | **b=2 K5/V3, K7/V5, K9/V7 block-VQ** | **rate-resolved folded rotation** | **NC / LS-reassign/refit** | **fixed formal proposal** |
-| **HQ-Frontier** | **integer K(r+1)/V(r-1) block-VQ** | **rate-resolved folded rotation** | **UB / LS-refit** | **second fixed proposal candidate** |
-| **AdaptiveHQ** | **two-pair causal allocation over the same HQ codec** | **pair-resolved HQ rotation** | **NC / LS-reassign/refit** | **only opt-in formal proposal** |
+| **HQ-Frontier** | **integer K(r+1)/V(r-1) block-VQ** | **rate-resolved folded rotation** | **UB / LS-refit** | **fixed frontier proposal** |
+| **AdaptiveHQ** | **two-pair causal allocation over the same HQ codec** | **pair-resolved HQ rotation** | **NC / LS-reassign/refit** | **causal-allocation proposal** |
 | **RotationHQ** | **same fixed HQ payload** | **dense rotation** | **NC / LS-reassign/refit** | **rotation-axis proposal** |
 | HayateQuant scalar/block matched | scalar or block VQ | dense | RMS-equivalent | mechanism controls; exact encoder |
 | HQ-Fib-init-proxy | HQ block-VQ with Fib-inspired warm-start | HQ auto | HQ default | internal ablation, not FibQuant |
