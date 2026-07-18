@@ -54,9 +54,15 @@ class TurboTaperCache(TaperKVCache):
 
     def __init__(self, policy, config=None, requant_stride: int = 16, **kwargs):
         super().__init__(policy, config=config, requant_stride=requant_stride, **kwargs)
-        self._codecs: dict = {}          # (bits, is_floor) -> TurboQuantCodec
-        self._prev_kbits: dict = {}      # layer_idx -> kbits at last _grade_layer call
-        self._prev_vbits: dict = {}      # layer_idx -> vbits at last _grade_layer call
+        self._codecs: dict = {}  # (bits, is_floor) -> TurboQuantCodec
+        self._prev_kbits: dict = {}  # layer_idx -> kbits at last _grade_layer call
+        self._prev_vbits: dict = {}  # layer_idx -> vbits at last _grade_layer call
+
+    def reset(self):
+        """Reset cache data and delta-quantization bit-history together."""
+        super().reset()
+        self._prev_kbits.clear()
+        self._prev_vbits.clear()
 
     def _codec_for(self, bits: int, is_floor: bool) -> TurboQuantCodec:
         key = (bits, is_floor)
@@ -65,13 +71,19 @@ class TurboTaperCache(TaperKVCache):
             p = self.policy
             n_out = p.n_outlier_floor if is_floor else 0
             codec = TurboQuantCodec(
-                bits=bits, dist=p.dist, rotation_mode=p.rotation_mode, seed=p.seed,
-                n_outlier=n_out, outlier_bits=(bits + 1 if n_out else None))
+                bits=bits,
+                dist=p.dist,
+                rotation_mode=p.rotation_mode,
+                seed=p.seed,
+                n_outlier=n_out,
+                outlier_bits=(bits + 1 if n_out else None),
+            )
             self._codecs[key] = codec
         return codec
 
-    def _rot_quant_group(self, x: torch.Tensor, bits: torch.Tensor,
-                         floor_bit: int) -> torch.Tensor:
+    def _rot_quant_group(
+        self, x: torch.Tensor, bits: torch.Tensor, floor_bit: int
+    ) -> torch.Tensor:
         """Rotated Lloyd-Max fake-quantization for a group of tokens.
 
         ``floor_bit`` is the global floor bit-width (from policy).  Tokens whose
@@ -143,22 +155,28 @@ class TurboTaperCache(TaperKVCache):
 
         if k_need.any():
             kq[:, :, k_need, :] = self._rot_quant_group(
-                keys[:, :, k_need, :], kbits[k_need], k_floor)
+                keys[:, :, k_need, :], kbits[k_need], k_floor
+            )
         if v_need.any():
             vq[:, :, v_need, :] = self._rot_quant_group(
-                values[:, :, v_need, :], vbits[v_need], v_floor)
+                values[:, :, v_need, :], vbits[v_need], v_floor
+            )
 
         # Persist bit assignments for next call's delta check.
         self._prev_kbits[layer_idx] = kbits
         self._prev_vbits[layer_idx] = vbits
 
-        per = keys.shape[1] * keys.shape[-1]
-        heads = keys.shape[1]
+        batch_heads = keys.shape[0] * keys.shape[1]
+        per = batch_heads * keys.shape[-1]
         # Payload + per-vector rotated-codec norm metadata (see _meta_bits) so the
         # reported ratio is an honest whole-cache figure, comparable to the
         # TurboQuant codec baseline which also counts its per-vector norm.
-        bits = int(kbits.sum() * per + vbits.sum() * per
-                   + self._meta_bits(kbits, heads) + self._meta_bits(vbits, heads))
+        bits = int(
+            kbits.sum() * per
+            + vbits.sum() * per
+            + self._meta_bits(kbits, batch_heads)
+            + self._meta_bits(vbits, batch_heads)
+        )
         n_out = self.policy.n_outlier_floor
         if n_out:
             for bt in (kbits, vbits):
@@ -168,5 +186,5 @@ class TurboTaperCache(TaperKVCache):
                 floor_bit = min(quant)
                 n_floor = int((bt == floor_bit).sum())
                 # +1 bit on n_out of d channels for each floor token (x heads).
-                bits += n_floor * heads * n_out
+                bits += n_floor * batch_heads * n_out
         return kq, vq, bits

@@ -29,7 +29,13 @@ from .metrics import (
 )
 from .ppl import wikitext2_perplexity, perplexity_over_text
 from .zeroshot import zeroshot_accuracy, ZeroShotResult
-from .reasoning import gsm8k_pass_at_1, math500_pass_at_1, aime_pass_at_1, ReasoningResult
+from .reasoning import (
+    gsm8k_pass_at_1,
+    math500_pass_at_1,
+    aime_pass_at_1,
+    math_verify_equivalent,
+    ReasoningResult,
+)
 from .code import code_pass_at_1, livecodebench_pass_at_1, extract_code
 from .longcontext import (
     needle_in_haystack,
@@ -39,7 +45,29 @@ from .longcontext import (
     greedy_answer,
     NeedleResult,
 )
-from .longbench import longbench_e, LongBenchResult, LONGBENCH_E_TASKS
+from .longbench import (
+    longbench_e,
+    LongBenchResult,
+    LONGBENCH_E_TASKS,
+    LONGBENCH_E_TASK_COUNTS,
+    LONGBENCH_E_TOTAL,
+)
+from .ruler import (
+    ruler_v1,
+    ruler_v1_sample_score,
+    load_ruler_v1_task,
+    RulerV1Result,
+    RULER_V1_TASKS,
+    RULER_V1_MAX_NEW_TOKENS,
+    RULER_V1_SAMPLES_PER_TASK,
+)
+from .longcodeqa import (
+    longcodeqa,
+    aggregate_longcodeqa,
+    extract_longcodeqa_letter,
+    LongCodeQAResult,
+    LONGCODEQA_BRACKET_COUNTS,
+)
 
 __all__ = [
     "KVMemoryReport",
@@ -53,6 +81,7 @@ __all__ = [
     "gsm8k_pass_at_1",
     "math500_pass_at_1",
     "aime_pass_at_1",
+    "math_verify_equivalent",
     "ReasoningResult",
     "code_pass_at_1",
     "livecodebench_pass_at_1",
@@ -66,4 +95,18 @@ __all__ = [
     "longbench_e",
     "LongBenchResult",
     "LONGBENCH_E_TASKS",
+    "LONGBENCH_E_TASK_COUNTS",
+    "LONGBENCH_E_TOTAL",
+    "ruler_v1",
+    "ruler_v1_sample_score",
+    "load_ruler_v1_task",
+    "RulerV1Result",
+    "RULER_V1_TASKS",
+    "RULER_V1_MAX_NEW_TOKENS",
+    "RULER_V1_SAMPLES_PER_TASK",
+    "longcodeqa",
+    "aggregate_longcodeqa",
+    "extract_longcodeqa_letter",
+    "LongCodeQAResult",
+    "LONGCODEQA_BRACKET_COUNTS",
 ]

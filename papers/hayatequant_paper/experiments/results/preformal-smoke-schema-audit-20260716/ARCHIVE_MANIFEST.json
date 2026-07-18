@@ -1,0 +1,2975 @@
+{
+  "allowed_scopes": [
+    "results/smoke",
+    "results/formal",
+    "results/dev",
+    "summaries",
+    "manifests",
+    "provenance",
+    "logs"
+  ],
+  "archive_root": "papers/hayatequant_paper/experiments/results/preformal-smoke-schema-audit-20260716",
+  "archiver_commit": "c2677000d5dee10f7a15df4d8b6cdb51988400b5",
+  "file_count": 416,
+  "files": [
+    {
+      "bytes": 778,
+      "mode": "0644",
+      "path": "logs/dev/hq_recipe_search_v2_llama2/.hydra/config.yaml",
+      "scope": "logs",
+      "sha256": "da53a3b7534b5137937f6da70e007348e3c9931babe3d786909c0608f0b8dee0"
+    },
+    {
+      "bytes": 5148,
+      "mode": "0644",
+      "path": "logs/dev/hq_recipe_search_v2_llama2/.hydra/hydra.yaml",
+      "scope": "logs",
+      "sha256": "c776437b4276166120803c82166fdabb4a607e36aabff5553710b87a750ce2ac"
+    },
+    {
+      "bytes": 704,
+      "mode": "0644",
+      "path": "logs/dev/hq_recipe_search_v2_llama2/.hydra/overrides.yaml",
+      "scope": "logs",
+      "sha256": "48a72f530d1e5c0cd5e1e4f588d299d466fb02caf208e1d09a142f8165b609a7"
+    },
+    {
+      "bytes": 18073,
+      "mode": "0644",
+      "path": "logs/dev/hq_recipe_search_v2_llama2/codec_benchmark.log",
+      "scope": "logs",
+      "sha256": "967c251bd3ec3bdd86468632fc052fe482b2fdde8100f3091926c64999ed1158"
+    },
+    {
+      "bytes": 786,
+      "mode": "0644",
+      "path": "logs/dev/hq_recipe_search_v2_qwen05/.hydra/config.yaml",
+      "scope": "logs",
+      "sha256": "b6a4f62015745ff16ed2ceec9c3b55d36b6b2c00a1cc52b10a4ff3170315f0db"
+    },
+    {
+      "bytes": 5164,
+      "mode": "0644",
+      "path": "logs/dev/hq_recipe_search_v2_qwen05/.hydra/hydra.yaml",
+      "scope": "logs",
+      "sha256": "6f7b8bad1f7dc8fc5abf96fd87c39b656021f39440047dfdaa26d5bc5c335997"
+    },
+    {
+      "bytes": 712,
+      "mode": "0644",
+      "path": "logs/dev/hq_recipe_search_v2_qwen05/.hydra/overrides.yaml",
+      "scope": "logs",
+      "sha256": "43d6efab4473f876a196db648aec4b8a6f3c58879c5d16857668724da42387c7"
+    },
+    {
+      "bytes": 18073,
+      "mode": "0644",
+      "path": "logs/dev/hq_recipe_search_v2_qwen05/codec_benchmark.log",
+      "scope": "logs",
+      "sha256": "4d68f204a9f364de7b009d9d677b5461b6bb180cfd4f8f499f5c1693f24c4521"
+    },
+    {
+      "bytes": 573,
+      "mode": "0644",
+      "path": "logs/dev/recipe_freeze_auto_b4cap/.hydra/config.yaml",
+      "scope": "logs",
+      "sha256": "acd3c736b0dc4668fb8759ee4aa8e21ee9be10a62bfc5f577d2af415492140ba"
+    },
+    {
+      "bytes": 4722,
+      "mode": "0644",
+      "path": "logs/dev/recipe_freeze_auto_b4cap/.hydra/hydra.yaml",
+      "scope": "logs",
+      "sha256": "ae0a1a76c99e9f1691464e1f54f4f015137da7cc1aeb4094ccaff095a0168875"
+    },
+    {
+      "bytes": 493,
+      "mode": "0644",
+      "path": "logs/dev/recipe_freeze_auto_b4cap/.hydra/overrides.yaml",
+      "scope": "logs",
+      "sha256": "19205ac117ef50a71679eea848115670661e08f5e9e6dcae639388027f467f4f"
+    },
+    {
+      "bytes": 4081,
+      "mode": "0644",
+      "path": "logs/dev/recipe_freeze_auto_b4cap/codec_benchmark.log",
+      "scope": "logs",
+      "sha256": "e0c77fb81625709156f76dbfa3205ad63f9d7b31b74689b910890b8a0466c551"
+    },
+    {
+      "bytes": 567,
+      "mode": "0644",
+      "path": "logs/dev/recipe_freeze_tq_frontier/.hydra/config.yaml",
+      "scope": "logs",
+      "sha256": "48614bb877bce4f450eda93610ff9632344f166a6d2a5db05043b6864829be4e"
+    },
+    {
+      "bytes": 4713,
+      "mode": "0644",
+      "path": "logs/dev/recipe_freeze_tq_frontier/.hydra/hydra.yaml",
+      "scope": "logs",
+      "sha256": "f12a158e39f53c1db5f8551cb30021e35c13f592d0de382b3fd5dabb7cfb37ad"
+    },
+    {
+      "bytes": 487,
+      "mode": "0644",
+      "path": "logs/dev/recipe_freeze_tq_frontier/.hydra/overrides.yaml",
+      "scope": "logs",
+      "sha256": "029a609a899372e3d3d4226e2bc4afe6cac830a0d5d9035094ce858347beed10"
+    },
+    {
+      "bytes": 4081,
+      "mode": "0644",
+      "path": "logs/dev/recipe_freeze_tq_frontier/codec_benchmark.log",
+      "scope": "logs",
+      "sha256": "5808d90c4849737d3f40741ff7326cb9df65dcb7cdf4b6115890f8d81d4d155a"
+    },
+    {
+      "bytes": 174,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69242_0.err",
+      "scope": "logs",
+      "sha256": "7dd7933a34643f707d6133565d8215c3771d9ace6fbe5fad2ee0c77ba0685250"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69242_0.out",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 174,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69242_1.err",
+      "scope": "logs",
+      "sha256": "7dd7933a34643f707d6133565d8215c3771d9ace6fbe5fad2ee0c77ba0685250"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69242_1.out",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 174,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69242_2.err",
+      "scope": "logs",
+      "sha256": "7dd7933a34643f707d6133565d8215c3771d9ace6fbe5fad2ee0c77ba0685250"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69242_2.out",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 174,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69242_3.err",
+      "scope": "logs",
+      "sha256": "7dd7933a34643f707d6133565d8215c3771d9ace6fbe5fad2ee0c77ba0685250"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69242_3.out",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 174,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69242_4.err",
+      "scope": "logs",
+      "sha256": "7dd7933a34643f707d6133565d8215c3771d9ace6fbe5fad2ee0c77ba0685250"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69242_4.out",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 174,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69242_5.err",
+      "scope": "logs",
+      "sha256": "7dd7933a34643f707d6133565d8215c3771d9ace6fbe5fad2ee0c77ba0685250"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69242_5.out",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 174,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69242_6.err",
+      "scope": "logs",
+      "sha256": "7dd7933a34643f707d6133565d8215c3771d9ace6fbe5fad2ee0c77ba0685250"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69242_6.out",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 8580,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69249_0.err",
+      "scope": "logs",
+      "sha256": "9ab517d10f65c0f9cde172ab74d17f79115c303f12abfdd26df75b8022f2e72e"
+    },
+    {
+      "bytes": 825,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69249_0.out",
+      "scope": "logs",
+      "sha256": "fec9393ab0d90a4739595ee1eb8cf3397b6362363f1e46bce39775ead789e48c"
+    },
+    {
+      "bytes": 6775,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69249_1.err",
+      "scope": "logs",
+      "sha256": "9ac804f78b90b1344bd82f2fad0617138236519b23fc8af37a23d00d1c7a28ad"
+    },
+    {
+      "bytes": 2183,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69249_1.out",
+      "scope": "logs",
+      "sha256": "fe59e2a4ac2de2323fbe011f6a5057582b128e5ef565e04ec42623cd90daae8d"
+    },
+    {
+      "bytes": 6497,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69249_2.err",
+      "scope": "logs",
+      "sha256": "a54dde79f786b64072fb719cbbc04fc7b799f28e1129181e823b30b5a3e3f31f"
+    },
+    {
+      "bytes": 2172,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69249_2.out",
+      "scope": "logs",
+      "sha256": "cac6983b7f5a5ac54cb69c3cf1c72b7fd223c6108db1b3ea3f06111dfa45a8a0"
+    },
+    {
+      "bytes": 7440,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69249_3.err",
+      "scope": "logs",
+      "sha256": "353d38bf0e7e11f2422fdbbadfef8630f10b2685655338c9c730c7b1061aec1d"
+    },
+    {
+      "bytes": 2171,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69249_3.out",
+      "scope": "logs",
+      "sha256": "e90c3c7803b6d3bac6ae2a7a52bc5ab88f8dc033704ba087bc1b6efa6b16492b"
+    },
+    {
+      "bytes": 10404,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69249_4.err",
+      "scope": "logs",
+      "sha256": "a3abcb5f934c607df1d996ef39ed131068e49858e88633f9054908dbc4280c3b"
+    },
+    {
+      "bytes": 2193,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69249_4.out",
+      "scope": "logs",
+      "sha256": "a573361ffad350daf67d7b0d353bc5cfc3cb3e34806ef46de397d84f6db542d4"
+    },
+    {
+      "bytes": 7397,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69249_5.err",
+      "scope": "logs",
+      "sha256": "6a856691b043d3a3dbfa7f7d3a210098ca9b470895c18bb722ceecd9edc1c84f"
+    },
+    {
+      "bytes": 2190,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69249_5.out",
+      "scope": "logs",
+      "sha256": "0f1a8d808e6212983e31601860658de9acb3b340de8fbca1121b26a2986e65a5"
+    },
+    {
+      "bytes": 5408,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69249_6.err",
+      "scope": "logs",
+      "sha256": "e56df79beae221d10f54af360e8cade72311e640ca16838e8def9cf7553a6ef9"
+    },
+    {
+      "bytes": 2194,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69249_6.out",
+      "scope": "logs",
+      "sha256": "d7c05900a8c89167b42381e55ff87454a193753867f2fba895ceca45ad2a7875"
+    },
+    {
+      "bytes": 18488,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69257_0.err",
+      "scope": "logs",
+      "sha256": "568ad0369382c63b8c864937e1c71c95d191d7f3b3517c3d2bf298e576da72d0"
+    },
+    {
+      "bytes": 93422,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69257_0.out",
+      "scope": "logs",
+      "sha256": "e7fb35dcf83f4ee3e65bad2d69f4bc0fc85c5a294ddd58bd180567f020c8187b"
+    },
+    {
+      "bytes": 13595,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69257_1.err",
+      "scope": "logs",
+      "sha256": "ccff5e78448105353659e41864e8ba740ce1e56c854f5b0c2b5a176aedced826"
+    },
+    {
+      "bytes": 93358,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69257_1.out",
+      "scope": "logs",
+      "sha256": "97079441945a1a5071b6183c6167b2251dc12c9e33ede884e9ca9f7f99139b24"
+    },
+    {
+      "bytes": 15851,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69257_2.err",
+      "scope": "logs",
+      "sha256": "19eab27856bbd765b231a5802e29f813310f7f5904d1b0190b4d966d892534cd"
+    },
+    {
+      "bytes": 93355,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69257_2.out",
+      "scope": "logs",
+      "sha256": "83b464217cb87835d6379fb4faa0e05f02dc948ad308da4ea08ee7785d1e88ae"
+    },
+    {
+      "bytes": 15627,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69257_3.err",
+      "scope": "logs",
+      "sha256": "bc4d25c031a42e09ada1ab0b103d9aa8acc6f41cbf92264c6097a586b4a5c291"
+    },
+    {
+      "bytes": 93354,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69257_3.out",
+      "scope": "logs",
+      "sha256": "d9f21f6e76d80fe91df3302c965322faf59c03c56774eafa22426b30179f4238"
+    },
+    {
+      "bytes": 16351,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69257_4.err",
+      "scope": "logs",
+      "sha256": "c14c7daf6170fb906711bad57e9eec219025f6913772fd5adc0b1156b0e5aa6f"
+    },
+    {
+      "bytes": 93412,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69257_4.out",
+      "scope": "logs",
+      "sha256": "093f18563c16dced9415ff51c310a1dbc3bcc69ff349ff5fcd29d710ab59e205"
+    },
+    {
+      "bytes": 14471,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69257_5.err",
+      "scope": "logs",
+      "sha256": "270ab1bbbd595a4c82164b21daedb110009d35fa436f464d6a40e696476d82e2"
+    },
+    {
+      "bytes": 93555,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69257_5.out",
+      "scope": "logs",
+      "sha256": "8cd1040432f65fcff14a1516b47c091d67cedce46bbe017b668e1f9d5b0b14b9"
+    },
+    {
+      "bytes": 14232,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69257_6.err",
+      "scope": "logs",
+      "sha256": "ae0c5f660c01528cb148cccdd1d5bfbec6b71e8cfb65ae1a73c33bcdb67da45c"
+    },
+    {
+      "bytes": 93512,
+      "mode": "0644",
+      "path": "logs/dev_hq_fixed_recipe/hq_fixed_69257_6.out",
+      "scope": "logs",
+      "sha256": "44efb33dcad34f88862fe4704d56e7ae85a9190874fd7e8fdbdef7ecc913233a"
+    },
+    {
+      "bytes": 7700,
+      "mode": "0644",
+      "path": "logs/dev_hq_paper_identity_v5/hqv5_ministral_69236.err",
+      "scope": "logs",
+      "sha256": "6ace85b9fe09de5dbe015bfa982f018bc532d56875218bd5f8f91663fcc789a4"
+    },
+    {
+      "bytes": 2633,
+      "mode": "0644",
+      "path": "logs/dev_hq_paper_identity_v5/hqv5_ministral_69236.out",
+      "scope": "logs",
+      "sha256": "91a1d6a1171b40828062548cb9b7c0234c7e9ac23a7353a57df8d795291e84cb"
+    },
+    {
+      "bytes": 10615,
+      "mode": "0644",
+      "path": "logs/dev_hq_paper_identity_v5/hqv5_qwen317_69238.err",
+      "scope": "logs",
+      "sha256": "3e75427ea6ef64827a99c649c4a6dc4db175f3b4ddef6b06c330dffc31c329c2"
+    },
+    {
+      "bytes": 61148,
+      "mode": "0644",
+      "path": "logs/dev_hq_paper_identity_v5/hqv5_qwen317_69238.out",
+      "scope": "logs",
+      "sha256": "beb2ec1062a326384444905ab343b76d65a5d77350e9b3b72996b4d96709e8c5"
+    },
+    {
+      "bytes": 13767,
+      "mode": "0644",
+      "path": "logs/dev_hq_paper_identity_v5/hqv5_qwen38_69239.err",
+      "scope": "logs",
+      "sha256": "6dad4d0b6922052fe98fae8290d10e57c9216eb5da6399ae2e75801409530d11"
+    },
+    {
+      "bytes": 61116,
+      "mode": "0644",
+      "path": "logs/dev_hq_paper_identity_v5/hqv5_qwen38_69239.out",
+      "scope": "logs",
+      "sha256": "87837d7d5621f4edc5fc33a943f1e50f9a77f2aec705f852fa061867f2b5d32a"
+    },
+    {
+      "bytes": 16171,
+      "mode": "0644",
+      "path": "logs/dev_hq_paper_identity_v5/hqv5_r1llama8_69237.err",
+      "scope": "logs",
+      "sha256": "8b73e1ce46114c13e88221241b24b6204c0741908935258c2994775fc7de123c"
+    },
+    {
+      "bytes": 61164,
+      "mode": "0644",
+      "path": "logs/dev_hq_paper_identity_v5/hqv5_r1llama8_69237.out",
+      "scope": "logs",
+      "sha256": "5983c9a1cd2d0d09ef72cb4e0388af949e38e41296a2a64c92fee3a18bc439d8"
+    },
+    {
+      "bytes": 11439,
+      "mode": "0644",
+      "path": "logs/dev_hq_paper_identity_v5/hqv5_r1qwen15_69240.err",
+      "scope": "logs",
+      "sha256": "25bf86a7c0240118bc3236ba540a6d8b4a0e7cec5936706d7cac37f0829b84fc"
+    },
+    {
+      "bytes": 61208,
+      "mode": "0644",
+      "path": "logs/dev_hq_paper_identity_v5/hqv5_r1qwen15_69240.out",
+      "scope": "logs",
+      "sha256": "0410bf7f40e088f54c7912e6d1b739979daebe5a868136dd4822597a7cdf2620"
+    },
+    {
+      "bytes": 13142,
+      "mode": "0644",
+      "path": "logs/dev_hq_paper_identity_v5/hqv5_r1qwen7_69241.err",
+      "scope": "logs",
+      "sha256": "63ed5f82995f0316a260a0a1953bdcf5a67a08edb717a7e446357e87ebbbf79c"
+    },
+    {
+      "bytes": 61237,
+      "mode": "0644",
+      "path": "logs/dev_hq_paper_identity_v5/hqv5_r1qwen7_69241.out",
+      "scope": "logs",
+      "sha256": "5303c3b29aac867b09760649a883f488fa700ddff66c98eb9d836f7b9334456d"
+    },
+    {
+      "bytes": 10275,
+      "mode": "0644",
+      "path": "logs/dev_hq_paper_identity_v5/hqv5_tinyllama_69235.err",
+      "scope": "logs",
+      "sha256": "cba7aacf63f6ff7891cb9fc720f484cc8f895fc9fdb655a0afaca018c92acca5"
+    },
+    {
+      "bytes": 61047,
+      "mode": "0644",
+      "path": "logs/dev_hq_paper_identity_v5/hqv5_tinyllama_69235.out",
+      "scope": "logs",
+      "sha256": "ac81afb39d2bf9a0a02190646d32b2a77ab875521857dc69bc3b0bffe362cab0"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqb2decode_69274.err",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 9509,
+      "mode": "0644",
+      "path": "logs/full_native/hqb2decode_69274.out",
+      "scope": "logs",
+      "sha256": "0f570f436fb180b3740d00542a865f3fbeb1e25fe7c32643cb7e694e6f06c12b"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqexactfair3_69291.err",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 23161,
+      "mode": "0644",
+      "path": "logs/full_native/hqexactfair3_69291.out",
+      "scope": "logs",
+      "sha256": "84f3d7a16ddd62958bda9fa4aafa24e59e52e89089dacf267558eb22050b4659"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqexactfair4_69292.err",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 23162,
+      "mode": "0644",
+      "path": "logs/full_native/hqexactfair4_69292.out",
+      "scope": "logs",
+      "sha256": "fb3428d9d769d0d252ed8f7595b8915b82bfbcb22dbad8440f55fd161189b8da"
+    },
+    {
+      "bytes": 308,
+      "mode": "0644",
+      "path": "logs/full_native/hqexactprof3_69300.err",
+      "scope": "logs",
+      "sha256": "52731b5d01ddb674d0faff42812b743758f9976ccd99cac90e9f21df83e1b896"
+    },
+    {
+      "bytes": 25788,
+      "mode": "0644",
+      "path": "logs/full_native/hqexactprof3_69300.out",
+      "scope": "logs",
+      "sha256": "2afca3604eeae4afcb53c7c25db0a0739e2a15fc26abc0c5e85249e4b3e9eeb7"
+    },
+    {
+      "bytes": 308,
+      "mode": "0644",
+      "path": "logs/full_native/hqexactprof4_69299.err",
+      "scope": "logs",
+      "sha256": "52731b5d01ddb674d0faff42812b743758f9976ccd99cac90e9f21df83e1b896"
+    },
+    {
+      "bytes": 25651,
+      "mode": "0644",
+      "path": "logs/full_native/hqexactprof4_69299.out",
+      "scope": "logs",
+      "sha256": "2ff18fb7372723447fbda40e6b621ae39c69856477e528628418573b161c49bb"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqexactsmoke_69290.err",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 10409,
+      "mode": "0644",
+      "path": "logs/full_native/hqexactsmoke_69290.out",
+      "scope": "logs",
+      "sha256": "8b86c59d35f1322e0947fdc285f15af1818ef108937dea1f804f2e0fcfb574b9"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqfair3_69270.err",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 20401,
+      "mode": "0644",
+      "path": "logs/full_native/hqfair3_69270.out",
+      "scope": "logs",
+      "sha256": "c3fba04fa0d1c1ecc83e01ad7e59470f92196d50e8686fdbf9342603378fa699"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqfair4_69271.err",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 20734,
+      "mode": "0644",
+      "path": "logs/full_native/hqfair4_69271.out",
+      "scope": "logs",
+      "sha256": "9506cdcaef01add5d452974502e593c8b7c9e771ca793fc2e2924e1c37438bb3"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqfairgraph_69272.err",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 22000,
+      "mode": "0644",
+      "path": "logs/full_native/hqfairgraph_69272.out",
+      "scope": "logs",
+      "sha256": "a62f7704aedc470760de9021dc378577f5ade0e2e2061d05ded94a294f7f1f6f"
+    },
+    {
+      "bytes": 1691,
+      "mode": "0644",
+      "path": "logs/full_native/hqfullfair_69266.err",
+      "scope": "logs",
+      "sha256": "4e3c274760e6ffc3997685d40884fb1b41d9b5de8c18a9041d1a466bd8512603"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqfullfair_69266.out",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 2205,
+      "mode": "0644",
+      "path": "logs/full_native/hqfullfair_69268.err",
+      "scope": "logs",
+      "sha256": "043946985cdbaa50aca6b9682075e8cdb1b5588578df65401ca24e49d6ee2081"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqfullfair_69268.out",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqfullfair_69269.err",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 19981,
+      "mode": "0644",
+      "path": "logs/full_native/hqfullfair_69269.out",
+      "scope": "logs",
+      "sha256": "c7ae3d38f3ea213d0b96bef439c8670dee934b92b5ef2b1116409da4f9f923f7"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqfullmatrix_69267.err",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 28281,
+      "mode": "0644",
+      "path": "logs/full_native/hqfullmatrix_69267.out",
+      "scope": "logs",
+      "sha256": "5fc1ed1714188105d4e2ecefe92b04d73bd8651cc8e46f8e0543e720b7be7028"
+    },
+    {
+      "bytes": 10704,
+      "mode": "0644",
+      "path": "logs/full_native/hqfullmodel_69273.err",
+      "scope": "logs",
+      "sha256": "65f4c2d6d7d7d7ac0cd2abbd9336a823a9d5f73eded836315fc167bf098d180f"
+    },
+    {
+      "bytes": 14428,
+      "mode": "0644",
+      "path": "logs/full_native/hqfullmodel_69273.out",
+      "scope": "logs",
+      "sha256": "012ed75b9618780c5919751e683865735893143f7d4886787b5730d00202271a"
+    },
+    {
+      "bytes": 9609,
+      "mode": "0644",
+      "path": "logs/full_native/hqfullmodel_69275.err",
+      "scope": "logs",
+      "sha256": "d6c92383beeb56d178b63c6de12bd74b782240f9b2df8b91fb5284b34b149de6"
+    },
+    {
+      "bytes": 12408,
+      "mode": "0644",
+      "path": "logs/full_native/hqfullmodel_69275.out",
+      "scope": "logs",
+      "sha256": "8fa29d8a673fdbe04aa33b5d80b51aea407657be6fdfc0014226a00db72f6df2"
+    },
+    {
+      "bytes": 11580,
+      "mode": "0644",
+      "path": "logs/full_native/hqfullmodel_69280.err",
+      "scope": "logs",
+      "sha256": "2b402335fdf18851cddd75404b9d5d507761a68e18205b445936896e83ffef62"
+    },
+    {
+      "bytes": 15558,
+      "mode": "0644",
+      "path": "logs/full_native/hqfullmodel_69280.out",
+      "scope": "logs",
+      "sha256": "cc7aaa6de7e8dedce40bbf49aaaff5732d44158c413c2f619ae7a40a479c51d2"
+    },
+    {
+      "bytes": 3605,
+      "mode": "0644",
+      "path": "logs/full_native/hqfullmodel_69287.err",
+      "scope": "logs",
+      "sha256": "cacd6c57fc3ef97521ce36bd1497c95400164beb245aa07cdf9c686ea6f31342"
+    },
+    {
+      "bytes": 33785,
+      "mode": "0644",
+      "path": "logs/full_native/hqfullmodel_69287.out",
+      "scope": "logs",
+      "sha256": "f79d76416b2a90001bea10c41409404fc27c15f08e6c626207203c4f583e891c"
+    },
+    {
+      "bytes": 3605,
+      "mode": "0644",
+      "path": "logs/full_native/hqfullmodelpath_69318.err",
+      "scope": "logs",
+      "sha256": "cbac6bd66aeb21bf829c657cf1a360f1aacfacaa7670e3d994b2c8dc7cfb5db3"
+    },
+    {
+      "bytes": 33889,
+      "mode": "0644",
+      "path": "logs/full_native/hqfullmodelpath_69318.out",
+      "scope": "logs",
+      "sha256": "3db662390b0feb518a3f4bd96043ac27b81635fed928894f08347f439cb67bda"
+    },
+    {
+      "bytes": 1047,
+      "mode": "0644",
+      "path": "logs/full_native/hqfullsmoke_69256.err",
+      "scope": "logs",
+      "sha256": "8ebe04fa5981e5fd1accd0e0f9711e60fec617b82c14237d8e43b6e05f571620"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqfullsmoke_69256.out",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1215,
+      "mode": "0644",
+      "path": "logs/full_native/hqfullsmoke_69264.err",
+      "scope": "logs",
+      "sha256": "7753bbcd47db6a08dbd35bbbcb7824f38f36247a3f77b2d524ab6d8a6e9e5767"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqfullsmoke_69264.out",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqfullsmoke_69265.err",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 18435,
+      "mode": "0644",
+      "path": "logs/full_native/hqfullsmoke_69265.out",
+      "scope": "logs",
+      "sha256": "aa1fa4ad6fd4346793c5a6413a184353abac07b2209fba10f931e9bf1f67313c"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutfair3_69281.err",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 23898,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutfair3_69281.out",
+      "scope": "logs",
+      "sha256": "fe5e8b2ad6b2737e8af186c2502c903805ccd2462d34e23868ea6b28271b7880"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutfair4_69282.err",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 23906,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutfair4_69282.out",
+      "scope": "logs",
+      "sha256": "d1444cc2559f865d152d0e2f3a17efb31b6e5cf73e70764051b266ce8edbe961"
+    },
+    {
+      "bytes": 1407,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutppl_69279.err",
+      "scope": "logs",
+      "sha256": "8ee32de03f20b7be4c181475de7acae578d02e8ea20b3d516240afb8627bfdaa"
+    },
+    {
+      "bytes": 32100,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutppl_69279.out",
+      "scope": "logs",
+      "sha256": "93846ad87ade9612975a653a178873d2d56c3344b15880798782bfe6c36cdcb2"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutsmoke2_69276.err",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 11076,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutsmoke2_69276.out",
+      "scope": "logs",
+      "sha256": "a18631ff32a39e65bbc6545d17df4f4f6f428e2a582fd09e21679c3ebad1f6b9"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutsmoke3_69277.err",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 11077,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutsmoke3_69277.out",
+      "scope": "logs",
+      "sha256": "6d78b9234876071d9b9752e4592c38cc3fc61ca9cf027ba9b6f3d53dcc700ab5"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutsmoke4_69278.err",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 11079,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutsmoke4_69278.out",
+      "scope": "logs",
+      "sha256": "3c2106284cb17ef9cd7db4aef697419682341590f753f84edd5b9bb9929a4336"
+    },
+    {
+      "bytes": 785,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt16audit2_69303.err",
+      "scope": "logs",
+      "sha256": "5b880049e2b89e6e0cea2c3a9019e7c4b4b59480ded5f50ce016122f886ff9cc"
+    },
+    {
+      "bytes": 18610,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt16audit2_69303.out",
+      "scope": "logs",
+      "sha256": "a5fe6eb9f49dab9356f2a093382359aba9854e96f95d7a0f42bf39549354b65c"
+    },
+    {
+      "bytes": 852,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt16ppl_69289.err",
+      "scope": "logs",
+      "sha256": "e200e74bc93263de4c6e7017f1ca4e6391ceff29ed6359cbc708ce5327e4a19c"
+    },
+    {
+      "bytes": 34112,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt16ppl_69289.out",
+      "scope": "logs",
+      "sha256": "872465db1396020ad2abb4b6234c736cd20a37a07a4cec5660dad47aaf942ef0"
+    },
+    {
+      "bytes": 852,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt16scoreppl_69297.err",
+      "scope": "logs",
+      "sha256": "6c0c18e1f4cdfe0c4792f5586c128ac43adf83a9a2538ed5c92c364943e5586d"
+    },
+    {
+      "bytes": 34182,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt16scoreppl_69297.out",
+      "scope": "logs",
+      "sha256": "048b49f2d13f671fa01fc2633f2efbe2df0a0e2a678c4a6b7839ff84c3858c27"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4fused2fair3_69317.err",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 24248,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4fused2fair3_69317.out",
+      "scope": "logs",
+      "sha256": "b4b862b52b531692b018f944e787cac41390771ea6719c14e34c77c2c01ba4b9"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4fused2fair4_69315.err",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 24248,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4fused2fair4_69315.out",
+      "scope": "logs",
+      "sha256": "2bafd27d0c3359af88d0a195b48677db303437e2d554f02197a8d8e0f4aa7ef0"
+    },
+    {
+      "bytes": 1016,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4fused2ppl_69316.err",
+      "scope": "logs",
+      "sha256": "9021a1be54b38941c3a5b9fb3a5cd1a288d95ea5fcb5c903083e096b106261d6"
+    },
+    {
+      "bytes": 34276,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4fused2ppl_69316.out",
+      "scope": "logs",
+      "sha256": "75e68bfff48cee8f0e73c2d5a775dcbd6752502bdf32d9389cc99539ba52fb62"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4fused2s2_69314.err",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 11350,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4fused2s2_69314.out",
+      "scope": "logs",
+      "sha256": "696d678d37eccd2fea822eb808b3c94e8ca030661e764dfb16e0e3559a70dac1"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4fused2s3_69313.err",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 11354,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4fused2s3_69313.out",
+      "scope": "logs",
+      "sha256": "f27563d6e05c9886a24029f91b7de149f0ba3b268c9af4c665427dc97125575f"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4fused2s4_69312.err",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 11357,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4fused2s4_69312.out",
+      "scope": "logs",
+      "sha256": "f7f24460f7e8da6cee5e67a33120c40f015f744c4cfe9382a878f0c40365dfe0"
+    },
+    {
+      "bytes": 4769,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4fusedfair3_69310.err",
+      "scope": "logs",
+      "sha256": "d64aab2f8457f3040e1bc2c0541f0f51a2e31154a0e34255bafd87fc6e4a098b"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4fusedfair3_69310.out",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 4769,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4fusedfair4_69307.err",
+      "scope": "logs",
+      "sha256": "d64aab2f8457f3040e1bc2c0541f0f51a2e31154a0e34255bafd87fc6e4a098b"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4fusedfair4_69307.out",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 12341,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4fusedppl_69305.err",
+      "scope": "logs",
+      "sha256": "88ef0e8a47da710c1141393ba2d5b8a9e2aa282a52d468b003647e1d6ccef09b"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4fusedppl_69305.out",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 4714,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4fuseds2_69309.err",
+      "scope": "logs",
+      "sha256": "673948a38c5601e260d0c274b8658c72b5c2c8bd6fce258175d7d9aa354084a9"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4fuseds2_69309.out",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 4714,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4fuseds3_69304.err",
+      "scope": "logs",
+      "sha256": "673948a38c5601e260d0c274b8658c72b5c2c8bd6fce258175d7d9aa354084a9"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4fuseds3_69304.out",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 4714,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4fuseds4_69308.err",
+      "scope": "logs",
+      "sha256": "673948a38c5601e260d0c274b8658c72b5c2c8bd6fce258175d7d9aa354084a9"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4fuseds4_69308.out",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4fusedtest2_69311.err",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 913,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4fusedtest2_69311.out",
+      "scope": "logs",
+      "sha256": "1bf0f73e25aa4929758b8d846c7bf00cb5015d5f172cdf751da2eb76682d0bdd"
+    },
+    {
+      "bytes": 82,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4fusedtest_69306.err",
+      "scope": "logs",
+      "sha256": "ee649220d15160ba4535a7786250af6d7977bbefe63aade254a3850aee272f43"
+    },
+    {
+      "bytes": 7681,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4fusedtest_69306.out",
+      "scope": "logs",
+      "sha256": "58601fb4c3223801e83285fa82d3be77ea4af9d76edec458d676d14af12d4646"
+    },
+    {
+      "bytes": 934,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4ppl_69286.err",
+      "scope": "logs",
+      "sha256": "9d84ae2fd6ef38584e34e0e60edb4af55c37197abe5c589913fecfd9fa1e418b"
+    },
+    {
+      "bytes": 34061,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4ppl_69286.out",
+      "scope": "logs",
+      "sha256": "ba3802e1a5cb145c1daf84cb2e7972103b2e80135ed6894848031acd4e51820b"
+    },
+    {
+      "bytes": 835,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4s2_69283.err",
+      "scope": "logs",
+      "sha256": "e6e4a3e2e148d6c5fa861f77d9d2e613b4084b05ef51f91e6514cbf5af46f625"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4s2_69283.out",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 835,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4s3_69284.err",
+      "scope": "logs",
+      "sha256": "e6e4a3e2e148d6c5fa861f77d9d2e613b4084b05ef51f91e6514cbf5af46f625"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4s3_69284.out",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 835,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4s4_69285.err",
+      "scope": "logs",
+      "sha256": "e6e4a3e2e148d6c5fa861f77d9d2e613b4084b05ef51f91e6514cbf5af46f625"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4s4_69285.out",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4score2_69294.err",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 11224,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4score2_69294.out",
+      "scope": "logs",
+      "sha256": "c8ab71335cc723a9f1ed8df7d465eb469ab173fec55dee244e49f2849f30ba9d"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4score3_69296.err",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 11228,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4score3_69296.out",
+      "scope": "logs",
+      "sha256": "71008a744b4d9d2b016ec4d460a55c57d25e02f051174f5988f2226887606258"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4score4_69295.err",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 11231,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4score4_69295.out",
+      "scope": "logs",
+      "sha256": "fb14ab9192255f840a86b7cbee0f3b8b716348a1c503dc0e32f0322a91eda3ab"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4scorefair3_69302.err",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 24173,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4scorefair3_69302.out",
+      "scope": "logs",
+      "sha256": "15ba3c91d1433ebfdcbebc594f56c88cba249afaa2ef3e4cb778637c317eaf6e"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4scorefair4_69301.err",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 24178,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4scorefair4_69301.out",
+      "scope": "logs",
+      "sha256": "626e02a9fb89d75bb5e3aca0b1e2c8d807dc1dfa2b2eaedeb736cf2b1de60e4d"
+    },
+    {
+      "bytes": 1308,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4scoreppl_69293.err",
+      "scope": "logs",
+      "sha256": "bf5b9a9a3acb82c15227b9395f83edc1da7962175cd48e8ab379310eb0e7ad28"
+    },
+    {
+      "bytes": 34106,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt4scoreppl_69293.out",
+      "scope": "logs",
+      "sha256": "14b89b6f92bba1aab51a6c7edf43989fd9ff357bc5a0cb0ddc5ea353bddca4ff"
+    },
+    {
+      "bytes": 852,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt8ppl_69288.err",
+      "scope": "logs",
+      "sha256": "94513f4e9d3662c9df60717da09d64fe63356b11b8d825fc2ba590f54cbe2e2d"
+    },
+    {
+      "bytes": 34103,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt8ppl_69288.out",
+      "scope": "logs",
+      "sha256": "c3d5a5cd7d3e584fa8cc1b7057adff35c67e016312dd0b260d5d05a9af3935c5"
+    },
+    {
+      "bytes": 854,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt8scoreppl_69298.err",
+      "scope": "logs",
+      "sha256": "adc2b73fff45b071681ec13cb24fe4df3e1a0d4924b7dafacf628a2ae13134e9"
+    },
+    {
+      "bytes": 34173,
+      "mode": "0644",
+      "path": "logs/full_native/hqlutt8scoreppl_69298.out",
+      "scope": "logs",
+      "sha256": "e0ed31a071d3bbcfb5ddf24d363f5aafaa30d5ab9f798d62fc6dd7912cfcb2c7"
+    },
+    {
+      "bytes": 2691,
+      "mode": "0644",
+      "path": "logs/preflight_login.log",
+      "scope": "logs",
+      "sha256": "0909487407ec0712e4043db4ca8f4f2afdbf1230fc67e20277c0e874407a9dfe"
+    },
+    {
+      "bytes": 1249,
+      "mode": "0644",
+      "path": "logs/smoke/hq-s-longbench_69413.err",
+      "scope": "logs",
+      "sha256": "22a09dcb37caba7de9118e6564de6d1bd22e5ef4cfc7c1458565bbd84a4ac3fb"
+    },
+    {
+      "bytes": 32965,
+      "mode": "0644",
+      "path": "logs/smoke/hq-s-longbench_69413.out",
+      "scope": "logs",
+      "sha256": "7fa28b21ec64f987c06fcbe6266a3ff3ea19089d1209269cfb639bbc5dc10767"
+    },
+    {
+      "bytes": 2407,
+      "mode": "0644",
+      "path": "logs/smoke/hq-s-longcode_69415.err",
+      "scope": "logs",
+      "sha256": "b478ef54d905f6cb00aa5638ead3280e7d5c3028bc9b59ec6c0515f700e2fb7e"
+    },
+    {
+      "bytes": 38629,
+      "mode": "0644",
+      "path": "logs/smoke/hq-s-longcode_69415.out",
+      "scope": "logs",
+      "sha256": "a0fd7d2bd8902fab7d8558eb4476aaab856e3d3c7b4d3b7e35c3ada7c485d453"
+    },
+    {
+      "bytes": 3407,
+      "mode": "0644",
+      "path": "logs/smoke/hq-s-math500_69414.err",
+      "scope": "logs",
+      "sha256": "0f67e4a3774552e8d6d59f58cf53070d71034ca7af64a0f01d08a8aefdac048d"
+    },
+    {
+      "bytes": 82130,
+      "mode": "0644",
+      "path": "logs/smoke/hq-s-math500_69414.out",
+      "scope": "logs",
+      "sha256": "a9d8b13377d64bf4c8d72713609af1b5b119a5f4203f093f512c3505cd2b5502"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/smoke/hq-s-native-hybrid_69417.err",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 12715,
+      "mode": "0644",
+      "path": "logs/smoke/hq-s-native-hybrid_69417.out",
+      "scope": "logs",
+      "sha256": "79c73888adbce3b2a9eb5c28f7e32214f052e4eb3e73a6f2a8c4082ad3bc0744"
+    },
+    {
+      "bytes": 555,
+      "mode": "0644",
+      "path": "logs/smoke/hq-s-ppl_69410.err",
+      "scope": "logs",
+      "sha256": "e8dd772a134e17d7673606fa83718f7fc6af2001ab658584ee5fca478259db69"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/smoke/hq-s-ppl_69410.out",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 752,
+      "mode": "0644",
+      "path": "logs/smoke/hq-s-ruler_69412.err",
+      "scope": "logs",
+      "sha256": "4d81de2cbe9b28174861a12a6664c5c1fdfe074048e2a19bbc02e66d40d13ad1"
+    },
+    {
+      "bytes": 17617,
+      "mode": "0644",
+      "path": "logs/smoke/hq-s-ruler_69412.out",
+      "scope": "logs",
+      "sha256": "267c1a4cf7439a6b0c27f98fc8949e55c04a88fb5e4e3d7e2f582eacddf40ee2"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "logs/smoke/hq-s-speed_69416.err",
+      "scope": "logs",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 8138,
+      "mode": "0644",
+      "path": "logs/smoke/hq-s-speed_69416.out",
+      "scope": "logs",
+      "sha256": "41e2b4edb62f35332cee2f5f7a2ad3daa3d50087504de342c0ec30092c94f17f"
+    },
+    {
+      "bytes": 2600,
+      "mode": "0644",
+      "path": "logs/smoke/hq-s-zeroshot_69411.err",
+      "scope": "logs",
+      "sha256": "fbcd75f4154f3d4e3122e65fe7a6032c0933d9bcbaa836632bbd84420db572b3"
+    },
+    {
+      "bytes": 40835,
+      "mode": "0644",
+      "path": "logs/smoke/hq-s-zeroshot_69411.out",
+      "scope": "logs",
+      "sha256": "a73285859841df6fb5b8e4f7949e54154d0e5d07e9b42c9052ad979843d0db89"
+    },
+    {
+      "bytes": 79588,
+      "mode": "0644",
+      "path": "manifests/hayatequant_paper_inputs.json",
+      "scope": "manifests",
+      "sha256": "db13cd58b290ac37ed16729ef531bd4aa714d013a20dca6d7de042b15539566b"
+    },
+    {
+      "bytes": 60848,
+      "mode": "0644",
+      "path": "manifests/hayatequant_paper_inputs.rootcheck.json",
+      "scope": "manifests",
+      "sha256": "6dc40690fba8e06e3f496ae8a1216b13d4510fa83bddcc29fc2ef48ccb2664e1"
+    },
+    {
+      "bytes": 4802,
+      "mode": "0644",
+      "path": "provenance/model-weight-preflight-qwen06-dev.json",
+      "scope": "provenance",
+      "sha256": "f52acde8d1413fd3d4e7f152d3d6481eb3495bdf2b121fe9c2721fb595b9e3d6"
+    },
+    {
+      "bytes": 7476,
+      "mode": "0644",
+      "path": "provenance/smoke-longbench_69413.json",
+      "scope": "provenance",
+      "sha256": "d0b17e797a7a0d328c4bfdd6feafac1c0917ae10d5554de0d7be0bf67b0e408b"
+    },
+    {
+      "bytes": 7734,
+      "mode": "0644",
+      "path": "provenance/smoke-longcode_69415.json",
+      "scope": "provenance",
+      "sha256": "7b7adaa8cdd46278187d3a5a9ebe44d184ff6be2f609be46d7faf49cf0f7a270"
+    },
+    {
+      "bytes": 6624,
+      "mode": "0644",
+      "path": "provenance/smoke-math500_69414.json",
+      "scope": "provenance",
+      "sha256": "9a88df080cb270ba4d2d7f5e55fb809194fd67b1b719753057b0a63d2ea69340"
+    },
+    {
+      "bytes": 7217,
+      "mode": "0644",
+      "path": "provenance/smoke-native-hybrid_69417.json",
+      "scope": "provenance",
+      "sha256": "5b11ee6b34221da62e62545f0019b521c210b512b602d82561cfce693e750b7b"
+    },
+    {
+      "bytes": 7473,
+      "mode": "0644",
+      "path": "provenance/smoke-ruler_69412.json",
+      "scope": "provenance",
+      "sha256": "b0b3dff2b38e82d11b53c41131509766bd55bbc427d390fe02cfacfcb051f838"
+    },
+    {
+      "bytes": 7207,
+      "mode": "0644",
+      "path": "provenance/smoke-speed_69416.json",
+      "scope": "provenance",
+      "sha256": "ef91c4b0c7cf325e4aebf7f5c8899d23948e067ddc37fb6b2f22fcde7a9dd8cf"
+    },
+    {
+      "bytes": 6623,
+      "mode": "0644",
+      "path": "provenance/smoke-zeroshot_69411.json",
+      "scope": "provenance",
+      "sha256": "9cee9408bf1d2d9ae8fc63eb97ce0a5a89894b0929b8f6935c096b8ab88f070e"
+    },
+    {
+      "bytes": 23161,
+      "mode": "0644",
+      "path": "results/dev/full_native_exact_precomputed_fair_rate3_ctx4096.json",
+      "scope": "results/dev",
+      "sha256": "84f3d7a16ddd62958bda9fa4aafa24e59e52e89089dacf267558eb22050b4659"
+    },
+    {
+      "bytes": 23162,
+      "mode": "0644",
+      "path": "results/dev/full_native_exact_precomputed_fair_rate4_ctx4096.json",
+      "scope": "results/dev",
+      "sha256": "fb3428d9d769d0d252ed8f7595b8915b82bfbcb22dbad8440f55fd161189b8da"
+    },
+    {
+      "bytes": 10409,
+      "mode": "0644",
+      "path": "results/dev/full_native_exact_precomputed_smoke_rate3.json",
+      "scope": "results/dev",
+      "sha256": "8b86c59d35f1322e0947fdc285f15af1818ef108937dea1f804f2e0fcfb574b9"
+    },
+    {
+      "bytes": 25788,
+      "mode": "0644",
+      "path": "results/dev/full_native_exact_stage_profile_rate3_ctx4096.json",
+      "scope": "results/dev",
+      "sha256": "2afca3604eeae4afcb53c7c25db0a0739e2a15fc26abc0c5e85249e4b3e9eeb7"
+    },
+    {
+      "bytes": 25651,
+      "mode": "0644",
+      "path": "results/dev/full_native_exact_stage_profile_rate4_ctx4096.json",
+      "scope": "results/dev",
+      "sha256": "2ff18fb7372723447fbda40e6b621ae39c69856477e528628418573b161c49bb"
+    },
+    {
+      "bytes": 22000,
+      "mode": "0644",
+      "path": "results/dev/full_native_fair_graph_smoke_rate3.json",
+      "scope": "results/dev",
+      "sha256": "a62f7704aedc470760de9021dc378577f5ade0e2e2061d05ded94a294f7f1f6f"
+    },
+    {
+      "bytes": 20401,
+      "mode": "0644",
+      "path": "results/dev/full_native_fair_rate3_ctx4096.json",
+      "scope": "results/dev",
+      "sha256": "c3fba04fa0d1c1ecc83e01ad7e59470f92196d50e8686fdbf9342603378fa699"
+    },
+    {
+      "bytes": 20734,
+      "mode": "0644",
+      "path": "results/dev/full_native_fair_rate4_ctx4096.json",
+      "scope": "results/dev",
+      "sha256": "9506cdcaef01add5d452974502e593c8b7c9e771ca793fc2e2924e1c37438bb3"
+    },
+    {
+      "bytes": 19981,
+      "mode": "0644",
+      "path": "results/dev/full_native_fair_smoke_rate3.json",
+      "scope": "results/dev",
+      "sha256": "c7ae3d38f3ea213d0b96bef439c8670dee934b92b5ef2b1116409da4f9f923f7"
+    },
+    {
+      "bytes": 23898,
+      "mode": "0644",
+      "path": "results/dev/full_native_lut_t2_fair_rate3_ctx4096.json",
+      "scope": "results/dev",
+      "sha256": "fe5e8b2ad6b2737e8af186c2502c903805ccd2462d34e23868ea6b28271b7880"
+    },
+    {
+      "bytes": 23906,
+      "mode": "0644",
+      "path": "results/dev/full_native_lut_t2_fair_rate4_ctx4096.json",
+      "scope": "results/dev",
+      "sha256": "d1444cc2559f865d152d0e2f3a17efb31b6e5cf73e70764051b266ce8edbe961"
+    },
+    {
+      "bytes": 11076,
+      "mode": "0644",
+      "path": "results/dev/full_native_lut_t2_smoke_rate2.json",
+      "scope": "results/dev",
+      "sha256": "a18631ff32a39e65bbc6545d17df4f4f6f428e2a582fd09e21679c3ebad1f6b9"
+    },
+    {
+      "bytes": 11077,
+      "mode": "0644",
+      "path": "results/dev/full_native_lut_t2_smoke_rate3.json",
+      "scope": "results/dev",
+      "sha256": "6d78b9234876071d9b9752e4592c38cc3fc61ca9cf027ba9b6f3d53dcc700ab5"
+    },
+    {
+      "bytes": 11079,
+      "mode": "0644",
+      "path": "results/dev/full_native_lut_t2_smoke_rate4.json",
+      "scope": "results/dev",
+      "sha256": "3c2106284cb17ef9cd7db4aef697419682341590f753f84edd5b9bb9929a4336"
+    },
+    {
+      "bytes": 24173,
+      "mode": "0644",
+      "path": "results/dev/full_native_lut_t4_canonical_score_fair_rate3_ctx4096.json",
+      "scope": "results/dev",
+      "sha256": "15ba3c91d1433ebfdcbebc594f56c88cba249afaa2ef3e4cb778637c317eaf6e"
+    },
+    {
+      "bytes": 24178,
+      "mode": "0644",
+      "path": "results/dev/full_native_lut_t4_canonical_score_fair_rate4_ctx4096.json",
+      "scope": "results/dev",
+      "sha256": "626e02a9fb89d75bb5e3aca0b1e2c8d807dc1dfa2b2eaedeb736cf2b1de60e4d"
+    },
+    {
+      "bytes": 11224,
+      "mode": "0644",
+      "path": "results/dev/full_native_lut_t4_canonical_score_smoke_rate2.json",
+      "scope": "results/dev",
+      "sha256": "c8ab71335cc723a9f1ed8df7d465eb469ab173fec55dee244e49f2849f30ba9d"
+    },
+    {
+      "bytes": 11228,
+      "mode": "0644",
+      "path": "results/dev/full_native_lut_t4_canonical_score_smoke_rate3.json",
+      "scope": "results/dev",
+      "sha256": "71008a744b4d9d2b016ec4d460a55c57d25e02f051174f5988f2226887606258"
+    },
+    {
+      "bytes": 11231,
+      "mode": "0644",
+      "path": "results/dev/full_native_lut_t4_canonical_score_smoke_rate4.json",
+      "scope": "results/dev",
+      "sha256": "fb14ab9192255f840a86b7cbee0f3b8b716348a1c503dc0e32f0322a91eda3ab"
+    },
+    {
+      "bytes": 24248,
+      "mode": "0644",
+      "path": "results/dev/full_native_lut_t4_fused_v2_canonical_score_fair_rate3_ctx4096.json",
+      "scope": "results/dev",
+      "sha256": "b4b862b52b531692b018f944e787cac41390771ea6719c14e34c77c2c01ba4b9"
+    },
+    {
+      "bytes": 24248,
+      "mode": "0644",
+      "path": "results/dev/full_native_lut_t4_fused_v2_canonical_score_fair_rate4_ctx4096.json",
+      "scope": "results/dev",
+      "sha256": "2bafd27d0c3359af88d0a195b48677db303437e2d554f02197a8d8e0f4aa7ef0"
+    },
+    {
+      "bytes": 11350,
+      "mode": "0644",
+      "path": "results/dev/full_native_lut_t4_fused_v2_canonical_score_smoke_rate2.json",
+      "scope": "results/dev",
+      "sha256": "696d678d37eccd2fea822eb808b3c94e8ca030661e764dfb16e0e3559a70dac1"
+    },
+    {
+      "bytes": 11354,
+      "mode": "0644",
+      "path": "results/dev/full_native_lut_t4_fused_v2_canonical_score_smoke_rate3.json",
+      "scope": "results/dev",
+      "sha256": "f27563d6e05c9886a24029f91b7de149f0ba3b268c9af4c665427dc97125575f"
+    },
+    {
+      "bytes": 11357,
+      "mode": "0644",
+      "path": "results/dev/full_native_lut_t4_fused_v2_canonical_score_smoke_rate4.json",
+      "scope": "results/dev",
+      "sha256": "f7f24460f7e8da6cee5e67a33120c40f015f744c4cfe9382a878f0c40365dfe0"
+    },
+    {
+      "bytes": 9422,
+      "mode": "0644",
+      "path": "results/dev/full_native_smoke_ablation_k10v6_b4_beta.json",
+      "scope": "results/dev",
+      "sha256": "360eb98519129fe2d6b3492ef7a7b800eeabac07d9449da78c22e4ade9d29ddb"
+    },
+    {
+      "bytes": 9231,
+      "mode": "0644",
+      "path": "results/dev/full_native_smoke_delta3.json",
+      "scope": "results/dev",
+      "sha256": "279c52efd228c30aadf02d33d6d632981222e579d9acf0d9f5a13a2c45c521a1"
+    },
+    {
+      "bytes": 9427,
+      "mode": "0644",
+      "path": "results/dev/full_native_smoke_hq_rate2.json",
+      "scope": "results/dev",
+      "sha256": "3e1579eb579c709fa5a66f418d2074512fe22466cbf44f4498a237b8ee1b8faf"
+    },
+    {
+      "bytes": 9509,
+      "mode": "0644",
+      "path": "results/dev/full_native_smoke_hq_rate3_b2decode.json",
+      "scope": "results/dev",
+      "sha256": "0f570f436fb180b3740d00542a865f3fbeb1e25fe7c32643cb7e694e6f06c12b"
+    },
+    {
+      "bytes": 9432,
+      "mode": "0644",
+      "path": "results/dev/full_native_smoke_hq_rate4.json",
+      "scope": "results/dev",
+      "sha256": "7e12b078146b0b3ab4997d7b7c83bf9c3d693ba71012acd2d7f4e43424560e01"
+    },
+    {
+      "bytes": 9204,
+      "mode": "0644",
+      "path": "results/dev/full_native_smoke_paper3.json",
+      "scope": "results/dev",
+      "sha256": "f1963cf74586e1e01116d01d5cd42551f9895b8a1f5878e47e59dc3c133e3776"
+    },
+    {
+      "bytes": 824,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_llama2_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "948fcf34b748cab25ffa6adc772abf5e7d02e41077ecab59b17196eb68f8416f"
+    },
+    {
+      "bytes": 5358,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_llama2_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "98ff254c4547af74864339a512a0b3c007031cbeb7847f63c05c956cd752d908"
+    },
+    {
+      "bytes": 786,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_llama2_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "0304123d1e4bddb622ee1dc111e03f6425844275174f529b3cacd2de73b831b5"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_llama2_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 833,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_llama31_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "0bf8f3eb3d10270e812b2461d6b755ea9d78278eea18c44e30e428df32f8a623"
+    },
+    {
+      "bytes": 5379,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_llama31_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "738bdf8819840ad2b301acd07507ad7e7f313848ba918689ccd272edd26e6c0b"
+    },
+    {
+      "bytes": 795,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_llama31_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "11a5e32a98c5c36def162be33d257989fa439558b50701aee5f052a560f55ce7"
+    },
+    {
+      "bytes": 583,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_llama31_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "1b388a5ac8a225abb004eed39457277b2f462f74310ee0938a13b29f70fd90c0"
+    },
+    {
+      "bytes": 819,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_qwen34_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "e02f4fb40751fae2367473909b6a489d5514b171e4b098afdce67f8cf9dc62a9"
+    },
+    {
+      "bytes": 5348,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_qwen34_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "af202e63d07c326366b57a63e2b920ea16fc93a0e94126e22f1f3eba9afa2c22"
+    },
+    {
+      "bytes": 781,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_qwen34_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "a08d69190a4d9db8e5902fc11c743fbe1f577a510ac09ed47c74ddb9f94fdea2"
+    },
+    {
+      "bytes": 583,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_qwen34_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "1b388a5ac8a225abb004eed39457277b2f462f74310ee0938a13b29f70fd90c0"
+    },
+    {
+      "bytes": 819,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_qwen38_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "542e70b50603c32d0ff829a5dd46583547953f121843b2c2809ebe406b1b1ffc"
+    },
+    {
+      "bytes": 5348,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_qwen38_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "5e58543e4687d05ab747bae7953e7e67d23ea09dc302a91cbd7b82b46bd82b43"
+    },
+    {
+      "bytes": 781,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_qwen38_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "fbfa620e9bbdc4702d6965c4c6fdeac5e963488f28f0344b9472161ccf26f4f2"
+    },
+    {
+      "bytes": 583,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_qwen38_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "15243227a7c3ef26ad804f50bf2348681879ad08880002ebf6b0faf3536bb213"
+    },
+    {
+      "bytes": 841,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_r1llama8_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "e1e7247b129c69e081319499ab356bf7631d11afbfff8633784c081848b96643"
+    },
+    {
+      "bytes": 5398,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_r1llama8_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "9d40199b29e6dbb237644cb19e04b4fc7d1ad437a5a3fe3a3038713d0f04d20b"
+    },
+    {
+      "bytes": 803,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_r1llama8_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "dc54f6c966cb54024992fa1890dcade21ae7e7d1c4d46aeacd710def4f2fb971"
+    },
+    {
+      "bytes": 583,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_r1llama8_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "c532169306798487f3064a424314e55720d059a4640f991601c946c40b72f317"
+    },
+    {
+      "bytes": 842,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_r1qwen15_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "f6835404ec848bc6d787c988ae3ca5ed6f9064b69c03b74e68a7c189c97f070f"
+    },
+    {
+      "bytes": 5400,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_r1qwen15_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "2680cafc113e385a4ded2c8064244ba7d7a543bd74ee0d1059debf9b68f2a07c"
+    },
+    {
+      "bytes": 804,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_r1qwen15_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "cb4369afcc0619178993fe4e61133e73d8526e9231e2ef83a958436c53eba01a"
+    },
+    {
+      "bytes": 583,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_r1qwen15_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "e4050000ba84c75d76e6a7f9daa5495cb97a931184a74f7e083a66c03ab02856"
+    },
+    {
+      "bytes": 839,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_r1qwen7_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "98b2ac6bc0500de20616c9c523446e4da044e8f1fd7cfda91e6ef01898659404"
+    },
+    {
+      "bytes": 5391,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_r1qwen7_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "d42a456b97cc7398885886982dacc56a8d367e70eba96f8a2e213308b9a19b69"
+    },
+    {
+      "bytes": 801,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_r1qwen7_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "8e412c1f8227a327eef880c86f60428cec1ba24ba24c5a958a9265b37fc8f798"
+    },
+    {
+      "bytes": 583,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_r1qwen7_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "976400989191811f9373e93b5f90f8d0fdd4336d98fef14b085e094d11cff88a"
+    },
+    {
+      "bytes": 827,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_llama2_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "344deac5af14c458ea88afe19559c2e8d25fee66ef04cab56512f403cd1ca0a2"
+    },
+    {
+      "bytes": 5373,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_llama2_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "449d1c0ac7b972ed0e12ab4042c40165f95b37a93988989e1da24cbc720fa240"
+    },
+    {
+      "bytes": 789,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_llama2_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "16ba5a1e8fb2c4b53f35d5fcdf9e622537b901588b7bbfaf0240d9c36767d42f"
+    },
+    {
+      "bytes": 16324,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_llama2_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "de1e91a13599a2c8b8476d517e7c54ea4406189c660e2ed50c73eed107c53af5"
+    },
+    {
+      "bytes": 104618,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_llama2_20260716/results_Llama-2-7b-hf.json",
+      "scope": "results/dev",
+      "sha256": "44c7df9e22dcfc11c156633cf290f602a2f28a679ee0224f62f62a08dbb446dc"
+    },
+    {
+      "bytes": 836,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_llama31_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "2f320cb195d5026bfb83a10db618b0ce11deb6b632f1af2d4e45743e872df203"
+    },
+    {
+      "bytes": 5394,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_llama31_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "38c24aee6631c473aaaf4aaf28c3104136281d30e2a8bbbcb0ccc181414e7848"
+    },
+    {
+      "bytes": 798,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_llama31_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "91ab935b2611f198b383cb254a00c34ff87e2b9a59f1c7e147a5a3ff8fc53a53"
+    },
+    {
+      "bytes": 16324,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_llama31_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "02b726e17a1ce43197553760c80ca4e0c67d6ee33ec820bf1f770388b7bdfb9c"
+    },
+    {
+      "bytes": 104548,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_llama31_20260716/results_llama-3.1-8b-instruct.json",
+      "scope": "results/dev",
+      "sha256": "30febd1f8cf0a43286fbc010d19136ec5bfee4d3c62e55174d1be2791e81070b"
+    },
+    {
+      "bytes": 822,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_qwen34_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "43417bf1b6e13b9449a1600c513f4795157ac11644857c7425f0a6c03e4158cf"
+    },
+    {
+      "bytes": 5363,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_qwen34_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "d8643023320f04ef5f843964579632d6ae8d3a526c5a8ec57c10df750abf63e2"
+    },
+    {
+      "bytes": 784,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_qwen34_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "c595819133606e944ccf84e9fb9ddbff44df47f6833cd47cae0af9b84ead0fb8"
+    },
+    {
+      "bytes": 16324,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_qwen34_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "957b11f09d96d5ad67752a2e640245d8c27633d59af2c376c587bac27e71572c"
+    },
+    {
+      "bytes": 104527,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_qwen34_20260716/results_Qwen3-4B.json",
+      "scope": "results/dev",
+      "sha256": "60352bb1fcc60fe64db30e3b8fbe6c527e000da42d68dadd668a5bccfc6461bd"
+    },
+    {
+      "bytes": 822,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_qwen38_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "3a6b44ee0799b9998ea4b45b06b11eaeb8d456cfffc8306386f4e468eb08cc82"
+    },
+    {
+      "bytes": 5363,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_qwen38_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "24409dbc9b94fcf9376cbaadbd119453f08a55c9392fee270f09488e1a392371"
+    },
+    {
+      "bytes": 784,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_qwen38_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "600790f27d550c3f1a642888aa34860287de4bf54199ec6d78033cb99dfd727b"
+    },
+    {
+      "bytes": 16324,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_qwen38_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "fa207e53fa452d4848c612154747a6492be72220132cb2ab9f61aa09bd4f4dcb"
+    },
+    {
+      "bytes": 104527,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_qwen38_20260716/results_Qwen3-8B.json",
+      "scope": "results/dev",
+      "sha256": "d658012e1af522981f4974389b51d0c88b0c2bb8cdc4b66166df3434aeefca7b"
+    },
+    {
+      "bytes": 844,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_r1llama8_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "f9713e3882eb7977a1b07bd68f95fa3cb47602ae7940fb16f9a693b9c0358468"
+    },
+    {
+      "bytes": 5413,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_r1llama8_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "97d96451715dd966e845eaab4c5e4a227c2f70cd54abcd33c1ec63021f370e63"
+    },
+    {
+      "bytes": 806,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_r1llama8_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "e8dbab2edf98093883f15d85e1941ae06797a5750eadaa52e940cc58c64f146b"
+    },
+    {
+      "bytes": 16324,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_r1llama8_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "129184a2eb756d964a7c218887e12939b0a6a7aa7647f71069f67591ceaf4dd3"
+    },
+    {
+      "bytes": 104587,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_r1llama8_20260716/results_DeepSeek-R1-Distill-Llama-8B.json",
+      "scope": "results/dev",
+      "sha256": "761da5648b81d6f790d5fc0483d1cd884ed834f553f9d9db0bc31c3123650132"
+    },
+    {
+      "bytes": 845,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_r1qwen15_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "1d0131a8e7d2f161d26479de37d77064354311cc90460df758d737421db00025"
+    },
+    {
+      "bytes": 5415,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_r1qwen15_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "f21fe5c60f6a430f87e77a6ad5cea47f4edf568a5a8b1ac60bf2890f2154536f"
+    },
+    {
+      "bytes": 807,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_r1qwen15_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "54dc5f2ae859831425a0c03d500840a240107ca94281d8d99d0d48d0e251bd7f"
+    },
+    {
+      "bytes": 16324,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_r1qwen15_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "741f0d8490a0e5ed2b895354bb8fcaa5921c371edf312423ed098e8ff8cf2929"
+    },
+    {
+      "bytes": 104613,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_r1qwen15_20260716/results_DeepSeek-R1-Distill-Qwen-1.5B.json",
+      "scope": "results/dev",
+      "sha256": "470eff28fbc8a84758bb11dbcd2acfd44e5dfc7f1d966be12c51df6f4b9898e9"
+    },
+    {
+      "bytes": 842,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_r1qwen7_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "762f7d585cf871fff0ef0861508d7313f0b76869130c25efb5705bf3233a6971"
+    },
+    {
+      "bytes": 5406,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_r1qwen7_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "7504addef87fd2ffc292e2745ccc248a03241bb6938847c9dc8af88492b4fdac"
+    },
+    {
+      "bytes": 804,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_r1qwen7_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "7129e9efea9855c5eaac1a2f1d063501c348e62755333c3e7c7f69c0e6ba5728"
+    },
+    {
+      "bytes": 16324,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_r1qwen7_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "5c32ed9184c2a88b9faf3f233e765548a262824cf2790dff8812ea53bc5a1a65"
+    },
+    {
+      "bytes": 104651,
+      "mode": "0644",
+      "path": "results/dev/hq_fixed_recipe_v2_r1qwen7_20260716/results_DeepSeek-R1-Distill-Qwen-7B.json",
+      "scope": "results/dev",
+      "sha256": "5db73c969891198edba569d214acd8e53496a64fa5f5df8759a31828562da69b"
+    },
+    {
+      "bytes": 18610,
+      "mode": "0644",
+      "path": "results/dev/hq_lut_t16_canonical_score_assignment_audit_rate2_qwen3_0.6b.json",
+      "scope": "results/dev",
+      "sha256": "a5fe6eb9f49dab9356f2a093382359aba9854e96f95d7a0f42bf39549354b65c"
+    },
+    {
+      "bytes": 34182,
+      "mode": "0644",
+      "path": "results/dev/hq_lut_t16_canonical_score_quality_gate_qwen3_0.6b.json",
+      "scope": "results/dev",
+      "sha256": "048b49f2d13f671fa01fc2633f2efbe2df0a0e2a678c4a6b7839ff84c3858c27"
+    },
+    {
+      "bytes": 34112,
+      "mode": "0644",
+      "path": "results/dev/hq_lut_t16_quality_gate_qwen3_0.6b.json",
+      "scope": "results/dev",
+      "sha256": "872465db1396020ad2abb4b6234c736cd20a37a07a4cec5660dad47aaf942ef0"
+    },
+    {
+      "bytes": 32100,
+      "mode": "0644",
+      "path": "results/dev/hq_lut_t2_quality_gate_qwen3_0.6b.json",
+      "scope": "results/dev",
+      "sha256": "93846ad87ade9612975a653a178873d2d56c3344b15880798782bfe6c36cdcb2"
+    },
+    {
+      "bytes": 34106,
+      "mode": "0644",
+      "path": "results/dev/hq_lut_t4_canonical_score_quality_gate_qwen3_0.6b.json",
+      "scope": "results/dev",
+      "sha256": "14b89b6f92bba1aab51a6c7edf43989fd9ff357bc5a0cb0ddc5ea353bddca4ff"
+    },
+    {
+      "bytes": 34276,
+      "mode": "0644",
+      "path": "results/dev/hq_lut_t4_fused_v2_canonical_score_quality_gate_qwen3_0.6b.json",
+      "scope": "results/dev",
+      "sha256": "75e68bfff48cee8f0e73c2d5a775dcbd6752502bdf32d9389cc99539ba52fb62"
+    },
+    {
+      "bytes": 34061,
+      "mode": "0644",
+      "path": "results/dev/hq_lut_t4_quality_gate_qwen3_0.6b.json",
+      "scope": "results/dev",
+      "sha256": "ba3802e1a5cb145c1daf84cb2e7972103b2e80135ed6894848031acd4e51820b"
+    },
+    {
+      "bytes": 34173,
+      "mode": "0644",
+      "path": "results/dev/hq_lut_t8_canonical_score_quality_gate_qwen3_0.6b.json",
+      "scope": "results/dev",
+      "sha256": "e0ed31a071d3bbcfb5ddf24d363f5aafaa30d5ab9f798d62fc6dd7912cfcb2c7"
+    },
+    {
+      "bytes": 34103,
+      "mode": "0644",
+      "path": "results/dev/hq_lut_t8_quality_gate_qwen3_0.6b.json",
+      "scope": "results/dev",
+      "sha256": "c3d5a5cd7d3e584fa8cc1b7057adff35c67e016312dd0b260d5d05a9af3935c5"
+    },
+    {
+      "bytes": 682,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_llama2_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "d0ef582c42d8cf299f17f3fd80ae12c832647605c4bd9489740624817813e0c3"
+    },
+    {
+      "bytes": 5101,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_llama2_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "d8b0b5079e1540110a354a108a0b3463dbc34eae210adb60560878235bde0cdc"
+    },
+    {
+      "bytes": 650,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_llama2_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "877a8f60691a06384e203673746edb704036937dd4e6c942dc4ba68ee786a8ed"
+    },
+    {
+      "bytes": 11077,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_llama2_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "74babcd13afd9263db7f79fd910e14aaf38675dcbf3e9b25fb7a437ee6ba842f"
+    },
+    {
+      "bytes": 67878,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_llama2_20260716/results_Llama-2-7b-hf.json",
+      "scope": "results/dev",
+      "sha256": "44e3469b3553fd6a281d8ab09a3cfdcf67c10e4152f09e43db74671574e1ca3f"
+    },
+    {
+      "bytes": 691,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_llama31_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "c2e5cb785fa46ba88a3c6417f29c0e79949d29c0d2f3512bdaa36674ed9fa8cb"
+    },
+    {
+      "bytes": 5122,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_llama31_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "ce4201d5aa2923155f61d4acc5b532f7babeebf63297279b55c14fb2dbcfdd72"
+    },
+    {
+      "bytes": 659,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_llama31_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "41ba5bf8ef230177ae7334894040b723efeb543942198edc12f3b508987dbb89"
+    },
+    {
+      "bytes": 11077,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_llama31_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "690c3a4cda8115d25eb0097a594427d126c8dcb22f05190047c7f5b6640aacd6"
+    },
+    {
+      "bytes": 67820,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_llama31_20260716/results_llama-3.1-8b-instruct.json",
+      "scope": "results/dev",
+      "sha256": "51971777f280c01b18ada316a86cff8363636528f12604d83926246d798eed74"
+    },
+    {
+      "bytes": 698,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_ministral_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "4260b2a2637ab2a9ffb432b849ca2dbdbe954f70c5f4f336cedf2db5a4a140b4"
+    },
+    {
+      "bytes": 5142,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_ministral_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "db111b8d31c9a776792725ae63092975299cf3477fa39613792e89ad11a01618"
+    },
+    {
+      "bytes": 666,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_ministral_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "79539e0a711a21893425c1b273b44288b4cbfe7f7e552a4bcebb6773ee15072f"
+    },
+    {
+      "bytes": 1166,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_ministral_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "19ebd86b8e95e96ae4960e6bb91657ec5cf954291635753aa1cd647c96e1cfc3"
+    },
+    {
+      "bytes": 680,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_qwen317_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "dfd13f639c3184ec5345e0bec7ac56701e8f4aee69a6cd93d17417e276ad9f4b"
+    },
+    {
+      "bytes": 5100,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_qwen317_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "44c9b7d93b717ca93f77a45cf0c9ac0ae95c6849d8847c04edc7a74032454221"
+    },
+    {
+      "bytes": 648,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_qwen317_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "c9ee8d1608d55ae0124d1d2c9162811a07e7bd56d2776a42e4e55b334d01a1cc"
+    },
+    {
+      "bytes": 11077,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_qwen317_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "240d46eb7dd1bbea2c016b7ecba6660fbec2f04d6ed607b6410f1472c1929978"
+    },
+    {
+      "bytes": 67824,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_qwen317_20260716/results_Qwen3-1.7B.json",
+      "scope": "results/dev",
+      "sha256": "1902a63a130ee4d8e380671ac197e0893374ad41bff2a69b306df88d77afb4da"
+    },
+    {
+      "bytes": 677,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_qwen34_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "b321007b5ce606a01be2d90989f7efe1f8df8176a0b273440d6cf8733de78005"
+    },
+    {
+      "bytes": 5091,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_qwen34_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "0625397f401ce80055e1165c8778068c275996da2788aa3570d9fde4af60fec8"
+    },
+    {
+      "bytes": 645,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_qwen34_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "3791c6cecc6d83f95370e4c10a2dec85430edc8b76f5f49850a8fde937323286"
+    },
+    {
+      "bytes": 11077,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_qwen34_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "2b4831546f6e880939fb57307a46ce54aea48b67e2b067d67d67d12c5163705d"
+    },
+    {
+      "bytes": 67798,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_qwen34_20260716/results_Qwen3-4B.json",
+      "scope": "results/dev",
+      "sha256": "f4fa9864dd73bba9cede6999e847eef8e422a57fcf69729d48d0ce47799994f1"
+    },
+    {
+      "bytes": 677,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_qwen38_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "37ac3a0e168eb19ddb814256010790d4576b45a522be39a4111b7687eae70a99"
+    },
+    {
+      "bytes": 5091,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_qwen38_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "25ba68b9a56526ee81278f399b7a45a367ea280f6d60af4133eb78afbefd5c56"
+    },
+    {
+      "bytes": 645,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_qwen38_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "d903f70cd0954e1bc45afd145cafd38733edd7ba3d8b6e3e5bdc732b25686a0f"
+    },
+    {
+      "bytes": 11077,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_qwen38_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "94b2054a52a6f96cafd831e3d56fae4288c1e7f210e7e539835dc379bd9d96c3"
+    },
+    {
+      "bytes": 67807,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_qwen38_20260716/results_Qwen3-8B.json",
+      "scope": "results/dev",
+      "sha256": "6eb0c2b9fbaf6be496571278baf8952239809ba4449940cbf2e6f608ac7d2a39"
+    },
+    {
+      "bytes": 699,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_r1llama8_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "4bdc288a04f5628649af967c2756e559d1ad50c567737b0cb352ff8f912586a8"
+    },
+    {
+      "bytes": 5141,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_r1llama8_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "c2c1a00eabf213341ba6a1eb68eb5bd81f796d5de14bb33b8e3f3f520b8fd2a3"
+    },
+    {
+      "bytes": 667,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_r1llama8_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "f49f35b3db1789868d7a5c89c63e5032deb32cddbff874b958855dc7767a3a83"
+    },
+    {
+      "bytes": 11077,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_r1llama8_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "aad3fbbabfba5206f6eb8d1d25169361ff0eed5a9686eb6e4a7eb45cc45be2f7"
+    },
+    {
+      "bytes": 67861,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_r1llama8_20260716/results_DeepSeek-R1-Distill-Llama-8B.json",
+      "scope": "results/dev",
+      "sha256": "76ab68648185c63d358df76f3298ec887d76a904e908c3bdbf92ef8e75cc1fe7"
+    },
+    {
+      "bytes": 700,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_r1qwen15_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "c661543237f8ef0a53eebbbc1ea8850f88a7aa2870781df30f612643ae54fe6a"
+    },
+    {
+      "bytes": 5143,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_r1qwen15_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "50e37327d704d689296e1f04b83b541ccd55600d26689a7369b9a14520fbe237"
+    },
+    {
+      "bytes": 668,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_r1qwen15_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "763f00c5079bd7af9890ee9495dc05e54b1f32864d43f862a858e501ad12d6bb"
+    },
+    {
+      "bytes": 11077,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_r1qwen15_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "796f914e0d978f21f0abc0c1374b87fc5f656fe75c91c8c87434a2567ec267a6"
+    },
+    {
+      "bytes": 67862,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_r1qwen15_20260716/results_DeepSeek-R1-Distill-Qwen-1.5B.json",
+      "scope": "results/dev",
+      "sha256": "9557505f69bb0dd7afe286932f956043254264f2ee4edb6e9ea5ee15b4b2f001"
+    },
+    {
+      "bytes": 697,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_r1qwen7_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "3e146f575785c1acb9ea872e1ddc55b94cc2548e429598145c690cdb61a4de1b"
+    },
+    {
+      "bytes": 5134,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_r1qwen7_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "2e647c3c58ae8c51f096de24f2c004f90e6aaa0449d3de5a585a1b0b5e38ecde"
+    },
+    {
+      "bytes": 665,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_r1qwen7_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "23506685e88e3b0cafa59e954d28b92a10be1a1246419225049ab3fca53c9d83"
+    },
+    {
+      "bytes": 11077,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_r1qwen7_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "80c9c98dde646aa7d4bd612d01f1f9ae859cb25159623a2b7f8ac00303c2aa3e"
+    },
+    {
+      "bytes": 67893,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_r1qwen7_20260716/results_DeepSeek-R1-Distill-Qwen-7B.json",
+      "scope": "results/dev",
+      "sha256": "1af3c84df707029011c8a730cfc3cd5ea47d8f4f873132a0bae39e4306587aeb"
+    },
+    {
+      "bytes": 696,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_tinyllama_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "ab523576510f52c0db1039c7a56c4494754afe95cd67076235c38653f2f37d8e"
+    },
+    {
+      "bytes": 5138,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_tinyllama_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "2581060e99ded484fc128519c258403de4b26e55922137be3d8578dd1b353aa1"
+    },
+    {
+      "bytes": 664,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_tinyllama_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "968a4cc06bb9ab8e31a063724cc7088832f8dcc9644f5cf7f1328ad87240c198"
+    },
+    {
+      "bytes": 11077,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_tinyllama_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "459bf853c86710718da94ad6f6392721eb9fa7627dd36039dd618d6996d705cd"
+    },
+    {
+      "bytes": 67786,
+      "mode": "0644",
+      "path": "results/dev/hq_paper_identity_v5_tinyllama_20260716/results_TinyLlama-1.1B-Chat-v1.0.json",
+      "scope": "results/dev",
+      "sha256": "ea0a0b8539bda06d6b9ba820204863d9af85707cbaa0c15f5fb88ad8df6f3640"
+    },
+    {
+      "bytes": 112928,
+      "mode": "0644",
+      "path": "results/dev/hq_recipe_search_v2_llama2_20260716/results_Llama-2-7b-hf.json",
+      "scope": "results/dev",
+      "sha256": "ddbce2f352c6232faa76f9136a61338e5b77d4279d997534ece8bfebf17e7c3d"
+    },
+    {
+      "bytes": 112803,
+      "mode": "0644",
+      "path": "results/dev/hq_recipe_search_v2_qwen05_20260716/results_Qwen2.5-0.5B-Instruct.json",
+      "scope": "results/dev",
+      "sha256": "13dff0912ee68391a837ac916f4aec824b79b096661d609efb60aef3063fe9c7"
+    },
+    {
+      "bytes": 699,
+      "mode": "0644",
+      "path": "results/dev/hq_recipe_search_v3_llama31_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "b4f083513d0e1620fe4cf226a49fc4c242e3eb121049ef88a250cf58598b6c1d"
+    },
+    {
+      "bytes": 5131,
+      "mode": "0644",
+      "path": "results/dev/hq_recipe_search_v3_llama31_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "ef2fc48f6ebc46181c91d032ebbc254f2fa66bc91e1e2811fbc7243a497296be"
+    },
+    {
+      "bytes": 665,
+      "mode": "0644",
+      "path": "results/dev/hq_recipe_search_v3_llama31_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "60ca384f782bd99db397710e88f28e92727f310544100b35594fcaff469e452e"
+    },
+    {
+      "bytes": 12826,
+      "mode": "0644",
+      "path": "results/dev/hq_recipe_search_v3_llama31_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "934230635e479ed9af0c70d017ae7d276b3ef5455bf8f642d48d90a691ff9fcf"
+    },
+    {
+      "bytes": 78904,
+      "mode": "0644",
+      "path": "results/dev/hq_recipe_search_v3_llama31_20260716/results_llama-3.1-8b-instruct.json",
+      "scope": "results/dev",
+      "sha256": "e51f7c78364a6dc10d76893d427430fc36dd9ee6015b16e0e9391d0214226f1c"
+    },
+    {
+      "bytes": 685,
+      "mode": "0644",
+      "path": "results/dev/hq_recipe_search_v3_qwen34_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "2d7811ff074db57ba6a47aff2112927ac23a23cf8ef10aa4dcfcb1012c48cbcf"
+    },
+    {
+      "bytes": 5100,
+      "mode": "0644",
+      "path": "results/dev/hq_recipe_search_v3_qwen34_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "29c2121e923db0155c4c4574bb833a685a0e57e1b77e67f33c389fc4ec88cfcf"
+    },
+    {
+      "bytes": 651,
+      "mode": "0644",
+      "path": "results/dev/hq_recipe_search_v3_qwen34_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "9635c34fa88c77babe87e5385c0a8a867b68ecd2db9242beba10ed78414ab970"
+    },
+    {
+      "bytes": 12826,
+      "mode": "0644",
+      "path": "results/dev/hq_recipe_search_v3_qwen34_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "c66b52e7eb184a21d0b9df177de18533b60d68dbd09611c4ffeb33321ad5d092"
+    },
+    {
+      "bytes": 78892,
+      "mode": "0644",
+      "path": "results/dev/hq_recipe_search_v3_qwen34_20260716/results_Qwen3-4B.json",
+      "scope": "results/dev",
+      "sha256": "4ab86111e31a4dbe1db0ca730c527c3ac96547d58d0af33aac90bf891e94ca14"
+    },
+    {
+      "bytes": 705,
+      "mode": "0644",
+      "path": "results/dev/hq_recipe_search_v3_r1q15_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "53a2e735c8f09bb7572703dba58298d40ff48b2ca368e31294517b405b211dae"
+    },
+    {
+      "bytes": 5137,
+      "mode": "0644",
+      "path": "results/dev/hq_recipe_search_v3_r1q15_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "00c94c88d75fefaccf33400b78adf528354e21f2388a9a8e61ad394cc179cc77"
+    },
+    {
+      "bytes": 671,
+      "mode": "0644",
+      "path": "results/dev/hq_recipe_search_v3_r1q15_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "6f243d0fff40d701cf66e64879856d5030ba6f95df27c845cc72396d2a3d5830"
+    },
+    {
+      "bytes": 12826,
+      "mode": "0644",
+      "path": "results/dev/hq_recipe_search_v3_r1q15_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "d8fc6504d157f109fe1ca34c542a3e9427180b7be9c1178e11c8d2692e9d09be"
+    },
+    {
+      "bytes": 78976,
+      "mode": "0644",
+      "path": "results/dev/hq_recipe_search_v3_r1q15_20260716/results_DeepSeek-R1-Distill-Qwen-1.5B.json",
+      "scope": "results/dev",
+      "sha256": "ffc8a87128bb4421283a9d78c19e366225db9f936014b3d1b1c1d17f6702e2bc"
+    },
+    {
+      "bytes": 609,
+      "mode": "0644",
+      "path": "results/dev/hq_role_geometry_v4_llama31_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "cd4b6607adb0ab91a2460ce8583ea1233ee9c314164cec70cf34ae57fc009618"
+    },
+    {
+      "bytes": 4963,
+      "mode": "0644",
+      "path": "results/dev/hq_role_geometry_v4_llama31_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "dcc9a0ca76c8fba26fb54f9f41e730bb59c68980defb7a1ed323d87f939943d8"
+    },
+    {
+      "bytes": 581,
+      "mode": "0644",
+      "path": "results/dev/hq_role_geometry_v4_llama31_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "649f6624703c4f03b8b0fc7e5a7c1f624038d7f347027dad4f232c7f3c72faf0"
+    },
+    {
+      "bytes": 7579,
+      "mode": "0644",
+      "path": "results/dev/hq_role_geometry_v4_llama31_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "ed71801df54e2ff9dec45d67da1388c6c42e40bff8ee42f0d0603b646a271b82"
+    },
+    {
+      "bytes": 39701,
+      "mode": "0644",
+      "path": "results/dev/hq_role_geometry_v4_llama31_20260716/results_llama-3.1-8b-instruct.json",
+      "scope": "results/dev",
+      "sha256": "984d185c27667a072fbdbce14ef1ad8adf796234ba444492217047825b4eded3"
+    },
+    {
+      "bytes": 595,
+      "mode": "0644",
+      "path": "results/dev/hq_role_geometry_v4_qwen34_20260716/hydra/.hydra/config.yaml",
+      "scope": "results/dev",
+      "sha256": "71b7c0ede43e79fa62d8abe092494b90c42487d53800de6d100580e2bb43edf6"
+    },
+    {
+      "bytes": 4932,
+      "mode": "0644",
+      "path": "results/dev/hq_role_geometry_v4_qwen34_20260716/hydra/.hydra/hydra.yaml",
+      "scope": "results/dev",
+      "sha256": "a53c2a4efb126a75c4710f6ddb6f792d45e91ce132ecce5477ee72c5ab5268fc"
+    },
+    {
+      "bytes": 567,
+      "mode": "0644",
+      "path": "results/dev/hq_role_geometry_v4_qwen34_20260716/hydra/.hydra/overrides.yaml",
+      "scope": "results/dev",
+      "sha256": "0c993867ad3c0c8bafeab7f2a836a765576236e007d3ccd6270afd6dbd00e3bf"
+    },
+    {
+      "bytes": 7579,
+      "mode": "0644",
+      "path": "results/dev/hq_role_geometry_v4_qwen34_20260716/hydra/codec_benchmark.log",
+      "scope": "results/dev",
+      "sha256": "7c1a819c07042bdcb4d4840b722ed24d45696514ec087e6bc0eceae52c44a7dd"
+    },
+    {
+      "bytes": 39684,
+      "mode": "0644",
+      "path": "results/dev/hq_role_geometry_v4_qwen34_20260716/results_Qwen3-4B.json",
+      "scope": "results/dev",
+      "sha256": "b6eb08b940394ab1eea607975efaf5e3729fd986542dba1564a9c23896bb5051"
+    },
+    {
+      "bytes": 256483,
+      "mode": "0644",
+      "path": "results/dev/provisional_speed_20260715/gpu1_off.json",
+      "scope": "results/dev",
+      "sha256": "ef0377d6861526d7f67aa0fa0880565c0af598ba1beda4ac7a5090711f78c9cf"
+    },
+    {
+      "bytes": 256553,
+      "mode": "0644",
+      "path": "results/dev/provisional_speed_20260715/gpu2_decode_only.json",
+      "scope": "results/dev",
+      "sha256": "b341a9dfb717204b1c57e483555542c9a35b70aa885cc892f81f2c324d1e6e46"
+    },
+    {
+      "bytes": 45152,
+      "mode": "0644",
+      "path": "results/dev/recipe_freeze_llama2_20260716/results_Llama-2-7b-hf.json",
+      "scope": "results/dev",
+      "sha256": "dd3b038ac89553f07c32b3db1f875501d6161c88095de01954e6412b629d7189"
+    },
+    {
+      "bytes": 2540,
+      "mode": "0644",
+      "path": "results/smoke/longbench/2026-07-16_09-47-28/.hydra/config.yaml",
+      "scope": "results/smoke",
+      "sha256": "bb9d25a36dc773b6400ea33a529eafbd86e5152e59c0b808f259a77f50338a88"
+    },
+    {
+      "bytes": 5618,
+      "mode": "0644",
+      "path": "results/smoke/longbench/2026-07-16_09-47-28/.hydra/hydra.yaml",
+      "scope": "results/smoke",
+      "sha256": "d1e224889016225a7196ce0cc6448082a1ab1aaa3c32d14414e943419cc096f4"
+    },
+    {
+      "bytes": 1033,
+      "mode": "0644",
+      "path": "results/smoke/longbench/2026-07-16_09-47-28/.hydra/overrides.yaml",
+      "scope": "results/smoke",
+      "sha256": "c9ca55dc3364222976d06c07d7438c86a979417674502b2c327111eb3f2d51e4"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "results/smoke/longbench/2026-07-16_09-47-28/kv_benchmark.log",
+      "scope": "results/smoke",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 81964,
+      "mode": "0644",
+      "path": "results/smoke/longbench/results_llama-3.1-8b-instruct.json",
+      "scope": "results/smoke",
+      "sha256": "0d69d8f73bdd9ed66f7ca9ee643e3bc96fd08ea29d426ae3016be6f3175ea3d4"
+    },
+    {
+      "bytes": 2796,
+      "mode": "0644",
+      "path": "results/smoke/longcodeqa/2026-07-16_09-47-29/.hydra/config.yaml",
+      "scope": "results/smoke",
+      "sha256": "bc4bf5151187d7184ca5dc14d400d94787dce592cd994e182c5511ae4261d4bd"
+    },
+    {
+      "bytes": 5975,
+      "mode": "0644",
+      "path": "results/smoke/longcodeqa/2026-07-16_09-47-29/.hydra/hydra.yaml",
+      "scope": "results/smoke",
+      "sha256": "8ddb9929ebec49228224b462c58e09136bc531d03530571c26c9bc2dd8c553d6"
+    },
+    {
+      "bytes": 1208,
+      "mode": "0644",
+      "path": "results/smoke/longcodeqa/2026-07-16_09-47-29/.hydra/overrides.yaml",
+      "scope": "results/smoke",
+      "sha256": "cda5d90bab7f5b390af98d39309b4d7b8a968553aca210343939b45a313a4ab9"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "results/smoke/longcodeqa/2026-07-16_09-47-29/kv_benchmark.log",
+      "scope": "results/smoke",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 89332,
+      "mode": "0644",
+      "path": "results/smoke/longcodeqa/results_llama-3.1-8b-instruct.json",
+      "scope": "results/smoke",
+      "sha256": "3cc1853d665493bd285e722b5d0e2991d853a0cb287eaee969953935b9496881"
+    },
+    {
+      "bytes": 2512,
+      "mode": "0644",
+      "path": "results/smoke/math500/2026-07-16_09-47-18/.hydra/config.yaml",
+      "scope": "results/smoke",
+      "sha256": "0d3501089e0889e95e4cc284d1b5197b42698d2bbbd92ce6e8dece9870601a12"
+    },
+    {
+      "bytes": 5774,
+      "mode": "0644",
+      "path": "results/smoke/math500/2026-07-16_09-47-18/.hydra/hydra.yaml",
+      "scope": "results/smoke",
+      "sha256": "326b2448c8e374acedd521f40ce62a00555c73f15963a5f6e10d37aa94740fd6"
+    },
+    {
+      "bytes": 1108,
+      "mode": "0644",
+      "path": "results/smoke/math500/2026-07-16_09-47-18/.hydra/overrides.yaml",
+      "scope": "results/smoke",
+      "sha256": "7292ed3f185fca0a1fb7bd91bfa4c4f073130009cc641617f9868b1b5afe3321"
+    },
+    {
+      "bytes": 3414,
+      "mode": "0644",
+      "path": "results/smoke/math500/2026-07-16_09-47-18/kv_benchmark.log",
+      "scope": "results/smoke",
+      "sha256": "f4f5b0df80424f51c4c50aa7840432822d28098bdb90f4425b9e2b2f39c6ec93"
+    },
+    {
+      "bytes": 130519,
+      "mode": "0644",
+      "path": "results/smoke/math500/results_Qwen3-0.6B.json",
+      "scope": "results/smoke",
+      "sha256": "bcaf4474a17d9aa05497d3bb0b9a8007ba4390cb5579e4494f1b8cf5424206ef"
+    },
+    {
+      "bytes": 4843,
+      "mode": "0644",
+      "path": "results/smoke/native/hayate_native_hybrid.json",
+      "scope": "results/smoke",
+      "sha256": "2502eb1cb800b32bbb7e58597fa52e7ff47f80e9cc8743246898dfd3dcdea37c"
+    },
+    {
+      "bytes": 2769,
+      "mode": "0644",
+      "path": "results/smoke/ruler/2026-07-16_09-47-27/.hydra/config.yaml",
+      "scope": "results/smoke",
+      "sha256": "859938498a3a3ac991e44bb94597218b681a0beebe50efaa5b0098efeb9c1cd4"
+    },
+    {
+      "bytes": 6258,
+      "mode": "0644",
+      "path": "results/smoke/ruler/2026-07-16_09-47-27/.hydra/hydra.yaml",
+      "scope": "results/smoke",
+      "sha256": "39d9cb8a3a6a014089de9ba22de71e3aec2b94267617b20af95e32c535d71aa8"
+    },
+    {
+      "bytes": 1353,
+      "mode": "0644",
+      "path": "results/smoke/ruler/2026-07-16_09-47-27/.hydra/overrides.yaml",
+      "scope": "results/smoke",
+      "sha256": "8502ade59b77bce15993b887cf8c58f2beb709117a4e5e8a22f337a9cd150945"
+    },
+    {
+      "bytes": 0,
+      "mode": "0644",
+      "path": "results/smoke/ruler/2026-07-16_09-47-27/kv_benchmark.log",
+      "scope": "results/smoke",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 250141,
+      "mode": "0644",
+      "path": "results/smoke/ruler/results_llama-3.1-8b-instruct.json",
+      "scope": "results/smoke",
+      "sha256": "3db619f07c274f0ef7d8764cf1b74e707e967e2b1f186fe5ccf59d724492a174"
+    },
+    {
+      "bytes": 161067,
+      "mode": "0644",
+      "path": "results/smoke/speed/fair_speed_llama_b3.json",
+      "scope": "results/smoke",
+      "sha256": "5ca784252c909f8cdbba01e09ea030ed9bd919108c36fa7626960c6075a381c4"
+    },
+    {
+      "bytes": 51066,
+      "mode": "0644",
+      "path": "results/smoke/zeroshot/zeroshot_Qwen3-0.6B_smoke.json",
+      "scope": "results/smoke",
+      "sha256": "22c2bcb3afb891cf8d97ab5ec1badaad95bf8b6ade6da149fb5c108e5b98d6d2"
+    },
+    {
+      "bytes": 1452,
+      "mode": "0644",
+      "path": "summaries/preformal_smoke_schema_audit.json",
+      "scope": "summaries",
+      "sha256": "1e11ab85729792786a1fca84256b82637696bdb5c6c736ab73036332bacf5c28"
+    }
+  ],
+  "generated_files": [
+    {
+      "bytes": 1640,
+      "mode": "0644",
+      "path": "ARCHIVE_COMMAND.json",
+      "sha256": "6bf81d39ccd88eb471536577638970d76d671a18c0d718b6e89e01a76f2099b8"
+    },
+    {
+      "bytes": 50948,
+      "mode": "0644",
+      "path": "SHA256SUMS",
+      "sha256": "29c7c6eb1a3a1f936d5a3bf8699c8601b547321f6c67974b5fdbb71206ae6a84"
+    }
+  ],
+  "inventory_sha256": "199f74d4927abe8d974d210a29521e9f5a437a0655bb970ec7053e8e70dfff99",
+  "kind": "hayatequant_repo_local_run_archive",
+  "missing_scopes": [],
+  "present_scopes": [
+    "results/smoke",
+    "results/formal",
+    "results/dev",
+    "summaries",
+    "manifests",
+    "provenance",
+    "logs"
+  ],
+  "required_scopes": [
+    "results/smoke",
+    "summaries",
+    "manifests",
+    "provenance",
+    "logs"
+  ],
+  "run_id": "preformal-smoke-schema-audit-20260716",
+  "schema_version": 1,
+  "scope_file_counts": {
+    "logs": 201,
+    "manifests": 2,
+    "provenance": 8,
+    "results/dev": 181,
+    "results/formal": 0,
+    "results/smoke": 23,
+    "summaries": 1
+  },
+  "source_commit": "3d6f264363d7291c1fd07fe40d310ae041e53425",
+  "source_run_root": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715",
+  "total_bytes": 7294234
+}

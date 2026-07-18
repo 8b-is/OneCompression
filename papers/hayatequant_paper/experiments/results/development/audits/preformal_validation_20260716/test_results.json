@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "audit_date": "2026-07-16",
+  "runs": [
+    {
+      "id": "focused_final",
+      "artifact": "focused-junit.xml",
+      "passed": 407,
+      "failed": 0,
+      "skipped": 0,
+      "warnings": 15,
+      "duration_seconds": 371.85,
+      "status": "pass"
+    },
+    {
+      "id": "full_intermediate_fixture_failure",
+      "artifact": "full-kvcomp-failed-missing-ruler-fixture-junit.xml",
+      "passed": 1053,
+      "failed": 18,
+      "skipped": 40,
+      "warnings": 15,
+      "duration_seconds": 497.16,
+      "status": "preserved_nonproduction_fixture_failure",
+      "cause": "synthetic RULER aggregate fixture lacked the newly mandatory formal_smoke_approval record"
+    },
+    {
+      "id": "ruler_fixture_regression",
+      "artifact": null,
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0,
+      "duration_seconds": 2.04,
+      "status": "pass"
+    },
+    {
+      "id": "full_final",
+      "artifact": "full-kvcomp-junit.xml",
+      "passed": 1071,
+      "failed": 0,
+      "skipped": 40,
+      "warnings": 15,
+      "duration_seconds": 484.24,
+      "status": "pass"
+    }
+  ],
+  "static": {
+    "changed_python_files": 18,
+    "changed_shell_files": 2,
+    "black_check_fast": "pass",
+    "python_compile": "pass",
+    "bash_parse": "pass",
+    "git_diff_check": "pass",
+    "junit_xml_parse": "pass"
+  },
+  "formal_plan": {
+    "artifact": "formal-plan.txt",
+    "counts_artifact": "formal-plan-counts.txt",
+    "source_commit_artifact": "formal-plan-source-commit.txt",
+    "jobs": 969,
+    "quality_jobs": 909,
+    "speed_jobs": 60,
+    "status": "pass"
+  }
+}

@@ -1,10 +1,10 @@
 """HALO: HAdamard-gemm + Least-squares-scale + Online preconditioning KV codec.
 
-HALO is the proposed data-free KV codec.  It shares TurboQuant's skeleton
-(orthogonal rotation -> per-vector scale -> Gaussian Lloyd-Max scalar quant) but
-wins on the **speed-quality** Pareto against the shipped TurboQuant default
-(``rotation_mode="hadamard"`` = butterfly WHT + RMS scale) through two
-verified, hardware-robust, storage-neutral levers (the maths is verified
+HALO is a research data-free KV codec.  It shares TurboQuant's skeleton
+(orthogonal rotation -> per-vector scale -> Gaussian Lloyd-Max scalar quant)
+and studies two storage-neutral levers. Their algebra and implementations are
+verified in-repo, while downstream quality and hardware speed remain empirical
+questions that must be evaluated at matched rate and API (the checks live
 in-repo, data-free and CPU-only, by
 ``benchmark/kvcomp-longcontext/paper/tests/verify_halo_asym_scale.py`` and
 ``verify_halo_outlier.py``, and by ``tests/onecomp/kvcomp/test_kvcomp.py``):
@@ -60,15 +60,17 @@ in-repo, data-free and CPU-only, by
    (``HALO-NCIT``) beats the shipped TurboQuant default at every tested
    bit-width in perplexity (e.g. Llama 3-bit: HALO-NCIT 6.878 vs TurboQuant
    6.917; Ministral 3-bit: 9.073 vs 9.114) while matching or exceeding it on
-   the RULER long-context benchmark.
+   the repository's local synthetic multi-key diagnostic (not NVIDIA RULER).
 
-This makes HALO dominate the shipped TurboQuant default on *both* the MSE axis
-(values) and the attention axis (keys) at identical bit-width and metadata
-footprint -- matching upstream vLLM's choice of the ``_nc`` (norm-corrected)
-TurboQuant presets as the standard.
+These scale objectives target different proxies: LS minimizes value-vector MSE,
+whereas NC targets norm preservation for keys. Neither proxy proves lower
+perplexity or task error, and no universal Pareto-dominance claim follows from
+the algebra alone. Comparisons with TurboQuant therefore remain empirical at
+identical realised payload rate.
 
-The default operating point is ``key_scale_mode="nc"`` + ``value_scale_mode="ls_iter"``
-(validated as the best across all tested models and bit-widths).
+The default research operating point is ``key_scale_mode="nc"`` +
+``value_scale_mode="ls_iter"``; it was selected from local sweeps and is not a
+model-independent optimum.
 The legacy symmetric least-squares scale is retained for backwards
 comparability via explicit ``key_scale_mode="ls", value_scale_mode="ls"``.
 ``ls_scale=False`` still selects pure RMS (TurboQuant-faithful) mode when
@@ -185,11 +187,15 @@ class HALOCodec(KVCodec):
     # Outlier mixed-precision (lever 3, ported from TurboQuant): split the
     # ``n_outlier`` highest-energy rotated-input channels off and quantise them at
     # ``outlier_bits`` while the rest use ``bits`` -- the data-free way to reach
-    # the 2.5 / 3.5-bit operating points of the TurboQuant headline table.  The
-    # effective payload bit-width is ``(n_o*outlier_bits + (d-n_o)*bits)/d``; for
-    # head_dim=128, ``64 ch @ 3 + 64 @ 2`` = 2.5-bit and ``64 @ 4 + 64 @ 3`` =
-    # 3.5-bit.  Each subset keeps the role-asymmetric scale (nc keys / ls
-    # values).  ``outlier_bits`` defaults to ``bits + 1``.  Like TurboQuant, the
+    # the nominal 2.5 / 3.5-bit operating points of the TurboQuant headline table. The
+    # effective payload bit-width is ``(n_o*outlier_bits + (d-n_o)*bits)/d``.
+    # Each subset stores an fp16 scale/norm, so at head_dim=128 the paper's
+    # 32/96 split totals 2.5 or 3.5 bits/coordinate before channel identities
+    # (2.25/3.25 payload + 0.25 scale metadata).  This dynamic implementation
+    # also accounts a packed d-bit selection bitmap, so the realised rate is
+    # slightly higher and depends on update granularity. Each subset keeps the
+    # role-asymmetric scale (nc keys / ls values). ``outlier_bits`` defaults to
+    # ``bits + 1``. Like TurboQuant, the
     # channel set is chosen per encoded block from that block's energy, so under
     # incremental decode (q_len=1) the mask is per-step dynamic -- faithful in
     # fake-quant, documented as a layout caveat for a real kernel.
@@ -246,21 +252,46 @@ class HALOCodec(KVCodec):
     def validate_params(self):
         if self.rotation_mode not in ("hadamard", "hadamard_gemm", "dense", "auto"):
             raise ValueError(
-                "rotation_mode must be 'auto', 'hadamard_gemm', 'hadamard' or 'dense'")
+                "rotation_mode must be 'auto', 'hadamard_gemm', 'hadamard' or 'dense'"
+            )
         if not (isinstance(self.bits, int) and 1 <= self.bits <= 8):
             raise ValueError(f"bits must be int in 1..8, got {self.bits!r}")
+        for label, value in (
+            ("value_bits", self.value_bits),
+            ("outlier_bits", self.outlier_bits),
+        ):
+            if value is not None and not (isinstance(value, int) and 1 <= value <= 8):
+                raise ValueError(f"{label} must be None or int in 1..8, got {value!r}")
         for mode in (self.key_scale_mode, self.value_scale_mode):
             if mode is not None and mode not in self._SCALE_MODES:
                 raise ValueError(
-                    f"scale_mode must be one of {self._SCALE_MODES} or None, got {mode!r}")
+                    f"scale_mode must be one of {self._SCALE_MODES} or None, got {mode!r}"
+                )
         if not (isinstance(self.n_outlier, int) and self.n_outlier >= 0):
             raise ValueError(f"n_outlier must be a non-negative int, got {self.n_outlier!r}")
+        if (
+            self.n_outlier > 0
+            and self.outlier_bits is None
+            and max(self.bits, self._value_bits()) == 8
+        ):
+            raise ValueError("8-bit HALO role cannot default outlier_bits to that role's bits+1")
 
     def _value_bits(self) -> int:
         return self.value_bits if self.value_bits is not None else self.bits
 
-    def _outlier_bits(self) -> int:
-        return self.outlier_bits if self.outlier_bits is not None else self.bits + 1
+    def teacher_forced_temporal_dependency(self):
+        dependency = super().teacher_forced_temporal_dependency()
+        if dependency is not None:
+            return dependency
+        if self.n_outlier > 0:
+            return "dynamic_outlier_channels_over_update_tokens"
+        if self.precond_roles and (self.center or self.whiten):
+            return "block_global_preconditioner_statistics"
+        return None
+
+    def _outlier_bits(self, base_bits: int) -> int:
+        """Resolve the shared override or default relative to this K/V role."""
+        return self.outlier_bits if self.outlier_bits is not None else int(base_bits) + 1
 
     def _scale_mode_for(self, role: str) -> str:
         """Resolve the per-role dequant-scale mode.
@@ -371,14 +402,17 @@ class HALOCodec(KVCodec):
             # Inner-product-unbiased: <x_hat, x> = ||x||^2 exactly.
             # Preserve the sign of num (clamp_min would flip negative inner products
             # to a large positive scale, which is wrong -- use sign-aware clamping).
-            num_safe = num.sign() * num.abs().clamp_min(1e-8)
+            num_abs = num.abs().clamp_min(1e-8)
+            num_safe = torch.where(num < 0, -num_abs, num_abs)
             return (xr * xr).sum(dim=-1, keepdim=True) / num_safe, codes
         if mode == "ls_iter":
             # One Lloyd alternating-minimisation step: re-quantise at the fitted
             # scale, then re-fit the LS scale.  ||xr - s*c||^2 is monotone
             # non-increasing (the codes-update and the scale-update each minimise
             # the same objective along their coordinate).
-            codes2 = quantize_to_codebook(xr / s_ls.clamp_min(1e-8), cb)
+            scale_abs = s_ls.abs().clamp_min(1e-8)
+            scale_safe = torch.where(s_ls < 0, -scale_abs, scale_abs)
+            codes2 = quantize_to_codebook(xr / scale_safe, cb)
             chat2 = cb[codes2]
             num2 = (xr * chat2).sum(dim=-1, keepdim=True)
             den2 = (chat2 * chat2).sum(dim=-1, keepdim=True).clamp_min(1e-8)
@@ -389,30 +423,36 @@ class HALOCodec(KVCodec):
     def _quant_rotor(self, xsub, bits, role):
         """Rotate a channel subset, fit the role's scale, quantise to codebook."""
         m = xsub.shape[-1]
-        xr, kind = self._rotate(xsub, m)             # orthogonal rotation
+        xr, kind = self._rotate(xsub, m)  # orthogonal rotation
         rms = xr.pow(2).mean(dim=-1, keepdim=True).sqrt().clamp_min(1e-8)
         cb = _gaussian_codebook(bits).to(xsub.device)
         codes = quantize_to_codebook(xr / rms, cb)
         scale, codes = self._fit_scale(xr, cb, codes, rms, self._scale_mode_for(role))
-        return {"codes": codes, "scale": scale, "bits": bits, "m": m, "kind": kind}
+        # Logical accounting charges a signed fp16 scale.  Materialise that
+        # precision in the research payload as well, matching TQ/HQ rather than
+        # evaluating an unreported fp32-metadata codec.
+        return {
+            "codes": codes,
+            "scale": scale.to(dtype=torch.float16),
+            "bits": bits,
+            "m": m,
+            "kind": kind,
+        }
 
     def _decode_rotor(self, p):
         cb = _gaussian_codebook(p["bits"]).to(p["codes"].device)
-        xr = cb[p["codes"]] * p["scale"]
+        xr = cb[p["codes"]] * p["scale"].to(device=p["codes"].device, dtype=cb.dtype)
         return self._unrotate(xr, p["m"], p["kind"])
 
     # --- per-tensor encode / decode --------------------------------------
     def _encode_tensor(self, x, bits, role):
         d = x.shape[-1]
-        single_pow2 = is_power_of_two(d)
-        # Single-subset path needs a power-of-two dim for the Hadamard transforms;
-        # the outlier path rotates each subset by its own resolved transform (the
-        # dense QR for non-power-of-two subset dims), exactly like TurboQuant, so
-        # it does not require ``d`` itself to be a power of two.
+        if self.n_outlier >= d and self.n_outlier > 0:
+            raise ValueError(f"n_outlier={self.n_outlier} must be smaller than head_dim={d}")
         use_outlier = 0 < self.n_outlier < d
-        if not use_outlier and self._resolved_mode(d) in ("hadamard", "hadamard_gemm") \
-                and not single_pow2:
-            return None  # caller falls back to affine
+        # _rotate transparently uses dense QR when a requested Hadamard cannot
+        # represent a non-power-of-two dimension. Retain the rotated Lloyd-Max
+        # algorithm instead of silently changing the codec to affine INT.
         # Stateless block-wise affine preconditioning -- only when this role opts
         # in.  When it is off (the default), the (x-mu)*w step is the identity, so
         # we skip it entirely instead of paying a full-tensor subtract-0 /
@@ -420,7 +460,7 @@ class HALOCodec(KVCodec):
         # Lloyd-Max path.
         do_precond = role in self.precond_roles and (self.center or self.whiten)
         if do_precond:
-            mu, w = self._precondition(x, role)      # per-channel (mean, scale)
+            mu, w = self._precondition(x, role)  # per-channel (mean, scale)
             xw = x.float()
             if mu is not None:
                 xw = xw - mu
@@ -442,8 +482,12 @@ class HALOCodec(KVCodec):
         mask = torch.zeros(d, dtype=torch.bool, device=x.device)
         mask[out_idx] = True
         return {
-            "outlier": True, "head_dim": d, "mask": mask, "mu": mu, "w": w,
-            "out": self._quant_rotor(xw[..., mask], self._outlier_bits(), role),
+            "outlier": True,
+            "head_dim": d,
+            "mask": mask,
+            "mu": mu,
+            "w": w,
+            "out": self._quant_rotor(xw[..., mask], self._outlier_bits(bits), role),
             "in": self._quant_rotor(xw[..., ~mask], bits, role),
         }
 
@@ -459,9 +503,9 @@ class HALOCodec(KVCodec):
         else:
             xw = self._decode_rotor(p)
         if p["w"] is not None:
-            xw = xw / p["w"]                          # un-whiten
+            xw = xw / p["w"]  # un-whiten
         if p["mu"] is not None:
-            xw = xw + p["mu"]                         # un-center
+            xw = xw + p["mu"]  # un-center
         return xw.to(dtype)
 
     def _stored_bits(self, x, bits, precond=False):
@@ -476,8 +520,9 @@ class HALOCodec(KVCodec):
         if 0 < self.n_outlier < d:
             no = self.n_outlier
             # two subsets -> two per-vector fp16 scales; codes at mixed bit-width.
-            payload = vecs * (no * self._outlier_bits() + (d - no) * bits)
-            return payload + vecs * 2 * 16 + precond_bits
+            payload = vecs * (no * self._outlier_bits(bits) + (d - no) * bits)
+            # The data-dependent outlier set needs one packed d-bit bitmap.
+            return payload + vecs * 2 * 16 + d + precond_bits
         # codes + per-vec scale (+ per-block (mu,w) only when preconditioning on)
         return x.numel() * bits + vecs * 16 + precond_bits
 
@@ -488,36 +533,60 @@ class HALOCodec(KVCodec):
             kq = fake_quantize_affine(key, self.bits, axis="token")
             vq = fake_quantize_affine(value, self._value_bits(), axis="token")
             # Honest whole-cache accounting: the per-token affine fallback also
-            # stores a scale + zero (two fp16) per quantised vector, like the
+            # stores a fp16 scale + integer zero per quantised vector, like the
             # AffineKVCodec path -- count it so the fallback's compression ratio
             # is not over-stated (memo A-6).
             kvecs = key.shape[0] * key.shape[1] * key.shape[2]
             vvecs = value.shape[0] * value.shape[1] * value.shape[2]
-            stored = (key.numel() * self.bits + value.numel() * self._value_bits()
-                      + (kvecs + vvecs) * 2 * 16)
-            return CompressedKV(key_q=kq, value_q=vq,
-                                meta={"dtype": key.dtype, "fallback": True,
-                                      "stored_bits": int(stored), "passthrough": True})
+            stored = (
+                key.numel() * self.bits
+                + kvecs * (16 + self.bits)
+                + value.numel() * self._value_bits()
+                + vvecs * (16 + self._value_bits())
+            )
+            return CompressedKV(
+                key_q=kq,
+                value_q=vq,
+                meta={
+                    "dtype": key.dtype,
+                    "fallback": True,
+                    "stored_bits": int(stored),
+                    "passthrough": True,
+                },
+            )
         kpre = "k" in self.precond_roles and (self.center or self.whiten)
         vpre = "v" in self.precond_roles and (self.center or self.whiten)
-        stored = (self._stored_bits(key, self.bits, kpre)
-                  + self._stored_bits(value, self._value_bits(), vpre))
-        return CompressedKV(key_q=kp, value_q=vp, meta={"dtype": key.dtype, "stored_bits": int(stored)})
+        stored = self._stored_bits(key, self.bits, kpre) + self._stored_bits(
+            value, self._value_bits(), vpre
+        )
+        return CompressedKV(
+            key_q=kp, value_q=vp, meta={"dtype": key.dtype, "stored_bits": int(stored)}
+        )
 
     def decode(self, compressed: CompressedKV, ctx=None):
         dtype = compressed.meta.get("dtype", torch.float16)
         if compressed.meta.get("fallback") or compressed.meta.get("passthrough"):
             return compressed.key_q.to(dtype), compressed.value_q.to(dtype)
-        return self._decode_tensor(compressed.key_q, dtype), self._decode_tensor(compressed.value_q, dtype)
+        return self._decode_tensor(compressed.key_q, dtype), self._decode_tensor(
+            compressed.value_q, dtype
+        )
 
     def get_kv_config(self) -> dict:
         cfg = super().get_kv_config()
-        cfg.update({"value_bits": self.value_bits, "ls_scale": self.ls_scale,
-                    "n_outlier": self.n_outlier, "outlier_bits": self.outlier_bits,
-                    "key_scale_mode": self.key_scale_mode,
-                    "value_scale_mode": self.value_scale_mode,
-                    "center": self.center, "whiten": self.whiten,
-                    "precond_roles": list(self.precond_roles),
-                    "momentum": self.momentum, "rotation_mode": self.rotation_mode,
-                    "hadamard_gemm_max_dim": self.hadamard_gemm_max_dim})
+        cfg.update(
+            {
+                "value_bits": self.value_bits,
+                "ls_scale": self.ls_scale,
+                "n_outlier": self.n_outlier,
+                "outlier_bits": self.outlier_bits,
+                "key_scale_mode": self.key_scale_mode,
+                "value_scale_mode": self.value_scale_mode,
+                "center": self.center,
+                "whiten": self.whiten,
+                "precond_roles": list(self.precond_roles),
+                "momentum": self.momentum,
+                "rotation_mode": self.rotation_mode,
+                "hadamard_gemm_max_dim": self.hadamard_gemm_max_dim,
+            }
+        )
         return cfg

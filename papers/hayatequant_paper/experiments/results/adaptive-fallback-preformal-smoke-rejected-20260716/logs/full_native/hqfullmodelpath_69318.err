@@ -1,0 +1,40 @@
+[W716 05:14:30.026118774 socket.cpp:764] [c10d] The client socket cannot be initialized to connect to [kagura-gpu13]:39537 (errno: 97 - Address family not supported by protocol).
+(EngineCore pid=2812525) Loading safetensors checkpoint shards:   0% Completed | 0/1 [00:00<?, ?it/s]
+(EngineCore pid=2812525) Loading safetensors checkpoint shards: 100% Completed | 1/1 [00:01<00:00,  1.10s/it]
+(EngineCore pid=2812525) Loading safetensors checkpoint shards: 100% Completed | 1/1 [00:01<00:00,  1.10s/it]
+(EngineCore pid=2812525) 
+(EngineCore pid=2812525) 2026-07-16 05:14:40,496 - INFO - autotuner.py:457 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(EngineCore pid=2812525) 2026-07-16 05:14:43,697 - INFO - autotuner.py:466 - flashinfer.jit: [Autotuner]: Autotuning process ends
+Rendering prompts:   0%|          | 0/1 [00:00<?, ?it/s]Rendering prompts: 100%|██████████| 1/1 [00:00<00:00, 14.61it/s]
+Processed prompts:   0%|          | 0/1 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s]Traceback (most recent call last):
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/benchmark/kvcomp-codec/hayatequant_vllm_native_generate.py", line 356, in <module>
+    main()
+    ~~~~^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/benchmark/kvcomp-codec/hayatequant_vllm_native_generate.py", line 349, in main
+    result = run(args)
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/benchmark/kvcomp-codec/hayatequant_vllm_native_generate.py", line 245, in run
+    llm.generate([prompts[0]], SamplingParams(temperature=0.0, max_tokens=8))
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/entrypoints/llm.py", line 500, in generate
+    return self._run_completion(
+           ~~~~~~~~~~~~~~~~~~~~^
+        prompts=prompts,
+        ^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+        mm_processor_kwargs=mm_processor_kwargs,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/entrypoints/llm.py", line 1651, in _run_completion
+    return self._run_engine(use_tqdm=use_tqdm, output_type=output_type)
+           ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/entrypoints/llm.py", line 1861, in _run_engine
+    step_outputs = self.llm_engine.step()
+  File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/v1/engine/llm_engine.py", line 295, in step
+    outputs = self.engine_core.get_output()
+  File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/v1/engine/core_client.py", line 793, in get_output
+    raise self._format_exception(outputs) from None
+vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause.
+Processed prompts:   0%|          | 0/1 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s]
+/lustre/home/frj/yuma-ichikawa/.local/share/uv/python/cpython-3.13.12-linux-x86_64-gnu/lib/python3.13/multiprocessing/resource_tracker.py:400: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown: {'/loky-2812525-o4rc1l0t'}
+  warnings.warn(

@@ -1,8 +1,10 @@
-# Paper-faithful TurboQuant benchmark grid (arXiv:2504.19874, Zandieh et al.),
-# with **HayateQuant** (this repo's proposed codec) as the primary method under
-# test and HALO kept as the strongest prior baseline.
+# Historical TurboQuant-inspired benchmark grid (arXiv:2504.19874, Zandieh et
+# al.), with **HayateQuant** as the primary method under test and HALO retained
+# as a research baseline. This preset is not the formal reproduction boundary:
+# the paper does not disclose enough K/V Algorithm-1-vs-2 and mixed-precision
+# selection details to identify these 2.5/3.5 rows as an exact Table-1 recipe.
 #
-# Setup faithful to the TurboQuant paper:
+# Components aligned with the paper, with the scope caveat above:
 #   * Model      : Llama-3.1-8B-Instruct (paper's 1st KV-cache model). The 2nd
 #                  paper model, Ministral-8B-Instruct-2410, runs the same grid via
 #                  conf/turboquant_paper_ministral.yaml.
@@ -21,7 +23,7 @@ defaults:
   - benchmark_longcontext
   - _self_
 
-model_path: /lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct
+model_path: ???  # supply an external local path or Hugging Face id
 attn_implementation: sdpa   # codec/eviction methods need no attention capture
 
 output_dir: ${hydra:runtime.cwd}/results_paper1/turboquant
@@ -72,8 +74,8 @@ hayatequant_variants:
   - {label: "HayateQuant-4bit",   bits: 4}
   - {label: "HayateQuant-3bit",   bits: 3}
   - {label: "HayateQuant-2bit",   bits: 2}
-  - {label: "HayateQuant-3.5bit", bits: 3, n_outlier: 64, outlier_bits: 4}
-  - {label: "HayateQuant-2.5bit", bits: 2, n_outlier: 64, outlier_bits: 3}
+  - {label: "HayateQuant-3.5bit", bits: 3, n_outlier: 32, outlier_bits: 4}
+  - {label: "HayateQuant-2.5bit", bits: 2, n_outlier: 32, outlier_bits: 3}
 
 # HALO baseline at iso bit-width (superseded scalar predecessor; kept as the
 # strongest prior operating point: NC keys + ls_iter values).
@@ -84,8 +86,8 @@ halo_variants:
   - {label: "HALO-4bit",    bits: 4, key_scale_mode: nc, value_scale_mode: ls_iter}
   - {label: "HALO-3bit",    bits: 3, key_scale_mode: nc, value_scale_mode: ls_iter}
   - {label: "HALO-2bit",    bits: 2, key_scale_mode: nc, value_scale_mode: ls_iter}
-  - {label: "HALO-3.5bit",  bits: 3, n_outlier: 64, outlier_bits: 4, key_scale_mode: nc, value_scale_mode: ls_iter}
-  - {label: "HALO-2.5bit",  bits: 2, n_outlier: 64, outlier_bits: 3, key_scale_mode: nc, value_scale_mode: ls_iter}
+  - {label: "HALO-3.5bit",  bits: 3, n_outlier: 32, outlier_bits: 4, key_scale_mode: nc, value_scale_mode: ls_iter}
+  - {label: "HALO-2.5bit",  bits: 2, n_outlier: 32, outlier_bits: 3, key_scale_mode: nc, value_scale_mode: ls_iter}
 
 # Additional standalone-codec baselines (now reachable via the generic path):
 # FP8 (the recommended 2026 native baseline) and NVFP4 (4-bit E2M1 float).
@@ -115,15 +117,16 @@ turbotaper:
 # Beta codebook (exact Beta((d-1)/2) law) + per-vector L2 norm is the faithful
 # TurboQuant; gaussian (RMS) is the high-d limit. head_dim=128 is power-of-two so
 # the fast Hadamard rotation applies for full-width variants.
-# True 2.5 / 3.5-bit on head_dim=128 = 64 outliers @ b+1 + 64 @ b (the prior
-# n_outlier=32 was an effective 2.25 / 3.25-bit -- see codec docstrings).  All
-# three codecs use the same split so the comparison is exactly iso-memory.
+# Paper 2.5 / 3.5-bit at head_dim=128 = 32 outliers @ b+1 + 96 @ b:
+# 2.25/3.25 payload plus 0.25 bits/coordinate for two fp16 subset norms. All
+# three codecs use the same logical split and metadata accounting in this
+# repository; this does not turn the row into a Table-1 reproduction.
 turboquant_variants:
-  - {label: "TurboQuant-4bit",   bits: 4, dist: beta}
-  - {label: "TurboQuant-3.5bit", bits: 3, n_outlier: 64, outlier_bits: 4, dist: beta}
-  - {label: "TurboQuant-3bit",   bits: 3, dist: beta}
-  - {label: "TurboQuant-2.5bit", bits: 2, n_outlier: 64, outlier_bits: 3, dist: beta}
-  - {label: "TurboQuant-2bit",   bits: 2, dist: beta}
+  - {label: "TurboQuant-4bit",   bits: 4, dist: beta, rotation_mode: dense}
+  - {label: "TurboQuant-3.5bit", bits: 3, n_outlier: 32, outlier_bits: 4, dist: beta, rotation_mode: dense}
+  - {label: "TurboQuant-3bit",   bits: 3, dist: beta, rotation_mode: dense}
+  - {label: "TurboQuant-2.5bit", bits: 2, n_outlier: 32, outlier_bits: 3, dist: beta, rotation_mode: dense}
+  - {label: "TurboQuant-2bit",   bits: 2, dist: beta, rotation_mode: dense}
 
 # --- Needle-in-a-Haystack (paper §4.2: vary context, recall, 4x+ compression) ---
 run_needle: true
@@ -135,13 +138,13 @@ max_new_needle: 32
 # --- LongBench-E (paper §4.3 / Table 1: the headline downstream metric) ---
 run_longbench: true
 longbench_tasks: []         # all 13 English LongBench-E tasks
-longbench_max_length: 7500
-longbench_limit: 10         # 10 x 13 tasks x 14 methods fits the time budget
+longbench_max_length: 32768
+longbench_limit: null       # complete official split; use an integer only for smoke runs
 
 # TurboQuant is a long-context quantizer, not a reasoning method: GSM8K/MATH off.
 run_gsm8k: false
 run_math: false
-run_ruler: true             # extra retrieval stress (disambiguation)
+run_ruler: false            # local multi-key diagnostic is not a RULER benchmark
 ruler_keys: 4
 ruler_seeds: 5
 
@@ -149,4 +152,4 @@ ruler_seeds: 5
 run_ppl: true
 ppl_max_length: 4096
 ppl_stride: 2048
-ppl_windows: 16
+ppl_windows: null            # complete WikiText-2 test split

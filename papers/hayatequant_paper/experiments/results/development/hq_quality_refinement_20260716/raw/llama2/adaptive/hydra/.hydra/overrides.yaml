@@ -1,0 +1,17 @@
+- model_path=/lustre/home/frj/yuma-ichikawa/conference/models/Llama-2-7b-hf
+- device=cuda:0
+- dtype=bfloat16
+- output_dir=/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/papers/hayatequant_paper/experiments/results/development/hq_quality_refinement_20260716/raw/llama2/adaptive
+- bits=[2,3,4]
+- sink_tokens=0
+- recent_tokens=0
+- capture_tokens=512
+- timing_heads=1
+- timing_seq=64
+- timing_iters=20
+- run_ppl=true
+- ppl_max_length=512
+- ppl_stride=512
+- ppl_windows=1
+- +methods=[DEVONLY-AdaptiveHQ-safe-kw1,DEVONLY-AdaptiveHQ-safe-kw4,DEVONLY-AdaptiveHQ-safe-kw16]
+- +skip_outliers=false

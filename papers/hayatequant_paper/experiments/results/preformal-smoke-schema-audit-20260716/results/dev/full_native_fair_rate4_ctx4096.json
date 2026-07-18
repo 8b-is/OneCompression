@@ -1,0 +1,462 @@
+{
+  "aggregate": {
+    "decode_attention": {
+      "HQ_faster_point_estimate": false,
+      "HQ_median_of_process_medians_ms": 0.14446400105953217,
+      "HQ_speedup_over_TurboQuant": 0.5546018284000263,
+      "TurboQuant_median_of_process_medians_ms": 0.08011999912559986,
+      "fresh_process_medians_ms": {
+        "HQ": [
+          0.14443200081586838,
+          0.14449600130319595
+        ],
+        "TurboQuant": [
+          0.08134400099515915,
+          0.07889599725604057
+        ]
+      }
+    },
+    "prefill_store": {
+      "HQ_faster_point_estimate": false,
+      "HQ_median_of_process_medians_ms": 9.374736070632935,
+      "HQ_speedup_over_TurboQuant": 0.013216798457994918,
+      "TurboQuant_median_of_process_medians_ms": 0.12390399724245071,
+      "fresh_process_medians_ms": {
+        "HQ": [
+          9.372528076171875,
+          9.376944065093994
+        ],
+        "TurboQuant": [
+          0.1239359974861145,
+          0.12387199699878693
+        ]
+      }
+    },
+    "serving_step_store1_plus_decode": {
+      "HQ_faster_point_estimate": false,
+      "HQ_median_of_process_medians_ms": 0.8062000125646591,
+      "HQ_speedup_over_TurboQuant": 0.20363185023900726,
+      "TurboQuant_median_of_process_medians_ms": 0.16416800022125244,
+      "fresh_process_medians_ms": {
+        "HQ": [
+          0.8347200155258179,
+          0.7776800096035004
+        ],
+        "TurboQuant": [
+          0.16459199786186218,
+          0.1637440025806427
+        ]
+      }
+    }
+  },
+  "comparison_contract": {
+    "algorithm_specific_physical_slot_width_reported": true,
+    "counterbalance_order": [
+      "HQ",
+      "TurboQuant",
+      "TurboQuant",
+      "HQ"
+    ],
+    "excluded": [
+      "Adaptive HQ",
+      "FibQuant",
+      "BlockQuant",
+      "hybrid",
+      "fake_quant",
+      "public_payload_api"
+    ],
+    "fresh_process_per_sample": true,
+    "methods": [
+      "HQ",
+      "TurboQuant"
+    ],
+    "proposal_variants": [
+      "HQ"
+    ],
+    "same_gpu": true,
+    "same_semantic_shapes_and_paged_layout": true,
+    "timing": "CUDA events with one final synchronization per sample vector",
+    "turboquant": "unmodified upstream vLLM 0.20 native kernels",
+    "warmup_and_compilation_excluded": true
+  },
+  "formal_eligible": false,
+  "formal_ineligibility_reasons": [
+    "dirty_worktree"
+  ],
+  "provenance": {
+    "arguments": {
+      "allow_canonical_k10v6_b4": false,
+      "avg_bits": 4,
+      "codebook_init": "auto",
+      "dist": "gaussian",
+      "dtype": "bfloat16",
+      "head_dim": 128,
+      "iters": 30,
+      "key_block_size": null,
+      "key_code_bits": null,
+      "kv_heads": 8,
+      "max_splits": 32,
+      "output": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/results/dev/full_native_fair_rate4_ctx4096.json",
+      "page_size": 16,
+      "query_heads": 32,
+      "recipe": "hq",
+      "rotation_mode": "auto",
+      "seed": 0,
+      "tokens": 4096,
+      "trial_index": 0,
+      "trials": 4,
+      "value_block_size": null,
+      "value_code_bits": null,
+      "warmups": 10,
+      "worker": false,
+      "worker_variant": null
+    },
+    "finished_at_utc": "2026-07-15T19:15:36.257018+00:00",
+    "git_branch": "agent/hayate-paper-refresh-20260715",
+    "git_commit": "e50379c225259b3e5d5df1facafa7133b36915d5",
+    "git_status_porcelain": "M README.md\n M benchmark/kvcomp-codec/README.md\n M benchmark/kvcomp-codec/codec_benchmark.py\n M benchmark/kvcomp-codec/conf/paper_halo.yaml\n M benchmark/kvcomp-codec/conf/paper_hayatequant.yaml\n M benchmark/kvcomp-codec/hayatequant_aw_calibrate.py\n M benchmark/kvcomp-codec/hayatequant_cayley_calibrate.py\n M benchmark/kvcomp-codec/hayatequant_cross_model.py\n M benchmark/kvcomp-codec/hayatequant_pair_calibrate.py\n M benchmark/kvcomp-codec/hayatequant_sbr_calibrate.py\n M benchmark/kvcomp-codec/hayatequant_value_calibrate.py\n M benchmark/kvcomp-codec/hayatequant_vllm_native_generate.py\n M benchmark/kvcomp-codec/hayatequant_vllm_native_smoke.py\n M benchmark/kvcomp-codec/hayatequant_zeroshot.py\n M benchmark/kvcomp-codec/reproduce_hayatequant_paper.py\n M benchmark/kvcomp-codec/submit_hayatequant_paper.sh\n M benchmark/kvcomp-codec/zeroshot_benchmark.py\n M benchmark/kvcomp-longcontext/README.md\n M benchmark/kvcomp-longcontext/codec_speed.py\n M benchmark/kvcomp-longcontext/conf/azalea_reasoning.yaml\n M benchmark/kvcomp-longcontext/conf/benchmark_longcontext.yaml\n M benchmark/kvcomp-longcontext/conf/hayatequant_exhaustive_grid.yaml\n M benchmark/kvcomp-longcontext/conf/hayatequant_fib_blockquant.yaml\n M benchmark/kvcomp-longcontext/conf/hayatequant_paper.yaml\n M benchmark/kvcomp-longcontext/conf/paper_ablation.yaml\n M benchmark/kvcomp-longcontext/conf/paper_aime.yaml\n M benchmark/kvcomp-longcontext/conf/paper_run.yaml\n M benchmark/kvcomp-longcontext/conf/paper_taperkv.yaml\n M benchmark/kvcomp-longcontext/conf/turboquant_paper.yaml\n M benchmark/kvcomp-longcontext/e2e_speed.py\n M benchmark/kvcomp-longcontext/kv_benchmark.py\n M benchmark/kvcomp-longcontext/paper/HALO_ENHANCED_REPORT.md\n M benchmark/kvcomp-longcontext/paper/README.md\n M benchmark/kvcomp-longcontext/paper/tests/verify_hayatequant_vq_gain.py\n M docs/design/kvcomp-architecture.md\n M onecomp/kvcomp/_base.py\n M onecomp/kvcomp/cache/_graded_base.py\n M onecomp/kvcomp/cache/builders.py\n M onecomp/kvcomp/cache/compressed_cache.py\n M onecomp/kvcomp/cache/streaming_evict.py\n M onecomp/kvcomp/cache/thinkv_cache.py\n M onecomp/kvcomp/codec/__init__.py\n M onecomp/kvcomp/codec/_scale.py\n M onecomp/kvcomp/codec/halo.py\n M onecomp/kvcomp/codec/hayate/__init__.py\n M onecomp/kvcomp/codec/hayate/codec.py\n M onecomp/kvcomp/codec/hayate/recipes.py\n M onecomp/kvcomp/codec/hayate/triton_step.py\n M onecomp/kvcomp/codec/hayate/vq.py\n M onecomp/kvcomp/codec/rotation.py\n M onecomp/kvcomp/codec/turboquant.py\n M onecomp/kvcomp/eval/__init__.py\n M onecomp/kvcomp/eval/longbench.py\n M onecomp/kvcomp/eval/longcontext.py\n M onecomp/kvcomp/eval/metrics.py\n M onecomp/kvcomp/eval/ppl.py\n M onecomp/kvcomp/eval/reasoning.py\n M onecomp/kvcomp/eval/zeroshot.py\n M onecomp/kvcomp/recipe/turbotaper.py\n M papers/README.md\n M papers/hayatequant_paper/FIBQUANT_BLOCKQUANT_DIFF.md\n M papers/hayatequant_paper/MATH_REVIEW.md\n M papers/hayatequant_paper/README.md\n M papers/hayatequant_paper/TURBOQUANT_COMPARISON.md\n M papers/hayatequant_paper/experiments/README.md\n M pyproject.toml\n M tests/onecomp/kvcomp/test_eval_correctness.py\n M tests/onecomp/kvcomp/test_kvcomp.py\n M tests/vllm_plugins/kvcomp/test_kvcomp_vllm_plugin.py\n M tests/vllm_plugins/kvcomp/test_rolekv_mapping.py\n M uv.lock\n M vllm_plugins/kvcomp/hayate_native.py\n M vllm_plugins/kvcomp/hayate_triton.py\n M vllm_plugins/kvcomp/mapping.py\n M vllm_plugins/kvcomp/vllm_plugin.py\n?? benchmark/kvcomp-codec/FORMAL_PAPER_RESULTS.md\n?? benchmark/kvcomp-codec/aggregate_hayatequant_paper_shards.py\n?? benchmark/kvcomp-codec/hayatequant_fair_speed.py\n?? benchmark/kvcomp-codec/hayatequant_vllm_full_native_fair_speed.py\n?? benchmark/kvcomp-codec/hayatequant_vllm_full_native_smoke.py\n?? benchmark/kvcomp-codec/model_weight_manifest.py\n?? benchmark/kvcomp-codec/paper_preflight.py\n?? benchmark/kvcomp-codec/prepare_paper_datasets.py\n?? benchmark/kvcomp-codec/render_hayatequant_formal_results.py\n?? benchmark/kvcomp-codec/run_paper_job.sh\n?? benchmark/kvcomp-codec/validate_hayatequant_paper_inputs.py\n?? benchmark/kvcomp-codec/validate_hayatequant_smoke_gate.py\n?? benchmark/kvcomp-longcontext/LONGCODEQA_PROTOCOL_AUDIT.md\n?? benchmark/kvcomp-longcontext/prepare_official_ruler.py\n?? benchmark/kvcomp-longcontext/validate_longcodeqa_context.py\n?? onecomp/kvcomp/codec/blockquant.py\n?? onecomp/kvcomp/codec/fibquant.py\n?? onecomp/kvcomp/codec/quality_baselines.py\n?? onecomp/kvcomp/eval/_teacher_forcing.py\n?? onecomp/kvcomp/eval/longcodeqa.py\n?? onecomp/kvcomp/eval/provenance.py\n?? onecomp/kvcomp/eval/ruler.py\n?? papers/hayatequant_paper/experiments/results/development/\n?? tests/onecomp/kvcomp/test_blockquant.py\n?? tests/onecomp/kvcomp/test_compressed_cache_lifecycle.py\n?? tests/onecomp/kvcomp/test_fibquant.py\n?? tests/onecomp/kvcomp/test_hayate_full_native_contract.py\n?? tests/onecomp/kvcomp/test_hayatequant_fair_speed.py\n?? tests/onecomp/kvcomp/test_hayatequant_formal_renderer.py\n?? tests/onecomp/kvcomp/test_hayatequant_native_speed_contract.py\n?? tests/onecomp/kvcomp/test_hayatequant_paper_inputs.py\n?? tests/onecomp/kvcomp/test_hayatequant_paper_shards.py\n?? tests/onecomp/kvcomp/test_hayatequant_public_encode.py\n?? tests/onecomp/kvcomp/test_hayatequant_ruler_aggregate.py\n?? tests/onecomp/kvcomp/test_hayatequant_smoke_gate.py\n?? tests/onecomp/kvcomp/test_longcontext_protocol.py\n?? tests/onecomp/kvcomp/test_model_weight_manifest.py\n?? tests/onecomp/kvcomp/test_paper_provenance.py\n?? tests/onecomp/kvcomp/test_ruler_eval.py\n?? tests/onecomp/kvcomp/test_submit_hayatequant_paper.py\n?? tests/onecomp/kvcomp/test_zeroshot_sharding.py\n?? tests/vllm_plugins/kvcomp/test_hayate_full_config.py\n?? tests/vllm_plugins/kvcomp/test_hayate_full_spawn_registration.py\n?? vllm_plugins/kvcomp/hayate_full_config.py\n?? vllm_plugins/kvcomp/hayate_full_native.py\n?? vllm_plugins/kvcomp/hayate_full_triton.py",
+    "hostname": "kagura-gpu14",
+    "source_sha256": {
+      "benchmark/kvcomp-codec/hayatequant_vllm_full_native_fair_speed.py": "21a7d44d70ae7b9f4fed0e26288b956bfda98f65c109d6e149f92fbbd284986e",
+      "vllm_plugins/kvcomp/hayate_full_config.py": "5d3d578524ea083a699e365010e2f8bda8168cd22902a464d414c47ad791f538",
+      "vllm_plugins/kvcomp/hayate_full_native.py": "3b2cd3642213e6bcbd9476f0920467a6bd63d5024ad5251661e142fe87057cd1",
+      "vllm_plugins/kvcomp/hayate_full_triton.py": "1cdc56901424f1e05364a20c8a6ee9d0ed233fe9b1e63284ff1f3fe77f2ced9d"
+    },
+    "upstream_vllm_sha256": {
+      "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/model_executor/layers/quantization/turboquant/config.py": "579d32873a4be1d51a1bd47a3f5bd36d4a7ec7ad162d193c27b156f13a899777",
+      "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/v1/attention/ops/triton_turboquant_decode.py": "f15c5e1eb5b363b063fb075e632e0a8ed0177b49115a5aa1f7a09b676c1d2f86",
+      "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/v1/attention/ops/triton_turboquant_store.py": "0ac49b3da69a70fdc6e7b1800237a81f8398f8509770d0f48d1938d926d06e45"
+    },
+    "vllm_version": "0.20.0"
+  },
+  "schema": {
+    "name": "onecomp.hq_vs_upstream_tq_native_fair_speed",
+    "version": 1
+  },
+  "workers": [
+    {
+      "gpu": {
+        "capability": [
+          10,
+          0
+        ],
+        "name": "NVIDIA B200",
+        "total_memory_bytes": 191503007744,
+        "uuid": "6f0580cd-27fe-1922-7806-2fe51b173900"
+      },
+      "method_contract": {
+        "implementation": "faithful_packed_fixed_HQ_native",
+        "recipe": {
+          "allow_canonical_k10v6_b4": false,
+          "assignment": "exact_nearest_codeword_then_value_ls_refit",
+          "average_kv_rate_bits_per_coordinate": 4.0,
+          "codebook_init": "auto",
+          "dist": "gaussian",
+          "key_block_size": 2,
+          "key_code_bits_per_block": 9,
+          "key_rate_bits_per_coordinate": 4.5,
+          "key_scale_mode": "nc",
+          "layout": {
+            "key_code_bytes": 72,
+            "key_scale_offset": 72,
+            "slot_padding_bytes": 0,
+            "slot_size": 132,
+            "slot_size_aligned": 132,
+            "value_code_bytes": 56,
+            "value_codes_offset": 74,
+            "value_scale_offset": 130
+          },
+          "max_codebook_bits": 9,
+          "rotation_mode": "auto",
+          "scale_contract": "one_signed_fp16_scale_per_role_vector",
+          "seed": 0,
+          "value_block_size": 2,
+          "value_code_bits_per_block": 7,
+          "value_rate_bits_per_coordinate": 3.5,
+          "value_scale_mode": "ls_iter",
+          "zero_points": 0
+        },
+        "slot_size_aligned": 132,
+        "upstream_turboquant_modified": false
+      },
+      "physical_cache_bytes": 4325376,
+      "pid": 1831292,
+      "shape_contract": {
+        "dtype": "bfloat16",
+        "head_dim": 128,
+        "kv_heads": 8,
+        "max_kv_splits": 32,
+        "page_size": 16,
+        "pages": 256,
+        "query_heads": 32,
+        "tokens": 4096
+      },
+      "timings": {
+        "decode_attention": {
+          "max_ms": 0.256415992975235,
+          "mean_ms": 0.1483733336130778,
+          "median_ms": 0.14443200081586838,
+          "min_ms": 0.14214399456977844,
+          "n": 30,
+          "p10_ms": 0.1441279947757721,
+          "p90_ms": 0.14640000462532043
+        },
+        "prefill_store": {
+          "max_ms": 9.476960182189941,
+          "mean_ms": 9.376671028137206,
+          "median_ms": 9.372528076171875,
+          "min_ms": 9.35910415649414,
+          "n": 30,
+          "p10_ms": 9.363264083862305,
+          "p90_ms": 9.386048316955566
+        },
+        "serving_step_store1_plus_decode": {
+          "max_ms": 1.0791679620742798,
+          "mean_ms": 0.8442944010098775,
+          "median_ms": 0.8347200155258179,
+          "min_ms": 0.817471981048584,
+          "n": 30,
+          "p10_ms": 0.8209919929504395,
+          "p90_ms": 0.8526719808578491
+        }
+      },
+      "trial_index": 0,
+      "worker_stderr_tail": "",
+      "worker_variant": "HQ"
+    },
+    {
+      "gpu": {
+        "capability": [
+          10,
+          0
+        ],
+        "name": "NVIDIA B200",
+        "total_memory_bytes": 191503007744,
+        "uuid": "6f0580cd-27fe-1922-7806-2fe51b173900"
+      },
+      "method_contract": {
+        "implementation": "unmodified_upstream_vllm_0.20_TurboQuant_native",
+        "key_bits": 4,
+        "kv_cache_dtype": "turboquant_4bit_nc",
+        "slot_size_aligned": 134,
+        "upstream_turboquant_modified": false,
+        "value_bits": 4
+      },
+      "physical_cache_bytes": 4390912,
+      "pid": 1831335,
+      "shape_contract": {
+        "dtype": "bfloat16",
+        "head_dim": 128,
+        "kv_heads": 8,
+        "max_kv_splits": 32,
+        "page_size": 16,
+        "pages": 256,
+        "query_heads": 32,
+        "tokens": 4096
+      },
+      "timings": {
+        "decode_attention": {
+          "max_ms": 0.1406719982624054,
+          "mean_ms": 0.08385386591156324,
+          "median_ms": 0.08134400099515915,
+          "min_ms": 0.0769599974155426,
+          "n": 30,
+          "p10_ms": 0.07791999727487564,
+          "p90_ms": 0.0870399996638298
+        },
+        "prefill_store": {
+          "max_ms": 0.14710399508476257,
+          "mean_ms": 0.12473386575778325,
+          "median_ms": 0.1239359974861145,
+          "min_ms": 0.12201599776744843,
+          "n": 30,
+          "p10_ms": 0.12358400225639343,
+          "p90_ms": 0.1249919980764389
+        },
+        "serving_step_store1_plus_decode": {
+          "max_ms": 0.24009600281715393,
+          "mean_ms": 0.16796373377243679,
+          "median_ms": 0.16459199786186218,
+          "min_ms": 0.1563519984483719,
+          "n": 30,
+          "p10_ms": 0.16060799360275269,
+          "p90_ms": 0.17484800517559052
+        }
+      },
+      "trial_index": 1,
+      "worker_stderr_tail": "",
+      "worker_variant": "TurboQuant"
+    },
+    {
+      "gpu": {
+        "capability": [
+          10,
+          0
+        ],
+        "name": "NVIDIA B200",
+        "total_memory_bytes": 191503007744,
+        "uuid": "6f0580cd-27fe-1922-7806-2fe51b173900"
+      },
+      "method_contract": {
+        "implementation": "unmodified_upstream_vllm_0.20_TurboQuant_native",
+        "key_bits": 4,
+        "kv_cache_dtype": "turboquant_4bit_nc",
+        "slot_size_aligned": 134,
+        "upstream_turboquant_modified": false,
+        "value_bits": 4
+      },
+      "physical_cache_bytes": 4390912,
+      "pid": 1831376,
+      "shape_contract": {
+        "dtype": "bfloat16",
+        "head_dim": 128,
+        "kv_heads": 8,
+        "max_kv_splits": 32,
+        "page_size": 16,
+        "pages": 256,
+        "query_heads": 32,
+        "tokens": 4096
+      },
+      "timings": {
+        "cudagraph_serving_step_store1_plus_decode": {
+          "max_ms": 0.11807999759912491,
+          "mean_ms": 0.07912426739931107,
+          "median_ms": 0.07840000092983246,
+          "min_ms": 0.07651200145483017,
+          "n": 30,
+          "p10_ms": 0.0767040029168129,
+          "p90_ms": 0.07884799689054489
+        },
+        "decode_attention": {
+          "max_ms": 0.1364479959011078,
+          "mean_ms": 0.08234239965677262,
+          "median_ms": 0.07889599725604057,
+          "min_ms": 0.07561600208282471,
+          "n": 30,
+          "p10_ms": 0.07763200253248215,
+          "p90_ms": 0.08985599875450134
+        },
+        "prefill_store": {
+          "max_ms": 0.15600000321865082,
+          "mean_ms": 0.12496213267246882,
+          "median_ms": 0.12387199699878693,
+          "min_ms": 0.12176000326871872,
+          "n": 30,
+          "p10_ms": 0.12361600250005722,
+          "p90_ms": 0.12489599734544754
+        },
+        "serving_step_store1_plus_decode": {
+          "max_ms": 0.23347200453281403,
+          "mean_ms": 0.16758826673030852,
+          "median_ms": 0.1637440025806427,
+          "min_ms": 0.15769599378108978,
+          "n": 30,
+          "p10_ms": 0.15878400206565857,
+          "p90_ms": 0.17295999825000763
+        }
+      },
+      "trial_index": 2,
+      "worker_stderr_tail": "",
+      "worker_variant": "TurboQuant"
+    },
+    {
+      "gpu": {
+        "capability": [
+          10,
+          0
+        ],
+        "name": "NVIDIA B200",
+        "total_memory_bytes": 191503007744,
+        "uuid": "6f0580cd-27fe-1922-7806-2fe51b173900"
+      },
+      "method_contract": {
+        "implementation": "faithful_packed_fixed_HQ_native",
+        "recipe": {
+          "allow_canonical_k10v6_b4": false,
+          "assignment": "exact_nearest_codeword_then_value_ls_refit",
+          "average_kv_rate_bits_per_coordinate": 4.0,
+          "codebook_init": "auto",
+          "dist": "gaussian",
+          "key_block_size": 2,
+          "key_code_bits_per_block": 9,
+          "key_rate_bits_per_coordinate": 4.5,
+          "key_scale_mode": "nc",
+          "layout": {
+            "key_code_bytes": 72,
+            "key_scale_offset": 72,
+            "slot_padding_bytes": 0,
+            "slot_size": 132,
+            "slot_size_aligned": 132,
+            "value_code_bytes": 56,
+            "value_codes_offset": 74,
+            "value_scale_offset": 130
+          },
+          "max_codebook_bits": 9,
+          "rotation_mode": "auto",
+          "scale_contract": "one_signed_fp16_scale_per_role_vector",
+          "seed": 0,
+          "value_block_size": 2,
+          "value_code_bits_per_block": 7,
+          "value_rate_bits_per_coordinate": 3.5,
+          "value_scale_mode": "ls_iter",
+          "zero_points": 0
+        },
+        "slot_size_aligned": 132,
+        "upstream_turboquant_modified": false
+      },
+      "physical_cache_bytes": 4325376,
+      "pid": 1831465,
+      "shape_contract": {
+        "dtype": "bfloat16",
+        "head_dim": 128,
+        "kv_heads": 8,
+        "max_kv_splits": 32,
+        "page_size": 16,
+        "pages": 256,
+        "query_heads": 32,
+        "tokens": 4096
+      },
+      "timings": {
+        "cudagraph_serving_step_store1_plus_decode": {
+          "max_ms": 0.41465601325035095,
+          "mean_ms": 0.2764682630697886,
+          "median_ms": 0.27139198780059814,
+          "min_ms": 0.2710399925708771,
+          "n": 30,
+          "p10_ms": 0.27113598585128784,
+          "p90_ms": 0.2731199860572815
+        },
+        "decode_attention": {
+          "max_ms": 0.2533760070800781,
+          "mean_ms": 0.1481045330564181,
+          "median_ms": 0.14449600130319595,
+          "min_ms": 0.14188799262046814,
+          "n": 30,
+          "p10_ms": 0.14239999651908875,
+          "p90_ms": 0.14633600413799286
+        },
+        "prefill_store": {
+          "max_ms": 11.03763198852539,
+          "mean_ms": 9.4844651222229,
+          "median_ms": 9.376944065093994,
+          "min_ms": 9.357151985168457,
+          "n": 30,
+          "p10_ms": 9.368512153625488,
+          "p90_ms": 9.38588809967041
+        },
+        "serving_step_store1_plus_decode": {
+          "max_ms": 1.040511965751648,
+          "mean_ms": 0.7881834646066029,
+          "median_ms": 0.7776800096035004,
+          "min_ms": 0.7513599991798401,
+          "n": 30,
+          "p10_ms": 0.7635840177536011,
+          "p90_ms": 0.8058559894561768
+        }
+      },
+      "trial_index": 3,
+      "worker_stderr_tail": "",
+      "worker_variant": "HQ"
+    }
+  ]
+}

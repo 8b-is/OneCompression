@@ -10,17 +10,20 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import sys
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from onecomp.kvcomp.codec import HayateQuantCodec
-from onecomp.kvcomp.codec.hayate.recipes import hayate_frontier_bits
+from onecomp.kvcomp.codec.hayate.recipes import hayate_hq_kwargs, hayate_hq_role_rates
 from onecomp.kvcomp.codec.hayate.calibration import (
     calibrate_hayatequant,
     capture_kv_samples,
 )
-
 
 DEFAULT_TEXT = (
     "A robust KV-cache quantizer should preserve attention logits and value "
@@ -28,17 +31,19 @@ DEFAULT_TEXT = (
 ) * 64
 
 
-def _kv_asym(bits: int) -> tuple[int, int]:
-    kv_bits = hayate_frontier_bits(bits)
+def _kv_asym(bits: int) -> tuple[float, float]:
+    kv_bits = hayate_hq_role_rates(bits)
     if kv_bits is None:
-        raise ValueError(f"average bits must be in [2, 7], got {bits}")
+        raise ValueError(f"average bits must be one of 2, 3, or 4, got {bits}")
     return kv_bits
 
 
 def main() -> None:
     args = parse_args()
     key_bits, value_bits = _kv_asym(args.avg_bits)
-    tok = AutoTokenizer.from_pretrained(args.model_path, trust_remote_code=True)
+    tok = AutoTokenizer.from_pretrained(
+        args.model_path, trust_remote_code=True, fix_mistral_regex=True
+    )
     model = AutoModelForCausalLM.from_pretrained(
         args.model_path,
         torch_dtype=getattr(torch, args.dtype),
@@ -56,13 +61,14 @@ def main() -> None:
         layer_stride=args.layer_stride,
         device=model.device,
     )
+    if args.block_size not in (None, 2):
+        raise ValueError("the fixed HQ calibration recipe requires block_size=2")
     codec = HayateQuantCodec(
-        bits=key_bits,
-        value_bits=value_bits,
-        key_scale_mode="ub",
-        block_size=args.block_size,
-        max_codebook_bits=args.max_codebook_bits,
-        encoder="exact",
+        **hayate_hq_kwargs(
+            args.avg_bits,
+            max_codebook_bits=args.max_codebook_bits,
+            encoder="exact",
+        )
     )
     cal = calibrate_hayatequant(
         codec,
@@ -80,13 +86,15 @@ def main() -> None:
         device=args.fit_device,
         verbose=True,
     )
-    cal.meta.update({
-        "model_path": str(args.model_path),
-        "avg_bits": args.avg_bits,
-        "key_bits": key_bits,
-        "value_bits": value_bits,
-        "recipe": "Kplus1_Vminus1_UBkey_CayleyCalib",
-    })
+    cal.meta.update(
+        {
+            "model_path": str(args.model_path),
+            "avg_bits": args.avg_bits,
+            "key_bits": key_bits,
+            "value_bits": value_bits,
+            "recipe": "HQ_b2_Kplus0.5_Vminus0.5_NCkey_LSiterValue_CayleyCalib",
+        }
+    )
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
     cal.save(str(out))

@@ -1,0 +1,138 @@
+Loading weights:   0%|          | 0/311 [00:00<?, ?it/s]Loading weights:   0%|          | 1/311 [00:00<00:35,  8.64it/s]Loading weights:   1%|          | 2/311 [00:00<00:43,  7.14it/s]Loading weights:  19%|█▊        | 58/311 [00:00<00:01, 184.35it/s]Loading weights:  25%|██▍       | 77/311 [00:00<00:01, 185.00it/s]Loading weights:  74%|███████▍  | 230/311 [00:00<00:00, 598.82it/s]Loading weights: 100%|██████████| 311/311 [00:00<00:00, 443.44it/s]
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (299078 > 131072). Running this sequence through the model will result in indexing errors
+Traceback (most recent call last):
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/.venv/lib/python3.12/site-packages/triton/language/core.py", line 43, in wrapper
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/.venv/lib/python3.12/site-packages/triton/language/core.py", line 1101, in __getitem__
+    raise ValueError(f"unsupported tensor index: {sl}")
+ValueError: unsupported tensor index: constexpr[0]
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/benchmark/kvcomp-codec/hayatequant_lut_quality_gate.py", line 314, in <module>
+    main()
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/benchmark/kvcomp-codec/hayatequant_lut_quality_gate.py", line 304, in main
+    result = run(args)
+             ^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/benchmark/kvcomp-codec/hayatequant_lut_quality_gate.py", line 189, in run
+    ppl = wikitext2_perplexity(
+          ^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/eval/ppl.py", line 292, in wikitext2_perplexity
+    out = perplexity_over_text(
+          ^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/.venv/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/eval/ppl.py", line 135, in perplexity_over_text
+    logits, window_protocol, window_dependency = causal_teacher_forced_logits(
+                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/.venv/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/eval/_teacher_forcing.py", line 99, in causal_teacher_forced_logits
+    out = _forward_step(model, input_ids, cache)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/eval/_teacher_forcing.py", line 66, in _forward_step
+    out = model(input_ids, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/.venv/lib/python3.12/site-packages/transformers/utils/generic.py", line 887, in wrapper
+    output = func(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/.venv/lib/python3.12/site-packages/transformers/models/qwen3/modeling_qwen3.py", line 492, in forward
+    outputs: BaseModelOutputWithPast = self.model(
+                                       ^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/.venv/lib/python3.12/site-packages/transformers/utils/generic.py", line 963, in wrapper
+    output = func(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/.venv/lib/python3.12/site-packages/transformers/utils/output_capturing.py", line 248, in wrapper
+    outputs = func(self, *args, **kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/.venv/lib/python3.12/site-packages/transformers/models/qwen3/modeling_qwen3.py", line 424, in forward
+    hidden_states = decoder_layer(
+                    ^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/.venv/lib/python3.12/site-packages/transformers/modeling_layers.py", line 93, in __call__
+    return super().__call__(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/.venv/lib/python3.12/site-packages/transformers/models/qwen3/modeling_qwen3.py", line 318, in forward
+    hidden_states, _ = self.self_attn(
+                       ^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/.venv/lib/python3.12/site-packages/transformers/models/qwen3/modeling_qwen3.py", line 271, in forward
+    key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/cache/compressed_cache.py", line 239, in update
+    key_q, value_q, stored = self.codec.fake_quant_roundtrip(
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codec.py", line 2510, in fake_quant_roundtrip
+    khat = self._rt_call(
+           ^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codec.py", line 2472, in _rt_call
+    return fn(x, w, cb32, cb_score, csq, bounds, lut, bins, block_size, modes)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codec.py", line 563, in _roundtrip_tensors
+    chat = _assign(xi / ri)
+           ^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codec.py", line 541, in _assign
+    codes = quantize_via_lut(
+            ^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/vq.py", line 876, in quantize_via_lut
+    return quantize_lut_canonical_t4_triton(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/triton_step.py", line 427, in quantize_lut_canonical_t4_triton
+    _hq_lut_canonical_t4_kernel[(triton.cdiv(rows, block_n),)](
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/.venv/lib/python3.12/site-packages/triton/runtime/jit.py", line 370, in <lambda>
+    return lambda *args, **kwargs: self.run(grid=grid, warmup=False, *args, **kwargs)
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/.venv/lib/python3.12/site-packages/triton/runtime/jit.py", line 720, in run
+    kernel = self._do_compile(key, signature, device, constexprs, options, attrs, warmup)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/.venv/lib/python3.12/site-packages/triton/runtime/jit.py", line 849, in _do_compile
+    kernel = self.compile(src, target=target, options=options.__dict__)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/.venv/lib/python3.12/site-packages/triton/compiler/compiler.py", line 304, in compile
+    module = src.make_ir(target, options, codegen_fns, module_map, context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/.venv/lib/python3.12/site-packages/triton/compiler/compiler.py", line 80, in make_ir
+    return ast_to_ttir(self.fn, self, context=context, options=options, codegen_fns=codegen_fns,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+triton.compiler.errors.CompilationError: at 22:11:
+    STEP: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+):
+    """Fused b=2,T=4 lookup with canonical half-GEMM score rounding."""
+    rows = tl.program_id(0) * BLOCK_N + tl.arange(0, BLOCK_N)
+    row_mask = rows < N
+    offs_b = tl.arange(0, 2)
+    z = tl.load(Z + rows[:, None] * 2 + offs_b[None, :], mask=row_mask[:, None])
+    z_clamped = tl.maximum(tl.minimum(z, LIM), -LIM)
+    zi = ((z_clamped + LIM) * STEP).to(tl.int32)
+    zi = tl.maximum(0, tl.minimum(zi, BINS - 1))
+    flat = zi[:, 0] * BINS + zi[:, 1]
+           ^
+unsupported tensor index: constexpr[0]

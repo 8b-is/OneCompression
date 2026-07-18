@@ -1,32 +1,32 @@
-"""LiveCodeBench-style code-generation pass@1 under a KV ``cache_factory``.
+"""HumanEval-style functional-code pass@1 under a KV ``cache_factory``.
 
-ThinKV (Ramachandran et al., ICLR 2026) reports **LiveCodeBench** alongside
-MATH-500 / AIME / GSM8K, so a paper comparable to ThinKV needs the code axis too.
-This module adds the functional-correctness ``pass@1`` protocol shared by
-HumanEval / MBPP / LiveCodeBench (functional subset): the model writes a solution
+This module implements a small HumanEval-compatible functional-correctness
+protocol: the model writes a solution
 from a problem statement, and the extracted code is executed against held-out
-assertions in a **sandboxed subprocess** (CPU-time + address-space rlimits, a hard
-wall-clock timeout, and a throw-away working directory).  It returns the same
+assertions in a **resource-limited subprocess** (CPU-time + address-space rlimits,
+a hard wall-clock timeout, and a throw-away working directory). It returns the same
 :class:`~onecomp.kvcomp.eval.reasoning.ReasoningResult` (pass@1 + stderr + 95% CI)
 as the math evals, so the paper table stays uniform and every quality number
 carries an error bar.
 
 A *problem* is a dict ``{"prompt": str, "entry_point": str, "test": str}`` where
 ``test`` defines ``def check(candidate): ...`` (the HumanEval convention).  The
-program executed is ``<extracted code>\n<test>\ncheck(<entry_point>)``.  Pass the
-real LiveCodeBench (functional subset) via :func:`livecodebench_pass_at_1`, or any
-local list of problems via :func:`code_pass_at_1` (used by the unit tests).
+program executed is ``<extracted code>\n<test>\ncheck(<entry_point>)``. Pass
+HumanEval-shaped rows through :func:`livecodebench_pass_at_1`, or any local list
+via :func:`code_pass_at_1`. Official LiveCodeBench requires its APPS-based runner.
 
 Security note: generated code is untrusted.  It runs in a child ``python -c``
 process with ``RLIMIT_CPU`` / ``RLIMIT_AS`` and a timeout; it never executes in
-the benchmark process.  This is a research sandbox, not a hardened jail -- run the
-harness on an isolated node, as with any code-execution benchmark.
+the benchmark process. This is not a security boundary: the subprocess is not
+namespace/seccomp-isolated and may access resources available to the job. Run
+only on an isolated node with untrusted-network/filesystem access disabled.
 
 Copyright 2025-2026 Fujitsu Ltd.
 """
 
 from __future__ import annotations
 
+import math
 import os
 import re
 import subprocess
@@ -35,7 +35,14 @@ import tempfile
 from logging import getLogger
 from typing import Callable, List, Optional
 
-from .reasoning import ReasoningResult, _build_prompt, _generate, _mean_stderr_ci
+from .compression_accounting import aggregate_compression_sufficient_statistics
+from .reasoning import (
+    ReasoningResult,
+    _build_prompt,
+    _generate,
+    _mean_stderr_ci,
+    _seeded_rng,
+)
 
 logger = getLogger(__name__)
 
@@ -89,7 +96,7 @@ def _limit_resources(cpu_s: int, mem_mb: int):
 
 
 def run_code(program: str, timeout: float = 6.0, mem_mb: int = 2048) -> tuple:
-    """Execute ``program`` in a sandboxed subprocess. Returns ``(passed, detail)``."""
+    """Execute in a resource-limited subprocess; not a hardened sandbox."""
     with tempfile.TemporaryDirectory() as tmp:
         try:
             proc = subprocess.run(
@@ -126,9 +133,11 @@ def code_pass_at_1(
     system: Optional[str] = _CODE_SYSTEM,
     timeout: float = 6.0,
     mem_mb: int = 2048,
-    task: str = "livecodebench",
+    task: str = "functional_code_smoke",
     verbose: bool = False,
     attn_capture: bool = False,
+    sample_seed: Optional[int] = 0,
+    dataset_size: Optional[int] = None,
 ) -> ReasoningResult:
     """Functional-correctness pass@1 over ``problems`` under ``cache_factory``.
 
@@ -136,32 +145,51 @@ def code_pass_at_1(
     ``test`` defines ``check(candidate)``).  Mirrors the math evals' aggregation
     so the result carries pass@1, its standard error, and a 95% CI.
     """
+    if k <= 0:
+        raise ValueError("Functional-code k must be positive")
+    if max_new_tokens <= 0:
+        raise ValueError("Functional-code max_new_tokens must be positive")
+    if not problems:
+        raise ValueError("Functional-code evaluation needs at least one problem")
     n = 0
     p1_values: List[float] = []
     gen_lens: List[int] = []
     ratios: List[float] = []
+    compression_records: List[dict] = []
     per_q: List[dict] = []
+    pass_k_values: List[float] = []
     fired_all, saw_eviction = True, False
-    for prob in problems:
+    eviction_events: List[Optional[bool]] = []
+    for problem_idx, prob in enumerate(problems):
         prompt = prob["prompt"]
         entry = prob["entry_point"]
         test = prob["test"]
         ids = _build_prompt(tokenizer, prompt, system)
         passed = 0
-        for _ in range(k):
-            gen, ratio, _fired = _generate(
-                model,
-                tokenizer,
-                ids,
-                cache_factory,
-                max_new_tokens,
-                do_sample or k > 1,
-                temperature,
-                top_p,
-                attn_capture=attn_capture,
+        for sample_idx in range(k):
+            seed = (
+                None
+                if sample_seed is None
+                else int(sample_seed) + problem_idx * 100_003 + sample_idx
             )
+            with _seeded_rng(seed, model.device):
+                gen, ratio, fired, compression = _generate(
+                    model,
+                    tokenizer,
+                    ids,
+                    cache_factory,
+                    max_new_tokens,
+                    do_sample or k > 1,
+                    temperature,
+                    top_p,
+                    attn_capture=attn_capture,
+                )
             gen_lens.append(int(gen.shape[0]))
             ratios.append(ratio)
+            if fired is not None and not isinstance(fired, bool):
+                raise TypeError("Code generator eviction flag must be a bool or None")
+            eviction_events.append(fired)
+            compression_records.append(compression)
             text = tokenizer.decode(gen, skip_special_tokens=True)
             code = extract_code(text, entry)
             ok, detail = run_code(_build_program(code, test, entry), timeout, mem_mb)
@@ -170,24 +198,53 @@ def code_pass_at_1(
                 logger.info("[%s] %s k-sample -> %s (%s)", task, entry, ok, detail)
         p1 = passed / k
         p1_values.append(p1)
+        pass_k_values.append(float(passed > 0))
         n += 1
         per_q.append({"entry_point": entry, "pass@1": p1})
     probe = cache_factory() if cache_factory is not None else None
     if probe is not None and hasattr(probe, "evict_now"):
         saw_eviction = True
-        fired_all = bool(ratios) and (sum(ratios) / len(ratios)) > 1.0 + 1e-6
+        if any(value is None for value in eviction_events):
+            raise RuntimeError("Eviction cache generation omitted its eviction event record")
+        fired_all = bool(eviction_events) and any(bool(value) for value in eviction_events)
     mean_p1, se, ci = _mean_stderr_ci(p1_values)
+    compression_statistics = aggregate_compression_sufficient_statistics(compression_records)
+    if compression_statistics["compression_aggregation"] == (
+        "sum_exact_per_generation_cache_bit_counters"
+    ):
+        exact_fp16_bits = int(compression_statistics["compression_fp16_bits"])
+        exact_stored_bits = int(compression_statistics["compression_stored_bits"])
+        displayed_compression_ratio = (
+            float("inf") if exact_stored_bits == 0 else exact_fp16_bits / exact_stored_bits
+        )
+        compression_ratio_aggregation = "exact_sum_fp16_bits_over_sum_stored_bits"
+    elif compression_statistics["compression_aggregation"] == "fullkv_no_cache":
+        displayed_compression_ratio = 1.0
+        compression_ratio_aggregation = "fullkv_no_cache"
+    else:
+        displayed_compression_ratio = float(math.fsum(ratios) / len(ratios)) if ratios else 1.0
+        compression_ratio_aggregation = (
+            "legacy_arithmetic_mean_per_generation_ratio_no_exact_counters"
+        )
     return ReasoningResult(
         task=task,
         n=n,
         k=k,
         pass_at_1=mean_p1,
         avg_gen_len=sum(gen_lens) / max(len(gen_lens), 1),
-        compression_ratio=float(sum(ratios) / len(ratios)) if ratios else 1.0,
+        compression_ratio=displayed_compression_ratio,
+        compression_ratio_aggregation=compression_ratio_aggregation,
         per_question=per_q,
         pass_at_1_stderr=se,
         pass_at_1_ci95=ci,
-        eviction_fired=(fired_all if saw_eviction else True),
+        eviction_applicable=saw_eviction,
+        eviction_fired=(fired_all if saw_eviction else None),
+        observed_pass_at_k=(sum(pass_k_values) / len(pass_k_values) if pass_k_values else None),
+        dataset_size=dataset_size,
+        grader="resource_limited_python_check",
+        protocol="humaneval_shaped_functional_smoke",
+        pass_at_1_sum=float(sum(p1_values)),
+        compression_sufficient_statistics=compression_statistics,
     )
 
 
@@ -229,13 +286,15 @@ def livecodebench_pass_at_1(
     adapter: Callable[[dict], Optional[dict]] = _adapt_livecodebench,
     **kwargs,
 ) -> ReasoningResult:
-    """LiveCodeBench (functional subset) pass@1 under ``cache_factory``.
+    """Compatibility loader for HumanEval-shaped rows, not official LiveCodeBench.
 
     Pass an explicit ``problems`` list (``{prompt, entry_point, test}``) to bypass
-    dataset loading, e.g. a local LiveCodeBench JSONL; otherwise the HF ``dataset``
-    is loaded and adapted via ``adapter`` (functional rows only).  Extra kwargs go
-    to :func:`code_pass_at_1` (``k``, ``max_new_tokens``, ``timeout`` ...).
+    dataset loading. Official LiveCodeBench competition problems use stdin/stdout
+    tests and the APPS checker; they must be evaluated with the official runner.
+    This helper deliberately reports task ``functional_code_smoke`` so its output
+    cannot be mistaken for a leaderboard-comparable LiveCodeBench score.
     """
+    known_dataset_size = None
     if problems is None:
         from datasets import load_dataset  # pylint: disable=import-outside-toplevel
 
@@ -249,9 +308,12 @@ def livecodebench_pass_at_1(
                 break
         if not problems:
             raise ValueError(
-                f"No functional problems adapted from {dataset!r}; supply a "
-                "`problems` list or a custom `adapter` for stdin/stdout tasks."
+                f"No HumanEval-shaped rows adapted from {dataset!r}. Official "
+                "LiveCodeBench stdin/stdout tasks require the official APPS-based runner."
             )
     else:
+        known_dataset_size = len(problems)
         problems = problems[:limit]
-    return code_pass_at_1(model, tokenizer, problems, cache_factory, **kwargs)
+    return code_pass_at_1(
+        model, tokenizer, problems, cache_factory, dataset_size=known_dataset_size, **kwargs
+    )

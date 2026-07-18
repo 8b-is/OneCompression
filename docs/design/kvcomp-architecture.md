@@ -16,15 +16,15 @@
 > | **baseline: PM-KVQ** (recipe `pmkvq` + `PMKVQCache`, progressive dynamic precision + block-wise layer allocation + K>V) | done | `01`, `smoke_pmkvq`, `kv_benchmark` |
 > | **shared base `GradedQuantCache`** (per-token variable bits, sink/skip, accounting; shared by TaperKV/PM-KVQ) | done | `01` |
 > | **proposed: TaperKV** (recipe `taperkv` + `TaperKVCache`, age-graded precision, no eviction, K>V) | done (verified, wins, multi-arch) | `01`, `kv_benchmark` |
-> | **proposed: HALO** (codec `halo`, preconditioning off by default; `auto` rotation + skip-preconditioning is 2.9× faster than TurboQuant at equal quality; role-asymmetric NC/LS scale is a validated *quality* lever) | done (wins on speed-quality); **superseded by HayateQuant, kept as the baseline it must beat** | `01`, `speed_halo`, `codec_benchmark` |
-> | **proposed: HayateQuant** (codec `hayatequant` — strict superset of TurboQuant + HALO: data-free block-VQ + Hadamard/block-dense hybrid rotation + HALO's role-asymmetric scale, all storage-neutral) | done (`block_size=1` reproduces TurboQuant/HALO bit-for-bit; block-VQ strictly reduces distortion at equal bits) | `verify_hayatequant_vq_gain`, `test_kvcomp.py`, `codec_benchmark` |
+> | **research baseline: HALO** (codec `halo`, preconditioning off by default; role-asymmetric NC/LS scale is an empirical quality lever) | implemented; historical speed claims require rerun under the paired public-payload protocol | `01`, `speed_halo`, `codec_benchmark` |
+> | **proposed: HayateQuant** (codec `hayatequant` — data-free block-VQ + Hadamard/block-dense hybrid rotation + role-asymmetric scale) | done (`block_size=1` with matched knobs is a scalar compatibility control; the distinct block-VQ recipe is benchmarked rather than claimed to dominate universally) | `verify_hayatequant_vq_gain`, `test_kvcomp.py`, `codec_benchmark` |
 > | HF integration `CompressedDynamicCache` + `ThinKVCache` (live TBQ) + `StreamingLLMEvictCache` (eviction baseline) | done | `02`, `05`, `07`, `08`, `kv_benchmark` |
 > | eval: `eval/{metrics,ppl,zeroshot,reasoning,longcontext}` (PPL / 0-shot / GSM8K · MATH500 / **Needle/RULER**) | done | `08`, `09`, `kv_benchmark` |
 > | **main experiment `benchmark/kvcomp-longcontext/`** (Full/uniform/evict/ThinKV/PM-KVQ/TaperKV, iso-memory) | done | llama-3.1-8b, R1-Distill-Qwen-7B/1.5B |
 > | **main experiment `benchmark/kvcomp-codec/`** (HayateQuant vs TurboQuant/HALO: distortion/PPL/overhead) | done | llama-8b / Qwen-1.5B |
 > | Runner `kv_config` -> `config.json` dual-config | done | `03` |
-> | vLLM plugin: FP8 -> native `kv_cache_dtype` mapping + entry-point (`vllm.general_plugins`) | done | `10` |
-> | Custom AttentionBackend for low-bit/eviction in vLLM, LongBench, Triton kernels, ILP bit allocation | todo | roadmap |
+> | vLLM plugin: FP8 mapping, faithful packed fixed-HQ, TapeKV semantic reference, HQ+TapeKV composition | done | `tests/vllm_plugins/kvcomp` |
+> | Packed TapeKV and token-eviction vLLM backends, LongBench, ILP bit allocation | todo | roadmap |
 >
 > Verification is in-repo and self-contained: the unit suite `tests/onecomp/kvcomp/test_kvcomp.py` plus the CPU-only array-level proofs under `benchmark/kvcomp-longcontext/paper/tests/` (`verify_halo_asym_scale.py`, `verify_halo_outlier.py`, `taper_schedule.py`). Benchmark models follow the competing papers (TurboQuant: Llama-3.1-8B-Instruct + Ministral-8B; ThinKV/PM-KVQ: DeepSeek-R1-Distill family). Gemma is intentionally excluded — no KV-cache-compression baseline reports Gemma KV-cache results.
 >
@@ -40,13 +40,23 @@
 > sparsity), Obs1b (T>R>E), Algorithm 1 (L\* + thresholds), keyword correspondence, and
 > the TBQ+TBE budget adherence (compression ratio < 5% KV) with Pareto dominance.
 >
-> The live HF cache path is verified for per-token codecs. ThinKV's TBQ (per-thought
+> The measurements and qualitative claims in this dated design history predate
+> the current official-data, exact-denominator, and provenance checks. They are
+> exploratory records rather than paper-ready evidence. The live HF cache path is verified for per-token codecs. ThinKV's TBQ (per-thought
 > precision) is integrated into live `model.generate` via `ThinKVCache` (a `DynamicCache`
 > subclass) plus an attention forward-hook for thought classification; `08_thinkv_gsm8k.py`
 > measures GSM8K pass@1 on hardware for FullKV vs ThinKV-R4E4T2/R8E4T2 (R8 matches or
 > exceeds R4 and reproduces near-FullKV accuracy). KIVI's group-wise (group=32) quantization
-> is implemented in `_quant_primitives.quantize_affine`; WikiText PPL at 2-bit improves from
-> 35.7 to 8.9 (FullKV 7.9), reproducing the paper's near-lossless 2-bit (`09`). TurboQuant's
+> is implemented in `_quant_primitives.quantize_affine`. The historical KIVI
+> WikiText PPL values (35.7 to 8.9 versus FullKV 7.9) were produced before the
+> evaluator guarded sequence-axis statistics: a full-window update could fit an
+> early key scale using later target tokens. They are invalid as causal PPL and
+> must not be cited; KIVI is now re-evaluated with causal prefix/token-step
+> scoring. The same invalidation applies to the historical ThinKV, PM-KVQ,
+> TaperKV/TurboTaper, and StreamingLLM PPL columns below: group statistics,
+> final-window age schedules, or missing between-target eviction made them
+> non-causal. Their generation/retrieval runs use separate autoregressive loops
+> and are not invalidated by this specific PPL defect. TurboQuant's
 > distortion-rate (Theorem 1) is reproduced to D_mse={0.36, 0.117, 0.03, 0.009}, along with
 > outlier mixed-precision / QJL / WikiText PPL (4-bit near-lossless, rotation improving
 > compression over naive INT4) (`09`). The vLLM plugin maps the FP8 codec onto the native
@@ -86,8 +96,8 @@
 > axis along which long-context retrieval separates the two. PM-KVQ shares `GradedQuantCache`
 > with TaperKV.
 >
-> **HALO** (`codec/halo.py`, registered as `"halo"`) — **a codec that beats TurboQuant on
-> speed-quality**: it extends TurboQuant's rotation + data-free Lloyd-Max with an optional
+> **HALO** (`codec/halo.py`, registered as `"halo"`) — a research codec extending
+> TurboQuant's rotation + data-free Lloyd-Max with an optional
 > online per-channel affine preconditioning step (mean-center / whiten, EMA O(D)) applied
 > before rotation. However, **a multi-architecture sweep (Llama / Qwen2 / Cohere) did not
 > confirm a quality win** from preconditioning:
@@ -104,13 +114,11 @@
 > "HALO wins on quality" claim. The math: mean-centering is neutral to attention output because
 > the weights sum to 1, while whitening amplifies output error on high-variance channels through
 > the 1/w un-whitening.
-> **HALO does win on speed-quality, however** (main experiment `benchmark/kvcomp-codec/`): as a
-> quality-neutral online optimization, (1) `rotation_mode="auto"` picks the cheapest orthogonal
-> transform per head dimension (measured: dense GEMM beats WHT across all D <= 512), (2) the
-> `(x-mu)*w` step is skipped entirely when preconditioning is off, and (3) the sign vector is
-> cached. As a result HALO(auto) is **2.9× faster than TurboQuant's shipped default (Hadamard)
-> at identical quality** (llama-8b: 4-bit PPL 7.706 == 7.706, 0.356 vs 1.020 ms/encode; 2/3-bit
-> similar).
+> HALO also contains implementation optimizations: `rotation_mode="auto"` selects a transform,
+> the `(x-mu)*w` step is skipped when preconditioning is off, and the sign vector is cached.
+> The historical 2.9x number compared different rotation implementations and was not measured
+> with paired public-payload calls across independent processes. It is therefore archived as a
+> development observation, not a current speed-quality claim.
 > Faithful live per-channel-key (KIVI), token eviction (TBE), and low-bit codecs running inside
 > vLLM all require a custom AttentionBackend and are scheduled for v0.2–0.3 (see § HF integration
 > / § vLLM integration).
@@ -124,15 +132,16 @@
 > objective for a linearly-consumed tensor). HayateQuant inherits that lever verbatim
 > (`codec/_scale.py`, shared by both codecs) and adds the genuinely new, previously-unexplored one:
 > - **Data-free block vector quantization** (`codec/hayate/vq.py`): TurboQuant's own paper proves its
->   *scalar* Lloyd-Max codebook is within a constant factor (`<= sqrt(3*pi/2) ~= 2.7x`) of the
+>   *scalar* Lloyd-Max codebook is within a constant factor (`<= pi*sqrt(3)/2 ~= 2.72x`) of the
 >   distortion-rate optimum; classical high-rate quantization theory (Gersho & Gray 1992) identifies
 >   the residual as exactly the **space-filling / shape gain** any *joint* (vector) quantizer of
 >   dimension `>1` can capture and an independent scalar quantizer cannot. HayateQuant fits a
 >   `block_size`-dimensional codebook by batched Lloyd's algorithm (multi-restart K-means) to
 >   synthetic samples from TurboQuant's own source law (i.i.d. Gaussian, or the exact finite-`d`
 >   Beta/Dirichlet marginal) — still fully data-free, just generalized from dimension 1 to
->   `block_size`. `block_size=1` reduces to the scalar codebook exactly, so HayateQuant can never do
->   worse than TurboQuant/HALO at the same bit-rate.
+>   `block_size`. `block_size=1` supplies the matched scalar control. A finite-sample Lloyd fit
+>   and a higher-dimensional local optimum do not guarantee lower downstream error, so every
+>   block-VQ operating point must be compared empirically at its exact realised rate.
 > - **Hybrid rotation** (`codec/rotation.py`: `hybrid_rotate`/`unrotate`): block-VQ needs each
 >   rotated block to be close to *isotropic* for the codebook to fit well, but a fixed Hadamard
 >   transform (randomized only by a global sign flip) is not Haar-random at the block level.
@@ -145,9 +154,10 @@
 > block-VQ distortion decreases as `block_size` grows `1->2->4->8` at equal bits (both the Gaussian
 > and exact Beta source laws), the hybrid rotation's block marginals are measurably more isotropic
 > than Hadamard-only on structured (non-i.i.d.) input, and outlier mixed-precision (`n_outlier`,
-> inherited from HALO/TurboQuant) keeps the guarantee under real massive-activation-style
+> inherited from HALO/TurboQuant) is separately stress-tested under massive-activation-style
 > anisotropy. `HALOCodec` is kept in the codebase (not deleted) purely as the baseline
-> `codec_benchmark.py` must show HayateQuant beating — new work should use `hayatequant`.
+> `codec_benchmark.py` compares against independently — new work may use `hayatequant`, but
+> directional claims are emitted only when the formal confidence-interval gates pass.
 
 ---
 
@@ -463,6 +473,15 @@ def build_compressed_cache(model, kv_config: "KVCompressionConfig", sink_tokens=
 > **Note (transformers >= 5.5):** OneComp depends on `transformers>=5.5.0` (`pyproject.toml`).
 > 5.5 uses a layered Cache (`CacheLayerMixin` family). `cache/` stays a thin adapter so API
 > changes are confined to a single file.
+>
+> `CompressedDynamicCache` currently fails closed for an actual
+> `DynamicSlidingWindowLayer`. Its codec reports aggregate per-block bits (including shared
+> scale/mask data-plane fields), which cannot be decremented exactly when the model evicts only part of a
+> block. Allowing that path would make the benchmark's `compression_ratio()` a cumulative-history
+> ratio mislabeled as the logical data-plane size of the resident token set. These `stored_bits`
+> counters exclude self-describing control tags, Python/container bytes, allocator overhead, and
+> persistent codebook/LUT/rotation state; they are not physical serving memory. Full-attention layer types, including Qwen configs whose
+> sliding metadata is disabled, remain supported.
 
 ---
 
@@ -598,20 +617,23 @@ Proposal (two stages to reduce risk):
 
 | | weight (existing) | KV (new) |
 |---|---|---|
-| entry point | `vllm.general_plugins` (`pyproject.toml`) | `vllm.platform_plugins` (TurboQuant style) |
-| mechanism | `register_quantization_config` → `get_quant_method` → Linear swap | `Platform.get_attn_backend_cls` → `AttentionBackend`/`AttentionImpl` |
+| entry point | `vllm.general_plugins` (`pyproject.toml`) | `vllm.general_plugins` (`pyproject.toml`) |
+| mechanism | `register_quantization_config` → `get_quant_method` → Linear swap | engine-args hook + explicit `AttentionBackend` registration |
 | touches | `LinearBase` | `Attention.forward` / KV cache layout |
 | combined use | — | **possible simultaneously** (separate subsystems; only a `kv_cache_dtype` conflict warns) |
 
-```toml
-# proposed pyproject.toml addition
-[project.entry-points."vllm.platform_plugins"]
-kvcomp = "vllm_plugins.kvcomp.platform:KVCompPlatform"
-```
-
 Direction: **measure correctly in HF first, then vLLM** (as the existing weight path also goes
-HF→vLLM). Simple FP8 leverages vLLM's native `kv_cache_dtype` as a baseline; INT4/eviction/ThinKV
-are offered experimentally via an `AttentionBackend` swap.
+HF→vLLM). FP8 leverages vLLM's native `kv_cache_dtype`; fixed HQ owns a packed
+key/value data plane. TapeKV uses an explicitly labelled model-dtype semantic
+backend until a packed paged-cache kernel exists. INT4/eviction/ThinKV remain
+fail-closed rather than running an uncompressed look-alike.
+
+Native `kv_cache_dtype` applies one storage type to every resident token; it cannot reproduce
+OneComp's `residual_window` contract (the newest N tokens remain full precision). Therefore the
+mapper fails closed to the HF/custom path whenever `residual_window > 0`. The serialized default,
+and the default for older configs missing the field, remains 128. A deployment that intentionally
+wants uniform native quantization must migrate by setting `residual_window: 0` explicitly; otherwise
+the same saved recipe would denote different algorithms in HF and vLLM.
 
 ---
 

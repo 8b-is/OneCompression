@@ -42,3 +42,9 @@ benchmark/*/results/slurm_*.out
 
 # Data-free block-VQ codebook artifacts are first-class source (tiny, versioned)
 !onecomp/kvcomp/codec/hayate/codebooks/*.pt
+
+# Audited HayateQuant result archives are first-class reproducibility data.
+# Keep their raw Slurm logs, Hydra configs, and small codebook artifacts even
+# though those suffixes are ignored for ordinary development runs above.
+!papers/hayatequant_paper/experiments/results/
+!papers/hayatequant_paper/experiments/results/**

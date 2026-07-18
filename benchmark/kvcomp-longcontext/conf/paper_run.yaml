@@ -2,7 +2,7 @@
 #
 # Extends the default benchmark_longcontext.yaml with settings needed to
 # reproduce the results reported in the paper, in particular:
-#   - RULER multi-key retrieval (run_ruler: true)
+#   - optional local synthetic multi-key retrieval (not a RULER benchmark)
 #   - MATH-500 pass@1 (run_math: true)
 #   - Extended context lengths up to 16k
 #   - Larger evaluation samples for tighter confidence intervals
@@ -34,12 +34,13 @@ depths: [0.1, 0.25, 0.4, 0.5, 0.6, 0.75, 0.9]   # 7 depths (full grid)
 seeds: 5                                            # 5 seeds per cell
 
 # --------------------------------------------------------------------------
-# Retrieval: Needle-in-a-Haystack + RULER multi-key
+# Retrieval: Needle-in-a-Haystack; the separately named NeMo-Skills RULER-v1
+# 100/task adapter uses the dedicated `run_official_ruler_v1` compatibility path
 # --------------------------------------------------------------------------
 run_needle: true
 max_new_needle: 256          # adequate for long chain-of-thought models
 
-run_ruler: true              # RULER multi-key retrieval (harder disambiguation task)
+run_ruler: false             # historical flag runs only a local synthetic diagnostic
 ruler_keys: 4
 ruler_seeds: 5
 
@@ -47,20 +48,23 @@ ruler_seeds: 5
 # Reasoning: GSM8K + MATH-500 + AIME-2024
 # --------------------------------------------------------------------------
 run_gsm8k: true
-gsm8k_limit: 100             # 100 samples for tighter estimate
+gsm8k_limit: null            # complete 1,319-example test split
 max_new_reason: 8192         # long chain-of-thought models need headroom (paper: 32K)
 
 run_math: true
-math_limit: 50
+math_limit: null             # complete MATH-500 test split
 max_new_math: 8192
+math_grader: math_verify     # required; no silent local fallback
+math_verify_version: "0.9.0"
 
 # AIME evaluation (competition math -- both ThinKV and PM-KVQ evaluate this).
 # ThinKV paper: k=8 samples, PM-KVQ paper: k=16 samples.
-# We use k=8 (ThinKV faithful setting) for paper-level comparison.
+# k=8 matches the reported ThinKV sampling count; the cache row itself is TBQ-only.
 aime_years: [2024]           # add 2025 for PM-KVQ-level comparison
 aime_k: 8                    # ThinKV uses 8; PM-KVQ uses 16
+sample_seed: 0
 aime_limit: 30               # all 30 AIME-2024 problems
-max_new_aime: 8192           # paper uses 32768 but 8192 is feasible per-GPU
+max_new_aime: 32768           # ThinKV paper protocol
 
 # --------------------------------------------------------------------------
 # Perplexity sanity (WikiText-2 sliding window)
@@ -68,11 +72,11 @@ max_new_aime: 8192           # paper uses 32768 but 8192 is feasible per-GPU
 run_ppl: true
 ppl_max_length: 2048
 ppl_stride: 1024
-ppl_windows: 32
+ppl_windows: null            # complete WikiText-2 test split
 
 # --------------------------------------------------------------------------
-# ThinKV: faithful paper settings (Ramachandran et al., ICLR 2026)
-# R=4, E=4, T=2; KDE-calibrated L* + threshold; outlier-layer skip
+# ThinKV TBQ settings: R=4, E=4, T=2; KDE-calibrated L* + threshold.
+# HF does not implement TBE, so the result is marked non-paper-comparable.
 # --------------------------------------------------------------------------
 thinkv:
   group_size: 16

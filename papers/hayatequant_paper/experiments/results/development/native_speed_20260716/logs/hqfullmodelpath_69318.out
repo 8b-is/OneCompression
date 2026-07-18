@@ -1,0 +1,205 @@
+INFO 07-16 05:14:12 [utils.py:233] non-default args: {'trust_remote_code': True, 'dtype': 'bfloat16', 'kv_cache_dtype': 'turboquant_3bit_nc', 'max_model_len': 512, 'gpu_memory_utilization': 0.65, 'disable_log_stats': True, 'enforce_eager': True, 'model': '/lustre/home/frj/yuma-ichikawa/conference/models/TinyLlama-1.1B-Chat-v1.0'}
+INFO 07-16 05:14:12 [model.py:555] Resolved architecture: LlamaForCausalLM
+INFO 07-16 05:14:12 [model.py:1680] Using max model len 512
+INFO 07-16 05:14:12 [arg_utils.py:1691] TQ: skipping layers ['0', '1', '20', '21'] for boundary protection (num_layers=22)
+INFO 07-16 05:14:12 [scheduler.py:239] Chunked prefill is enabled with max_num_batched_tokens=16384.
+WARNING 07-16 05:14:12 [arg_utils.py:2009] TurboQuant is not yet compatible with FlashAttention >= 3. Overriding flash_attn_version to 2. To silence this warning, pass --attention-config.flash_attn_version=2
+INFO 07-16 05:14:12 [vllm.py:840] Asynchronous scheduling is enabled.
+WARNING 07-16 05:14:12 [vllm.py:896] Enforce eager set, disabling torch.compile and CUDAGraphs. This is equivalent to setting -cc.mode=none -cc.cudagraph_mode=none
+WARNING 07-16 05:14:12 [vllm.py:914] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+INFO 07-16 05:14:12 [kernel.py:205] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'])
+INFO 07-16 05:14:12 [vllm.py:1089] Cudagraph is disabled under eager mode
+INFO 07-16 05:14:12 [compilation.py:303] Enabled custom fusions: norm_quant, act_quant
+WARNING 07-16 05:14:12 [system_utils.py:157] We must use the `spawn` multiprocessing start method. Overriding VLLM_WORKER_MULTIPROC_METHOD to 'spawn'. See https://docs.vllm.ai/en/latest/usage/troubleshooting.html#python-multiprocessing for more information. Reasons: CUDA is initialized
+(EngineCore pid=2812525) INFO 07-16 05:14:28 [core.py:109] Initializing a V1 LLM engine (v0.20.0) with config: model='/lustre/home/frj/yuma-ichikawa/conference/models/TinyLlama-1.1B-Chat-v1.0', speculative_config=None, tokenizer='/lustre/home/frj/yuma-ichikawa/conference/models/TinyLlama-1.1B-Chat-v1.0', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=True, dtype=torch.bfloat16, max_seq_len=512, download_dir=None, load_format=auto, tensor_parallel_size=1, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=False, quantization=None, quantization_config=None, enforce_eager=True, enable_return_routed_experts=False, kv_cache_dtype=turboquant_3bit_nc, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser='', reasoning_parser_plugin='', enable_in_reasoning=False), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None, kv_cache_metrics=False, kv_cache_metrics_sample=0.01, cudagraph_metrics=False, enable_layerwise_nvtx_tracing=False, enable_mfu_metrics=False, enable_mm_processor_stats=False, enable_logging_iteration_details=False), seed=0, served_model_name=/lustre/home/frj/yuma-ichikawa/conference/models/TinyLlama-1.1B-Chat-v1.0, enable_prefix_caching=True, enable_chunked_prefill=True, pooler_config=None, compilation_config={'mode': <CompilationMode.NONE: 0>, 'debug_dump_path': None, 'cache_dir': '', 'compile_cache_save_format': 'binary', 'backend': 'inductor', 'custom_ops': ['all'], 'ir_enable_torch_wrap': False, 'splitting_ops': [], 'compile_mm_encoder': False, 'cudagraph_mm_encoder': False, 'encoder_cudagraph_token_budgets': [], 'encoder_cudagraph_max_vision_items_per_batch': 0, 'encoder_cudagraph_max_frames_per_batch': None, 'compile_sizes': [], 'compile_ranges_endpoints': [16384], 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'size_asserts': False, 'alignment_asserts': False, 'scalar_asserts': False, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.NONE: 0>, 'cudagraph_num_of_warmups': 0, 'cudagraph_capture_sizes': [], 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': False, 'pass_config': {'fuse_norm_quant': True, 'fuse_act_quant': True, 'fuse_attn_quant': False, 'enable_sp': False, 'fuse_gemm_comms': False, 'fuse_allreduce_rms': False}, 'max_cudagraph_capture_size': 0, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>, 'evaluate_guards': False, 'assume_32_bit_indexing': False}, 'local_cache_dir': None, 'fast_moe_cold_start': False, 'static_all_moe_layers': []}, kernel_config=KernelConfig(ir_op_priority=IrOpPriorityConfig(rms_norm=['vllm_c', 'native']), enable_flashinfer_autotune=True, moe_backend='auto')
+(EngineCore pid=2812525) INFO 07-16 05:14:29 [nixl_utils.py:20] Setting UCX_RCACHE_MAX_UNRELEASED to '1024' to avoid a rare memory leak in UCX when using NIXL.
+(EngineCore pid=2812525) WARNING 07-16 05:14:29 [nixl_utils.py:34] NIXL is not available
+(EngineCore pid=2812525) WARNING 07-16 05:14:29 [nixl_utils.py:44] NIXL agent config is not available
+(EngineCore pid=2812525) INFO 07-16 05:14:30 [parallel_state.py:1402] world_size=1 rank=0 local_rank=0 distributed_init_method=tcp://172.16.100.113:39537 backend=nccl
+(EngineCore pid=2812525) INFO 07-16 05:14:30 [parallel_state.py:1715] rank 0 in world size 1 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, EP rank N/A, EPLB rank N/A
+(EngineCore pid=2812525) INFO 07-16 05:14:32 [gpu_model_runner.py:4777] Starting to load model /lustre/home/frj/yuma-ichikawa/conference/models/TinyLlama-1.1B-Chat-v1.0...
+(EngineCore pid=2812525) INFO 07-16 05:14:37 [cuda.py:368] Using FLASHINFER attention backend out of potential backends: ['FLASHINFER', 'FLASH_ATTN', 'TRITON_ATTN', 'FLEX_ATTENTION'].
+(EngineCore pid=2812525) INFO 07-16 05:14:37 [selector.py:136] Using HND KV cache layout for FLASHINFER backend.
+(EngineCore pid=2812525) INFO 07-16 05:14:37 [cuda.py:368] Using TURBOQUANT attention backend out of potential backends: ['TURBOQUANT'].
+(EngineCore pid=2812525) INFO 07-16 05:14:37 [weight_utils.py:904] Filesystem type for checkpoints: LUSTRE. Checkpoint size: 2.05 GiB. Available RAM: 2953.76 GiB.
+(EngineCore pid=2812525) INFO 07-16 05:14:37 [weight_utils.py:874] Prefetching checkpoint files into page cache started (in background)
+(EngineCore pid=2812525) INFO 07-16 05:14:38 [weight_utils.py:851] Prefetching checkpoint files: 10% (1/1)
+(EngineCore pid=2812525) INFO 07-16 05:14:38 [weight_utils.py:869] Prefetching checkpoint files into page cache finished in 0.78s
+(EngineCore pid=2812525) INFO 07-16 05:14:38 [default_loader.py:384] Loading weights took 1.15 seconds
+(EngineCore pid=2812525) INFO 07-16 05:14:39 [gpu_model_runner.py:4879] Model loading took 6.76 GiB memory and 6.493024 seconds
+(EngineCore pid=2812525) INFO 07-16 05:14:40 [gpu_worker.py:440] Available KV cache memory: 108.23 GiB
+(EngineCore pid=2812525) INFO 07-16 05:14:40 [kv_cache_utils.py:1711] GPU KV cache size: 14,822,304 tokens
+(EngineCore pid=2812525) INFO 07-16 05:14:40 [kv_cache_utils.py:1716] Maximum concurrency for 512 tokens per request: 28949.81x
+(EngineCore pid=2812525) INFO 07-16 05:14:40 [utils.py:60] `_KV_CACHE_LAYOUT_OVERRIDE` variable detected. Setting KV cache layout to HND.
+(EngineCore pid=2812525) INFO 07-16 05:14:43 [core.py:306] init engine (profile, create kv cache, warmup model) took 4.62 s
+(EngineCore pid=2812525) INFO 07-16 05:14:45 [vllm.py:840] Asynchronous scheduling is enabled.
+(EngineCore pid=2812525) WARNING 07-16 05:14:45 [vllm.py:896] Enforce eager set, disabling torch.compile and CUDAGraphs. This is equivalent to setting -cc.mode=none -cc.cudagraph_mode=none
+(EngineCore pid=2812525) WARNING 07-16 05:14:45 [vllm.py:914] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+(EngineCore pid=2812525) INFO 07-16 05:14:45 [kernel.py:205] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'])
+(EngineCore pid=2812525) INFO 07-16 05:14:45 [vllm.py:1089] Cudagraph is disabled under eager mode
+(EngineCore pid=2812525) INFO 07-16 05:14:45 [compilation.py:303] Enabled custom fusions: norm_quant, act_quant
+(EngineCore pid=2812525) WARNING 07-16 05:14:45 [flashinfer.py:405] Using TRTLLM prefill attention (auto-detected).
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [dump_input.py:72] Dumping input data for V1 LLM engine (v0.20.0) with config: model='/lustre/home/frj/yuma-ichikawa/conference/models/TinyLlama-1.1B-Chat-v1.0', speculative_config=None, tokenizer='/lustre/home/frj/yuma-ichikawa/conference/models/TinyLlama-1.1B-Chat-v1.0', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=True, dtype=torch.bfloat16, max_seq_len=512, download_dir=None, load_format=auto, tensor_parallel_size=1, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=False, quantization=None, quantization_config=None, enforce_eager=True, enable_return_routed_experts=False, kv_cache_dtype=turboquant_3bit_nc, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser='', reasoning_parser_plugin='', enable_in_reasoning=False), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None, kv_cache_metrics=False, kv_cache_metrics_sample=0.01, cudagraph_metrics=False, enable_layerwise_nvtx_tracing=False, enable_mfu_metrics=False, enable_mm_processor_stats=False, enable_logging_iteration_details=False), seed=0, served_model_name=/lustre/home/frj/yuma-ichikawa/conference/models/TinyLlama-1.1B-Chat-v1.0, enable_prefix_caching=True, enable_chunked_prefill=True, pooler_config=None, compilation_config={'mode': <CompilationMode.NONE: 0>, 'debug_dump_path': None, 'cache_dir': '', 'compile_cache_save_format': 'binary', 'backend': 'inductor', 'custom_ops': ['all'], 'ir_enable_torch_wrap': False, 'splitting_ops': [], 'compile_mm_encoder': False, 'cudagraph_mm_encoder': False, 'encoder_cudagraph_token_budgets': [], 'encoder_cudagraph_max_vision_items_per_batch': 0, 'encoder_cudagraph_max_frames_per_batch': None, 'compile_sizes': [], 'compile_ranges_endpoints': [16384], 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'size_asserts': False, 'alignment_asserts': False, 'scalar_asserts': False, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.NONE: 0>, 'cudagraph_num_of_warmups': 0, 'cudagraph_capture_sizes': [], 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': False, 'pass_config': {'fuse_norm_quant': True, 'fuse_act_quant': True, 'fuse_attn_quant': False, 'enable_sp': False, 'fuse_gemm_comms': False, 'fuse_allreduce_rms': False}, 'max_cudagraph_capture_size': 0, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>, 'evaluate_guards': False, 'assume_32_bit_indexing': False}, 'local_cache_dir': None, 'fast_moe_cold_start': False, 'static_all_moe_layers': []}, kernel_config=KernelConfig(ir_op_priority=IrOpPriorityConfig(rms_norm=['vllm_c', 'native']), enable_flashinfer_autotune=True, moe_backend='auto'), 
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [dump_input.py:79] Dumping scheduler output for model execution: SchedulerOutput(scheduled_new_reqs=[NewRequestData(req_id=0-885f4977,prompt_token_ids_len=14,prefill_token_ids_len=None,mm_features=[],sampling_params=SamplingParams(n=1, presence_penalty=0.0, frequency_penalty=0.0, repetition_penalty=1.0, temperature=0.0, top_p=1.0, top_k=0, min_p=0.0, seed=None, stop=[], stop_token_ids=[], bad_words=[], thinking_token_budget=None, include_stop_str_in_output=False, ignore_eos=False, max_tokens=8, min_tokens=0, logprobs=None, prompt_logprobs=None, skip_special_tokens=True, spaces_between_special_tokens=True, structured_outputs=None, extra_args=None),block_ids=([1],),num_computed_tokens=0,lora_request=None,prompt_embeds_shape=None)], scheduled_cached_reqs=CachedRequestData(req_ids=[],resumed_req_ids=set(),new_token_ids_lens=[],all_token_ids_lens={},new_block_ids=[],num_computed_tokens=[],num_output_tokens=[]), num_scheduled_tokens={0-885f4977: 14}, total_num_scheduled_tokens=14, scheduled_spec_decode_tokens={}, scheduled_encoder_inputs={}, num_common_prefix_blocks=[1], finished_req_ids=[], free_encoder_mm_hashes=[], preempted_req_ids=[], has_structured_output_requests=false, pending_structured_output_tokens=false, num_invalid_spec_tokens=null, kv_connector_metadata=null, ec_connector_metadata=null, new_block_ids_to_zero=null)
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138] EngineCore encountered a fatal error.
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138] Traceback (most recent call last):
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/flashinfer/jit/cpp_ext.py", line 332, in run_ninja
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     subprocess.run(
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     ~~~~~~~~~~~~~~^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]         command,
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]         ^^^^^^^^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     ...<4 lines>...
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]         text=True,
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]         ^^^^^^^^^^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     )
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     ^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/.local/share/uv/python/cpython-3.13.12-linux-x86_64-gnu/lib/python3.13/subprocess.py", line 577, in run
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     raise CalledProcessError(retcode, process.args,
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]                              output=stdout, stderr=stderr)
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138] subprocess.CalledProcessError: Command '['ninja', '-v', '-C', '/lustre/home/frj/yuma-ichikawa/.cache/flashinfer/0.6.8.post1/100a/cached_ops/fmha_gen', '-f', '/lustre/home/frj/yuma-ichikawa/.cache/flashinfer/0.6.8.post1/100a/cached_ops/fmha_gen/build.ninja']' returned non-zero exit status 1.
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138] 
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138] The above exception was the direct cause of the following exception:
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138] 
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138] Traceback (most recent call last):
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/v1/engine/core.py", line 1129, in run_engine_core
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     engine_core.run_busy_loop()
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/v1/engine/core.py", line 1170, in run_busy_loop
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     self._process_engine_step()
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/v1/engine/core.py", line 1209, in _process_engine_step
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     outputs, model_executed = self.step_fn()
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]                               ~~~~~~~~~~~~^^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/v1/engine/core.py", line 473, in step_with_batch_queue
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     exec_future = self.model_executor.execute_model(
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]         scheduler_output, non_block=True
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     )
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/v1/executor/uniproc_executor.py", line 114, in execute_model
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     output.result()
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     ~~~~~~~~~~~~~^^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/.local/share/uv/python/cpython-3.13.12-linux-x86_64-gnu/lib/python3.13/concurrent/futures/_base.py", line 449, in result
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     return self.__get_result()
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]            ~~~~~~~~~~~~~~~~~^^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/.local/share/uv/python/cpython-3.13.12-linux-x86_64-gnu/lib/python3.13/concurrent/futures/_base.py", line 401, in __get_result
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     raise self._exception
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/v1/executor/uniproc_executor.py", line 84, in collective_rpc
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     result = run_method(self.driver_worker, method, args, kwargs)
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/v1/serial_utils.py", line 510, in run_method
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     return func(*args, **kwargs)
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/v1/worker/worker_base.py", line 337, in execute_model
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     return self.worker.execute_model(scheduler_output)
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]            ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     return func(*args, **kwargs)
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/v1/worker/gpu_worker.py", line 813, in execute_model
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     output = self.model_runner.execute_model(
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]         scheduler_output, intermediate_tensors
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     )
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     return func(*args, **kwargs)
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/v1/worker/gpu_model_runner.py", line 4051, in execute_model
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     model_output = self._model_forward(
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]         input_ids=input_ids,
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     ...<3 lines>...
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]         **model_kwargs,
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     )
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/v1/worker/gpu_model_runner.py", line 3524, in _model_forward
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     return self.model(
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]            ~~~~~~~~~~^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]         input_ids=input_ids,
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]         ^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     ...<3 lines>...
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]         **model_kwargs,
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]         ^^^^^^^^^^^^^^^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     )
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     ^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     return self._call_impl(*args, **kwargs)
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]            ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     return forward_call(*args, **kwargs)
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/model_executor/models/llama.py", line 577, in forward
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     model_output = self.model(
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]         input_ids, positions, intermediate_tensors, inputs_embeds
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     )
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/compilation/decorators.py", line 467, in __call__
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     return self.forward(*args, **kwargs)
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]            ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/model_executor/models/llama.py", line 423, in forward
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     hidden_states, residual = layer(
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]                               ~~~~~^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]         positions, hidden_states, residual, **extra_layer_kwargs
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     )
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     ^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     return self._call_impl(*args, **kwargs)
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]            ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     return forward_call(*args, **kwargs)
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/model_executor/models/llama.py", line 328, in forward
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     hidden_states = self.self_attn(positions=positions, hidden_states=hidden_states)
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     return self._call_impl(*args, **kwargs)
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]            ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     return forward_call(*args, **kwargs)
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/model_executor/models/llama.py", line 231, in forward
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     attn_output = self.attn(q, k, v)
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     return self._call_impl(*args, **kwargs)
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]            ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     return forward_call(*args, **kwargs)
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/model_executor/layers/attention/attention.py", line 541, in forward
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     torch.ops.vllm.unified_attention_with_output(
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]         query,
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]         ^^^^^^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     ...<4 lines>...
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]         kv_cache_dummy_dep=kv_cache_dummy_dep,
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     )
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     ^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/torch/_ops.py", line 1269, in __call__
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     return self._op(*args, **kwargs)
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]            ~~~~~~~~^^^^^^^^^^^^^^^^^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/model_executor/layers/attention/kv_transfer_utils.py", line 40, in wrapper
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     return func(*args, **kwargs)
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/model_executor/layers/attention/attention.py", line 771, in unified_attention_with_output
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     self.impl.forward(
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     ~~~~~~~~~~~~~~~~~^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]         self,
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]         ^^^^^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     ...<7 lines>...
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]         output_block_scale=output_block_scale,
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     )
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     ^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/v1/attention/backends/flashinfer.py", line 1584, in forward
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     trtllm_batch_context_with_kv_cache(
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]         query=prefill_query,
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]         ^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     ...<14 lines>...
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]         out=out,
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]         ^^^^^^^^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     )
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     ^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/flashinfer/prefill.py", line 4018, in trtllm_batch_context_with_kv_cache
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     run_func = get_trtllm_gen_fmha_module().trtllm_paged_attention_context
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]                ~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/flashinfer/prefill.py", line 3667, in get_trtllm_gen_fmha_module
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     op = mod.build_and_load()
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/flashinfer/jit/core.py", line 318, in build_and_load
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     self.build(verbose, need_lock=False)
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/flashinfer/jit/core.py", line 304, in build
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     run_ninja(self.build_dir, self.ninja_path, verbose)
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]   File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/flashinfer/jit/cpp_ext.py", line 344, in run_ninja
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138]     raise RuntimeError(msg) from e
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138] RuntimeError: Ninja build failed. Ninja output:
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138] ninja: Entering directory `/lustre/home/frj/yuma-ichikawa/.cache/flashinfer/0.6.8.post1/100a/cached_ops/fmha_gen'
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138] ninja: error: '/lustre/home/frj/yuma-ichikawa/conference/mt-bench-runs/envs/vllm/lib/python3.12/site-packages/flashinfer/data/csrc/trtllm_fmha_kernel_launcher.cu', needed by '/lustre/home/frj/yuma-ichikawa/.cache/flashinfer/0.6.8.post1/100a/cached_ops/fmha_gen/csrc_trtllm_fmha_kernel_launcher.cuda.o', missing and no known rule to make it
+(EngineCore pid=2812525) ERROR 07-16 05:14:45 [core.py:1138] 

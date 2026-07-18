@@ -1,0 +1,62 @@
+{
+  "artifact": {
+    "bytes": 18010,
+    "dtype": "torch.float32",
+    "file_sha256": "88b4b969a5c29ca70fd194bb412de72624169e3a1b76ba91b7afce8000e23cb3",
+    "mtime_ns_preserved": 1784149465000000000,
+    "relative_path": "artifacts/gauss_b4_k1024.pt",
+    "shape": [
+      1024,
+      4
+    ],
+    "tensor_sha256": "e360009e28efbd165ce3ef79f117c08d4e537f64e3676f2b9f8f785e66b38691"
+  },
+  "fit": {
+    "artifact_preserved_without_refit": true,
+    "first_restart_init": "forgy_like_all_other_restarts",
+    "fit_seconds": null,
+    "fit_seconds_note": "lost only from in-memory metadata after post-save JSON failure",
+    "max_iterations": 60,
+    "original_failed_array_job": "69346_5",
+    "restarts": 8,
+    "samples": 390625,
+    "seed": 0,
+    "source": "iid_standard_normal_fp32",
+    "tf32_allowed": false
+  },
+  "heldout": {
+    "artifact_minus_online_mse": -0.0011556786950705153,
+    "artifact_mse_per_coordinate": 0.05067700138464186,
+    "distance": "explicit_fp32_squared_distance_smallest_index_argmin",
+    "metadata_only_recomputed_after_serialization_failure": true,
+    "online_fallback_mse_per_coordinate": 0.051832680079712375,
+    "samples": 500000,
+    "seed": 123,
+    "source": "iid_standard_normal_fp32",
+    "strict_improvement_gate": true
+  },
+  "recovery": {
+    "artifact_overwritten": false,
+    "artifact_refit": false,
+    "frozen_sha_manifest": "FAILED_FIT_ARTIFACT_SHA256.txt",
+    "reason": "all 69346 fits saved tensors then failed serializing _CUuuid"
+  },
+  "runtime": {
+    "cuda": "13.0",
+    "gpu": "NVIDIA B200",
+    "gpu_uuid": "fec6fc24-8df9-85fb-8199-df7362478882",
+    "metadata_finished_at_utc": "2026-07-15T21:07:52.091508+00:00",
+    "metadata_hostname": "kagura-gpu07",
+    "metadata_slurm_array_job_id": "69354",
+    "metadata_slurm_array_task_id": "5",
+    "metadata_slurm_job_id": "69354",
+    "python": "3.13.12",
+    "torch": "2.11.0+cu130"
+  },
+  "schema": "hayatequant.gaussian_codebook_artifact_fit.v1",
+  "target": {
+    "block_size": 4,
+    "code_bits": 10,
+    "k": 1024
+  }
+}

@@ -1,5 +1,8 @@
-"""HayateQuant: data-free block-VQ KV-cache quantization (strict superset of
-TurboQuant and HALO).
+"""HayateQuant: data-free block-VQ KV-cache quantization.
+
+Explicit scalar compatibility settings reproduce selected TurboQuant/HALO
+quantization components; the default block-VQ recipe is a distinct algorithm
+and is evaluated independently rather than described as a strict superset.
 
 Package layout (one module per concern):
 
@@ -12,8 +15,7 @@ Package layout (one module per concern):
 - :mod:`.calibration` -- optional SpinQuant-style calibration (learned
   per-role orthogonal rotations + real-data codebook refits); off by default,
   never required.
-- :mod:`.recipes` -- named operating points used by papers and benchmarks
-  (currently the HQ-frontier K/V rate allocation).
+- :mod:`.recipes` -- the fixed HQ and opt-in Adaptive HQ paper recipes.
 - :mod:`.codebooks` -- committed ``gauss_b{B}_k{K}.pt`` codebook artifacts and
   the :mod:`.codebooks.fit_codebooks` refit script.
 
@@ -31,12 +33,35 @@ from .calibration import (
     capture_kv_samples,
 )
 from .recipes import (
+    HQ_NAME,
+    HQ_FRONTIER_NAME,
+    HQ_ADAPTIVE_NAME,
+    HQ_ROTATION_NAME,
+    HQ_PUBLIC_METHODS,
+    HQ_PAPER_AVERAGE_RATES,
+    HQ_BLOCK_SIZE,
+    HQ_KEY_SCALE_MODE,
+    HQ_VALUE_SCALE_MODE,
     HQ_FRONTIER_NAME,
     HQ_FRONTIER_KEY_SCALE_MODE,
+    HQ_FRONTIER_VALUE_SCALE_MODE,
+    HQ_FRONTIER_SCALE_KWARGS,
+    HQ_FIB_INIT_PROXY_NAME,
+    HQ_BLOCK_SCALE_PROXY_NAME,
+    HQ_PROXY_LEGACY_ALIASES,
+    canonical_hayate_method_name,
+    hayate_result_method_candidates,
+    hayate_hq_role_rates,
+    hayate_hq_code_bits,
+    hayate_hq_kwargs,
     hayate_frontier_bits,
     hayate_frontier_kwargs,
     build_hayate_frontier,
+    build_hayate_hq,
     hayate_frontier_variant,
+    hayate_hq_frontier_kwargs,
+    build_hayate_hq_frontier,
+    hayate_hq_frontier_variant,
 )
 
 __all__ = [
@@ -44,10 +69,33 @@ __all__ = [
     "HayateQuantCalibration",
     "calibrate_hayatequant",
     "capture_kv_samples",
+    "HQ_NAME",
+    "HQ_FRONTIER_NAME",
+    "HQ_ADAPTIVE_NAME",
+    "HQ_ROTATION_NAME",
+    "HQ_PUBLIC_METHODS",
+    "HQ_PAPER_AVERAGE_RATES",
+    "HQ_BLOCK_SIZE",
+    "HQ_KEY_SCALE_MODE",
+    "HQ_VALUE_SCALE_MODE",
     "HQ_FRONTIER_NAME",
     "HQ_FRONTIER_KEY_SCALE_MODE",
+    "HQ_FRONTIER_VALUE_SCALE_MODE",
+    "HQ_FRONTIER_SCALE_KWARGS",
+    "HQ_FIB_INIT_PROXY_NAME",
+    "HQ_BLOCK_SCALE_PROXY_NAME",
+    "HQ_PROXY_LEGACY_ALIASES",
+    "canonical_hayate_method_name",
+    "hayate_result_method_candidates",
+    "hayate_hq_role_rates",
+    "hayate_hq_code_bits",
+    "hayate_hq_kwargs",
     "hayate_frontier_bits",
     "hayate_frontier_kwargs",
     "build_hayate_frontier",
+    "build_hayate_hq",
     "hayate_frontier_variant",
+    "hayate_hq_frontier_kwargs",
+    "build_hayate_hq_frontier",
+    "hayate_hq_frontier_variant",
 ]

@@ -1,5 +1,12 @@
 # HayateQuant 数理健全性レビュー (v3)
 
+> **Legacy note.** This review predates the signed-fp16 metadata contract and
+> the fixed b=2 HQ K5/V3--K9/V7 NC/LS-reassign-refit recipe. Statements of
+> bit-for-bit TurboQuant equivalence below apply only to ideal real arithmetic
+> (and the Gaussian/RMS parameterization); finite-Beta L2-versus-RMS fp16 scale
+> rounding can change reconstructed low-precision values.  Current empirical
+> claims require the formal rerun.
+
 対象: `onecomp/kvcomp/codec/{hayatequant.py, _vq.py, _scale.py, rotation.py}` (v3,
 Folded Hybrid Rotation + 候補リスト LUT + fp16 探索)。
 各主張を「厳密に成り立つもの」「確率的/漸近的に成り立つもの」「近似であり実測で
@@ -32,15 +39,16 @@ Folded Hybrid Rotation + 候補リスト LUT + fp16 探索)。
 
 ブロック符号は 1 ブロックあたり `bits·b` ビット (`K = 2^{bits·b}`) なので
 `(D/b)·bits·b = D·bits`。スケールは block_size に依らず 1 ベクトル 1 個 (fp16)。
-⇒ **TurboQuant/HALO と同一ビット数での等ストレージ比較**
+⇒ **TurboQuant/HALO と同じ論理 payload rate での比較**（実 allocation は別途測定）
 (`test_hayatequant_storage_neutral_across_block_size`)。
 
-### 1.3 block_size=1 の厳密退化 (上位互換性)
+### 1.3 block_size=1 の scalar compatibility（明示的に knobs を一致させた場合）
 
 `b=1` のとき `_block_codebook` はスカラー Lloyd-Max 符号帳を `(2^bits, 1)` に
 reshape して返し、探索は TurboQuant と同じ sorted-boundary searchsorted に
 ディスパッチされる。スケールモード rms/nc/ls/ls_iter は HALO と同一実装
-(`_scale.py` を共有)。⇒ **TurboQuant/HALO を bit-for-bit 再現**
+(`_scale.py` を共有)。⇒ **同じ量子化式を再現**（Beta/L2 対 RMS の fp16
+metadata 丸めは bit-for-bit 一致を保証しない）
 (`test_hayatequant_block_size_1_matches_*`、数値一致 <1e-6 で固定)。
 したがって「HayateQuant は理論上どの設定でも両者より悪くなり得ない」は、
 *その設定を選べば常に再現できる* という意味で厳密に正しい。
@@ -205,7 +213,7 @@ ulp ≈ 0.01 ⇒ ブロックあたり最大 ~0.02 の希な加算。実測ド�
 |---|---|---|
 | 折り畳み回転の可逆性・同値性 | 厳密 | 直交群の閉性、結合律、テスト |
 | ストレージ中立 | 厳密 | ビット勘定、テスト |
-| TurboQuant/HALO の再現 (bs=1) | 厳密 (bit-for-bit) | 実装共有、数値一致テスト |
+| TurboQuant/HALO の scalar control (bs=1) | codes/rate/実数演算で一致 | fp16 scale parameterization の丸め差を契約テストで限定 |
 | block-VQ の歪み優位 (等方ソース) | 漸近 + 実測 | space-filling gain 理論、verify スクリプト |
 | hybrid 回転のブロック等方化 | Haar 描画に関して厳密 (固定後は高確率型) | §2.2、isotropy 実測 |
 | LUT / fp16 の品質パリティ | 近似 (実測統制 <0.06% / <0.005%) | パリティテスト、GPU 実測 |

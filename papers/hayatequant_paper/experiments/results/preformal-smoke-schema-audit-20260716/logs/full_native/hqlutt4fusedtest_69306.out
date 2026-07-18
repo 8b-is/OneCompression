@@ -1,0 +1,131 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______ test_lut_canonical_t4_triton_matches_full_half_gemm_large_fixture _______
+
+args = (<triton.language.core.tensor object at 0x5a8a617f5b0>, (<triton.language.core.slice object at 0x5a8a6188e90>, constexpr[0]))
+kwargs = {'_semantic': <triton.language.semantic.TritonSemantic object at 0x5a8a62da3c0>}
+
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if "_semantic" not in kwargs or kwargs["_semantic"] is None:
+            raise ValueError("Did you forget to add @triton.jit ? "
+                             "(`_semantic` argument must be provided outside of JIT functions.)")
+>       return fn(*args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^
+
+../../onecomp-lab/.venv/lib/python3.13/site-packages/triton/language/core.py:43: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <triton.language.core.tensor object at 0x5a8a617f5b0>
+slices = [<triton.language.core.slice object at 0x5a8a6188e90>, constexpr[0]]
+_semantic = <triton.language.semantic.TritonSemantic object at 0x5a8a62da3c0>
+
+    @builtin
+    def __getitem__(self, slices, _semantic=None):
+        if isinstance(slices, (builtins.slice, slice, constexpr)) or slices is None:
+            slices = [slices]
+        if isinstance(slices, tuple):
+            slices = slices.values
+        ret = self
+        for dim, sl in enumerate(slices):
+            if _unwrap_if_constexpr(sl) is None:
+                ret = _semantic.expand_dims(ret, dim)
+            elif isinstance(sl, (builtins.slice, slice)) and all(
+                    _unwrap_if_constexpr(arg) is None for arg in (sl.start, sl.stop, sl.step)):
+                pass  # an unsqueeze
+            else:
+>               raise ValueError(f"unsupported tensor index: {sl}")
+E               ValueError: unsupported tensor index: constexpr[0]
+
+../../onecomp-lab/.venv/lib/python3.13/site-packages/triton/language/core.py:1101: ValueError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+    def test_lut_canonical_t4_triton_matches_full_half_gemm_large_fixture():
+        """The fused b2/T4 scorer is exact when its candidate set is complete."""
+    
+        from onecomp.kvcomp.codec.hayate.triton_step import HAS_TRITON
+    
+        if not HAS_TRITON:
+            pytest.skip("triton not installed")
+        device, bins = "cuda:0", 256
+        cb32 = _block_codebook_on(1, 2, "gaussian", 128, "auto", device)
+        cb16 = cb32.half()
+        csq16 = cb16.pow(2).sum(dim=1)
+        lut = _block_lut_on(1, 2, "gaussian", 128, "auto", bins, 4, device)
+        generator = torch.Generator(device=device).manual_seed(4404)
+        z = torch.randn(1_048_576, 2, generator=generator, device=device)
+        exact = quantize_exact_pre(z.half(), cb16, csq16)
+>       got = quantize_via_lut(
+            z,
+            lut,
+            bins,
+            cb32,
+            scoring_cb=cb16,
+            scoring_csq=csq16,
+        )
+
+tests/onecomp/kvcomp/test_hayatequant_public_encode.py:202: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+onecomp/kvcomp/codec/hayate/vq.py:876: in quantize_via_lut
+    return quantize_lut_canonical_t4_triton(
+onecomp/kvcomp/codec/hayate/triton_step.py:427: in quantize_lut_canonical_t4_triton
+    _hq_lut_canonical_t4_kernel[(triton.cdiv(rows, block_n),)](
+../../onecomp-lab/.venv/lib/python3.13/site-packages/triton/runtime/jit.py:370: in <lambda>
+    return lambda *args, **kwargs: self.run(grid=grid, warmup=False, *args, **kwargs)
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../onecomp-lab/.venv/lib/python3.13/site-packages/triton/runtime/jit.py:720: in run
+    kernel = self._do_compile(key, signature, device, constexprs, options, attrs, warmup)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../onecomp-lab/.venv/lib/python3.13/site-packages/triton/runtime/jit.py:849: in _do_compile
+    kernel = self.compile(src, target=target, options=options.__dict__)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../onecomp-lab/.venv/lib/python3.13/site-packages/triton/compiler/compiler.py:304: in compile
+    module = src.make_ir(target, options, codegen_fns, module_map, context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <triton.compiler.compiler.ASTSource object at 0x5a8a62d9e80>
+target = GPUTarget(backend='cuda', arch=100, warp_size=32)
+options = CUDAOptions(num_warps=4, num_ctas=1, num_stages=3, warp_size=32, maxnreg=None, ptx_version=None, ptx_options=None, ir_...b/libdevice.10.bc'),), debug=False, backend_name='cuda', sanitize_overflow=True, arch='sm100', instrumentation_mode='')
+codegen_fns = {'convert_custom_types': <function convert_custom_float8_sm80 at 0x5aad2417b00>, 'min_dot_size': <function min_dot_size.<locals>.check_dot_compatibility at 0x5a8a61a4c20>}
+module_map = {'triton.language.extra.libdevice': <module 'triton.language.extra.cuda.libdevice' from '/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/triton/language/extra/cuda/libdevice.py'>}
+context = <triton._C.libtriton.ir.context object at 0x5a8a6151130>
+
+    def make_ir(self, target: GPUTarget, options, codegen_fns, module_map, context):
+        from .code_generator import ast_to_ttir
+>       return ast_to_ttir(self.fn, self, context=context, options=options, codegen_fns=codegen_fns,
+                           module_map=module_map)
+E       triton.compiler.errors.CompilationError: at 22:11:
+E           STEP: tl.constexpr,
+E           BLOCK_N: tl.constexpr,
+E       ):
+E           """Fused b=2,T=4 lookup with canonical half-GEMM score rounding."""
+E           rows = tl.program_id(0) * BLOCK_N + tl.arange(0, BLOCK_N)
+E           row_mask = rows < N
+E           offs_b = tl.arange(0, 2)
+E           z = tl.load(Z + rows[:, None] * 2 + offs_b[None, :], mask=row_mask[:, None])
+E           z_clamped = tl.maximum(tl.minimum(z, LIM), -LIM)
+E           zi = ((z_clamped + LIM) * STEP).to(tl.int32)
+E           zi = tl.maximum(0, tl.minimum(zi, BINS - 1))
+E           flat = zi[:, 0] * BINS + zi[:, 1]
+E                  ^
+E       unsupported tensor index: constexpr[0]
+
+../../onecomp-lab/.venv/lib/python3.13/site-packages/triton/compiler/compiler.py:80: CompilationError
+=============================== warnings summary ===============================
+../../onecomp-lab/.venv/lib/python3.13/site-packages/torch/jit/_script.py:365: 14 warnings
+  /lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+    warnings.warn(
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/onecomp/kvcomp/test_hayatequant_public_encode.py::test_lut_canonical_t4_triton_matches_full_half_gemm_large_fixture
+1 failed, 19 deselected, 16 warnings in 16.76s

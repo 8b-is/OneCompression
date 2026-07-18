@@ -1,0 +1,26 @@
+{
+  "bit_exact": true,
+  "fresh_process": true,
+  "reference_tensor_sha256": "55d09c31d8bcfe4d597dff7021b85a6c9736b900dd3a298d214de9ec78333390",
+  "regenerated_dtype": "torch.float32",
+  "regenerated_finite": true,
+  "regenerated_shape": [
+    8,
+    2
+  ],
+  "regenerated_tensor_sha256": "55d09c31d8bcfe4d597dff7021b85a6c9736b900dd3a298d214de9ec78333390",
+  "regenerated_unique_rows": 8,
+  "runtime": {
+    "finished_at_utc": "2026-07-15T21:21:05.878468+00:00",
+    "hostname": "kagura-gpu13",
+    "python": "3.13.12",
+    "slurm_array_job_id": "69364",
+    "slurm_array_task_id": "0",
+    "torch": "2.11.0+cu130"
+  },
+  "schema": "hayatequant.current_online_serialization.regeneration_audit.v1",
+  "target": {
+    "block_size": 2,
+    "k": 8
+  }
+}

@@ -1,0 +1,528 @@
+{
+  "aggregate": {
+    "cudagraph_serving_step_store1_plus_decode": {
+      "HQ_faster_point_estimate": false,
+      "HQ_median_of_process_medians_ms": 0.15980799868702888,
+      "HQ_speedup_over_TurboQuant": 0.5619743637794213,
+      "TurboQuant_median_of_process_medians_ms": 0.08980799838900566,
+      "fresh_process_medians_ms": {
+        "HQ": [
+          0.15995199978351593,
+          0.15966399759054184
+        ],
+        "TurboQuant": [
+          0.08991999924182892,
+          0.0896959975361824
+        ]
+      }
+    },
+    "decode_attention": {
+      "HQ_faster_point_estimate": false,
+      "HQ_median_of_process_medians_ms": 0.10963200032711029,
+      "HQ_speedup_over_TurboQuant": 0.7611646234973555,
+      "TurboQuant_median_of_process_medians_ms": 0.08344800025224686,
+      "fresh_process_medians_ms": {
+        "HQ": [
+          0.09800000116229057,
+          0.12126399949193001
+        ],
+        "TurboQuant": [
+          0.08217599987983704,
+          0.08472000062465668
+        ]
+      }
+    },
+    "prefill_store": {
+      "HQ_faster_point_estimate": false,
+      "HQ_median_of_process_medians_ms": 0.7585199922323227,
+      "HQ_speedup_over_TurboQuant": 0.1730422359678619,
+      "TurboQuant_median_of_process_medians_ms": 0.13125599548220634,
+      "fresh_process_medians_ms": {
+        "HQ": [
+          0.7582879960536957,
+          0.7587519884109497
+        ],
+        "TurboQuant": [
+          0.13123199343681335,
+          0.13127999752759933
+        ]
+      }
+    },
+    "serving_step_store1_plus_decode": {
+      "HQ_faster_point_estimate": false,
+      "HQ_median_of_process_medians_ms": 0.7285199910402298,
+      "HQ_speedup_over_TurboQuant": 0.24520946438514638,
+      "TurboQuant_median_of_process_medians_ms": 0.1786399967968464,
+      "fresh_process_medians_ms": {
+        "HQ": [
+          0.6327039897441864,
+          0.8243359923362732
+        ],
+        "TurboQuant": [
+          0.17715200036764145,
+          0.18012799322605133
+        ]
+      }
+    }
+  },
+  "comparison_contract": {
+    "algorithm_specific_physical_slot_width_reported": true,
+    "counterbalance_order": [
+      "HQ",
+      "TurboQuant",
+      "TurboQuant",
+      "HQ"
+    ],
+    "cudagraph_decode_measured": true,
+    "excluded": [
+      "Adaptive HQ",
+      "FibQuant",
+      "BlockQuant",
+      "hybrid",
+      "fake_quant",
+      "public_payload_api"
+    ],
+    "fresh_process_per_sample": true,
+    "methods": [
+      "HQ",
+      "TurboQuant"
+    ],
+    "proposal_variants": [
+      "HQ"
+    ],
+    "same_gpu": true,
+    "same_semantic_shapes_and_paged_layout": true,
+    "timing": "CUDA events with one final synchronization per sample vector",
+    "turboquant": "unmodified upstream vLLM 0.20 native kernels",
+    "warmup_and_compilation_excluded": true
+  },
+  "formal_eligible": false,
+  "formal_ineligibility_reasons": [
+    "dirty_worktree"
+  ],
+  "provenance": {
+    "arguments": {
+      "allow_canonical_k10v6_b4": false,
+      "assignment_mode": null,
+      "avg_bits": 3,
+      "codebook_init": "auto",
+      "dist": "gaussian",
+      "dtype": "bfloat16",
+      "head_dim": 128,
+      "iters": 50,
+      "key_block_size": null,
+      "key_code_bits": null,
+      "kv_heads": 8,
+      "lut_bins": null,
+      "lut_candidates": null,
+      "max_splits": 32,
+      "measure_cudagraph": true,
+      "output": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/results/dev/native_exact_speed_opt_20260716/tensorcore_exact_v3/abba_rate3.json",
+      "page_size": 16,
+      "query_heads": 32,
+      "recipe": "hq",
+      "rotation_mode": "auto",
+      "seed": 0,
+      "tokens": 4096,
+      "trial_index": 0,
+      "trials": 4,
+      "value_block_size": null,
+      "value_code_bits": null,
+      "warmups": 10,
+      "worker": false,
+      "worker_variant": null
+    },
+    "finished_at_utc": "2026-07-16T05:25:01.953339+00:00",
+    "git_branch": "agent/hayate-paper-refresh-20260715",
+    "git_commit": "e13ee5477f7755907b2c9c003990157839a6214a",
+    "git_status_porcelain": "M benchmark/kvcomp-codec/hayatequant_vllm_full_native_fair_speed.py\n M benchmark/kvcomp-codec/hayatequant_vllm_full_native_profile.py\n M benchmark/kvcomp-codec/hayatequant_vllm_full_native_smoke.py\n M tests/onecomp/kvcomp/test_hayate_full_native_contract.py\n M vllm_plugins/kvcomp/hayate_full_triton.py\n?? benchmark/kvcomp-codec/hayatequant_vllm_full_native_exact_parity.py\n?? papers/hayatequant_paper/experiments/results/development/native_exact_grid_rejected_20260716/\n?? papers/hayatequant_paper/experiments/results/development/native_tensorcore_exact_accepted_20260716/",
+    "hostname": "kagura-gpu11",
+    "source_sha256": {
+      "benchmark/kvcomp-codec/hayatequant_vllm_full_native_fair_speed.py": "f5b5391e35274ac90103dac190ab5636a2551aad8521280f03b92e73f13f4a24",
+      "onecomp/kvcomp/codec/hayate/recipes.py": "3338a0519a31eba9a44136c9250f9e04657898575f0b496ab5b4f94da7514a52",
+      "onecomp/kvcomp/codec/hayate/triton_step.py": "7f663b268e320c6d6d8ec3216b4e005e3c5d796098c46a3a59f6b90cf29b6a5f",
+      "onecomp/kvcomp/codec/hayate/vq.py": "55ac248254422fd6f2eee62e32f9b6794ee294608b6b70ba7a1c0a2c510e0ca8",
+      "vllm_plugins/kvcomp/hayate_full_config.py": "1c42cd4a09b33c771ba25e3a713b8a0f37f9a7077b9f6d204589997188e1b993",
+      "vllm_plugins/kvcomp/hayate_full_native.py": "34ab6fca260af3520ead86cd4f61b92bcb204845c02194c83697a7e1e1a1bb4e",
+      "vllm_plugins/kvcomp/hayate_full_triton.py": "d7a81483628629a96e3a2b0546d571208b528c08c97dea9908b10140ffad3049"
+    },
+    "upstream_vllm_sha256": {
+      "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/model_executor/layers/quantization/turboquant/config.py": "579d32873a4be1d51a1bd47a3f5bd36d4a7ec7ad162d193c27b156f13a899777",
+      "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/v1/attention/ops/triton_turboquant_decode.py": "f15c5e1eb5b363b063fb075e632e0a8ed0177b49115a5aa1f7a09b676c1d2f86",
+      "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/vllm/v1/attention/ops/triton_turboquant_store.py": "0ac49b3da69a70fdc6e7b1800237a81f8398f8509770d0f48d1938d926d06e45"
+    },
+    "vllm_version": "0.20.0"
+  },
+  "schema": {
+    "name": "onecomp.hq_vs_upstream_tq_native_fair_speed",
+    "version": 1
+  },
+  "workers": [
+    {
+      "gpu": {
+        "capability": [
+          10,
+          0
+        ],
+        "name": "NVIDIA B200",
+        "total_memory_bytes": 191503007744,
+        "uuid": "5c2cdd13-9017-19d0-215d-754b79509cea"
+      },
+      "method_contract": {
+        "approximate_lut": false,
+        "exact_assignment_implementation": "all_codewords_tensorcore_score_fused_argmax",
+        "implementation": "faithful_packed_fixed_HQ_native",
+        "persistent_encoder_acceleration_bytes": 0,
+        "physical_cache_bytes_includes_encoder_acceleration": false,
+        "recipe": {
+          "allow_canonical_k10v6_b4": false,
+          "assignment": "exact_nearest_codeword_then_value_ls_refit",
+          "assignment_contract": {
+            "search": "all_codewords",
+            "tie_break": "smallest_index"
+          },
+          "assignment_mode": "exact",
+          "average_kv_rate_bits_per_coordinate": 3.0,
+          "codebook_init": "auto",
+          "dist": "gaussian",
+          "key_block_size": 2,
+          "key_code_bits_per_block": 7,
+          "key_rate_bits_per_coordinate": 3.5,
+          "key_scale_mode": "nc",
+          "layout": {
+            "key_code_bytes": 56,
+            "key_scale_offset": 56,
+            "slot_padding_bytes": 0,
+            "slot_size": 100,
+            "slot_size_aligned": 100,
+            "value_code_bytes": 40,
+            "value_codes_offset": 58,
+            "value_scale_offset": 98
+          },
+          "lut_bins": 256,
+          "lut_candidates": 2,
+          "lut_limit": 5.0,
+          "max_codebook_bits": 9,
+          "rotation_mode": "auto",
+          "scale_contract": "one_signed_fp16_scale_per_role_vector",
+          "seed": 0,
+          "value_block_size": 2,
+          "value_code_bits_per_block": 5,
+          "value_rate_bits_per_coordinate": 2.5,
+          "value_scale_mode": "ls_iter",
+          "zero_points": 0
+        },
+        "slot_size_aligned": 100,
+        "upstream_turboquant_modified": false
+      },
+      "physical_cache_bytes": 3276800,
+      "pid": 792869,
+      "shape_contract": {
+        "dtype": "bfloat16",
+        "head_dim": 128,
+        "kv_heads": 8,
+        "max_kv_splits": 32,
+        "page_size": 16,
+        "pages": 256,
+        "query_heads": 32,
+        "tokens": 4096
+      },
+      "timings": {
+        "cudagraph_serving_step_store1_plus_decode": {
+          "max_ms": 0.23369599878787994,
+          "mean_ms": 0.1616409593820572,
+          "median_ms": 0.15995199978351593,
+          "min_ms": 0.1589439958333969,
+          "n": 50,
+          "p10_ms": 0.15961599349975586,
+          "p90_ms": 0.16182400286197662
+        },
+        "decode_attention": {
+          "max_ms": 0.31625598669052124,
+          "mean_ms": 0.10359999969601631,
+          "median_ms": 0.09800000116229057,
+          "min_ms": 0.09471999853849411,
+          "n": 50,
+          "p10_ms": 0.09596800059080124,
+          "p90_ms": 0.10262399911880493
+        },
+        "prefill_store": {
+          "max_ms": 0.8241279721260071,
+          "mean_ms": 0.7595488011837006,
+          "median_ms": 0.7582879960536957,
+          "min_ms": 0.7512320280075073,
+          "n": 50,
+          "p10_ms": 0.7536960244178772,
+          "p90_ms": 0.7634879946708679
+        },
+        "serving_step_store1_plus_decode": {
+          "max_ms": 1.0047999620437622,
+          "mean_ms": 0.641003520488739,
+          "median_ms": 0.6327039897441864,
+          "min_ms": 0.6106879711151123,
+          "n": 50,
+          "p10_ms": 0.6208320260047913,
+          "p90_ms": 0.6466240286827087
+        }
+      },
+      "trial_index": 0,
+      "worker_stderr_tail": "",
+      "worker_variant": "HQ"
+    },
+    {
+      "gpu": {
+        "capability": [
+          10,
+          0
+        ],
+        "name": "NVIDIA B200",
+        "total_memory_bytes": 191503007744,
+        "uuid": "5c2cdd13-9017-19d0-215d-754b79509cea"
+      },
+      "method_contract": {
+        "implementation": "unmodified_upstream_vllm_0.20_TurboQuant_native",
+        "key_bits": 3,
+        "kv_cache_dtype": "turboquant_3bit_nc",
+        "slot_size_aligned": 102,
+        "upstream_turboquant_modified": false,
+        "value_bits": 3
+      },
+      "physical_cache_bytes": 3342336,
+      "pid": 793851,
+      "shape_contract": {
+        "dtype": "bfloat16",
+        "head_dim": 128,
+        "kv_heads": 8,
+        "max_kv_splits": 32,
+        "page_size": 16,
+        "pages": 256,
+        "query_heads": 32,
+        "tokens": 4096
+      },
+      "timings": {
+        "cudagraph_serving_step_store1_plus_decode": {
+          "max_ms": 0.13177600502967834,
+          "mean_ms": 0.09082303971052169,
+          "median_ms": 0.08991999924182892,
+          "min_ms": 0.0888959988951683,
+          "n": 50,
+          "p10_ms": 0.08953599631786346,
+          "p90_ms": 0.09040000289678574
+        },
+        "decode_attention": {
+          "max_ms": 0.20988799631595612,
+          "mean_ms": 0.08640191927552224,
+          "median_ms": 0.08217599987983704,
+          "min_ms": 0.07945600152015686,
+          "n": 50,
+          "p10_ms": 0.08083199709653854,
+          "p90_ms": 0.08691199868917465
+        },
+        "prefill_store": {
+          "max_ms": 0.17526400089263916,
+          "mean_ms": 0.13224000006914138,
+          "median_ms": 0.13123199343681335,
+          "min_ms": 0.1287039965391159,
+          "n": 50,
+          "p10_ms": 0.13072000443935394,
+          "p90_ms": 0.13257600367069244
+        },
+        "serving_step_store1_plus_decode": {
+          "max_ms": 0.3470720052719116,
+          "mean_ms": 0.18291776061058043,
+          "median_ms": 0.17715200036764145,
+          "min_ms": 0.17190399765968323,
+          "n": 50,
+          "p10_ms": 0.17337599396705627,
+          "p90_ms": 0.18534399569034576
+        }
+      },
+      "trial_index": 1,
+      "worker_stderr_tail": "",
+      "worker_variant": "TurboQuant"
+    },
+    {
+      "gpu": {
+        "capability": [
+          10,
+          0
+        ],
+        "name": "NVIDIA B200",
+        "total_memory_bytes": 191503007744,
+        "uuid": "5c2cdd13-9017-19d0-215d-754b79509cea"
+      },
+      "method_contract": {
+        "implementation": "unmodified_upstream_vllm_0.20_TurboQuant_native",
+        "key_bits": 3,
+        "kv_cache_dtype": "turboquant_3bit_nc",
+        "slot_size_aligned": 102,
+        "upstream_turboquant_modified": false,
+        "value_bits": 3
+      },
+      "physical_cache_bytes": 3342336,
+      "pid": 794321,
+      "shape_contract": {
+        "dtype": "bfloat16",
+        "head_dim": 128,
+        "kv_heads": 8,
+        "max_kv_splits": 32,
+        "page_size": 16,
+        "pages": 256,
+        "query_heads": 32,
+        "tokens": 4096
+      },
+      "timings": {
+        "cudagraph_serving_step_store1_plus_decode": {
+          "max_ms": 0.1316159963607788,
+          "mean_ms": 0.09072447970509528,
+          "median_ms": 0.0896959975361824,
+          "min_ms": 0.08902399986982346,
+          "n": 50,
+          "p10_ms": 0.08928000181913376,
+          "p90_ms": 0.09091199934482574
+        },
+        "decode_attention": {
+          "max_ms": 0.21193599700927734,
+          "mean_ms": 0.08976640000939369,
+          "median_ms": 0.08472000062465668,
+          "min_ms": 0.08179199695587158,
+          "n": 50,
+          "p10_ms": 0.08265600353479385,
+          "p90_ms": 0.09481599926948547
+        },
+        "prefill_store": {
+          "max_ms": 0.18758399784564972,
+          "mean_ms": 0.1324857595562935,
+          "median_ms": 0.13127999752759933,
+          "min_ms": 0.12643200159072876,
+          "n": 50,
+          "p10_ms": 0.13072000443935394,
+          "p90_ms": 0.13286399841308594
+        },
+        "serving_step_store1_plus_decode": {
+          "max_ms": 0.3978880047798157,
+          "mean_ms": 0.18754624038934709,
+          "median_ms": 0.18012799322605133,
+          "min_ms": 0.17260800302028656,
+          "n": 50,
+          "p10_ms": 0.17564800381660461,
+          "p90_ms": 0.19257600605487823
+        }
+      },
+      "trial_index": 2,
+      "worker_stderr_tail": "",
+      "worker_variant": "TurboQuant"
+    },
+    {
+      "gpu": {
+        "capability": [
+          10,
+          0
+        ],
+        "name": "NVIDIA B200",
+        "total_memory_bytes": 191503007744,
+        "uuid": "5c2cdd13-9017-19d0-215d-754b79509cea"
+      },
+      "method_contract": {
+        "approximate_lut": false,
+        "exact_assignment_implementation": "all_codewords_tensorcore_score_fused_argmax",
+        "implementation": "faithful_packed_fixed_HQ_native",
+        "persistent_encoder_acceleration_bytes": 0,
+        "physical_cache_bytes_includes_encoder_acceleration": false,
+        "recipe": {
+          "allow_canonical_k10v6_b4": false,
+          "assignment": "exact_nearest_codeword_then_value_ls_refit",
+          "assignment_contract": {
+            "search": "all_codewords",
+            "tie_break": "smallest_index"
+          },
+          "assignment_mode": "exact",
+          "average_kv_rate_bits_per_coordinate": 3.0,
+          "codebook_init": "auto",
+          "dist": "gaussian",
+          "key_block_size": 2,
+          "key_code_bits_per_block": 7,
+          "key_rate_bits_per_coordinate": 3.5,
+          "key_scale_mode": "nc",
+          "layout": {
+            "key_code_bytes": 56,
+            "key_scale_offset": 56,
+            "slot_padding_bytes": 0,
+            "slot_size": 100,
+            "slot_size_aligned": 100,
+            "value_code_bytes": 40,
+            "value_codes_offset": 58,
+            "value_scale_offset": 98
+          },
+          "lut_bins": 256,
+          "lut_candidates": 2,
+          "lut_limit": 5.0,
+          "max_codebook_bits": 9,
+          "rotation_mode": "auto",
+          "scale_contract": "one_signed_fp16_scale_per_role_vector",
+          "seed": 0,
+          "value_block_size": 2,
+          "value_code_bits_per_block": 5,
+          "value_rate_bits_per_coordinate": 2.5,
+          "value_scale_mode": "ls_iter",
+          "zero_points": 0
+        },
+        "slot_size_aligned": 100,
+        "upstream_turboquant_modified": false
+      },
+      "physical_cache_bytes": 3276800,
+      "pid": 794860,
+      "shape_contract": {
+        "dtype": "bfloat16",
+        "head_dim": 128,
+        "kv_heads": 8,
+        "max_kv_splits": 32,
+        "page_size": 16,
+        "pages": 256,
+        "query_heads": 32,
+        "tokens": 4096
+      },
+      "timings": {
+        "cudagraph_serving_step_store1_plus_decode": {
+          "max_ms": 0.26630398631095886,
+          "mean_ms": 0.16210879981517792,
+          "median_ms": 0.15966399759054184,
+          "min_ms": 0.1586879938840866,
+          "n": 50,
+          "p10_ms": 0.1592320054769516,
+          "p90_ms": 0.16128000617027283
+        },
+        "decode_attention": {
+          "max_ms": 0.31116798520088196,
+          "mean_ms": 0.12594495981931686,
+          "median_ms": 0.12126399949193001,
+          "min_ms": 0.11747200042009354,
+          "n": 50,
+          "p10_ms": 0.11923199892044067,
+          "p90_ms": 0.12540799379348755
+        },
+        "prefill_store": {
+          "max_ms": 0.8681920170783997,
+          "mean_ms": 0.7620614373683929,
+          "median_ms": 0.7587519884109497,
+          "min_ms": 0.7534719705581665,
+          "n": 50,
+          "p10_ms": 0.7553279995918274,
+          "p90_ms": 0.7637119889259338
+        },
+        "serving_step_store1_plus_decode": {
+          "max_ms": 1.1632319688796997,
+          "mean_ms": 0.8338259136676789,
+          "median_ms": 0.8243359923362732,
+          "min_ms": 0.8091520071029663,
+          "n": 50,
+          "p10_ms": 0.8144959807395935,
+          "p90_ms": 0.840287983417511
+        }
+      },
+      "trial_index": 3,
+      "worker_stderr_tail": "",
+      "worker_variant": "HQ"
+    }
+  ]
+}

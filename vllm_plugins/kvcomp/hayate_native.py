@@ -1,12 +1,14 @@
 # Copyright 2026 Fujitsu Ltd.
-"""Native vLLM attention backend override for HayateQuant.
+"""Experimental vLLM key-block-VQ/TurboQuant-value backend.
 
 vLLM exposes TurboQuant through fixed ``kv_cache_dtype`` strings.  Rather than
 adding a new dtype to vLLM's pydantic config surface, the OneComp plugin maps a
 HayateQuant model onto the byte-compatible TurboQuant dtype and overrides the
 TurboQuant attention backend in-process.  The cache size and scheduler behavior
 therefore stay identical to upstream vLLM, while the key quantizer uses
-HayateQuant block-VQ codebooks.
+HayateQuant block-VQ codebooks. Values still use upstream TurboQuant's
+uniform scalar quantizer, so this backend is not a faithful HayateQuant
+implementation and is never selected by default.
 """
 
 from __future__ import annotations
@@ -61,13 +63,14 @@ class HayateQuantNativeBackend(TurboQuantAttentionBackend):
 
 
 class HayateQuantNativeImpl(TurboQuantAttentionImpl):
-    """Drop-in replacement for vLLM's TurboQuant implementation.
+    """Explicit opt-in hybrid replacement for vLLM's TurboQuant implementation.
 
     The implementation keeps the upstream TurboQuant value path and cache
     layout, then swaps the key scalar MSE indexer for a HayateQuant block-VQ
     indexer when the model config requests the supported 3/4-bit block_size=2
-    operating point.  Unsupported or non-block settings delegate to upstream
-    TurboQuant so the engine remains serveable.
+    operating point. Values remain uniform scalar-quantized. Unsupported or
+    non-block settings delegate to upstream TurboQuant so the engine remains
+    serveable; benchmark output must label this hybrid distinctly.
     """
 
     def _ensure_on_device(self, layer, device):
@@ -79,6 +82,13 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
             return super()._ensure_on_device(layer, device)
 
         cfg = _native_config()
+        # This backend class can remain registered after a previous Hayate
+        # engine because vLLM's attention registry is process-global. An empty
+        # config is therefore an explicit upstream-TurboQuant state, not an
+        # invitation to synthesize Hayate defaults for an unrelated engine.
+        if not cfg:
+            layer._hq_native_enabled = False
+            return super()._ensure_on_device(layer, device)
         key_bits = int(cfg.get("bits") or self.tq_config.key_quant_bits)
         value_bits = cfg.get("value_bits")
         value_bits = int(value_bits) if value_bits is not None else self.tq_config.value_quant_bits
@@ -105,7 +115,9 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
             _block_codebook,
             _dense_rotation_on,
         )
-        from onecomp.kvcomp.codec.hayate.vq import resolve_block_size  # pylint: disable=import-outside-toplevel
+        from onecomp.kvcomp.codec.hayate.vq import (
+            resolve_block_size,
+        )  # pylint: disable=import-outside-toplevel
         from onecomp.kvcomp.codec.rotation import (  # pylint: disable=import-outside-toplevel
             hybrid_rotation_matrix,
             is_power_of_two,

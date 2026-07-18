@@ -1,0 +1,22 @@
+# Source acquisition (read-only; archives were inspected in /tmp and are not vendored)
+curl -L --fail --silent --show-error https://export.arxiv.org/e-print/2504.19874v1 -o /tmp/kvcomp_external_audit/tq.tar
+curl -L --fail --silent --show-error https://export.arxiv.org/e-print/2605.11478v1 -o /tmp/kvcomp_external_audit/fib.tar
+curl -L --fail --silent --show-error https://export.arxiv.org/e-print/2605.19972v1 -o /tmp/kvcomp_external_audit/block.tar
+sha256sum /tmp/kvcomp_external_audit/tq.tar /tmp/kvcomp_external_audit/fib.tar /tmp/kvcomp_external_audit/block.tar
+tar -xf /tmp/kvcomp_external_audit/tq.tar -C /tmp/kvcomp_external_audit/tq
+tar -xf /tmp/kvcomp_external_audit/fib.tar -C /tmp/kvcomp_external_audit/fib
+tar -xf /tmp/kvcomp_external_audit/block.tar -C /tmp/kvcomp_external_audit/block
+sha256sum /tmp/kvcomp_external_audit/tq/main.tex /tmp/kvcomp_external_audit/fib/Arxiv_fibquant_neurips.tex /tmp/kvcomp_external_audit/block/BlockQuant.tex
+
+# Formatting and focused verification
+.venv/bin/black --fast onecomp/kvcomp/codec/turboquant.py onecomp/kvcomp/codec/fibquant.py onecomp/kvcomp/codec/blockquant.py onecomp/kvcomp/codec/quality_baselines.py tests/onecomp/kvcomp/test_external_baseline_audit.py
+.venv/bin/python -m pytest -q tests/onecomp/kvcomp/test_external_baseline_audit.py tests/onecomp/kvcomp/test_fibquant.py tests/onecomp/kvcomp/test_blockquant.py
+.venv/bin/python -m pytest -q tests/onecomp/kvcomp/test_kvcomp.py -k 'turboquant or lloyd_max'
+
+# Syntax, JSON, checksums and secret scan are run after audit artifacts are finalized.
+.venv/bin/python -m compileall -q onecomp/kvcomp/codec
+.venv/bin/python -m json.tool papers/hayatequant_paper/experiments/results/development/audits/external_codec_math_audit_20260716/audit.json
+.venv/bin/python -m json.tool papers/hayatequant_paper/experiments/results/development/audits/external_codec_math_audit_20260716/source_manifest.json
+.venv/bin/python -m json.tool papers/hayatequant_paper/experiments/results/development/audits/external_codec_math_audit_20260716/test_results.json
+.venv/bin/python -m json.tool papers/hayatequant_paper/experiments/results/development/audits/external_codec_math_audit_20260716/security_scan.json
+sha256sum -c papers/hayatequant_paper/experiments/results/development/audits/external_codec_math_audit_20260716/SHA256SUMS

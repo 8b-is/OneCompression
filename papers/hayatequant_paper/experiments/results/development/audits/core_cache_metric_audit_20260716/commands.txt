@@ -1,0 +1,20 @@
+# Final focused correctness verification
+uv run --frozen pytest -q tests/onecomp/kvcomp/test_core_cache_metric_audit.py tests/onecomp/kvcomp/test_eval_correctness.py tests/onecomp/kvcomp/test_metrics_accounting.py tests/onecomp/kvcomp/test_ruler_eval.py tests/onecomp/kvcomp/test_longcontext_protocol.py tests/onecomp/kvcomp/test_code_accounting.py --disable-warnings
+
+# Broad cache/evaluation regression
+uv run --frozen pytest -q tests/onecomp/kvcomp/test_kvcomp.py
+
+# Formal aggregate/renderer compatibility
+uv run --frozen pytest -q tests/onecomp/kvcomp/test_hayatequant_ruler_aggregate.py tests/onecomp/kvcomp/test_hayatequant_formal_renderer.py -x --tb=short
+
+# Static validation
+uv run --frozen python -m compileall -q onecomp/kvcomp/_base.py onecomp/kvcomp/cache onecomp/kvcomp/eval tests/onecomp/kvcomp/test_core_cache_metric_audit.py tests/onecomp/kvcomp/test_metrics_accounting.py tests/onecomp/kvcomp/test_eval_correctness.py tests/onecomp/kvcomp/test_code_accounting.py tests/onecomp/kvcomp/test_ruler_eval.py
+git diff --check -- onecomp/kvcomp/_base.py onecomp/kvcomp/cache onecomp/kvcomp/eval tests/onecomp/kvcomp/test_core_cache_metric_audit.py tests/onecomp/kvcomp/test_metrics_accounting.py tests/onecomp/kvcomp/test_eval_correctness.py tests/onecomp/kvcomp/test_code_accounting.py tests/onecomp/kvcomp/test_ruler_eval.py
+uv run --frozen black --check --fast onecomp/kvcomp/_base.py onecomp/kvcomp/cache/_graded_base.py onecomp/kvcomp/cache/streaming_evict.py onecomp/kvcomp/cache/thinkv_cache.py onecomp/kvcomp/eval/metrics.py onecomp/kvcomp/eval/_teacher_forcing.py tests/onecomp/kvcomp/test_core_cache_metric_audit.py
+
+# JSON and archive integrity after finalization
+uv run --frozen python -m json.tool papers/hayatequant_paper/experiments/results/development/audits/core_cache_metric_audit_20260716/audit.json
+uv run --frozen python -m json.tool papers/hayatequant_paper/experiments/results/development/audits/core_cache_metric_audit_20260716/source_manifest.json
+uv run --frozen python -m json.tool papers/hayatequant_paper/experiments/results/development/audits/core_cache_metric_audit_20260716/test_results.json
+uv run --frozen python -m json.tool papers/hayatequant_paper/experiments/results/development/audits/core_cache_metric_audit_20260716/security_scan.json
+sha256sum -c papers/hayatequant_paper/experiments/results/development/audits/core_cache_metric_audit_20260716/SHA256SUMS

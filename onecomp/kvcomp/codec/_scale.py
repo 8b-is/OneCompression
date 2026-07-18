@@ -1,9 +1,8 @@
 """Role-asymmetric (attention-aligned) dequantization scale.
 
-Used by every rotated-codebook KV codec in this package (currently
-:class:`onecomp.kvcomp.codec.hayatequant.HayateQuantCodec`, which subsumes
-TurboQuant and the historical HALO codec as special cases -- see that
-module's docstring): for a rotated, per-vector-normalised vector ``x`` and
+Used by the rotated-codebook KV codecs in this package. HayateQuant exposes
+matched scalar controls for TurboQuant/HALO equations, but those codecs remain
+independent baselines. For a rotated, per-vector-normalised vector ``x`` and
 its current reconstructed **direction** ``chat`` (the concatenation of
 per-coordinate Lloyd-Max centroids for a scalar codec, or of block-VQ
 codewords for HayateQuant -- either way, a single ``(..., m)`` tensor with
@@ -47,12 +46,22 @@ import torch
 SCALE_MODES = ("rms", "nc", "ls", "ip", "ls_iter", "bsm", "ub")
 
 
+def _signed_clamp(value: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
+    """Clamp a possibly signed denominator away from zero without sign loss.
+
+    Treat exact zero as positive.  ``value.sign() * value.abs().clamp_min``
+    leaves zero equal to zero and therefore still produces NaN/inf on division.
+    """
+    magnitude = value.abs().clamp_min(eps)
+    return torch.where(value < 0, -magnitude, magnitude)
+
+
 def resolve_scale_mode(explicit: Optional[str], ls_scale: bool, role: str) -> str:
     """Resolve the effective scale mode for ``role`` (``"k"`` or ``"v"``).
 
     ``explicit`` (the codec's ``key_scale_mode`` / ``value_scale_mode``) wins
     when set; otherwise falls back to the ``ls_scale`` smart default: NC for
-    keys / ``ls_iter`` for values when ``True`` (the validated best
+    keys / ``ls_iter`` for values when ``True`` (the default research
     operating point), plain per-vector RMS (TurboQuant-faithful, no scale
     refinement) for both roles when ``False``.
     """
@@ -115,12 +124,12 @@ def fit_scale(
         # Inner-product-unbiased: <x_hat, x> = ||x||^2 exactly. Preserve the
         # sign of num (clamp_min alone would flip a negative inner product to
         # a large positive scale).
-        num_safe = num.sign() * num.abs().clamp_min(1e-8)
+        num_safe = _signed_clamp(num)
         return (xr * xr).sum(dim=-1, keepdim=True) / num_safe, None
     if mode == "ls_iter":
         if requantize_fn is None:
             raise ValueError("mode='ls_iter' requires a requantize_fn")
-        chat2, codes2 = requantize_fn(xr / s_ls.clamp_min(1e-8))
+        chat2, codes2 = requantize_fn(xr / _signed_clamp(s_ls))
         num2 = (xr * chat2).sum(dim=-1, keepdim=True)
         den2 = (chat2 * chat2).sum(dim=-1, keepdim=True).clamp_min(1e-8)
         return num2 / den2, codes2

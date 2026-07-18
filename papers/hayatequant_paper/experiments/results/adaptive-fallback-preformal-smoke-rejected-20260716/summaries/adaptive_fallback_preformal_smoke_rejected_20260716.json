@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "status": "development_only_rejected_before_smoke_approval",
+  "source_commit": "a887e6e15a4ac830f058741ff8dac8f9233eabed",
+  "formal_claim_eligible": false,
+  "formal_submission_started": false,
+  "smoke_approval_written": false,
+  "slurm_jobs": {
+    "completed": [69483, 69484, 69489],
+    "cancelled_pending_before_allocation": [69485, 69486, 69487, 69488, 69490]
+  },
+  "direct_ssh_gpu11_diagnostics": {
+    "host": "kagura-gpu11",
+    "device": 0,
+    "tag": "a887e6e-gpu11",
+    "speed_completed": true,
+    "native_hybrid_completed": true,
+    "formal_rows": false
+  },
+  "ppl_smoke": {
+    "model": "Qwen3-0.6B",
+    "fullkv": 21.167885014504623,
+    "TurboQuant-paper": 3422.267408268432,
+    "FibQuant-paper": 2569.167632372546,
+    "BlockQuant-paper": 62.108034894464865,
+    "HQ": 477.22588767676575,
+    "AdaptiveHQ": 625.2691156145258,
+    "tokens": 767,
+    "interpretation": "HQ and AdaptiveHQ beat TurboQuant/FibQuant in this capped point estimate; BlockQuant is better but remains an unmatched, method-level reproduction-completed descriptive baseline"
+  },
+  "speed_smoke": {
+    "slurm_node": "kagura-gpu06",
+    "fixed_hq_public_payload_speedup_range_vs_turboquant": [0.8227213464983002, 0.9943851990088536],
+    "fixed_hq_research_fake_quant_speedup_range_vs_turboquant": [3.3497745035368376, 3.452279792359571],
+    "adaptive_hq_public_payload_speedup_range_vs_turboquant": [0.44031932494450654, 0.6502308166328177],
+    "adaptive_hq_research_fake_quant_speedup_range_vs_turboquant": [0.5395116430023648, 0.5807024363834896],
+    "gpu11_replication_consistent": true
+  },
+  "rejection_reasons": [
+    "AdaptiveHQ result metadata described the research fake-quant path as fused even though the implementation explicitly disabled the fused roundtrip and fell back to public encode then decode",
+    "AdaptiveHQ public encode/decode incurred GPU-to-host synchronization and repeated payload metadata work and lost every measured public-payload speed endpoint in both Slurm and gpu11 diagnostics",
+    "the frozen AdaptiveHQ absolute-MSE selector frequently preferred the symmetric K6/V6 pair and produced worse PPL than the fixed K7/V5 HQ recipe in this smoke",
+    "the five remaining exact smoke jobs were still pending and were cancelled before allocation so no incomplete smoke could be approved"
+  ],
+  "next_action": "fix truthful path labelling and AdaptiveHQ execution overhead; add matched incremental and pair-selection provenance controls; preregister any selector change; rerun all eight smoke jobs from one new clean commit"
+}

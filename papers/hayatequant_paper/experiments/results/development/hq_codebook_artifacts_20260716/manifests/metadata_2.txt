@@ -1,0 +1,17 @@
+job_id=69357
+array_job_id=69354
+array_task_id=2
+node=kagura-gpu15
+start_utc=2026-07-15T21:07:21Z
+676b601c3853e6ee8cf9e2f7e9cfbc8720b2cf05d9f12d6794ff4c9db540949b  /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/papers/hayatequant_paper/experiments/results/development/hq_codebook_artifacts_20260716/FAILED_FIT_ARTIFACT_SHA256.txt
+35d895ad7fa760cf58690af0a56c326a7afffd6a3261d71274b80a81aa20d7db  /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/papers/hayatequant_paper/experiments/results/development/hq_codebook_artifacts_20260716/runtime/finalize_existing_artifact.py
+artifacts/gauss_b2_k128.pt: OK
+artifacts/gauss_b2_k32.pt: OK
+artifacts/gauss_b2_k512.pt: OK
+artifacts/gauss_b2_k8.pt: OK
+artifacts/gauss_b4_k1024.pt: OK
+artifacts/gauss_b4_k64.pt: OK
+Python 3.13.12
+NVIDIA B200, GPU-8aab0488-b3f1-1a5b-f4f4-3870e176479d, 580.126.20
+end_utc=2026-07-15T21:08:57Z
+exit_status=0

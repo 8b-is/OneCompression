@@ -6,7 +6,7 @@
 #   - PM-KVQ (arXiv:2505.18610): k=16 samples on AIME-2024/2025, CMIMC, LC-Bench;
 #     models: DeepSeek-R1-Distill-Qwen-7B/14B/32B, LLaMA-8B/70B, QwQ-32B.
 #
-# This config skips needle/RULER (long-context retrieval), focusing only on
+# This config skips needle/local multi-key retrieval, focusing only on
 # competition math reasoning -- the primary claim of both papers.
 #
 # Usage:
@@ -31,33 +31,32 @@ run_ruler: false
 run_ppl: true
 ppl_max_length: 2048
 ppl_stride: 1024
-ppl_windows: 16
+ppl_windows: null            # complete WikiText-2 test split
 
 # GSM8K: included as a sanity check (matches both papers)
 run_gsm8k: true
-gsm8k_limit: 100
+gsm8k_limit: null            # complete 1,319-example test split
 max_new_reason: 8192
 
 # MATH-500: included (ThinKV main eval)
 run_math: true
-math_limit: 100
+math_limit: null             # complete MATH-500 test split
 max_new_math: 8192
+math_grader: math_verify     # required; no silent local fallback
+math_verify_version: "0.9.0"
 
 # AIME-2024 and AIME-2025: primary evaluation axis for both papers.
 # k=8 matches ThinKV; set aime_k=16 to match PM-KVQ (doubles compute).
 aime_years: [2024, 2025]
 aime_k: 8
+sample_seed: 0
 aime_limit: 30               # all 30 AIME problems per year
-max_new_aime: 8192
+max_new_aime: 32768           # ThinKV paper protocol
 
-# LiveCodeBench (functional subset): ThinKV's code axis. Supply a local JSONL of
-# {prompt, entry_point, test} (functional/HumanEval-style) for an offline run, or
-# leave lcb_problems_path null to load lcb_dataset from HF. Generated code is
-# executed in a sandboxed subprocess (rlimits + timeout) -- run on an isolated node.
-run_livecodebench: true
-# Pre-converted HumanEval-style JSONL (142 functional problems extracted from
-# livecodebench/code_generation_lite raw JSONL -- datasets>=4.x dropped script support).
-lcb_problems_path: /lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/data/lcb_functional.jsonl
+# The bundled HumanEval-shaped JSONL contains public-example assertions and is
+# only a smoke test, not official LiveCodeBench. Keep it out of paper runs.
+run_livecodebench: false
+lcb_problems_path: ${oc.env:KVCOMP_LCB_PROBLEMS,???}
 lcb_limit: 50
 lcb_k: 1
 # Reasoning models (R1-Distill, QwQ) emit long <think> blocks before the
@@ -98,7 +97,8 @@ halo_variants:
   - {label: "HALO-NCIT-3bit", bits: 3, key_scale_mode: nc, value_scale_mode: ls_iter}
 kivi_bits: [2]
 
-# ThinKV: paper-faithful settings (R4E4T2, auto-calibrated L*)
+# ThinKV TBQ settings (R4E4T2, auto-calibrated L*). The HF cache omits TBE;
+# kv_benchmark marks this row paper_comparable=false.
 thinkv:
   group_size: 16
   precision: {R: 4, E: 4, T: 2}

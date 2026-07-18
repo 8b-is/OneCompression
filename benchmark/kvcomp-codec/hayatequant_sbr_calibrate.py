@@ -2,7 +2,7 @@
 
 HQ-SBR is a single codec recipe, not a model-family selector:
 
-    K(r+1)V(r-1) + key UB scale + spectral-balanced rotation/codebook artifact.
+    K(r+1)V(r-1) + key UB + value LS-iter + spectral-balanced artifact.
 
 The artifact contains fixed per-role rotations and optional refit codebooks.
 At inference time it is consumed by ``HayateQuantCodec(calibration=...)`` and
@@ -13,17 +13,20 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import sys
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from onecomp.kvcomp.codec import HayateQuantCodec
-from onecomp.kvcomp.codec.hayate.recipes import hayate_frontier_bits
+from onecomp.kvcomp.codec.hayate.recipes import hayate_hq_kwargs, hayate_hq_role_rates
 from onecomp.kvcomp.codec.hayate.calibration import (
     calibrate_hayatequant_spectral,
     capture_kv_samples,
 )
-
 
 DEFAULT_TEXT = (
     "A careful proof often starts from the quantity that downstream attention "
@@ -34,22 +37,25 @@ DEFAULT_TEXT = (
 ) * 32
 
 
-def _kv_asym(bits: int) -> tuple[int, int]:
-    kv_bits = hayate_frontier_bits(bits)
+def _kv_asym(bits: int) -> tuple[float, float]:
+    kv_bits = hayate_hq_role_rates(bits)
     if kv_bits is None:
-        raise ValueError(f"average bits must be in [2, 7], got {bits}")
+        raise ValueError(f"average bits must be one of 2, 3, or 4, got {bits}")
     return kv_bits
 
 
 def main() -> None:
     args = parse_args()
     key_bits, value_bits = _kv_asym(args.avg_bits)
-    if args.key_bits is not None:
-        key_bits = args.key_bits
-    if args.value_bits is not None:
-        value_bits = args.value_bits
+    if args.key_bits is not None or args.value_bits is not None:
+        raise ValueError(
+            "fixed HQ calibration does not accept legacy integer role-bit overrides; "
+            "use the canonical K/V rates recorded by hayate_hq_kwargs"
+        )
 
-    tok = AutoTokenizer.from_pretrained(args.model_path, trust_remote_code=True)
+    tok = AutoTokenizer.from_pretrained(
+        args.model_path, trust_remote_code=True, fix_mistral_regex=True
+    )
     model = AutoModelForCausalLM.from_pretrained(
         args.model_path,
         torch_dtype=getattr(torch, args.dtype),
@@ -68,13 +74,14 @@ def main() -> None:
         layer_stride=args.layer_stride,
         device=model.device,
     )
+    if args.block_size not in (None, 2):
+        raise ValueError("the fixed HQ calibration recipe requires block_size=2")
     codec = HayateQuantCodec(
-        bits=key_bits,
-        value_bits=value_bits,
-        key_scale_mode="ub",
-        block_size=args.block_size,
-        max_codebook_bits=args.max_codebook_bits,
-        encoder="exact",
+        **hayate_hq_kwargs(
+            args.avg_bits,
+            max_codebook_bits=args.max_codebook_bits,
+            encoder="exact",
+        )
     )
     cal = calibrate_hayatequant_spectral(
         codec,
@@ -90,13 +97,15 @@ def main() -> None:
     )
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
-    cal.meta.update({
-        "model_path": str(args.model_path),
-        "avg_bits": args.avg_bits,
-        "key_bits": key_bits,
-        "value_bits": value_bits,
-        "recipe": "K(r+1)V(r-1)+UB-key+SBR",
-    })
+    cal.meta.update(
+        {
+            "model_path": str(args.model_path),
+            "avg_bits": args.avg_bits,
+            "key_bits": key_bits,
+            "value_bits": value_bits,
+            "recipe": "HQ-b2-K(r+0.5)V(r-0.5)+NC-key+LSiter-value+SBR",
+        }
+    )
     cal.save(str(out))
     print(f"wrote {out}")
     print(cal.meta)

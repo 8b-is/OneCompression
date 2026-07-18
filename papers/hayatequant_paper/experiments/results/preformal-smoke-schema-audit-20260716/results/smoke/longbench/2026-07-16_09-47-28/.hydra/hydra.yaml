@@ -1,0 +1,183 @@
+hydra:
+  run:
+    dir: ${output_dir}/${now:%Y-%m-%d_%H-%M-%S}
+  sweep:
+    dir: multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}
+  launcher:
+    _target_: hydra._internal.core_plugins.basic_launcher.BasicLauncher
+  sweeper:
+    _target_: hydra._internal.core_plugins.basic_sweeper.BasicSweeper
+    max_batch_size: null
+    params: null
+  help:
+    app_name: ${hydra.job.name}
+    header: '${hydra.help.app_name} is powered by Hydra.
+
+      '
+    footer: 'Powered by Hydra (https://hydra.cc)
+
+      Use --hydra-help to view Hydra specific help
+
+      '
+    template: '${hydra.help.header}
+
+      == Configuration groups ==
+
+      Compose your configuration from those groups (group=option)
+
+
+      $APP_CONFIG_GROUPS
+
+
+      == Config ==
+
+      Override anything in the config (foo.bar=value)
+
+
+      $CONFIG
+
+
+      ${hydra.help.footer}
+
+      '
+  hydra_help:
+    template: 'Hydra (${hydra.runtime.version})
+
+      See https://hydra.cc for more info.
+
+
+      == Flags ==
+
+      $FLAGS_HELP
+
+
+      == Configuration groups ==
+
+      Compose your configuration from those groups (For example, append hydra/job_logging=disabled
+      to command line)
+
+
+      $HYDRA_CONFIG_GROUPS
+
+
+      Use ''--cfg hydra'' to Show the Hydra config.
+
+      '
+    hydra_help: ???
+  hydra_logging:
+    version: 1
+    formatters:
+      simple:
+        format: '[%(asctime)s][HYDRA] %(message)s'
+    handlers:
+      console:
+        class: logging.StreamHandler
+        formatter: simple
+        stream: ext://sys.stdout
+    root:
+      level: INFO
+      handlers:
+      - console
+    loggers:
+      logging_example:
+        level: DEBUG
+    disable_existing_loggers: false
+  job_logging:
+    version: 1
+    formatters:
+      simple:
+        format: '[%(asctime)s][%(name)s][%(levelname)s] - %(message)s'
+    handlers:
+      console:
+        class: logging.StreamHandler
+        formatter: simple
+        stream: ext://sys.stdout
+      file:
+        class: logging.FileHandler
+        formatter: simple
+        filename: ${hydra.runtime.output_dir}/${hydra.job.name}.log
+    root:
+      level: INFO
+      handlers:
+      - console
+      - file
+    disable_existing_loggers: false
+  env: {}
+  mode: RUN
+  searchpath: []
+  callbacks: {}
+  output_subdir: .hydra
+  overrides:
+    hydra:
+    - hydra.mode=RUN
+    task:
+    - model_path=/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct
+    - output_dir=/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/results/smoke/longbench
+    - methods=[FullKV,TurboQuant-paper,FibQuant-paper,BlockQuant-paper,HQ,AdaptiveHQ]
+    - turboquant_variants=[{label:TurboQuant-paper,bits:3,dist:beta,rotation_mode:dense}]
+    - fibquant_variants=[{label:FibQuant-paper,bits:3}]
+    - blockquant_variants=[{label:BlockQuant-paper,bits:3}]
+    - hayatequant_variants=[{label:HQ,bits:3},{label:AdaptiveHQ,bits:3}]
+    - uniform_bits=[]
+    - kivi_bits=[]
+    - halo_variants=[]
+    - codec_variants=[]
+    - thinkv.auto_configure=false
+    - run_needle=false
+    - run_ruler=false
+    - run_official_ruler_v1=false
+    - run_longbench=false
+    - run_gsm8k=false
+    - run_math=false
+    - run_ppl=false
+    - run_livecodebench=false
+    - run_longbench=true
+    - longbench_tasks=[passage_retrieval_en]
+    - longbench_limit=1
+    - longbench_max_length=4096
+    - skip_outliers=false
+    - sink_tokens=0
+    - recent_tokens=0
+    - attn_implementation=sdpa
+    - +resume=false
+  job:
+    name: kv_benchmark
+    chdir: false
+    override_dirname: +resume=false,attn_implementation=sdpa,blockquant_variants=[{label:BlockQuant-paper,bits:3}],codec_variants=[],fibquant_variants=[{label:FibQuant-paper,bits:3}],halo_variants=[],hayatequant_variants=[{label:HQ,bits:3},{label:AdaptiveHQ,bits:3}],kivi_bits=[],longbench_limit=1,longbench_max_length=4096,longbench_tasks=[passage_retrieval_en],methods=[FullKV,TurboQuant-paper,FibQuant-paper,BlockQuant-paper,HQ,AdaptiveHQ],model_path=/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct,output_dir=/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/results/smoke/longbench,recent_tokens=0,run_gsm8k=false,run_livecodebench=false,run_longbench=false,run_longbench=true,run_math=false,run_needle=false,run_official_ruler_v1=false,run_ppl=false,run_ruler=false,sink_tokens=0,skip_outliers=false,thinkv.auto_configure=false,turboquant_variants=[{label:TurboQuant-paper,bits:3,dist:beta,rotation_mode:dense}],uniform_bits=[]
+    id: ???
+    num: ???
+    config_name: benchmark_longcontext
+    env_set: {}
+    env_copy: []
+    config:
+      override_dirname:
+        kv_sep: '='
+        item_sep: ','
+        exclude_keys: []
+  runtime:
+    version: 1.3.2
+    version_base: '1.3'
+    cwd: /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness
+    config_sources:
+    - path: hydra.conf
+      schema: pkg
+      provider: hydra
+    - path: /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/benchmark/kvcomp-longcontext/conf
+      schema: file
+      provider: main
+    - path: ''
+      schema: structured
+      provider: schema
+    output_dir: /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/results/smoke/longbench/2026-07-16_09-47-28
+    choices:
+      hydra/env: default
+      hydra/callbacks: null
+      hydra/job_logging: default
+      hydra/hydra_logging: default
+      hydra/hydra_help: default
+      hydra/help: default
+      hydra/sweeper: basic
+      hydra/launcher: basic
+      hydra/output: default
+  verbose: false

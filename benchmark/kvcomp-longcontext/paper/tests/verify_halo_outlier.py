@@ -9,11 +9,11 @@ Hard assertions (non-zero exit means the lever is wrong):
     "auto"/"hadamard_gemm"/"dense" rotations, for keys (nc) and values (ls);
   * the channel mask has exactly ``n_outlier`` channels;
   * stored-bits matches the closed form and lands on the intended *effective*
-    bit-width (true 2.5 / 3.5 = 64-split on head_dim=128);
+    bit-width (paper 2.5 / 3.5 = 32/96 split plus norm metadata);
   * the mixed-precision reconstruction is no worse than uniform ``bits``;
   * HALO and TurboQuant compute identical mixed-precision storage (iso-memory);
-  * fallback accounting counts the affine scale/zero meta (memo A-6);
-  * TurboQuant QJL accounting counts the per-vector residual rms (memo A-7).
+  * non-power-of-two requests retain rotated Lloyd-Max via dense QR;
+  * TurboQuant QJL accounting counts projected signs and residual norms.
 
 Self-contained and CPU-only: resolves the repo root relative to this file.  The
 same invariants are asserted in ``tests/onecomp/kvcomp/test_kvcomp.py``; this is
@@ -65,10 +65,11 @@ def main() -> int:
 
     print("== lever 3: outlier mixed-precision round-trip & accounting ==")
     for rot in ("auto", "hadamard_gemm", "dense"):
-        # (n_outlier, outlier_bits, base_bits, expected effective payload bits):
-        # true 2.5 / 3.5-bit on head_dim=128 need 64 outliers; 32 gives 2.25/3.25.
-        for n_o, ob, base, eff in [(64, 3, 2, 2.5), (64, 4, 3, 3.5),
-                                   (32, 3, 2, 2.25), (32, 4, 3, 3.25)]:
+        # (n_outlier, outlier_bits, base_bits, expected stored bits/coordinate).
+        # The paper's 32/96 split has 2.25/3.25 payload bits; two fp16 norms
+        # contribute 0.25 at head_dim=128, giving the named 2.5/3.5 rate.
+        for n_o, ob, base, eff in [(32, 3, 2, 2.5), (32, 4, 3, 3.5),
+                                   (64, 3, 2, 2.75), (64, 4, 3, 3.75)]:
             c = HALOCodec(bits=base, n_outlier=n_o, outlier_bits=ob,
                           rotation_mode=rot, key_scale_mode="nc",
                           value_scale_mode="ls")
@@ -85,9 +86,9 @@ def main() -> int:
             expect = payload + scales
             check(comp.meta["stored_bits"] == expect,
                   f"{rot} n_o={n_o}: stored_bits == closed form ({expect})")
-            eff_bits = payload / (vecs * d)
+            eff_bits = comp.meta["stored_bits"] / (vecs * d)
             check(abs(eff_bits - eff) < 1e-6,
-                  f"{rot} n_o={n_o}: effective payload bit-width == {eff} (got {eff_bits:.3f})")
+                  f"{rot} n_o={n_o}: effective stored bit-width == {eff} (got {eff_bits:.3f})")
             cu = HALOCodec(bits=base, rotation_mode=rot, key_scale_mode="nc",
                            value_scale_mode="ls")
             ku, vu = cu.decode(cu.encode(key, value))
@@ -97,34 +98,38 @@ def main() -> int:
                   f"{rot} n_o={n_o}: key relMSE mixed {mse_mix:.4e} <= uniform {mse_uni:.4e}")
 
     print("\n== n_outlier matches TurboQuant's split structure (iso-memory) ==")
-    th = HALOCodec(bits=2, n_outlier=64, outlier_bits=3, rotation_mode="hadamard",
+    th = HALOCodec(bits=2, n_outlier=32, outlier_bits=3, rotation_mode="hadamard",
                    key_scale_mode="nc", value_scale_mode="ls")
-    tq = TurboQuantCodec(bits=2, n_outlier=64, outlier_bits=3, rotation_mode="hadamard")
+    tq = TurboQuantCodec(bits=2, n_outlier=32, outlier_bits=3, rotation_mode="hadamard")
     ch, ct = th.encode(key, value), tq.encode(key, value)
     check(ch.meta["stored_bits"] == ct.meta["stored_bits"],
           f"HALO and TurboQuant 2.5-bit stored_bits agree "
           f"({ch.meta['stored_bits']} == {ct.meta['stored_bits']})")
 
-    print("\n== memo A-6: fallback affine accounting counts scale/zero ==")
-    # head_dim=96 is not a power of two -> hadamard single path falls back.
+    print("\n== non-power-of-two Hadamard request keeps rotated algorithm ==")
+    # head_dim=96 cannot use WHT, so the codec must use dense QR rather than
+    # silently changing the algorithm to affine INT.
     kf = torch.randn(1, 2, 8, 96)
     vf = torch.randn(1, 2, 8, 96)
     cf = HALOCodec(bits=4, rotation_mode="hadamard")
     compf = cf.encode(kf, vf)
-    check(compf.meta.get("fallback") is True, "non-pow2 dim falls back to affine")
+    check(compf.meta.get("fallback") is not True and compf.key_q["kind"] == "d",
+          "non-pow2 dim uses dense rotated Lloyd-Max")
     vecs = 1 * 2 * 8
-    expect_fb = kf.numel() * 4 + vf.numel() * 4 + (vecs + vecs) * 2 * 16
+    expect_fb = kf.numel() * 4 + vf.numel() * 4 + (vecs + vecs) * 16
     check(compf.meta["stored_bits"] == expect_fb,
-          f"fallback stored_bits counts scale+zero meta ({expect_fb})")
+          f"rotated stored_bits counts one fp16 norm/vector ({expect_fb})")
 
-    print("\n== memo A-7: TurboQuant QJL counts the per-vector residual rms ==")
+    print("\n== memo A-7: TurboQuant QJL counts the per-vector residual norm ==")
     cq0 = TurboQuantCodec(bits=4, rotation_mode="hadamard", use_qjl=False)
     cq1 = TurboQuantCodec(bits=4, rotation_mode="hadamard", use_qjl=True)
     s0 = cq0.encode(key, value).meta["stored_bits"]
     s1 = cq1.encode(key, value).meta["stored_bits"]
-    vecs = b * h * s * 2
-    check(s1 - s0 == key.numel() * 1 + value.numel() * 1 + vecs * 16,
-          "QJL adds 1 sign bit/elem + 1 fp16 rms/vector")
+    # The production-compatible default is key-only QJL.  Values remain on the
+    # scalar path unless qjl_roles="both" is requested explicitly.
+    vecs = b * h * s
+    check(s1 - s0 == key.numel() * 1 + vecs * 16,
+          "key-only QJL adds 1 projected-sign bit/elem + 1 fp16 norm/vector")
 
     print()
     if fails:

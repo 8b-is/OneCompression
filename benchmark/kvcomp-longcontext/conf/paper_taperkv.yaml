@@ -1,6 +1,6 @@
 # TaperKV paper: retrieval-preserving age-graded KV quantization.
 #
-# Thesis: at an aggressive iso-memory budget (~3-bit average), eviction
+# Thesis under test: at an aggressive memory operating point (~3-bit average), eviction
 # baselines (StreamingLLM, ThinKV) structurally fail long-context retrieval
 # because the needle in the dropped region is unrecoverable.  Quantization
 # baselines (Uniform-INT, KIVI, TurboQuant) avoid eviction but spend bits
@@ -9,17 +9,17 @@
 # always survives — lossily but recoverably — and the bit budget is spent
 # where retrieval needs it.  This preset evaluates that thesis.
 #
-# Methods (iso-memory ~3-bit average, eviction window sized to target_mem):
+# Methods (shared prompt grid; realised memory is recorded per method):
 #   * FullKV                    — fp16 upper bound
 #   * Uniform-INT3              — per-token uniform affine (lower bound at 3-bit)
 #   * KIVI-INT2                 — per-channel-key/per-token-value (KIVI paper)
-#   * StreamingLLM              — eviction baseline (must fail at iso-memory)
-#   * ThinKV                    — thought-adaptive eviction+quant baseline
+#   * StreamingLLM              — eviction baseline at its explicit target_mem point
+#   * ThinKV                    — HF TBQ-only diagnostic (TBE is not implemented)
 #   * PM-KVQ                    — progressive precision baseline (no evict)
 #   * TurboQuant-3bit           — uniform rotated Lloyd-Max
 #   * HALO-3bit                 — proposed companion codec at iso-bit
 #   * TaperKV (~4-bit)          — proposed at the standard operating point
-#   * TaperKV-3bit (~3-bit)     — proposed at the headline iso-memory point
+#   * TaperKV-3bit (~3-bit)     — proposed candidate operating point
 #   * TurboTaper-3bit           — TaperKV schedule x rotated Lloyd-Max codec
 #
 # Run:
@@ -34,7 +34,8 @@ model_path: ???
 
 output_dir: ${hydra:runtime.cwd}/results_paper2/taperkv
 
-# Iso-memory budget for the eviction window: matches ~3-bit avg quant (3/16=0.1875).
+# StreamingLLM stored/fp16 operating point. Do not infer equality with a
+# quantizer from this setting; use the Needle v2 realised-memory ledger.
 target_mem: 0.20
 sink_tokens: 4
 recent_tokens: 128
@@ -45,7 +46,7 @@ methods:
   - Uniform-INT3
   - KIVI-INT2
   - StreamingLLM
-  - ThinKV                  # eager attention only
+  - ThinKV                  # TBQ-only; output is marked paper_comparable=false
   - PM-KVQ
   - TurboQuant-3bit
   - HayateQuant-3bit        # PROPOSED companion codec (supersedes HALO)
@@ -72,12 +73,9 @@ taperkv:
   b_min: 4                  # key floor 4: needle survives (verified needle=1.0)
   b_min_value: 2            # value floor 2: per-token 2-bit values are tolerable
 
-# Headline iso-memory ~3-bit point (K=4/V=3, KEY floor 3, value floor 2). Sized to
-# mem_fraction 0.197 -- identical to Uniform-INT3 / TurboQuant-3bit / HALO-3bit --
-# so the comparison is truly iso-memory. Verified (job 45990): needle 0.978,
-# RULER 0.933, PPL 6.96, i.e. it BEATS Uniform-INT3 (PPL 7.89) on perplexity,
-# matches it on retrieval, and crushes the eviction baselines (StreamingLLM 0.20).
-# recent_tokens inherits the config default (128).
+# Candidate ~3-bit point (K=4/V=3, key floor 3, value floor 2). Earlier
+# needle/local-multikey numbers are legacy v1 outputs and must be replaced by
+# Needle v2 before any matched-memory or quality claim. `recent_tokens` inherits 128.
 taperkv_sweep:
   - {label: "TaperKV-3bit", key_bits: 4, value_bits: 3, b_min: 3, b_min_value: 2}
 
@@ -88,9 +86,10 @@ turbotaper:
   n_outlier_floor: 32
 
 # Companion rotated-codec variant of TaperKV at the 3-bit headline budget.
-# MUST be iso-memory to TaperKV-3bit so the comparison isolates the codec
-# (plain affine vs rotated Lloyd-Max) rather than the schedule.  Align b_min=3,
-# b_min_value=3, and inherit recent_tokens=128 from the config default.
+# Align b_min=3, b_min_value=3, and inherit recent_tokens=128 from the config
+# default.  This is a candidate matched schedule only: a paper comparison must
+# verify the per-trial cache ledger and declared memory tolerance before calling
+# it matched-memory.
 #
 # TWO bugs were fixed in TurboTaper (2026-06-04):
 #
@@ -108,9 +107,10 @@ turbotaper:
 turbotaper_sweep:
   - {label: "TurboTaper-3bit", key_bits: 4, value_bits: 3, b_min: 3, b_min_value: 3}
 
-# Single TurboQuant variant at 3-bit (paper-faithful Beta + Hadamard rotation).
+# Single TurboQuant Algorithm-1-MSE component baseline at 3-bit (finite-Beta +
+# Gaussian-QR); this label does not claim a mixed-precision Table-1 reproduction.
 turboquant_variants:
-  - {label: "TurboQuant-3bit", bits: 3, dist: beta}
+  - {label: "TurboQuant-3bit", bits: 3, dist: beta, rotation_mode: dense}
 
 # HayateQuant at 3-bit (PROPOSED companion codec at iso-bit to TurboQuant-3bit),
 # with the strongest prior HALO operating point as baseline (iso-storage).
@@ -119,11 +119,12 @@ hayatequant_variants:
 halo_variants:
   - {label: "HALO-NCIT-3bit", bits: 3, key_scale_mode: nc, value_scale_mode: ls_iter}
 
-# ThinKV: keep eager attention so its sparsity calibration runs (faithful regime).
+# ThinKV TBQ: keep eager attention so its sparsity calibration runs. The HF
+# cache does not reproduce TBE eviction and is not a paper-comparable ThinKV row.
 attn_implementation: eager
 thinkv:
   group_size: 16
-  precision: {R: 4, E: 4, T: 2}     # match the ThinKV faithful preset
+  precision: {R: 4, E: 4, T: 2}     # TBQ precision preset
   auto_configure: true
   calib_max_new: 200
   capture_long: false                # cheaper, GSM8K only
@@ -135,28 +136,30 @@ depths: [0.1, 0.25, 0.5, 0.75, 0.9]
 seeds: 3
 max_new_needle: 256     # R1-Distill models always emit <think> prefix; 32 is too short
 
-run_ruler: true
+run_ruler: false            # local multi-key diagnostic is not a RULER benchmark
 ruler_keys: 4
 ruler_seeds: 5
 
 run_longbench: true
 longbench_tasks: []
-longbench_max_length: 7500
-longbench_limit: 10
+longbench_max_length: 32768
+longbench_limit: null       # complete official split
 
 # --- Reasoning non-degradation (TaperKV thesis: keeps reasoning intact) ---
 run_gsm8k: true
-gsm8k_limit: 100
+gsm8k_limit: null           # complete 1,319-example test split
 max_new_reason: 4096
 run_math: true
-math_limit: 100
+math_limit: null            # complete MATH-500 test split
 max_new_math: 4096
+math_grader: math_verify    # required; no silent local fallback
+math_verify_version: "0.9.0"
 
 # --- WikiText-2 PPL sanity ---
 run_ppl: true
 ppl_max_length: 4096
 ppl_stride: 2048
-ppl_windows: 16
+ppl_windows: null           # complete WikiText-2 test split
 
 skip_outliers: true
 outlier_ratio: 50.0

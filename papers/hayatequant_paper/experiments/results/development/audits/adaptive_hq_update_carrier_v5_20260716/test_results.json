@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "run_date": "2026-07-16",
+  "environment": {
+    "python": "3.12.13",
+    "pytest": "9.0.3",
+    "torch": "2.11.0+cu130",
+    "platform": "Linux-5.14.0-611.36.1.el9_7.x86_64-x86_64-with-glibc2.39",
+    "cuda_available": false,
+    "execution": "cpu_datafree"
+  },
+  "runs": [
+    {
+      "name": "adaptive_hq_update_carrier_focused",
+      "command": "uv run --frozen pytest -q tests/onecomp/kvcomp/test_kvcomp.py -k 'adaptive_hq_selector_carrier_delta_is_amortized_per_update_vector or adaptive_hq_qmc_all_scale_carrier_delta_is_frozen or adaptive_hq_update_vector_count_can_change_the_rd_choice or adaptive_hq_real_qmc_boundary_uses_actual_update_vector_count or hayatequant_adaptive_selector_carrier_is_required_for_decode'",
+      "exit_code": 0,
+      "passed": 10,
+      "failed": 0,
+      "deselected": 302,
+      "warnings": 14,
+      "reported_duration_seconds": 12.15,
+      "coverage_contracts": [
+        "signed_delta_amortized_at_update_vectors_1_2_8_128",
+        "invalid_update_vector_counts_and_constants_fail_closed",
+        "frozen_qmc_all_scale_delta_code_bits_3_through_8",
+        "synthetic_rd_choice_changes_with_actual_update_vector_count",
+        "real_qmc_boundary_uses_1_versus_128_actual_vectors",
+        "carrier_amortization_vector_count_provenance",
+        "selector_carrier_required_for_decode"
+      ]
+    }
+  ],
+  "model_or_formal_benchmarks_executed": false,
+  "raw_output_file": "test.log"
+}

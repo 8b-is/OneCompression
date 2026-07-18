@@ -62,12 +62,26 @@ class CompressedKV:
     meta: dict = field(default_factory=dict)
 
     def numel_bits(self) -> Optional[int]:
-        """Return the (approximate) number of stored bits, if known.
+        """Return the codec's logical fixed-width data-plane bits, if known.
 
-        Used by :mod:`onecomp.kvcomp.eval` to report realised compression.
-        Returns ``None`` when the codec did not record bit accounting.
+        For the rotated low-bit codecs this is the growth of the encoded KV
+        data plane: codes, signed-fp16 scales, and explicitly enabled fields
+        such as an outlier-channel bitmap or QJL signs/norms.  It deliberately
+        excludes self-describing Python control tags, dictionary/container
+        bytes, allocator overhead, and global codebook/LUT/rotation state.
+        Those controls are out-of-band/cache-level configuration, so this
+        value is not the resident memory of the materialized Python payload
+        and is not evidence of a packed serving backend.  Returns ``None``
+        when the codec does not provide this accounting contract.
         """
-        return self.meta.get("stored_bits")
+        stored_bits = self.meta.get("stored_bits")
+        if stored_bits is None:
+            return None
+        if isinstance(stored_bits, bool) or not isinstance(stored_bits, int) or stored_bits < 0:
+            raise ValueError(
+                "CompressedKV meta['stored_bits'] must be a non-negative integer or None"
+            )
+        return stored_bits
 
 
 @dataclass
@@ -96,15 +110,8 @@ class KVCodec:
         group_size (int): Group size along the quantization axis (-1 = whole).
         symmetric (bool): Symmetric quantization (zero point at center).
         skip_layers (list[int]): Layer indices to leave uncompressed.
-        residual_window (int): Intended number of most-recent tokens kept in full
-            precision (KIVI-style).  NOTE (memo A-2): the current research caches
-            (``CompressedDynamicCache`` and the graded caches) quantise every
-            arriving block immediately and do **not** honour this window -- it is
-            carried in the config/serialization only.  Codecs measured here are
-            therefore evaluated *without* a full-precision residual window (a
-            slightly harder setting than KIVI's original protocol); a future
-            cache-side implementation would populate ``CompressedKV.key_residual``
-            / ``value_residual``.  Do not assume residual protection in results.
+        residual_window (int): Number of most-recent tokens kept in full precision
+            by cache integrations (KIVI-style).
     """
 
     name: str = None
@@ -190,6 +197,26 @@ class KVCodec:
         compressed = self.encode(key, value, ctx=ctx)
         k, v = self.decode(compressed, ctx=ctx)
         return k, v, compressed.numel_bits()
+
+    def teacher_forced_temporal_dependency(self) -> Optional[str]:
+        """Describe statistics that couple one token to later tokens, if any.
+
+        A causal mask prevents attention to future *positions*, but it cannot
+        undo future dependence introduced before attention.  In particular, a
+        channel-axis codec fits a scale to a sequence-axis group.  Encoding a
+        complete teacher-forced window in one call can therefore change an
+        early key using later tokens from that window.  PPL/log-likelihood
+        evaluators use this contract to switch to causal prefix/incremental
+        scoring.
+
+        Token-axis codecs are local to each token by default.  A subclass that
+        computes any other block-global statistic (for example a dynamic
+        outlier-channel set) must override this method even when both declared
+        axes are ``"token"``.
+        """
+        if "channel" in (self.key_axis, self.value_axis):
+            return "sequence_axis_group_statistics"
+        return None
 
     def get_kv_config(self) -> dict:
         """Return a JSON-serialisable config dict (for ``config.json`` save)."""

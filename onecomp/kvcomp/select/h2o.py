@@ -54,19 +54,23 @@ class H2OSelector(KVSelector):
         keep = budget.resolve_keep(seq_len)
         recent = max(budget.recent_tokens, self.recent_tokens)
         recent = min(recent, seq_len)
-        n_topk = max(keep - recent, 0)
+        sink = min(max(budget.sink_tokens, self.sink_tokens), seq_len)
+        protected = torch.zeros(seq_len, dtype=torch.bool, device=scores.device)
+        if sink:
+            protected[:sink] = True
+        if recent:
+            protected[-recent:] = True
+        protected_count = int(protected.sum())
+        keep = min(seq_len, max(keep, protected_count))
+        n_topk = keep - protected_count
 
         scores = scores.clone()
-        if recent > 0:
-            scores[:, :, -recent:] = float("-inf")  # exclude recent from top-k
-        topk = min(n_topk, max(seq_len - recent, 0))
+        scores[:, :, protected] = float("-inf")
+        topk = min(n_topk, seq_len - protected_count)
         if topk > 0:
             idx = scores.topk(topk, dim=-1).indices
             mask = mask_from_keep_indices(idx, seq_len)
         else:
             mask = torch.zeros(batch, heads, seq_len, dtype=torch.bool, device=scores.device)
-        if recent > 0:
-            mask[:, :, -recent:] = True
-        if budget.sink_tokens > 0:
-            mask[:, :, : min(budget.sink_tokens, seq_len)] = True
+        mask[:, :, protected] = True
         return mask

@@ -134,9 +134,9 @@ def signed_hadamard_matrix(dim: int, seed: int, device_str: str, dtype) -> torch
     ``tests/onecomp/kvcomp/test_kvcomp.py`` (the ``hadamard_gemm`` round-trip and
     speed-ablation tests).
     """
-    sign = _cached_sign(int(dim), int(seed), str(device_str), dtype)   # (d,)
-    h = hadamard_matrix(int(dim), str(device_str), dtype)              # (d, d)
-    return sign.unsqueeze(1) * h     # row j scaled by sign[j]  ==  diag(sign) @ H
+    sign = _cached_sign(int(dim), int(seed), str(device_str), dtype)  # (d,)
+    h = hadamard_matrix(int(dim), str(device_str), dtype)  # (d, d)
+    return sign.unsqueeze(1) * h  # row j scaled by sign[j]  ==  diag(sign) @ H
 
 
 def random_sign(dim: int, seed: int, device=None, dtype=torch.float32) -> torch.Tensor:
@@ -160,37 +160,98 @@ def unrotate(x_rot: torch.Tensor, sign: torch.Tensor) -> torch.Tensor:
     return walsh_hadamard_transform(x_rot) * sign
 
 
-def lloyd_max_gaussian(bits: int, iters: int = 64, grid: int = 4096) -> torch.Tensor:
-    """Compute Lloyd-Max centroids for the standard normal N(0, 1).
+def _solve_lloyd_fixed_point(initial, update, *, warmup_iters: int, label: str) -> torch.Tensor:
+    """Solve the centroid/nearest-boundary Lloyd equations in float64.
 
-    Data-free: the codebook depends only on ``bits``.  Returns a sorted 1-D
-    tensor of ``2**bits`` centroids.
+    A fixed 64-step Lloyd loop is not a convergence guarantee: for 32-level
+    Gaussian quantization it left a roughly 23% excess distortion in the
+    formal HQ 5-bit scalar operating point.  We retain those inexpensive
+    iterations as a warm start, then solve the exact fixed-point equations and
+    fail closed unless their residual is small.  The SciPy dependency is
+    already part of OneComp; imports stay local so unrelated rotation paths do
+    not pay its import cost.
     """
+    import numpy as np
+    from scipy.optimize import root
+
+    centroids = np.asarray(initial, dtype=np.float64)
+    for _ in range(max(0, int(warmup_iters))):
+        centroids = np.asarray(update(centroids), dtype=np.float64)
+
+    def residual(candidate):
+        candidate = np.asarray(candidate, dtype=np.float64)
+        if not np.isfinite(candidate).all() or not np.all(np.diff(candidate) > 0.0):
+            return np.full_like(candidate, 1e6)
+        updated = np.asarray(update(candidate), dtype=np.float64)
+        if not np.isfinite(updated).all():
+            return np.full_like(candidate, 1e6)
+        return candidate - updated
+
+    levels = int(centroids.size)
+    solution = root(
+        residual,
+        centroids,
+        method="hybr",
+        options={"xtol": 1e-11, "maxfev": max(2000, 100 * (levels + 1))},
+    )
+    solved = np.asarray(solution.x, dtype=np.float64)
+    # The target laws and initialization are symmetric.  Re-impose symmetry
+    # after the numerical solve, then test the actual fixed-point residual.
+    solved = 0.5 * (solved - solved[::-1])
+    fixed_point_residual = float(np.max(np.abs(residual(solved))))
+    if (
+        not np.isfinite(solved).all()
+        or not np.all(np.diff(solved) > 0.0)
+        or not math.isfinite(fixed_point_residual)
+        or fixed_point_residual > 5e-9
+    ):
+        raise RuntimeError(
+            f"{label} Lloyd-Max solver did not converge: "
+            f"success={solution.success}, residual={fixed_point_residual:.3e}, "
+            f"message={solution.message}"
+        )
+    return torch.from_numpy(solved.copy()).to(torch.float32)
+
+
+def lloyd_max_gaussian(bits: int, iters: int = 64, grid: int = 4096) -> torch.Tensor:
+    """Return the converged Lloyd-Max codebook for standard normal ``N(0,1)``.
+
+    Cell probabilities and first moments are evaluated analytically, including
+    the infinite tail cells; this removes both the old ``[-6, 6]`` truncation
+    and grid-discretization error.  ``iters`` is retained as the number of
+    Lloyd warm-up iterations for API compatibility.  ``grid`` is validated
+    but otherwise obsolete because the final solution is grid independent.
+    """
+    import numpy as np
+    from scipy.special import ndtr, ndtri
+
+    if not isinstance(bits, int) or isinstance(bits, bool) or not 1 <= bits <= 8:
+        raise ValueError(f"bits must be an int in 1..8, got {bits!r}")
+    if not isinstance(iters, int) or isinstance(iters, bool) or iters < 0:
+        raise ValueError(f"iters must be a non-negative int, got {iters!r}")
+    if not isinstance(grid, int) or isinstance(grid, bool) or grid < 2:
+        raise ValueError(f"grid must be an int >= 2, got {grid!r}")
     levels = 1 << bits
-    xs = torch.linspace(-6.0, 6.0, grid, dtype=torch.float64)
-    pdf = torch.exp(-0.5 * xs * xs) / math.sqrt(2 * math.pi)
-    pdf = pdf / pdf.sum()
+    probabilities = (np.arange(levels, dtype=np.float64) + 0.5) / levels
+    initial = ndtri(probabilities)
+    inv_sqrt_two_pi = 1.0 / math.sqrt(2.0 * math.pi)
 
-    # Initialise centroids at equiprobable quantiles of the grid.
-    cdf = torch.cumsum(pdf, dim=0)
-    qs = (torch.arange(levels, dtype=torch.float64) + 0.5) / levels
-    idx = torch.searchsorted(cdf, qs).clamp(0, grid - 1)
-    centroids = xs[idx].clone()
+    def update(centroids):
+        boundaries = 0.5 * (centroids[1:] + centroids[:-1])
+        lower = np.concatenate(([-np.inf], boundaries))
+        upper = np.concatenate((boundaries, [np.inf]))
+        mass = ndtr(upper) - ndtr(lower)
+        lower_density = np.exp(-0.5 * lower * lower) * inv_sqrt_two_pi
+        upper_density = np.exp(-0.5 * upper * upper) * inv_sqrt_two_pi
+        conditional_mean = (lower_density - upper_density) / mass
+        return 0.5 * (conditional_mean - conditional_mean[::-1])
 
-    for _ in range(iters):
-        boundaries = (centroids[1:] + centroids[:-1]) / 2.0
-        region = torch.searchsorted(boundaries, xs)  # in [0, levels-1]
-        # Vectorized centroid update: scatter-sum xs*pdf and pdf per region,
-        # then divide.  Avoids a Python loop over all 2**bits levels.
-        one_hot = (region.unsqueeze(0) == torch.arange(levels).unsqueeze(1))  # (L, grid)
-        pdf_sum = (one_hot * pdf.unsqueeze(0)).sum(-1)  # (L,)
-        xs_sum = (one_hot * (xs * pdf).unsqueeze(0)).sum(-1)  # (L,)
-        new = torch.where(pdf_sum > 0, xs_sum / pdf_sum.clamp_min(1e-30), centroids)
-        if torch.allclose(new, centroids, atol=1e-7):
-            centroids = new
-            break
-        centroids = new
-    return centroids.to(torch.float32)
+    return _solve_lloyd_fixed_point(
+        initial,
+        update,
+        warmup_iters=iters,
+        label=f"Gaussian {bits}-bit",
+    )
 
 
 def lloyd_max_beta(bits: int, d: int, iters: int = 64, grid: int = 4096) -> torch.Tensor:
@@ -200,30 +261,54 @@ def lloyd_max_beta(bits: int, d: int, iters: int = 64, grid: int = 4096) -> torc
     random orthogonal rotation (TurboQuant, Lemma 1):
     ``f_X(x) propto (1 - x^2)^((d-3)/2)``.  As ``d`` grows this tends to a
     Gaussian, so :func:`lloyd_max_gaussian` is the high-dimensional limit.
+
+    Exact regularized incomplete-Beta integrals are used for cell masses and
+    first moments.  This removes the old 4096-point-grid bias.  ``iters`` is a
+    warm-start count and ``grid`` is retained only for API compatibility.
     """
+    import numpy as np
+    from scipy.special import betainc, betaincinv
+
+    if not isinstance(bits, int) or isinstance(bits, bool) or not 1 <= bits <= 8:
+        raise ValueError(f"bits must be an int in 1..8, got {bits!r}")
+    if not isinstance(d, int) or isinstance(d, bool) or d < 1:
+        raise ValueError(f"d must be a positive int, got {d!r}")
+    if not isinstance(iters, int) or isinstance(iters, bool) or iters < 0:
+        raise ValueError(f"iters must be a non-negative int, got {iters!r}")
+    if not isinstance(grid, int) or isinstance(grid, bool) or grid < 2:
+        raise ValueError(f"grid must be an int >= 2, got {grid!r}")
     levels = 1 << bits
-    xs = torch.linspace(-1.0, 1.0, grid, dtype=torch.float64)
-    # log density for numerical stability; (d-3)/2 can be large.
-    logpdf = ((d - 3) / 2.0) * torch.log1p(-xs.clamp(-0.999999, 0.999999) ** 2)
-    pdf = torch.exp(logpdf - logpdf.max())
-    pdf = pdf / pdf.sum()
-    cdf = torch.cumsum(pdf, dim=0)
-    qs = (torch.arange(levels, dtype=torch.float64) + 0.5) / levels
-    idx = torch.searchsorted(cdf, qs).clamp(0, grid - 1)
-    centroids = xs[idx].clone()
-    for _ in range(iters):
-        boundaries = (centroids[1:] + centroids[:-1]) / 2.0
-        region = torch.searchsorted(boundaries, xs)
-        # Vectorized centroid update (same scatter-sum pattern as lloyd_max_gaussian).
-        one_hot = (region.unsqueeze(0) == torch.arange(levels).unsqueeze(1))
-        pdf_sum = (one_hot * pdf.unsqueeze(0)).sum(-1)
-        xs_sum = (one_hot * (xs * pdf).unsqueeze(0)).sum(-1)
-        new = torch.where(pdf_sum > 0, xs_sum / pdf_sum.clamp_min(1e-30), centroids)
-        if torch.allclose(new, centroids, atol=1e-7):
-            centroids = new
-            break
-        centroids = new
-    return centroids.to(torch.float32)
+    if d == 1:
+        # A coordinate of the unit sphere S^0 is exactly uniform on {-1,+1}.
+        # Interior reconstruction levels have zero probability but retaining a
+        # strictly sorted codebook keeps nearest-boundary encoding well defined.
+        return torch.linspace(-1.0, 1.0, levels, dtype=torch.float32)
+
+    alpha = (d - 1.0) / 2.0
+    probabilities = (np.arange(levels, dtype=np.float64) + 0.5) / levels
+    initial = 2.0 * betaincinv(alpha, alpha, probabilities) - 1.0
+
+    def update(centroids):
+        boundaries = 0.5 * (centroids[1:] + centroids[:-1])
+        lower = np.concatenate(([-1.0], boundaries))
+        upper = np.concatenate((boundaries, [1.0]))
+        lower_beta = 0.5 * (lower + 1.0)
+        upper_beta = 0.5 * (upper + 1.0)
+        mass = betainc(alpha, alpha, upper_beta) - betainc(alpha, alpha, lower_beta)
+        # If Y=(X+1)/2~Beta(alpha,alpha), then
+        # E[X 1_cell] / P(cell) = Delta I(alpha+1,alpha)/Delta I(alpha,alpha)-1.
+        first_moment_shifted = betainc(alpha + 1.0, alpha, upper_beta) - betainc(
+            alpha + 1.0, alpha, lower_beta
+        )
+        conditional_mean = first_moment_shifted / mass - 1.0
+        return 0.5 * (conditional_mean - conditional_mean[::-1])
+
+    return _solve_lloyd_fixed_point(
+        initial,
+        update,
+        warmup_iters=iters,
+        label=f"Beta(d={d}) {bits}-bit",
+    )
 
 
 def random_orthogonal(dim: int, seed: int, device=None, dtype=torch.float32) -> torch.Tensor:
@@ -323,9 +408,7 @@ def unapply_block_rotation(y: torch.Tensor, block_mats: torch.Tensor) -> torch.T
     return xb.reshape(orig_shape)
 
 
-def hybrid_rotate(
-    x: torch.Tensor, sign: torch.Tensor, block_mats: torch.Tensor
-) -> torch.Tensor:
+def hybrid_rotate(x: torch.Tensor, sign: torch.Tensor, block_mats: torch.Tensor) -> torch.Tensor:
     """Global signed-Hadamard rotation followed by per-block dense rotation.
 
     ``x``'s last dimension must be a power of two matching ``sign`` and equal
@@ -387,4 +470,5 @@ def hybrid_rotation_matrix(
 ) -> torch.Tensor:
     """Device-resident folded hybrid-rotation matrix (see :func:`_hybrid_matrix_cpu`)."""
     return _hybrid_matrix_cpu(int(dim), int(block_size), int(seed)).to(
-        device=torch.device(device_str), dtype=dtype)
+        device=torch.device(device_str), dtype=dtype
+    )

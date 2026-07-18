@@ -1,0 +1,27 @@
+{
+  "schema": "hayatequant.development_high_budget_artifact_bundle.v1",
+  "scope": "development-only synthetic Gaussian source-law gate",
+  "preregistered_before_generation": true,
+  "bundle_decision": "REJECT",
+  "bundle_rejection_reason": "b2 K32 and b2 K512 fail strict held-out MSE improvement; whole-bundle rule forbids cherry-picking",
+  "model_quality_panel_run": false,
+  "native_gate_run": false,
+  "production_or_formal_changes_allowed": false,
+  "original_fit_recovery": {
+    "array_job": 69346,
+    "all_six_tensor_files_written_before_failure": true,
+    "failure": "metadata JSON TypeError for PyTorch _CUuuid",
+    "post_failure_sha_frozen": true,
+    "metadata_only_array_job": 69354,
+    "artifact_refit": false,
+    "artifact_overwritten": false
+  },
+  "targets": [
+    {"block_size": 2, "k": 8, "artifact_mse": 0.2013945321483247, "online_mse": 0.20160819125112756, "delta": -0.0002136591028028545, "relative_delta_percent": -0.10597739182963854, "pass": true, "file_sha256": "3bf6f9d612eb610d94cb95eafeb1a08e1baca2383465ed5193ab0c6184832fbc", "tensor_sha256": "876d661b020edea87155bb0f7d37f86b70923af0fec5a298002a2fb50a7a0c70"},
+    {"block_size": 2, "k": 32, "artifact_mse": 0.05770248649601183, "online_mse": 0.05742206200676594, "delta": 0.00028042448924589514, "relative_delta_percent": 0.48835670375761364, "pass": false, "file_sha256": "91a05e6a2c38b911df954b25ce62950d2715c348d87e8224abcab54ec4c3c6e8", "tensor_sha256": "f59b528b74e4ac3e47e77b54d90fabb4591b5049b3570922fb9916bc6b548ad1"},
+    {"block_size": 2, "k": 128, "artifact_mse": 0.015372082716829763, "online_mse": 0.015509261919273808, "delta": -0.00013717920244404533, "relative_delta_percent": -0.884498586445102, "pass": true, "file_sha256": "e789c4b7b7966dc3ddf55e0d1ab76f71c3b3a09e698f06a32abb588bc6ba5d3d", "tensor_sha256": "15eb6ce9cac044518bcf291f079faa74cfd0d896cbf3aa514b07c612ba03ee89"},
+    {"block_size": 2, "k": 512, "artifact_mse": 0.004254894693818971, "online_mse": 0.00405620595373422, "delta": 0.0001986887400847511, "relative_delta_percent": 4.89838884787974, "pass": false, "file_sha256": "3591ff90806677bcc00c50ddd44a761f11d8b845dbea1a408ce7034d6ca2d2ed", "tensor_sha256": "1ee2f93bb8f6cbe9008fdf3bf7a7388dec26314f2ecacaae652bbb2ec342aa13"},
+    {"block_size": 4, "k": 64, "artifact_mse": 0.18485075805512682, "online_mse": 0.18604629672446876, "delta": -0.001195538669341939, "relative_delta_percent": -0.642602777045603, "pass": true, "file_sha256": "1d46776f034453ce3d80c9a4e0404322973130cd7a2561ae552a0194af9d01bd", "tensor_sha256": "25e4454d8325298214fc35c8b15f4b18d99a4c3e41fdc0c0d64daab0b2b5be4e"},
+    {"block_size": 4, "k": 1024, "artifact_mse": 0.05067700138464186, "online_mse": 0.051832680079712375, "delta": -0.0011556786950705153, "relative_delta_percent": -2.229633299480601, "pass": true, "file_sha256": "88b4b969a5c29ca70fd194bb412de72624169e3a1b76ba91b7afce8000e23cb3", "tensor_sha256": "e360009e28efbd165ce3ef79f117c08d4e537f64e3676f2b9f8f785e66b38691"}
+  ]
+}

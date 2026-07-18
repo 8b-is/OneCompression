@@ -1,0 +1,128 @@
+{
+  "cross_method_speed_claim_allowed": false,
+  "diagnostic_timing": {
+    "decode_ms": 1.3120473944582045,
+    "store_ms": 0.7822837447747588
+  },
+  "formal_quality_benchmark": false,
+  "implementation_contract": {
+    "key_path": "data-free rotation + exact short block-VQ + NC",
+    "main_story": "paper HayateQuant fixed role-aware recipe",
+    "payload_parity_with_public_codec": true,
+    "proposal_name": "HQ",
+    "public_encoder": "exact",
+    "scale_storage": "one signed fp16 scale per role vector",
+    "value_inverse_rotation": "one fp32 GEMM after rotated-space attention accumulation",
+    "value_path": "data-free rotation + exact block-VQ + LS-reassign-LS"
+  },
+  "ok": true,
+  "parity": {
+    "attention_tolerance": {
+      "atol": 0.004,
+      "rtol": 0.002
+    },
+    "full_dequant_exact_at_output_dtype": true,
+    "key_codes_exact": true,
+    "key_fp16_scales_exact": true,
+    "packed_stream_exact": true,
+    "rotated_value_linearity_tolerance": {
+      "atol": 0.0003,
+      "rtol": 0.0002
+    },
+    "store1_matches_prefill_payload_and_bytes": true,
+    "value_codes_exact": true,
+    "value_fp16_scales_exact": true
+  },
+  "provenance": {
+    "arguments": {
+      "allow_canonical_k10v6_b4": false,
+      "assignment_mode": "exact",
+      "avg_bits": 3,
+      "codebook_init": "auto",
+      "dist": "gaussian",
+      "dtype": "float16",
+      "head_dim": 128,
+      "iters": 20,
+      "key_block_size": null,
+      "key_code_bits": null,
+      "kv_heads": 2,
+      "lut_bins": null,
+      "lut_candidates": null,
+      "max_excess_distortion_pct": 0.5,
+      "output": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/results/dev/native_exact_speed_opt_20260716/decode_b4w1/smoke_rate3.json",
+      "query_heads": 4,
+      "recipe": "hq",
+      "rotation_mode": "auto",
+      "seed": 0,
+      "tokens": 4096,
+      "value_block_size": null,
+      "value_code_bits": null,
+      "warmups": 3
+    },
+    "cuda_version": "13.0",
+    "cuda_visible_devices": "0",
+    "finished_at_utc": "2026-07-16T04:31:46.774632+00:00",
+    "git_commit": "e13ee5477f7755907b2c9c003990157839a6214a",
+    "git_status_porcelain": "M vllm_plugins/kvcomp/hayate_full_triton.py",
+    "gpu": "NVIDIA B200",
+    "hostname": "kagura-gpu11",
+    "source_sha256": {
+      "benchmark/kvcomp-codec/hayatequant_vllm_full_native_smoke.py": "33ad3d7ad01501f2d91a67e7e767271744e87304a60991c7bbf214f92400a45c",
+      "vllm_plugins/kvcomp/hayate_full_config.py": "1c42cd4a09b33c771ba25e3a713b8a0f37f9a7077b9f6d204589997188e1b993",
+      "vllm_plugins/kvcomp/hayate_full_native.py": "34ab6fca260af3520ead86cd4f61b92bcb204845c02194c83697a7e1e1a1bb4e",
+      "vllm_plugins/kvcomp/hayate_full_triton.py": "698c4427b61fdffabbd1dc38a6624b7bf6b2f69c9c3cd47fa1bc5766915e2356"
+    },
+    "torch_version": "2.11.0+cu130"
+  },
+  "quality_gate_against_exact_assignment": {
+    "distortion": {
+      "reason": "paper-original/exact development assignment",
+      "reference_only": true
+    },
+    "max_role_excess_mse_pct": 0.5,
+    "passed": true,
+    "ppl_required_separately": false
+  },
+  "recipe": {
+    "allow_canonical_k10v6_b4": false,
+    "assignment": "exact_nearest_codeword_then_value_ls_refit",
+    "assignment_contract": {
+      "search": "all_codewords",
+      "tie_break": "smallest_index"
+    },
+    "assignment_mode": "exact",
+    "average_kv_rate_bits_per_coordinate": 3.0,
+    "codebook_init": "auto",
+    "dist": "gaussian",
+    "key_block_size": 2,
+    "key_code_bits_per_block": 7,
+    "key_rate_bits_per_coordinate": 3.5,
+    "key_scale_mode": "nc",
+    "layout": {
+      "key_code_bytes": 56,
+      "key_scale_offset": 56,
+      "slot_padding_bytes": 0,
+      "slot_size": 100,
+      "slot_size_aligned": 100,
+      "value_code_bytes": 40,
+      "value_codes_offset": 58,
+      "value_scale_offset": 98
+    },
+    "lut_bins": 256,
+    "lut_candidates": 2,
+    "lut_limit": 5.0,
+    "max_codebook_bits": 9,
+    "rotation_mode": "auto",
+    "scale_contract": "one_signed_fp16_scale_per_role_vector",
+    "seed": 0,
+    "value_block_size": 2,
+    "value_code_bits_per_block": 5,
+    "value_rate_bits_per_coordinate": 2.5,
+    "value_scale_mode": "ls_iter",
+    "zero_points": 0
+  },
+  "schema": {
+    "name": "onecomp.hq_full_native_correctness_smoke",
+    "version": 2
+  }
+}

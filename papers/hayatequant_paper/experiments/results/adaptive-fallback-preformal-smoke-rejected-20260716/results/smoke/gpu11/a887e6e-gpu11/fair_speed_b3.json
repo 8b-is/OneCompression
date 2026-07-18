@@ -1,0 +1,4301 @@
+{
+  "code_commit": "a887e6e15a4ac830f058741ff8dac8f9233eabed",
+  "config": {
+    "model_path": "/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct"
+  },
+  "micro": {
+    "api_separation": {
+      "payload_api": "public encode/decode with a materialized logical payload; low-bit indices are unpacked int64 tensors",
+      "research_fake_quant": "dequantized research cache helper; may use Hayate-only fusion"
+    },
+    "category": "CUDA codec microbenchmark",
+    "method_configs": {
+      "AdaptiveHQ": {
+        "codec": {
+          "declared": {
+            "adaptive_bit_margin": 4,
+            "adaptive_bit_split": "online_stats",
+            "adaptive_stats_min_tokens": 16,
+            "avg_bits": 3.0,
+            "bits": 3,
+            "block_size": 2,
+            "code_bits_per_pair_block": null,
+            "codebook_init": "auto",
+            "dist": "gaussian",
+            "encoder": "exact",
+            "group_size": -1,
+            "hadamard_gemm_max_dim": 4096,
+            "key_axis": "token",
+            "key_bit_fraction": 0.5,
+            "key_code_bits_per_block": null,
+            "key_error_weight": 4.0,
+            "key_n_outlier": null,
+            "key_outlier_bits": null,
+            "key_scale_mode": "nc",
+            "ls_scale": true,
+            "lut_bins": null,
+            "lut_candidates": null,
+            "max_codebook_bits": 9,
+            "n_outlier": 0,
+            "name": "hayatequant",
+            "outlier_bits": null,
+            "required_codebook_bundle": "adaptive_hq_b2_safe_v1",
+            "residual_window": 128,
+            "rotation_mode": "auto",
+            "seed": 0,
+            "skip_layers": [],
+            "symmetric": false,
+            "use_qjl": false,
+            "value_axis": "token",
+            "value_bits": 3,
+            "value_code_bits_per_block": null,
+            "value_error_weight": 1.0,
+            "value_n_outlier": null,
+            "value_outlier_bits": null,
+            "value_scale_mode": "ls_iter"
+          },
+          "effective": {
+            "key_scale_mode": "nc",
+            "value_scale_mode": "ls_iter"
+          }
+        },
+        "fake_quant_implementation": "HayateQuant fused research fake_quant_roundtrip",
+        "proposal_method": true,
+        "proposal_variant": "causal_adaptive",
+        "resolved_at_model_head_dim": {
+          "adaptive_allocation": {
+            "block_size": 2,
+            "candidate_pairs": [
+              [
+                6,
+                6
+              ],
+              [
+                7,
+                5
+              ]
+            ],
+            "candidate_rotations": [
+              {
+                "key": "hybrid",
+                "pair": [
+                  6,
+                  6
+                ],
+                "value": "hybrid"
+              },
+              {
+                "key": "hybrid",
+                "pair": [
+                  7,
+                  5
+                ],
+                "value": "hybrid"
+              }
+            ],
+            "distortion_table_version": "source_qmc128_exact_codebook_fp16scale_safe_two_pair_update_carrier_v4",
+            "objective": "causal_raw_power_times_qmc_base_plus_one_carrier_per_update",
+            "pair_code_bits_per_block": 12,
+            "policy": "cache_causal_datafree_rd",
+            "policy_version": "adaptive_hq_cache_causal_safe_two_pair_rd_v5",
+            "prior_pair": [
+              6,
+              6
+            ],
+            "runtime_distortion_constants": "payload_and_cache_provenance",
+            "selected_pair": "payload_dependent",
+            "selection_scope": "per_encode_kv_pair",
+            "selector_bits_per_encode": 1,
+            "selector_carrier": "first_value_fp16_scale_low_fraction_bits",
+            "selector_carrier_distortion_amortization": "signed_qmc_all_scales_delta_divided_by_current_update_vectors",
+            "selector_carrier_version": "value_scale_fp16_fraction_lsb_v1",
+            "selector_incremental_stored_bits_per_encode": 0,
+            "selector_scale_reconstruction": "clear_carrier_fraction_bits",
+            "state_ownership": "compressed_dynamic_cache_instance_per_layer"
+          },
+          "assignment": {
+            "encoder": "exact",
+            "lut_bins": null,
+            "lut_candidates": null,
+            "shape_independent": true,
+            "tie_break": "smallest_global_codebook_index"
+          },
+          "calibration": null,
+          "codebook_artifacts": {
+            "artifacts": [
+              {
+                "block_size": 2,
+                "file_sha256": "d0b4402fa70317c6a72a85915becc9fd2923d8815793039349f7844c3000947a",
+                "k": 8,
+                "manifest_path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codebooks/manifest.json",
+                "manifest_pinned": true,
+                "manifest_sha256": "df02ba5fd41fd0cc3fd2d39474fcfe7a628c15eb9ea012e8c70b1ffb3dabecde",
+                "origin": "exact_current_online_fallback_serialization_20260716",
+                "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codebooks/gauss_b2_k8.pt",
+                "source": "shipped_manifest",
+                "tensor_sha256": "55d09c31d8bcfe4d597dff7021b85a6c9736b900dd3a298d214de9ec78333390"
+              },
+              {
+                "block_size": 2,
+                "file_sha256": "388bddfe30c6ed8e2ba583c10c91be72772cc4764138a5d4843bb4d91daf8016",
+                "k": 16,
+                "manifest_path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codebooks/manifest.json",
+                "manifest_pinned": true,
+                "manifest_sha256": "df02ba5fd41fd0cc3fd2d39474fcfe7a628c15eb9ea012e8c70b1ffb3dabecde",
+                "origin": "existing_high_budget_gaussian_fit",
+                "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codebooks/gauss_b2_k16.pt",
+                "source": "shipped_manifest",
+                "tensor_sha256": "a8097e52bc8fa14aeeb11a6736a0c7c6a3321ba289d4a404cbe1a25b3f11fac8"
+              },
+              {
+                "block_size": 2,
+                "file_sha256": "2e81e59d367252758d4ffbbf151d798c379732ecc43a3f21fefedd7b6466ced3",
+                "k": 32,
+                "manifest_path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codebooks/manifest.json",
+                "manifest_pinned": true,
+                "manifest_sha256": "df02ba5fd41fd0cc3fd2d39474fcfe7a628c15eb9ea012e8c70b1ffb3dabecde",
+                "origin": "exact_current_online_fallback_serialization_20260716",
+                "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codebooks/gauss_b2_k32.pt",
+                "source": "shipped_manifest",
+                "tensor_sha256": "5a6383c6742243ef42f6009e724b5a5bb55fa5b13c1ee93f7a9ce59b0d583926"
+              },
+              {
+                "block_size": 2,
+                "file_sha256": "b9853b19965a245487898fa773aad757861ba47b7cb8cc7d11bd916db71a8933",
+                "k": 64,
+                "manifest_path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codebooks/manifest.json",
+                "manifest_pinned": true,
+                "manifest_sha256": "df02ba5fd41fd0cc3fd2d39474fcfe7a628c15eb9ea012e8c70b1ffb3dabecde",
+                "origin": "existing_high_budget_gaussian_fit",
+                "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codebooks/gauss_b2_k64.pt",
+                "source": "shipped_manifest",
+                "tensor_sha256": "bca9cc714b7fbc64c33ffe4c5ad4cfd083383686ceefe036caf10be250073dd8"
+              },
+              {
+                "block_size": 2,
+                "file_sha256": "67b131bdea9045a8414ec43a81ecce806f87339a7a092ed19a2e5722506c7b51",
+                "k": 128,
+                "manifest_path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codebooks/manifest.json",
+                "manifest_pinned": true,
+                "manifest_sha256": "df02ba5fd41fd0cc3fd2d39474fcfe7a628c15eb9ea012e8c70b1ffb3dabecde",
+                "origin": "exact_current_online_fallback_serialization_20260716",
+                "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codebooks/gauss_b2_k128.pt",
+                "source": "shipped_manifest",
+                "tensor_sha256": "39e5d9b4958c4935180bba5844dcc41a8f2dfa012e2d44cd4611da40491f43fb"
+              },
+              {
+                "block_size": 2,
+                "file_sha256": "7d7a2bebad4ec4491410cbb26de9b01e66b136cba5cc6854ee20400e51254a76",
+                "k": 256,
+                "manifest_path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codebooks/manifest.json",
+                "manifest_pinned": true,
+                "manifest_sha256": "df02ba5fd41fd0cc3fd2d39474fcfe7a628c15eb9ea012e8c70b1ffb3dabecde",
+                "origin": "existing_high_budget_gaussian_fit",
+                "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codebooks/gauss_b2_k256.pt",
+                "source": "shipped_manifest",
+                "tensor_sha256": "cf6c3944f8506d5aa2e91d3602716401536b2ee2eb682f24d783eae60eb80f1d"
+              },
+              {
+                "block_size": 2,
+                "file_sha256": "e931ace83ba25147a8dcdce9a822c5318650fc392e1fa84026c89cc89baabfed",
+                "k": 512,
+                "manifest_path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codebooks/manifest.json",
+                "manifest_pinned": true,
+                "manifest_sha256": "df02ba5fd41fd0cc3fd2d39474fcfe7a628c15eb9ea012e8c70b1ffb3dabecde",
+                "origin": "exact_current_online_fallback_serialization_20260716",
+                "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codebooks/gauss_b2_k512.pt",
+                "source": "shipped_manifest",
+                "tensor_sha256": "97fd30ff4347c60a90e81560afb7833d98bb9c537004d9ba57f83592991bcce2"
+              }
+            ],
+            "bundle": "adaptive_hq_b2_safe_v1",
+            "development_override_dir": null,
+            "manifest_path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codebooks/manifest.json",
+            "manifest_sha256": "df02ba5fd41fd0cc3fd2d39474fcfe7a628c15eb9ea012e8c70b1ffb3dabecde",
+            "required": true
+          },
+          "codec": "hayatequant",
+          "head_dim": 128,
+          "roles": {
+            "key": {
+              "adaptive_bit_split": "online_stats",
+              "bits": 3,
+              "block_size": 2,
+              "mathematical_scale_mode": "nc",
+              "outlier_bits": null,
+              "outlier_channels": 0,
+              "outlier_selection": "none",
+              "pair_code_bits_per_block": 12,
+              "qjl_enabled": false,
+              "quantized_dim": 128,
+              "rotation_mode": "payload_dependent_candidate_rate",
+              "rotation_seed": 0,
+              "scale_mode": "nc",
+              "source_law": "gaussian"
+            },
+            "value": {
+              "adaptive_bit_split": "online_stats",
+              "bits": 3,
+              "block_size": 2,
+              "mathematical_scale_mode": "ls_iter",
+              "outlier_bits": null,
+              "outlier_channels": 0,
+              "outlier_selection": "none",
+              "pair_code_bits_per_block": 12,
+              "qjl_enabled": false,
+              "quantized_dim": 128,
+              "rotation_mode": "payload_dependent_candidate_rate",
+              "rotation_seed": 0,
+              "scale_mode": "ls_iter",
+              "source_law": "gaussian"
+            }
+          },
+          "schema_version": 1
+        },
+        "semantic_role": "causal online-rate-allocation HQ paper proposal"
+      },
+      "HQ": {
+        "codec": {
+          "declared": {
+            "adaptive_bit_margin": 4,
+            "adaptive_bit_split": null,
+            "adaptive_stats_min_tokens": 16,
+            "avg_bits": 3.0,
+            "bits": 3,
+            "block_size": 2,
+            "code_bits_per_pair_block": null,
+            "codebook_init": "auto",
+            "dist": "gaussian",
+            "encoder": "exact",
+            "group_size": -1,
+            "hadamard_gemm_max_dim": 4096,
+            "key_axis": "token",
+            "key_bit_fraction": null,
+            "key_code_bits_per_block": 7,
+            "key_error_weight": 4.0,
+            "key_n_outlier": null,
+            "key_outlier_bits": null,
+            "key_scale_mode": "nc",
+            "ls_scale": true,
+            "lut_bins": null,
+            "lut_candidates": null,
+            "max_codebook_bits": 9,
+            "n_outlier": 0,
+            "name": "hayatequant",
+            "outlier_bits": null,
+            "required_codebook_bundle": "fixed_hq_b2_v1",
+            "residual_window": 128,
+            "rotation_mode": "auto",
+            "seed": 0,
+            "skip_layers": [],
+            "symmetric": false,
+            "use_qjl": false,
+            "value_axis": "token",
+            "value_bits": 3,
+            "value_code_bits_per_block": 5,
+            "value_error_weight": 1.0,
+            "value_n_outlier": null,
+            "value_outlier_bits": null,
+            "value_scale_mode": "ls_iter"
+          },
+          "effective": {
+            "key_scale_mode": "nc",
+            "value_scale_mode": "ls_iter"
+          }
+        },
+        "fake_quant_implementation": "HayateQuant fused research fake_quant_roundtrip",
+        "proposal_method": true,
+        "proposal_variant": "fixed_global",
+        "resolved_at_model_head_dim": {
+          "assignment": {
+            "encoder": "exact",
+            "lut_bins": null,
+            "lut_candidates": null,
+            "shape_independent": true,
+            "tie_break": "smallest_global_codebook_index"
+          },
+          "calibration": null,
+          "codebook_artifacts": {
+            "artifacts": [
+              {
+                "block_size": 2,
+                "file_sha256": "d0b4402fa70317c6a72a85915becc9fd2923d8815793039349f7844c3000947a",
+                "k": 8,
+                "manifest_path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codebooks/manifest.json",
+                "manifest_pinned": true,
+                "manifest_sha256": "df02ba5fd41fd0cc3fd2d39474fcfe7a628c15eb9ea012e8c70b1ffb3dabecde",
+                "origin": "exact_current_online_fallback_serialization_20260716",
+                "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codebooks/gauss_b2_k8.pt",
+                "source": "shipped_manifest",
+                "tensor_sha256": "55d09c31d8bcfe4d597dff7021b85a6c9736b900dd3a298d214de9ec78333390"
+              },
+              {
+                "block_size": 2,
+                "file_sha256": "2e81e59d367252758d4ffbbf151d798c379732ecc43a3f21fefedd7b6466ced3",
+                "k": 32,
+                "manifest_path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codebooks/manifest.json",
+                "manifest_pinned": true,
+                "manifest_sha256": "df02ba5fd41fd0cc3fd2d39474fcfe7a628c15eb9ea012e8c70b1ffb3dabecde",
+                "origin": "exact_current_online_fallback_serialization_20260716",
+                "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codebooks/gauss_b2_k32.pt",
+                "source": "shipped_manifest",
+                "tensor_sha256": "5a6383c6742243ef42f6009e724b5a5bb55fa5b13c1ee93f7a9ce59b0d583926"
+              },
+              {
+                "block_size": 2,
+                "file_sha256": "67b131bdea9045a8414ec43a81ecce806f87339a7a092ed19a2e5722506c7b51",
+                "k": 128,
+                "manifest_path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codebooks/manifest.json",
+                "manifest_pinned": true,
+                "manifest_sha256": "df02ba5fd41fd0cc3fd2d39474fcfe7a628c15eb9ea012e8c70b1ffb3dabecde",
+                "origin": "exact_current_online_fallback_serialization_20260716",
+                "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codebooks/gauss_b2_k128.pt",
+                "source": "shipped_manifest",
+                "tensor_sha256": "39e5d9b4958c4935180bba5844dcc41a8f2dfa012e2d44cd4611da40491f43fb"
+              },
+              {
+                "block_size": 2,
+                "file_sha256": "e931ace83ba25147a8dcdce9a822c5318650fc392e1fa84026c89cc89baabfed",
+                "k": 512,
+                "manifest_path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codebooks/manifest.json",
+                "manifest_pinned": true,
+                "manifest_sha256": "df02ba5fd41fd0cc3fd2d39474fcfe7a628c15eb9ea012e8c70b1ffb3dabecde",
+                "origin": "exact_current_online_fallback_serialization_20260716",
+                "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codebooks/gauss_b2_k512.pt",
+                "source": "shipped_manifest",
+                "tensor_sha256": "97fd30ff4347c60a90e81560afb7833d98bb9c537004d9ba57f83592991bcce2"
+              }
+            ],
+            "bundle": "fixed_hq_b2_v1",
+            "development_override_dir": null,
+            "manifest_path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codebooks/manifest.json",
+            "manifest_sha256": "df02ba5fd41fd0cc3fd2d39474fcfe7a628c15eb9ea012e8c70b1ffb3dabecde",
+            "required": true
+          },
+          "codec": "hayatequant",
+          "head_dim": 128,
+          "roles": {
+            "key": {
+              "bits": 3,
+              "block_size": 2,
+              "code_bits_per_block": 7,
+              "mathematical_scale_mode": "nc",
+              "outlier_bits": null,
+              "outlier_channels": 0,
+              "outlier_selection": "none",
+              "payload_bits_per_coordinate": 3.5,
+              "qjl_enabled": false,
+              "quantized_dim": 128,
+              "rotation_mode": "hybrid",
+              "rotation_seed": 0,
+              "scale_mode": "nc",
+              "source_law": "gaussian"
+            },
+            "value": {
+              "bits": 3,
+              "block_size": 2,
+              "code_bits_per_block": 5,
+              "mathematical_scale_mode": "ls_iter",
+              "outlier_bits": null,
+              "outlier_channels": 0,
+              "outlier_selection": "none",
+              "payload_bits_per_coordinate": 2.5,
+              "qjl_enabled": false,
+              "quantized_dim": 128,
+              "rotation_mode": "hybrid",
+              "rotation_seed": 0,
+              "scale_mode": "ls_iter",
+              "source_law": "gaussian"
+            }
+          },
+          "schema_version": 1
+        },
+        "semantic_role": "canonical globally fixed HQ paper proposal"
+      },
+      "TurboQuant-paper": {
+        "codec": {
+          "declared": {
+            "bits": 3,
+            "dist": "beta",
+            "group_size": -1,
+            "key_axis": "token",
+            "n_outlier": 0,
+            "name": "turboquant",
+            "outlier_bits": null,
+            "qjl_roles": "key",
+            "residual_window": 128,
+            "rotation_mode": "dense",
+            "seed": 0,
+            "skip_layers": [],
+            "symmetric": false,
+            "use_qjl": false,
+            "value_axis": "token",
+            "value_bits": 3
+          },
+          "effective": {}
+        },
+        "fake_quant_implementation": "inherited unfused encode_then_decode",
+        "proposal_method": false,
+        "proposal_variant": null,
+        "resolved_at_model_head_dim": {
+          "calibration": null,
+          "codec": "turboquant",
+          "head_dim": 128,
+          "roles": {
+            "key": {
+              "bits": 3,
+              "block_size": 1,
+              "mathematical_scale_mode": "l2",
+              "outlier_bits": null,
+              "outlier_channels": 0,
+              "outlier_selection": "none",
+              "qjl_enabled": false,
+              "quantized_dim": 128,
+              "rotation_mode": "dense",
+              "rotation_seed": 0,
+              "scale_mode": "l2",
+              "source_law": "beta"
+            },
+            "value": {
+              "bits": 3,
+              "block_size": 1,
+              "mathematical_scale_mode": "l2",
+              "outlier_bits": null,
+              "outlier_channels": 0,
+              "outlier_selection": "none",
+              "qjl_enabled": false,
+              "quantized_dim": 128,
+              "rotation_mode": "dense",
+              "rotation_seed": 0,
+              "scale_mode": "l2",
+              "source_law": "beta"
+            }
+          },
+          "schema_version": 1
+        },
+        "semantic_role": "existing TurboQuant class; symmetric scalar Beta/L2 reference"
+      }
+    },
+    "parity_checks": {
+      "proposal_payload_vs_fused_quality": [
+        {
+          "fused_mse": 0.01513852458447218,
+          "method": "HQ",
+          "payload_mse": 0.015142388641834259,
+          "relative_mse_delta": 0.00025518149437825757,
+          "role": "key",
+          "stored_bits_from_fused": 3276800,
+          "stored_bits_from_quality_payload": 3276800,
+          "stored_bits_match": true
+        },
+        {
+          "fused_mse": 0.055441126227378845,
+          "method": "HQ",
+          "payload_mse": 0.05544324219226837,
+          "relative_mse_delta": 3.816452295824506e-05,
+          "role": "value",
+          "stored_bits_from_fused": 3276800,
+          "stored_bits_from_quality_payload": 3276800,
+          "stored_bits_match": true
+        },
+        {
+          "fused_mse": 0.015142388641834259,
+          "method": "AdaptiveHQ",
+          "payload_mse": 0.015142388641834259,
+          "relative_mse_delta": 0.0,
+          "role": "key",
+          "stored_bits_from_fused": 3276800,
+          "stored_bits_from_quality_payload": 3276800,
+          "stored_bits_match": true
+        },
+        {
+          "fused_mse": 0.05544324219226837,
+          "method": "AdaptiveHQ",
+          "payload_mse": 0.05544324219226837,
+          "relative_mse_delta": 0.0,
+          "role": "value",
+          "stored_bits_from_fused": 3276800,
+          "stored_bits_from_quality_payload": 3276800,
+          "stored_bits_match": true
+        }
+      ]
+    },
+    "proposal_contract": {
+      "formal_proposals": [
+        "HQ",
+        "AdaptiveHQ"
+      ],
+      "rows": {
+        "AdaptiveHQ": {
+          "exact_assignment": true,
+          "pair_code_bits_per_block": 12,
+          "proposal_variant": "causal_adaptive",
+          "selector": {
+            "block_size": 2,
+            "candidate_pairs": [
+              [
+                6,
+                6
+              ],
+              [
+                7,
+                5
+              ]
+            ],
+            "candidate_rotations": [
+              {
+                "key": "hybrid",
+                "pair": [
+                  6,
+                  6
+                ],
+                "value": "hybrid"
+              },
+              {
+                "key": "hybrid",
+                "pair": [
+                  7,
+                  5
+                ],
+                "value": "hybrid"
+              }
+            ],
+            "distortion_table_version": "source_qmc128_exact_codebook_fp16scale_safe_two_pair_update_carrier_v4",
+            "objective": "causal_raw_power_times_qmc_base_plus_one_carrier_per_update",
+            "pair_code_bits_per_block": 12,
+            "policy": "cache_causal_datafree_rd",
+            "policy_version": "adaptive_hq_cache_causal_safe_two_pair_rd_v5",
+            "prior_pair": [
+              6,
+              6
+            ],
+            "runtime_distortion_constants": "payload_and_cache_provenance",
+            "selected_pair": "payload_dependent",
+            "selection_scope": "per_encode_kv_pair",
+            "selector_bits_per_encode": 1,
+            "selector_carrier": "first_value_fp16_scale_low_fraction_bits",
+            "selector_carrier_distortion_amortization": "signed_qmc_all_scales_delta_divided_by_current_update_vectors",
+            "selector_carrier_version": "value_scale_fp16_fraction_lsb_v1",
+            "selector_incremental_stored_bits_per_encode": 0,
+            "selector_scale_reconstruction": "clear_carrier_fraction_bits",
+            "state_ownership": "compressed_dynamic_cache_instance_per_layer"
+          }
+        },
+        "HQ": {
+          "exact_assignment": true,
+          "pair_code_bits_per_block": 12,
+          "proposal_variant": "fixed_global",
+          "selector": null
+        }
+      },
+      "same_total_pair_code_bit_budget": true
+    },
+    "public_payload_runtime_audit": {
+      "decode": {
+        "AdaptiveHQ": {
+          "all_index_tensors_int64": true,
+          "all_scale_tensors_signed_fp16": true,
+          "index_elements": 1024,
+          "index_tensor_count": 2,
+          "index_tensors_bit_packed": false,
+          "logical_total_stored_bits": 6400,
+          "materialized_index_tensor_bits": 65536,
+          "materialized_payload_tensor_bytes": 8224,
+          "materialized_payload_tensor_scope": "exact storage of code-index and scale tensors in the public payload; excludes Python containers, control tags, allocator fragmentation, and persistent codec/codebook/LUT/rotation state",
+          "materialized_scale_tensor_bits": 256,
+          "scale_elements": 16,
+          "scale_tensor_count": 2
+        },
+        "HQ": {
+          "all_index_tensors_int64": true,
+          "all_scale_tensors_signed_fp16": true,
+          "index_elements": 1024,
+          "index_tensor_count": 2,
+          "index_tensors_bit_packed": false,
+          "logical_total_stored_bits": 6400,
+          "materialized_index_tensor_bits": 65536,
+          "materialized_payload_tensor_bytes": 8224,
+          "materialized_payload_tensor_scope": "exact storage of code-index and scale tensors in the public payload; excludes Python containers, control tags, allocator fragmentation, and persistent codec/codebook/LUT/rotation state",
+          "materialized_scale_tensor_bits": 256,
+          "scale_elements": 16,
+          "scale_tensor_count": 2
+        },
+        "TurboQuant-paper": {
+          "all_index_tensors_int64": true,
+          "all_scale_tensors_signed_fp16": true,
+          "index_elements": 2048,
+          "index_tensor_count": 2,
+          "index_tensors_bit_packed": false,
+          "logical_total_stored_bits": 6400,
+          "materialized_index_tensor_bits": 131072,
+          "materialized_payload_tensor_bytes": 16416,
+          "materialized_payload_tensor_scope": "exact storage of code-index and scale tensors in the public payload; excludes Python containers, control tags, allocator fragmentation, and persistent codec/codebook/LUT/rotation state",
+          "materialized_scale_tensor_bits": 256,
+          "scale_elements": 16,
+          "scale_tensor_count": 2
+        }
+      },
+      "prefill": {
+        "AdaptiveHQ": {
+          "all_index_tensors_int64": true,
+          "all_scale_tensors_signed_fp16": true,
+          "index_elements": 524288,
+          "index_tensor_count": 2,
+          "index_tensors_bit_packed": false,
+          "logical_total_stored_bits": 3276800,
+          "materialized_index_tensor_bits": 33554432,
+          "materialized_payload_tensor_bytes": 4210688,
+          "materialized_payload_tensor_scope": "exact storage of code-index and scale tensors in the public payload; excludes Python containers, control tags, allocator fragmentation, and persistent codec/codebook/LUT/rotation state",
+          "materialized_scale_tensor_bits": 131072,
+          "scale_elements": 8192,
+          "scale_tensor_count": 2
+        },
+        "HQ": {
+          "all_index_tensors_int64": true,
+          "all_scale_tensors_signed_fp16": true,
+          "index_elements": 524288,
+          "index_tensor_count": 2,
+          "index_tensors_bit_packed": false,
+          "logical_total_stored_bits": 3276800,
+          "materialized_index_tensor_bits": 33554432,
+          "materialized_payload_tensor_bytes": 4210688,
+          "materialized_payload_tensor_scope": "exact storage of code-index and scale tensors in the public payload; excludes Python containers, control tags, allocator fragmentation, and persistent codec/codebook/LUT/rotation state",
+          "materialized_scale_tensor_bits": 131072,
+          "scale_elements": 8192,
+          "scale_tensor_count": 2
+        },
+        "TurboQuant-paper": {
+          "all_index_tensors_int64": true,
+          "all_scale_tensors_signed_fp16": true,
+          "index_elements": 1048576,
+          "index_tensor_count": 2,
+          "index_tensors_bit_packed": false,
+          "logical_total_stored_bits": 3276800,
+          "materialized_index_tensor_bits": 67108864,
+          "materialized_payload_tensor_bytes": 8404992,
+          "materialized_payload_tensor_scope": "exact storage of code-index and scale tensors in the public payload; excludes Python containers, control tags, allocator fragmentation, and persistent codec/codebook/LUT/rotation state",
+          "materialized_scale_tensor_bits": 131072,
+          "scale_elements": 8192,
+          "scale_tensor_count": 2
+        }
+      }
+    },
+    "public_payload_scope": {
+      "api": "public KVCodec.encode/decode",
+      "control_state_interpretation": "out-of-band/cache-level configuration, not physical serving memory",
+      "excluded_from_stored_bits": "self-describing control tags, Python/container bytes, allocator-resident tensor bytes, and global codebook/LUT/rotation state",
+      "index_tensor_dtype": "int64",
+      "index_tensors_bit_packed": false,
+      "packed_serving_claim_allowed": false,
+      "persistent_codec_state_counted": false,
+      "physical_memory_interpretation": "not the actual tensor-memory footprint and not a packed serving-cache result",
+      "python_container_bytes_counted": false,
+      "representation": "materialized_logical_payload",
+      "self_describing_control_tags_counted": false,
+      "stored_bits_scope": "fixed_width_per_token_data_plane_growth_only",
+      "stored_bits_semantics": "codes plus signed-fp16 scales and enabled mask/QJL/outlier data-plane fields"
+    },
+    "quality": {
+      "AdaptiveHQ": {
+        "attention_output_relative_l2": 0.2660563588142395,
+        "input_kv_elements": 1048576,
+        "key_mse": 0.015142388641834259,
+        "quality_api": "decode(encode(key, value)); same codec recipe as timed row",
+        "recipe_sha256": "510ba56bdaee475d145d1bef4e30e4181bd34cf327f0e151856b6717c64c2d9f",
+        "stored_bits": 3276800,
+        "stored_bits_per_kv_element": 3.125,
+        "value_mse": 0.05544324219226837
+      },
+      "HQ": {
+        "attention_output_relative_l2": 0.2660563588142395,
+        "input_kv_elements": 1048576,
+        "key_mse": 0.015142388641834259,
+        "quality_api": "decode(encode(key, value)); same codec recipe as timed row",
+        "recipe_sha256": "4d27e043ea1d45cfec3408a57da59f1d037b9b42005189f6dbff57192b4ceea2",
+        "stored_bits": 3276800,
+        "stored_bits_per_kv_element": 3.125,
+        "value_mse": 0.05544324219226837
+      },
+      "TurboQuant-paper": {
+        "attention_output_relative_l2": 0.25603583455085754,
+        "input_kv_elements": 1048576,
+        "key_mse": 0.03398866578936577,
+        "quality_api": "decode(encode(key, value)); same codec recipe as timed row",
+        "recipe_sha256": "262e08aee7bf835d26f4487617dfcbff98abd247bb08c0aeab7481c4833e0f66",
+        "stored_bits": 3276800,
+        "stored_bits_per_kv_element": 3.125,
+        "value_mse": 0.03412231057882309
+      }
+    },
+    "rate_contract": {
+      "comparison_basis": "same input shape, same arithmetic K/V average code rate, and equal payload.numel_bits including enabled fixed-width data-plane fields",
+      "equal_accounted_payload_bits": true,
+      "equal_input_shape": true,
+      "methods": {
+        "AdaptiveHQ": {
+          "accounted_payload_bits": 3276800,
+          "accounted_payload_bits_per_kv_element": 3.125,
+          "allocation": "causal_adaptive",
+          "declared_key_bits": 3,
+          "declared_value_bits": 3,
+          "input_kv_elements": 1048576,
+          "nominal_average_code_bits_per_coordinate": 3.0
+        },
+        "HQ": {
+          "accounted_payload_bits": 3276800,
+          "accounted_payload_bits_per_kv_element": 3.125,
+          "allocation": "fixed_global",
+          "declared_key_bits": 3,
+          "declared_value_bits": 3,
+          "input_kv_elements": 1048576,
+          "nominal_average_code_bits_per_coordinate": 3.0
+        },
+        "TurboQuant-paper": {
+          "accounted_payload_bits": 3276800,
+          "accounted_payload_bits_per_kv_element": 3.125,
+          "allocation": "symmetric_scalar",
+          "declared_key_bits": 3,
+          "declared_value_bits": 3,
+          "input_kv_elements": 1048576,
+          "nominal_average_code_bits_per_coordinate": 3.0
+        }
+      },
+      "nominal_average_bits": 3,
+      "shared_codebook_storage_accounting": "global immutable codebooks/LUTs/rotations and Python control containers are out-of-band/cache-level state and are not charged per cache payload"
+    },
+    "recipe_linkage": {
+      "all_rows_fingerprinted_from_declared_and_role_resolved_codec_config": true,
+      "payload_quality_and_all_micro_timings_use_same_codec_instances": true
+    },
+    "recipe_sha256": {
+      "AdaptiveHQ": "510ba56bdaee475d145d1bef4e30e4181bd34cf327f0e151856b6717c64c2d9f",
+      "HQ": "4d27e043ea1d45cfec3408a57da59f1d037b9b42005189f6dbff57192b4ceea2",
+      "TurboQuant-paper": "262e08aee7bf835d26f4487617dfcbff98abd247bb08c0aeab7481c4833e0f66"
+    },
+    "regimes": {
+      "decode": {
+        "operation_execution_order": [
+          "encode",
+          "decode_prebuilt_payload",
+          "fake_quant_roundtrip",
+          "roundtrip_explicit_encode_then_decode"
+        ],
+        "payload_api": {
+          "decode_prebuilt_payload": {
+            "normalisation": "event elapsed time / 1 inner loop(s)",
+            "paired_speedups": {
+              "comparisons": {
+                "adaptive_hq_vs_turboquant": {
+                  "baseline_method": "TurboQuant-paper",
+                  "candidate_method": "AdaptiveHQ",
+                  "n_paired_repeats": 5,
+                  "raw_paired_ratios": [
+                    {
+                      "baseline_order_position": 2,
+                      "baseline_value": 0.10796800255775452,
+                      "candidate_order_position": 1,
+                      "candidate_speedup_x": 0.46486637484027776,
+                      "candidate_value": 0.2322559952735901,
+                      "repeat": 0
+                    },
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 0.10262399911880493,
+                      "candidate_order_position": 0,
+                      "candidate_speedup_x": 0.43537875121733505,
+                      "candidate_value": 0.23571200668811798,
+                      "repeat": 1
+                    },
+                    {
+                      "baseline_order_position": 0,
+                      "baseline_value": 0.09619200229644775,
+                      "candidate_order_position": 2,
+                      "candidate_speedup_x": 0.4418639019130992,
+                      "candidate_value": 0.21769599616527557,
+                      "repeat": 2
+                    },
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 0.10313600301742554,
+                      "candidate_order_position": 0,
+                      "candidate_speedup_x": 0.48900015649214557,
+                      "candidate_value": 0.21091200411319733,
+                      "repeat": 3
+                    },
+                    {
+                      "baseline_order_position": 0,
+                      "baseline_value": 0.09513600170612335,
+                      "candidate_order_position": 2,
+                      "candidate_speedup_x": 0.44313608747907685,
+                      "candidate_value": 0.2146880030632019,
+                      "repeat": 4
+                    }
+                  ],
+                  "within_process_summary": {
+                    "bootstrap_median_95ci": [
+                      0.43537875121733505,
+                      0.48900015649214557
+                    ],
+                    "bootstrap_resamples": 100,
+                    "iqr": 0.023002472927178552,
+                    "median": 0.44313608747907685,
+                    "n": 5,
+                    "p5": 0.43667578135648794,
+                    "p95": 0.484173400161772,
+                    "q1": 0.4418639019130992,
+                    "q3": 0.46486637484027776,
+                    "unit": "candidate_speedup_x"
+                  }
+                },
+                "hq_vs_turboquant": {
+                  "baseline_method": "TurboQuant-paper",
+                  "candidate_method": "HQ",
+                  "n_paired_repeats": 5,
+                  "raw_paired_ratios": [
+                    {
+                      "baseline_order_position": 2,
+                      "baseline_value": 0.10796800255775452,
+                      "candidate_order_position": 0,
+                      "candidate_speedup_x": 0.8825529883079187,
+                      "candidate_value": 0.1223360002040863,
+                      "repeat": 0
+                    },
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 0.10262399911880493,
+                      "candidate_order_position": 2,
+                      "candidate_speedup_x": 0.9570277718815475,
+                      "candidate_value": 0.1072319969534874,
+                      "repeat": 1
+                    },
+                    {
+                      "baseline_order_position": 0,
+                      "baseline_value": 0.09619200229644775,
+                      "candidate_order_position": 1,
+                      "candidate_speedup_x": 0.9408450593375615,
+                      "candidate_value": 0.10224000364542007,
+                      "repeat": 2
+                    },
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 0.10313600301742554,
+                      "candidate_order_position": 2,
+                      "candidate_speedup_x": 1.004675846106782,
+                      "candidate_value": 0.10265599936246872,
+                      "repeat": 3
+                    },
+                    {
+                      "baseline_order_position": 0,
+                      "baseline_value": 0.09513600170612335,
+                      "candidate_order_position": 1,
+                      "candidate_speedup_x": 0.9210037626529538,
+                      "candidate_value": 0.10329599678516388,
+                      "repeat": 4
+                    }
+                  ],
+                  "within_process_summary": {
+                    "bootstrap_median_95ci": [
+                      0.8825529883079187,
+                      1.004675846106782
+                    ],
+                    "bootstrap_resamples": 100,
+                    "iqr": 0.03602400922859372,
+                    "median": 0.9408450593375615,
+                    "n": 5,
+                    "p5": 0.8902431431769258,
+                    "p95": 0.9951462312617351,
+                    "q1": 0.9210037626529538,
+                    "q3": 0.9570277718815475,
+                    "unit": "candidate_speedup_x"
+                  }
+                }
+              },
+              "inferential_unit": "independently_launched_fresh_process",
+              "interpretation": "greater_than_1_means_candidate_is_faster",
+              "pairing_unit": "same_counterbalanced_repeat_within_one_process",
+              "ratio_definition": "baseline_latency / candidate_latency",
+              "source_value_key": "elapsed_ms_per_call",
+              "source_value_unit": "ms_per_call",
+              "within_process_ci_warning": "technical-repeat bootstrap intervals are descriptive only; do not pool repeats across processes as independent samples"
+            },
+            "raw_paired_repeats": [
+              {
+                "order": [
+                  "HQ",
+                  "AdaptiveHQ",
+                  "TurboQuant-paper"
+                ],
+                "repeat": 0,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.1223360002040863,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.2322559952735901,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.10796800255775452,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "AdaptiveHQ",
+                  "TurboQuant-paper",
+                  "HQ"
+                ],
+                "repeat": 1,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.23571200668811798,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.10262399911880493,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.1072319969534874,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "TurboQuant-paper",
+                  "HQ",
+                  "AdaptiveHQ"
+                ],
+                "repeat": 2,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.09619200229644775,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.10224000364542007,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.21769599616527557,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "AdaptiveHQ",
+                  "TurboQuant-paper",
+                  "HQ"
+                ],
+                "repeat": 3,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.21091200411319733,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.10313600301742554,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.10265599936246872,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "TurboQuant-paper",
+                  "HQ",
+                  "AdaptiveHQ"
+                ],
+                "repeat": 4,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.09513600170612335,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.10329599678516388,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.2146880030632019,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 2
+                  }
+                ]
+              }
+            ],
+            "summary": {
+              "AdaptiveHQ": {
+                "bootstrap_median_95ci": [
+                  0.21091200411319733,
+                  0.23571200668811798
+                ],
+                "bootstrap_resamples": 100,
+                "iqr": 0.017567992210388184,
+                "median": 0.21769599616527557,
+                "n": 5,
+                "p5": 0.21166720390319824,
+                "p95": 0.2350208044052124,
+                "q1": 0.2146880030632019,
+                "q3": 0.2322559952735901,
+                "unit": "ms_per_call"
+              },
+              "HQ": {
+                "bootstrap_median_95ci": [
+                  0.10224000364542007,
+                  0.1151615986600519
+                ],
+                "bootstrap_resamples": 100,
+                "iqr": 0.004575997591018677,
+                "median": 0.10329599678516388,
+                "n": 5,
+                "p5": 0.10232320278882981,
+                "p95": 0.11931519955396651,
+                "q1": 0.10265599936246872,
+                "q3": 0.1072319969534874,
+                "unit": "ms_per_call"
+              },
+              "TurboQuant-paper": {
+                "bootstrap_median_95ci": [
+                  0.09619200229644775,
+                  0.10796800255775452
+                ],
+                "bootstrap_resamples": 100,
+                "iqr": 0.006944000720977783,
+                "median": 0.10262399911880493,
+                "n": 5,
+                "p5": 0.09534720182418824,
+                "p95": 0.10700160264968872,
+                "q1": 0.09619200229644775,
+                "q3": 0.10313600301742554,
+                "unit": "ms_per_call"
+              }
+            },
+            "timer": "torch.cuda.Event",
+            "timer_completion_barrier": "end_event.synchronize before elapsed_time read",
+            "timer_native_unit": "milliseconds",
+            "warmup_orders": [
+              [
+                "TurboQuant-paper",
+                "AdaptiveHQ",
+                "HQ"
+              ],
+              [
+                "AdaptiveHQ",
+                "HQ",
+                "TurboQuant-paper"
+              ]
+            ]
+          },
+          "encode": {
+            "normalisation": "event elapsed time / 1 inner loop(s)",
+            "paired_speedups": {
+              "comparisons": {
+                "adaptive_hq_vs_turboquant": {
+                  "baseline_method": "TurboQuant-paper",
+                  "candidate_method": "AdaptiveHQ",
+                  "n_paired_repeats": 5,
+                  "raw_paired_ratios": [
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 0.6542080044746399,
+                      "candidate_order_position": 0,
+                      "candidate_speedup_x": 0.5922878388600744,
+                      "candidate_value": 1.1045440435409546,
+                      "repeat": 0
+                    },
+                    {
+                      "baseline_order_position": 0,
+                      "baseline_value": 0.626911997795105,
+                      "candidate_order_position": 2,
+                      "candidate_speedup_x": 0.6093813496307212,
+                      "candidate_value": 1.0287679433822632,
+                      "repeat": 1
+                    },
+                    {
+                      "baseline_order_position": 2,
+                      "baseline_value": 0.6893759965896606,
+                      "candidate_order_position": 1,
+                      "candidate_speedup_x": 0.6772185919055649,
+                      "candidate_value": 1.0179519653320312,
+                      "repeat": 2
+                    },
+                    {
+                      "baseline_order_position": 2,
+                      "baseline_value": 0.6726719737052917,
+                      "candidate_order_position": 1,
+                      "candidate_speedup_x": 0.6685430552238184,
+                      "candidate_value": 1.0061759948730469,
+                      "repeat": 3
+                    },
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 0.6573759913444519,
+                      "candidate_order_position": 0,
+                      "candidate_speedup_x": 0.5803763305341734,
+                      "candidate_value": 1.1326719522476196,
+                      "repeat": 4
+                    }
+                  ],
+                  "within_process_summary": {
+                    "bootstrap_median_95ci": [
+                      0.5803763305341734,
+                      0.6772185919055649
+                    ],
+                    "bootstrap_resamples": 100,
+                    "iqr": 0.076255216363744,
+                    "median": 0.6093813496307212,
+                    "n": 5,
+                    "p5": 0.5827586321993536,
+                    "p95": 0.6754834845692156,
+                    "q1": 0.5922878388600744,
+                    "q3": 0.6685430552238184,
+                    "unit": "candidate_speedup_x"
+                  }
+                },
+                "hq_vs_turboquant": {
+                  "baseline_method": "TurboQuant-paper",
+                  "candidate_method": "HQ",
+                  "n_paired_repeats": 5,
+                  "raw_paired_ratios": [
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 0.6542080044746399,
+                      "candidate_order_position": 2,
+                      "candidate_speedup_x": 0.9216897174701347,
+                      "candidate_value": 0.7097920179367065,
+                      "repeat": 0
+                    },
+                    {
+                      "baseline_order_position": 0,
+                      "baseline_value": 0.626911997795105,
+                      "candidate_order_position": 1,
+                      "candidate_speedup_x": 0.9314410566200549,
+                      "candidate_value": 0.6730560064315796,
+                      "repeat": 1
+                    },
+                    {
+                      "baseline_order_position": 2,
+                      "baseline_value": 0.6893759965896606,
+                      "candidate_order_position": 0,
+                      "candidate_speedup_x": 1.0790923495611298,
+                      "candidate_value": 0.6388480067253113,
+                      "repeat": 2
+                    },
+                    {
+                      "baseline_order_position": 2,
+                      "baseline_value": 0.6726719737052917,
+                      "candidate_order_position": 0,
+                      "candidate_speedup_x": 0.9213270823912686,
+                      "candidate_value": 0.7301120162010193,
+                      "repeat": 3
+                    },
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 0.6573759913444519,
+                      "candidate_order_position": 2,
+                      "candidate_speedup_x": 0.9313173903141612,
+                      "candidate_value": 0.7058560252189636,
+                      "repeat": 4
+                    }
+                  ],
+                  "within_process_summary": {
+                    "bootstrap_median_95ci": [
+                      0.9213270823912686,
+                      1.0790923495611298
+                    ],
+                    "bootstrap_resamples": 100,
+                    "iqr": 0.009751339149920213,
+                    "median": 0.9313173903141612,
+                    "n": 5,
+                    "p5": 0.9213996094070419,
+                    "p95": 1.0495620909729146,
+                    "q1": 0.9216897174701347,
+                    "q3": 0.9314410566200549,
+                    "unit": "candidate_speedup_x"
+                  }
+                }
+              },
+              "inferential_unit": "independently_launched_fresh_process",
+              "interpretation": "greater_than_1_means_candidate_is_faster",
+              "pairing_unit": "same_counterbalanced_repeat_within_one_process",
+              "ratio_definition": "baseline_latency / candidate_latency",
+              "source_value_key": "elapsed_ms_per_call",
+              "source_value_unit": "ms_per_call",
+              "within_process_ci_warning": "technical-repeat bootstrap intervals are descriptive only; do not pool repeats across processes as independent samples"
+            },
+            "raw_paired_repeats": [
+              {
+                "order": [
+                  "AdaptiveHQ",
+                  "TurboQuant-paper",
+                  "HQ"
+                ],
+                "repeat": 0,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 1.1045440435409546,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.6542080044746399,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.7097920179367065,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "TurboQuant-paper",
+                  "HQ",
+                  "AdaptiveHQ"
+                ],
+                "repeat": 1,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.626911997795105,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.6730560064315796,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 1.0287679433822632,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "HQ",
+                  "AdaptiveHQ",
+                  "TurboQuant-paper"
+                ],
+                "repeat": 2,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.6388480067253113,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 1.0179519653320312,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.6893759965896606,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "HQ",
+                  "AdaptiveHQ",
+                  "TurboQuant-paper"
+                ],
+                "repeat": 3,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.7301120162010193,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 1.0061759948730469,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.6726719737052917,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "AdaptiveHQ",
+                  "TurboQuant-paper",
+                  "HQ"
+                ],
+                "repeat": 4,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 1.1326719522476196,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.6573759913444519,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.7058560252189636,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 2
+                  }
+                ]
+              }
+            ],
+            "summary": {
+              "AdaptiveHQ": {
+                "bootstrap_median_95ci": [
+                  1.0061759948730469,
+                  1.1326719522476196
+                ],
+                "bootstrap_resamples": 100,
+                "iqr": 0.08659207820892334,
+                "median": 1.0287679433822632,
+                "n": 5,
+                "p5": 1.0085311889648438,
+                "p95": 1.1270463705062865,
+                "q1": 1.0179519653320312,
+                "q3": 1.1045440435409546,
+                "unit": "ms_per_call"
+              },
+              "HQ": {
+                "bootstrap_median_95ci": [
+                  0.6388480067253113,
+                  0.7301120162010193
+                ],
+                "bootstrap_resamples": 100,
+                "iqr": 0.03673601150512695,
+                "median": 0.7058560252189636,
+                "n": 5,
+                "p5": 0.6456896066665649,
+                "p95": 0.7260480165481568,
+                "q1": 0.6730560064315796,
+                "q3": 0.7097920179367065,
+                "unit": "ms_per_call"
+              },
+              "TurboQuant-paper": {
+                "bootstrap_median_95ci": [
+                  0.626911997795105,
+                  0.6893759965896606
+                ],
+                "bootstrap_resamples": 100,
+                "iqr": 0.018463969230651855,
+                "median": 0.6573759913444519,
+                "n": 5,
+                "p5": 0.632371199131012,
+                "p95": 0.6860351920127868,
+                "q1": 0.6542080044746399,
+                "q3": 0.6726719737052917,
+                "unit": "ms_per_call"
+              }
+            },
+            "timer": "torch.cuda.Event",
+            "timer_completion_barrier": "end_event.synchronize before elapsed_time read",
+            "timer_native_unit": "milliseconds",
+            "warmup_orders": [
+              [
+                "TurboQuant-paper",
+                "AdaptiveHQ",
+                "HQ"
+              ],
+              [
+                "AdaptiveHQ",
+                "HQ",
+                "TurboQuant-paper"
+              ]
+            ]
+          },
+          "roundtrip_explicit_encode_then_decode": {
+            "normalisation": "event elapsed time / 1 inner loop(s)",
+            "paired_speedups": {
+              "comparisons": {
+                "adaptive_hq_vs_turboquant": {
+                  "baseline_method": "TurboQuant-paper",
+                  "candidate_method": "AdaptiveHQ",
+                  "n_paired_repeats": 5,
+                  "raw_paired_ratios": [
+                    {
+                      "baseline_order_position": 2,
+                      "baseline_value": 0.8091520071029663,
+                      "candidate_order_position": 0,
+                      "candidate_speedup_x": 0.5700694473198041,
+                      "candidate_value": 1.4193919897079468,
+                      "repeat": 0
+                    },
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 0.7502080202102661,
+                      "candidate_order_position": 2,
+                      "candidate_speedup_x": 0.5413943543482781,
+                      "candidate_value": 1.3856960535049438,
+                      "repeat": 1
+                    },
+                    {
+                      "baseline_order_position": 0,
+                      "baseline_value": 0.7836480140686035,
+                      "candidate_order_position": 1,
+                      "candidate_speedup_x": 0.5608125256840455,
+                      "candidate_value": 1.3973439931869507,
+                      "repeat": 2
+                    },
+                    {
+                      "baseline_order_position": 2,
+                      "baseline_value": 0.7972480058670044,
+                      "candidate_order_position": 0,
+                      "candidate_speedup_x": 0.6105324918299595,
+                      "candidate_value": 1.3058240413665771,
+                      "repeat": 3
+                    },
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 0.7620480060577393,
+                      "candidate_order_position": 2,
+                      "candidate_speedup_x": 0.5484316923707302,
+                      "candidate_value": 1.3895039558410645,
+                      "repeat": 4
+                    }
+                  ],
+                  "within_process_summary": {
+                    "bootstrap_median_95ci": [
+                      0.5413943543482781,
+                      0.6105324918299595
+                    ],
+                    "bootstrap_resamples": 100,
+                    "iqr": 0.02163775494907394,
+                    "median": 0.5608125256840455,
+                    "n": 5,
+                    "p5": 0.5428018219527686,
+                    "p95": 0.6024398829279284,
+                    "q1": 0.5484316923707302,
+                    "q3": 0.5700694473198041,
+                    "unit": "candidate_speedup_x"
+                  }
+                },
+                "hq_vs_turboquant": {
+                  "baseline_method": "TurboQuant-paper",
+                  "candidate_method": "HQ",
+                  "n_paired_repeats": 5,
+                  "raw_paired_ratios": [
+                    {
+                      "baseline_order_position": 2,
+                      "baseline_value": 0.8091520071029663,
+                      "candidate_order_position": 1,
+                      "candidate_speedup_x": 0.9467220994631182,
+                      "candidate_value": 0.8546879887580872,
+                      "repeat": 0
+                    },
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 0.7502080202102661,
+                      "candidate_order_position": 0,
+                      "candidate_speedup_x": 0.8533779901684991,
+                      "candidate_value": 0.8791040182113647,
+                      "repeat": 1
+                    },
+                    {
+                      "baseline_order_position": 0,
+                      "baseline_value": 0.7836480140686035,
+                      "candidate_order_position": 2,
+                      "candidate_speedup_x": 0.9211585772095326,
+                      "candidate_value": 0.8507199883460999,
+                      "repeat": 2
+                    },
+                    {
+                      "baseline_order_position": 2,
+                      "baseline_value": 0.7972480058670044,
+                      "candidate_order_position": 1,
+                      "candidate_speedup_x": 0.9338431084328416,
+                      "candidate_value": 0.8537279963493347,
+                      "repeat": 3
+                    },
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 0.7620480060577393,
+                      "candidate_order_position": 0,
+                      "candidate_speedup_x": 0.8783240604111752,
+                      "candidate_value": 0.8676159977912903,
+                      "repeat": 4
+                    }
+                  ],
+                  "within_process_summary": {
+                    "bootstrap_median_95ci": [
+                      0.8533779901684991,
+                      0.9338431084328416
+                    ],
+                    "bootstrap_resamples": 100,
+                    "iqr": 0.055519048021666406,
+                    "median": 0.9211585772095326,
+                    "n": 5,
+                    "p5": 0.8583672042170344,
+                    "p95": 0.9441463012570629,
+                    "q1": 0.8783240604111752,
+                    "q3": 0.9338431084328416,
+                    "unit": "candidate_speedup_x"
+                  }
+                }
+              },
+              "inferential_unit": "independently_launched_fresh_process",
+              "interpretation": "greater_than_1_means_candidate_is_faster",
+              "pairing_unit": "same_counterbalanced_repeat_within_one_process",
+              "ratio_definition": "baseline_latency / candidate_latency",
+              "source_value_key": "elapsed_ms_per_call",
+              "source_value_unit": "ms_per_call",
+              "within_process_ci_warning": "technical-repeat bootstrap intervals are descriptive only; do not pool repeats across processes as independent samples"
+            },
+            "raw_paired_repeats": [
+              {
+                "order": [
+                  "AdaptiveHQ",
+                  "HQ",
+                  "TurboQuant-paper"
+                ],
+                "repeat": 0,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 1.4193919897079468,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.8546879887580872,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.8091520071029663,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "HQ",
+                  "TurboQuant-paper",
+                  "AdaptiveHQ"
+                ],
+                "repeat": 1,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.8791040182113647,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.7502080202102661,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 1.3856960535049438,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "TurboQuant-paper",
+                  "AdaptiveHQ",
+                  "HQ"
+                ],
+                "repeat": 2,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.7836480140686035,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 1.3973439931869507,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.8507199883460999,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "AdaptiveHQ",
+                  "HQ",
+                  "TurboQuant-paper"
+                ],
+                "repeat": 3,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 1.3058240413665771,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.8537279963493347,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.7972480058670044,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "HQ",
+                  "TurboQuant-paper",
+                  "AdaptiveHQ"
+                ],
+                "repeat": 4,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.8676159977912903,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.7620480060577393,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 1.3895039558410645,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 2
+                  }
+                ]
+              }
+            ],
+            "summary": {
+              "AdaptiveHQ": {
+                "bootstrap_median_95ci": [
+                  1.3058240413665771,
+                  1.4193919897079468
+                ],
+                "bootstrap_resamples": 100,
+                "iqr": 0.011647939682006836,
+                "median": 1.3895039558410645,
+                "n": 5,
+                "p5": 1.3217984437942505,
+                "p95": 1.4149823904037477,
+                "q1": 1.3856960535049438,
+                "q3": 1.3973439931869507,
+                "unit": "ms_per_call"
+              },
+              "HQ": {
+                "bootstrap_median_95ci": [
+                  0.8521487921476364,
+                  0.8791040182113647
+                ],
+                "bootstrap_resamples": 100,
+                "iqr": 0.013888001441955566,
+                "median": 0.8546879887580872,
+                "n": 5,
+                "p5": 0.8513215899467469,
+                "p95": 0.8768064141273498,
+                "q1": 0.8537279963493347,
+                "q3": 0.8676159977912903,
+                "unit": "ms_per_call"
+              },
+              "TurboQuant-paper": {
+                "bootstrap_median_95ci": [
+                  0.7502080202102661,
+                  0.8091520071029663
+                ],
+                "bootstrap_resamples": 100,
+                "iqr": 0.03519999980926514,
+                "median": 0.7836480140686035,
+                "n": 5,
+                "p5": 0.7525760173797609,
+                "p95": 0.806771206855774,
+                "q1": 0.7620480060577393,
+                "q3": 0.7972480058670044,
+                "unit": "ms_per_call"
+              }
+            },
+            "timer": "torch.cuda.Event",
+            "timer_completion_barrier": "end_event.synchronize before elapsed_time read",
+            "timer_native_unit": "milliseconds",
+            "warmup_orders": [
+              [
+                "TurboQuant-paper",
+                "HQ",
+                "AdaptiveHQ"
+              ],
+              [
+                "HQ",
+                "AdaptiveHQ",
+                "TurboQuant-paper"
+              ]
+            ]
+          }
+        },
+        "research_fake_quant": {
+          "fake_quant_roundtrip": {
+            "normalisation": "event elapsed time / 1 inner loop(s)",
+            "paired_speedups": {
+              "comparisons": {
+                "adaptive_hq_vs_turboquant": {
+                  "baseline_method": "TurboQuant-paper",
+                  "candidate_method": "AdaptiveHQ",
+                  "n_paired_repeats": 5,
+                  "raw_paired_ratios": [
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 0.8390079736709595,
+                      "candidate_order_position": 0,
+                      "candidate_speedup_x": 0.5897078058994836,
+                      "candidate_value": 1.422752022743225,
+                      "repeat": 0
+                    },
+                    {
+                      "baseline_order_position": 0,
+                      "baseline_value": 0.7175040245056152,
+                      "candidate_order_position": 2,
+                      "candidate_speedup_x": 0.48965955544158735,
+                      "candidate_value": 1.4653120040893555,
+                      "repeat": 1
+                    },
+                    {
+                      "baseline_order_position": 2,
+                      "baseline_value": 0.8059840202331543,
+                      "candidate_order_position": 1,
+                      "candidate_speedup_x": 0.5836268335871041,
+                      "candidate_value": 1.38099205493927,
+                      "repeat": 2
+                    },
+                    {
+                      "baseline_order_position": 2,
+                      "baseline_value": 0.8122239708900452,
+                      "candidate_order_position": 1,
+                      "candidate_speedup_x": 0.562868675209594,
+                      "candidate_value": 1.4430079460144043,
+                      "repeat": 3
+                    },
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 0.7929919958114624,
+                      "candidate_order_position": 0,
+                      "candidate_speedup_x": 0.5648090961779499,
+                      "candidate_value": 1.4040000438690186,
+                      "repeat": 4
+                    }
+                  ],
+                  "within_process_summary": {
+                    "bootstrap_median_95ci": [
+                      0.48965955544158735,
+                      0.5897078058994836
+                    ],
+                    "bootstrap_resamples": 100,
+                    "iqr": 0.02075815837751005,
+                    "median": 0.5648090961779499,
+                    "n": 5,
+                    "p5": 0.5043013793951887,
+                    "p95": 0.5884916114370077,
+                    "q1": 0.562868675209594,
+                    "q3": 0.5836268335871041,
+                    "unit": "candidate_speedup_x"
+                  }
+                },
+                "hq_vs_turboquant": {
+                  "baseline_method": "TurboQuant-paper",
+                  "candidate_method": "HQ",
+                  "n_paired_repeats": 5,
+                  "raw_paired_ratios": [
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 0.8390079736709595,
+                      "candidate_order_position": 2,
+                      "candidate_speedup_x": 3.3523844227044552,
+                      "candidate_value": 0.2502720057964325,
+                      "repeat": 0
+                    },
+                    {
+                      "baseline_order_position": 0,
+                      "baseline_value": 0.7175040245056152,
+                      "candidate_order_position": 1,
+                      "candidate_speedup_x": 3.179072879128378,
+                      "candidate_value": 0.22569599747657776,
+                      "repeat": 1
+                    },
+                    {
+                      "baseline_order_position": 2,
+                      "baseline_value": 0.8059840202331543,
+                      "candidate_order_position": 0,
+                      "candidate_speedup_x": 3.9998411560408957,
+                      "candidate_value": 0.20150400698184967,
+                      "repeat": 2
+                    },
+                    {
+                      "baseline_order_position": 2,
+                      "baseline_value": 0.8122239708900452,
+                      "candidate_order_position": 0,
+                      "candidate_speedup_x": 3.41431258927289,
+                      "candidate_value": 0.23788799345493317,
+                      "repeat": 3
+                    },
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 0.7929919958114624,
+                      "candidate_order_position": 2,
+                      "candidate_speedup_x": 3.2900955415528816,
+                      "candidate_value": 0.24102400243282318,
+                      "repeat": 4
+                    }
+                  ],
+                  "within_process_summary": {
+                    "bootstrap_median_95ci": [
+                      3.2318086437800173,
+                      3.9998411560408957
+                    ],
+                    "bootstrap_resamples": 100,
+                    "iqr": 0.12421704772000819,
+                    "median": 3.3523844227044552,
+                    "n": 5,
+                    "p5": 3.201277411613279,
+                    "p95": 3.882735442687294,
+                    "q1": 3.2900955415528816,
+                    "q3": 3.41431258927289,
+                    "unit": "candidate_speedup_x"
+                  }
+                }
+              },
+              "inferential_unit": "independently_launched_fresh_process",
+              "interpretation": "greater_than_1_means_candidate_is_faster",
+              "pairing_unit": "same_counterbalanced_repeat_within_one_process",
+              "ratio_definition": "baseline_latency / candidate_latency",
+              "source_value_key": "elapsed_ms_per_call",
+              "source_value_unit": "ms_per_call",
+              "within_process_ci_warning": "technical-repeat bootstrap intervals are descriptive only; do not pool repeats across processes as independent samples"
+            },
+            "raw_paired_repeats": [
+              {
+                "order": [
+                  "AdaptiveHQ",
+                  "TurboQuant-paper",
+                  "HQ"
+                ],
+                "repeat": 0,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 1.422752022743225,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.8390079736709595,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.2502720057964325,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "TurboQuant-paper",
+                  "HQ",
+                  "AdaptiveHQ"
+                ],
+                "repeat": 1,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.7175040245056152,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.22569599747657776,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 1.4653120040893555,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "HQ",
+                  "AdaptiveHQ",
+                  "TurboQuant-paper"
+                ],
+                "repeat": 2,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.20150400698184967,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 1.38099205493927,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.8059840202331543,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "HQ",
+                  "AdaptiveHQ",
+                  "TurboQuant-paper"
+                ],
+                "repeat": 3,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.23788799345493317,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 1.4430079460144043,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.8122239708900452,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "AdaptiveHQ",
+                  "TurboQuant-paper",
+                  "HQ"
+                ],
+                "repeat": 4,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 1.4040000438690186,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.7929919958114624,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.24102400243282318,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 2
+                  }
+                ]
+              }
+            ],
+            "summary": {
+              "AdaptiveHQ": {
+                "bootstrap_median_95ci": [
+                  1.38099205493927,
+                  1.4653120040893555
+                ],
+                "bootstrap_resamples": 100,
+                "iqr": 0.03900790214538574,
+                "median": 1.422752022743225,
+                "n": 5,
+                "p5": 1.3855936527252197,
+                "p95": 1.4608511924743652,
+                "q1": 1.4040000438690186,
+                "q3": 1.4430079460144043,
+                "unit": "ms_per_call"
+              },
+              "HQ": {
+                "bootstrap_median_95ci": [
+                  0.20150400698184967,
+                  0.2502720057964325
+                ],
+                "bootstrap_resamples": 100,
+                "iqr": 0.015328004956245422,
+                "median": 0.23788799345493317,
+                "n": 5,
+                "p5": 0.2063424050807953,
+                "p95": 0.2484224051237106,
+                "q1": 0.22569599747657776,
+                "q3": 0.24102400243282318,
+                "unit": "ms_per_call"
+              },
+              "TurboQuant-paper": {
+                "bootstrap_median_95ci": [
+                  0.7175040245056152,
+                  0.8390079736709595
+                ],
+                "bootstrap_resamples": 100,
+                "iqr": 0.019231975078582764,
+                "median": 0.8059840202331543,
+                "n": 5,
+                "p5": 0.7326016187667846,
+                "p95": 0.8336511731147765,
+                "q1": 0.7929919958114624,
+                "q3": 0.8122239708900452,
+                "unit": "ms_per_call"
+              }
+            },
+            "timer": "torch.cuda.Event",
+            "timer_completion_barrier": "end_event.synchronize before elapsed_time read",
+            "timer_native_unit": "milliseconds",
+            "warmup_orders": [
+              [
+                "AdaptiveHQ",
+                "TurboQuant-paper",
+                "HQ"
+              ],
+              [
+                "TurboQuant-paper",
+                "HQ",
+                "AdaptiveHQ"
+              ]
+            ]
+          },
+          "warning": "TurboQuant is inherited unfused encode->decode; HayateQuant is fused. Do not treat this category as equal public-API kernel timing."
+        },
+        "tensor": {
+          "device": "cuda:0",
+          "distribution": "independent standard normal",
+          "dtype": "float16",
+          "elements_per_key_value_pair": 2048,
+          "generated_on_device": true,
+          "key_seed": 20260917,
+          "shape": [
+            1,
+            8,
+            1,
+            128
+          ],
+          "value_seed": 20260918
+        },
+        "timed_recipe_sha256": {
+          "AdaptiveHQ": "510ba56bdaee475d145d1bef4e30e4181bd34cf327f0e151856b6717c64c2d9f",
+          "HQ": "4d27e043ea1d45cfec3408a57da59f1d037b9b42005189f6dbff57192b4ceea2",
+          "TurboQuant-paper": "262e08aee7bf835d26f4487617dfcbff98abd247bb08c0aeab7481c4833e0f66"
+        }
+      },
+      "prefill": {
+        "operation_execution_order": [
+          "fake_quant_roundtrip",
+          "roundtrip_explicit_encode_then_decode",
+          "decode_prebuilt_payload",
+          "encode"
+        ],
+        "payload_api": {
+          "decode_prebuilt_payload": {
+            "normalisation": "event elapsed time / 1 inner loop(s)",
+            "paired_speedups": {
+              "comparisons": {
+                "adaptive_hq_vs_turboquant": {
+                  "baseline_method": "TurboQuant-paper",
+                  "candidate_method": "AdaptiveHQ",
+                  "n_paired_repeats": 5,
+                  "raw_paired_ratios": [
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 0.11897599697113037,
+                      "candidate_order_position": 2,
+                      "candidate_speedup_x": 0.4438872619406867,
+                      "candidate_value": 0.2680320143699646,
+                      "repeat": 0
+                    },
+                    {
+                      "baseline_order_position": 0,
+                      "baseline_value": 0.11296000331640244,
+                      "candidate_order_position": 1,
+                      "candidate_speedup_x": 0.47593368636616307,
+                      "candidate_value": 0.23734399676322937,
+                      "repeat": 1
+                    },
+                    {
+                      "baseline_order_position": 2,
+                      "baseline_value": 0.13257600367069244,
+                      "candidate_order_position": 0,
+                      "candidate_speedup_x": 0.5962867331567735,
+                      "candidate_value": 0.22233599424362183,
+                      "repeat": 2
+                    },
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 0.10239999741315842,
+                      "candidate_order_position": 2,
+                      "candidate_speedup_x": 0.33462301984390047,
+                      "candidate_value": 0.3060159981250763,
+                      "repeat": 3
+                    },
+                    {
+                      "baseline_order_position": 0,
+                      "baseline_value": 0.11827199906110764,
+                      "candidate_order_position": 1,
+                      "candidate_speedup_x": 0.4522207194600722,
+                      "candidate_value": 0.26153600215911865,
+                      "repeat": 4
+                    }
+                  ],
+                  "within_process_summary": {
+                    "bootstrap_median_95ci": [
+                      0.33462301984390047,
+                      0.5391190359312342
+                    ],
+                    "bootstrap_resamples": 100,
+                    "iqr": 0.032046424425476394,
+                    "median": 0.4522207194600722,
+                    "n": 5,
+                    "p5": 0.3564758682632577,
+                    "p95": 0.5722161237986514,
+                    "q1": 0.4438872619406867,
+                    "q3": 0.47593368636616307,
+                    "unit": "candidate_speedup_x"
+                  }
+                },
+                "hq_vs_turboquant": {
+                  "baseline_method": "TurboQuant-paper",
+                  "candidate_method": "HQ",
+                  "n_paired_repeats": 5,
+                  "raw_paired_ratios": [
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 0.11897599697113037,
+                      "candidate_order_position": 0,
+                      "candidate_speedup_x": 1.0081344892457555,
+                      "candidate_value": 0.11801599711179733,
+                      "repeat": 0
+                    },
+                    {
+                      "baseline_order_position": 0,
+                      "baseline_value": 0.11296000331640244,
+                      "candidate_order_position": 2,
+                      "candidate_speedup_x": 1.0105926276340842,
+                      "candidate_value": 0.11177600175142288,
+                      "repeat": 1
+                    },
+                    {
+                      "baseline_order_position": 2,
+                      "baseline_value": 0.13257600367069244,
+                      "candidate_order_position": 1,
+                      "candidate_speedup_x": 0.9237458604424,
+                      "candidate_value": 0.14351999759674072,
+                      "repeat": 2
+                    },
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 0.10239999741315842,
+                      "candidate_order_position": 0,
+                      "candidate_speedup_x": 0.9098663391899585,
+                      "candidate_value": 0.1125440001487732,
+                      "repeat": 3
+                    },
+                    {
+                      "baseline_order_position": 0,
+                      "baseline_value": 0.11827199906110764,
+                      "candidate_order_position": 2,
+                      "candidate_speedup_x": 1.0713043516992622,
+                      "candidate_value": 0.1103999987244606,
+                      "repeat": 4
+                    }
+                  ],
+                  "within_process_summary": {
+                    "bootstrap_median_95ci": [
+                      0.9098663391899585,
+                      1.0713043516992622
+                    ],
+                    "bootstrap_resamples": 100,
+                    "iqr": 0.08684676719168416,
+                    "median": 1.0081344892457555,
+                    "n": 5,
+                    "p5": 0.9126422434404469,
+                    "p95": 1.0591620068862266,
+                    "q1": 0.9237458604424,
+                    "q3": 1.0105926276340842,
+                    "unit": "candidate_speedup_x"
+                  }
+                }
+              },
+              "inferential_unit": "independently_launched_fresh_process",
+              "interpretation": "greater_than_1_means_candidate_is_faster",
+              "pairing_unit": "same_counterbalanced_repeat_within_one_process",
+              "ratio_definition": "baseline_latency / candidate_latency",
+              "source_value_key": "elapsed_ms_per_call",
+              "source_value_unit": "ms_per_call",
+              "within_process_ci_warning": "technical-repeat bootstrap intervals are descriptive only; do not pool repeats across processes as independent samples"
+            },
+            "raw_paired_repeats": [
+              {
+                "order": [
+                  "HQ",
+                  "TurboQuant-paper",
+                  "AdaptiveHQ"
+                ],
+                "repeat": 0,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.11801599711179733,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.11897599697113037,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.2680320143699646,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "TurboQuant-paper",
+                  "AdaptiveHQ",
+                  "HQ"
+                ],
+                "repeat": 1,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.11296000331640244,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.23734399676322937,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.11177600175142288,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "AdaptiveHQ",
+                  "HQ",
+                  "TurboQuant-paper"
+                ],
+                "repeat": 2,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.22233599424362183,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.14351999759674072,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.13257600367069244,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "HQ",
+                  "TurboQuant-paper",
+                  "AdaptiveHQ"
+                ],
+                "repeat": 3,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.1125440001487732,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.10239999741315842,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.3060159981250763,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "TurboQuant-paper",
+                  "AdaptiveHQ",
+                  "HQ"
+                ],
+                "repeat": 4,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.11827199906110764,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.26153600215911865,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.1103999987244606,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 2
+                  }
+                ]
+              }
+            ],
+            "summary": {
+              "AdaptiveHQ": {
+                "bootstrap_median_95ci": [
+                  0.22233599424362183,
+                  0.3060159981250763
+                ],
+                "bootstrap_resamples": 100,
+                "iqr": 0.03068801760673523,
+                "median": 0.26153600215911865,
+                "n": 5,
+                "p5": 0.22533759474754333,
+                "p95": 0.298419201374054,
+                "q1": 0.23734399676322937,
+                "q3": 0.2680320143699646,
+                "unit": "ms_per_call"
+              },
+              "HQ": {
+                "bootstrap_median_95ci": [
+                  0.1103999987244606,
+                  0.14351999759674072
+                ],
+                "bootstrap_resamples": 100,
+                "iqr": 0.006239995360374451,
+                "median": 0.1125440001487732,
+                "n": 5,
+                "p5": 0.11067519932985306,
+                "p95": 0.13841919749975204,
+                "q1": 0.11177600175142288,
+                "q3": 0.11801599711179733,
+                "unit": "ms_per_call"
+              },
+              "TurboQuant-paper": {
+                "bootstrap_median_95ci": [
+                  0.10239999741315842,
+                  0.11897599697113037
+                ],
+                "bootstrap_resamples": 100,
+                "iqr": 0.006015993654727936,
+                "median": 0.11827199906110764,
+                "n": 5,
+                "p5": 0.10451199859380722,
+                "p95": 0.12985600233078,
+                "q1": 0.11296000331640244,
+                "q3": 0.11897599697113037,
+                "unit": "ms_per_call"
+              }
+            },
+            "timer": "torch.cuda.Event",
+            "timer_completion_barrier": "end_event.synchronize before elapsed_time read",
+            "timer_native_unit": "milliseconds",
+            "warmup_orders": [
+              [
+                "HQ",
+                "TurboQuant-paper",
+                "AdaptiveHQ"
+              ],
+              [
+                "TurboQuant-paper",
+                "AdaptiveHQ",
+                "HQ"
+              ]
+            ]
+          },
+          "encode": {
+            "normalisation": "event elapsed time / 1 inner loop(s)",
+            "paired_speedups": {
+              "comparisons": {
+                "adaptive_hq_vs_turboquant": {
+                  "baseline_method": "TurboQuant-paper",
+                  "candidate_method": "AdaptiveHQ",
+                  "n_paired_repeats": 5,
+                  "raw_paired_ratios": [
+                    {
+                      "baseline_order_position": 2,
+                      "baseline_value": 0.7453759908676147,
+                      "candidate_order_position": 0,
+                      "candidate_speedup_x": 0.6157282686715287,
+                      "candidate_value": 1.2105599641799927,
+                      "repeat": 0
+                    },
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 0.6879680156707764,
+                      "candidate_order_position": 2,
+                      "candidate_speedup_x": 0.5821396688787815,
+                      "candidate_value": 1.1817920207977295,
+                      "repeat": 1
+                    },
+                    {
+                      "baseline_order_position": 0,
+                      "baseline_value": 0.7412160038948059,
+                      "candidate_order_position": 1,
+                      "candidate_speedup_x": 0.6319192272129219,
+                      "candidate_value": 1.1729600429534912,
+                      "repeat": 2
+                    },
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 0.723583996295929,
+                      "candidate_order_position": 2,
+                      "candidate_speedup_x": 0.5969219078646391,
+                      "candidate_value": 1.2121920585632324,
+                      "repeat": 3
+                    },
+                    {
+                      "baseline_order_position": 0,
+                      "baseline_value": 0.7327039837837219,
+                      "candidate_order_position": 1,
+                      "candidate_speedup_x": 0.611222301103804,
+                      "candidate_value": 1.1987520456314087,
+                      "repeat": 4
+                    }
+                  ],
+                  "within_process_summary": {
+                    "bootstrap_median_95ci": [
+                      0.5821396688787815,
+                      0.6319192272129219
+                    ],
+                    "bootstrap_resamples": 100,
+                    "iqr": 0.018806360806889688,
+                    "median": 0.611222301103804,
+                    "n": 5,
+                    "p5": 0.5850961166759531,
+                    "p95": 0.6286810355046433,
+                    "q1": 0.5969219078646391,
+                    "q3": 0.6157282686715287,
+                    "unit": "candidate_speedup_x"
+                  }
+                },
+                "hq_vs_turboquant": {
+                  "baseline_method": "TurboQuant-paper",
+                  "candidate_method": "HQ",
+                  "n_paired_repeats": 5,
+                  "raw_paired_ratios": [
+                    {
+                      "baseline_order_position": 2,
+                      "baseline_value": 0.7453759908676147,
+                      "candidate_order_position": 1,
+                      "candidate_speedup_x": 0.8695311221248005,
+                      "candidate_value": 0.8572160005569458,
+                      "repeat": 0
+                    },
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 0.6879680156707764,
+                      "candidate_order_position": 0,
+                      "candidate_speedup_x": 0.8008269294934787,
+                      "candidate_value": 0.8590720295906067,
+                      "repeat": 1
+                    },
+                    {
+                      "baseline_order_position": 0,
+                      "baseline_value": 0.7412160038948059,
+                      "candidate_order_position": 2,
+                      "candidate_speedup_x": 0.8640653328653849,
+                      "candidate_value": 0.8578240275382996,
+                      "repeat": 2
+                    },
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 0.723583996295929,
+                      "candidate_order_position": 0,
+                      "candidate_speedup_x": 0.8912889218133221,
+                      "candidate_value": 0.8118399977684021,
+                      "repeat": 3
+                    },
+                    {
+                      "baseline_order_position": 0,
+                      "baseline_value": 0.7327039837837219,
+                      "candidate_order_position": 2,
+                      "candidate_speedup_x": 0.8572765657422947,
+                      "candidate_value": 0.8546879887580872,
+                      "repeat": 4
+                    }
+                  ],
+                  "within_process_summary": {
+                    "bootstrap_median_95ci": [
+                      0.8276405067116663,
+                      0.8912889218133221
+                    ],
+                    "bootstrap_resamples": 100,
+                    "iqr": 0.012254556382505832,
+                    "median": 0.8640653328653849,
+                    "n": 5,
+                    "p5": 0.812116856743242,
+                    "p95": 0.8869373618756178,
+                    "q1": 0.8572765657422947,
+                    "q3": 0.8695311221248005,
+                    "unit": "candidate_speedup_x"
+                  }
+                }
+              },
+              "inferential_unit": "independently_launched_fresh_process",
+              "interpretation": "greater_than_1_means_candidate_is_faster",
+              "pairing_unit": "same_counterbalanced_repeat_within_one_process",
+              "ratio_definition": "baseline_latency / candidate_latency",
+              "source_value_key": "elapsed_ms_per_call",
+              "source_value_unit": "ms_per_call",
+              "within_process_ci_warning": "technical-repeat bootstrap intervals are descriptive only; do not pool repeats across processes as independent samples"
+            },
+            "raw_paired_repeats": [
+              {
+                "order": [
+                  "AdaptiveHQ",
+                  "HQ",
+                  "TurboQuant-paper"
+                ],
+                "repeat": 0,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 1.2105599641799927,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.8572160005569458,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.7453759908676147,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "HQ",
+                  "TurboQuant-paper",
+                  "AdaptiveHQ"
+                ],
+                "repeat": 1,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.8590720295906067,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.6879680156707764,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 1.1817920207977295,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "TurboQuant-paper",
+                  "AdaptiveHQ",
+                  "HQ"
+                ],
+                "repeat": 2,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.7412160038948059,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 1.1729600429534912,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.8578240275382996,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "HQ",
+                  "TurboQuant-paper",
+                  "AdaptiveHQ"
+                ],
+                "repeat": 3,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.8118399977684021,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.723583996295929,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 1.2121920585632324,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "TurboQuant-paper",
+                  "AdaptiveHQ",
+                  "HQ"
+                ],
+                "repeat": 4,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.7327039837837219,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 1.1987520456314087,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.8546879887580872,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 2
+                  }
+                ]
+              }
+            ],
+            "summary": {
+              "AdaptiveHQ": {
+                "bootstrap_median_95ci": [
+                  1.1729600429534912,
+                  1.2121920585632324
+                ],
+                "bootstrap_resamples": 100,
+                "iqr": 0.028767943382263184,
+                "median": 1.1987520456314087,
+                "n": 5,
+                "p5": 1.174726438522339,
+                "p95": 1.2118656396865846,
+                "q1": 1.1817920207977295,
+                "q3": 1.2105599641799927,
+                "unit": "ms_per_call"
+              },
+              "HQ": {
+                "bootstrap_median_95ci": [
+                  0.8118399977684021,
+                  0.8590720295906067
+                ],
+                "bootstrap_resamples": 100,
+                "iqr": 0.0031360387802124023,
+                "median": 0.8572160005569458,
+                "n": 5,
+                "p5": 0.8204095959663391,
+                "p95": 0.8588224291801453,
+                "q1": 0.8546879887580872,
+                "q3": 0.8578240275382996,
+                "unit": "ms_per_call"
+              },
+              "TurboQuant-paper": {
+                "bootstrap_median_95ci": [
+                  0.6879680156707764,
+                  0.7453759908676147
+                ],
+                "bootstrap_resamples": 100,
+                "iqr": 0.017632007598876953,
+                "median": 0.7327039837837219,
+                "n": 5,
+                "p5": 0.6950912117958069,
+                "p95": 0.7445439934730529,
+                "q1": 0.723583996295929,
+                "q3": 0.7412160038948059,
+                "unit": "ms_per_call"
+              }
+            },
+            "timer": "torch.cuda.Event",
+            "timer_completion_barrier": "end_event.synchronize before elapsed_time read",
+            "timer_native_unit": "milliseconds",
+            "warmup_orders": [
+              [
+                "HQ",
+                "AdaptiveHQ",
+                "TurboQuant-paper"
+              ],
+              [
+                "AdaptiveHQ",
+                "TurboQuant-paper",
+                "HQ"
+              ]
+            ]
+          },
+          "roundtrip_explicit_encode_then_decode": {
+            "normalisation": "event elapsed time / 1 inner loop(s)",
+            "paired_speedups": {
+              "comparisons": {
+                "adaptive_hq_vs_turboquant": {
+                  "baseline_method": "TurboQuant-paper",
+                  "candidate_method": "AdaptiveHQ",
+                  "n_paired_repeats": 5,
+                  "raw_paired_ratios": [
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 0.8308159708976746,
+                      "candidate_order_position": 2,
+                      "candidate_speedup_x": 0.535606710348951,
+                      "candidate_value": 1.5511679649353027,
+                      "repeat": 0
+                    },
+                    {
+                      "baseline_order_position": 0,
+                      "baseline_value": 0.880511999130249,
+                      "candidate_order_position": 1,
+                      "candidate_speedup_x": 0.5586551319364188,
+                      "candidate_value": 1.5761280059814453,
+                      "repeat": 1
+                    },
+                    {
+                      "baseline_order_position": 2,
+                      "baseline_value": 0.9202880263328552,
+                      "candidate_order_position": 0,
+                      "candidate_speedup_x": 0.6254948398270151,
+                      "candidate_value": 1.471295952796936,
+                      "repeat": 2
+                    },
+                    {
+                      "baseline_order_position": 0,
+                      "baseline_value": 0.7062720060348511,
+                      "candidate_order_position": 1,
+                      "candidate_speedup_x": 0.44964858486019516,
+                      "candidate_value": 1.5707199573516846,
+                      "repeat": 3
+                    },
+                    {
+                      "baseline_order_position": 2,
+                      "baseline_value": 0.8889600038528442,
+                      "candidate_order_position": 0,
+                      "candidate_speedup_x": 0.5589762310162769,
+                      "candidate_value": 1.5903359651565552,
+                      "repeat": 4
+                    }
+                  ],
+                  "within_process_summary": {
+                    "bootstrap_median_95ci": [
+                      0.44964858486019516,
+                      0.6254948398270151
+                    ],
+                    "bootstrap_resamples": 100,
+                    "iqr": 0.023369520667325894,
+                    "median": 0.5586551319364188,
+                    "n": 5,
+                    "p5": 0.4668402099579464,
+                    "p95": 0.6121911180648676,
+                    "q1": 0.535606710348951,
+                    "q3": 0.5589762310162769,
+                    "unit": "candidate_speedup_x"
+                  }
+                },
+                "hq_vs_turboquant": {
+                  "baseline_method": "TurboQuant-paper",
+                  "candidate_method": "HQ",
+                  "n_paired_repeats": 5,
+                  "raw_paired_ratios": [
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 0.8308159708976746,
+                      "candidate_order_position": 0,
+                      "candidate_speedup_x": 0.8196684862078403,
+                      "candidate_value": 1.0135999917984009,
+                      "repeat": 0
+                    },
+                    {
+                      "baseline_order_position": 0,
+                      "baseline_value": 0.880511999130249,
+                      "candidate_order_position": 2,
+                      "candidate_speedup_x": 0.9223652471573152,
+                      "candidate_value": 0.9546239972114563,
+                      "repeat": 1
+                    },
+                    {
+                      "baseline_order_position": 2,
+                      "baseline_value": 0.9202880263328552,
+                      "candidate_order_position": 1,
+                      "candidate_speedup_x": 0.9428253475338835,
+                      "candidate_value": 0.976095974445343,
+                      "repeat": 2
+                    },
+                    {
+                      "baseline_order_position": 0,
+                      "baseline_value": 0.7062720060348511,
+                      "candidate_order_position": 2,
+                      "candidate_speedup_x": 0.7353813265188396,
+                      "candidate_value": 0.9604160189628601,
+                      "repeat": 3
+                    },
+                    {
+                      "baseline_order_position": 2,
+                      "baseline_value": 0.8889600038528442,
+                      "candidate_order_position": 1,
+                      "candidate_speedup_x": 0.9314646009358942,
+                      "candidate_value": 0.954367995262146,
+                      "repeat": 4
+                    }
+                  ],
+                  "within_process_summary": {
+                    "bootstrap_median_95ci": [
+                      0.7353813265188396,
+                      0.9428253475338835
+                    ],
+                    "bootstrap_resamples": 100,
+                    "iqr": 0.11179611472805395,
+                    "median": 0.9223652471573152,
+                    "n": 5,
+                    "p5": 0.7522387584566397,
+                    "p95": 0.9405531982142856,
+                    "q1": 0.8196684862078403,
+                    "q3": 0.9314646009358942,
+                    "unit": "candidate_speedup_x"
+                  }
+                }
+              },
+              "inferential_unit": "independently_launched_fresh_process",
+              "interpretation": "greater_than_1_means_candidate_is_faster",
+              "pairing_unit": "same_counterbalanced_repeat_within_one_process",
+              "ratio_definition": "baseline_latency / candidate_latency",
+              "source_value_key": "elapsed_ms_per_call",
+              "source_value_unit": "ms_per_call",
+              "within_process_ci_warning": "technical-repeat bootstrap intervals are descriptive only; do not pool repeats across processes as independent samples"
+            },
+            "raw_paired_repeats": [
+              {
+                "order": [
+                  "HQ",
+                  "TurboQuant-paper",
+                  "AdaptiveHQ"
+                ],
+                "repeat": 0,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 1.0135999917984009,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.8308159708976746,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 1.5511679649353027,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "TurboQuant-paper",
+                  "AdaptiveHQ",
+                  "HQ"
+                ],
+                "repeat": 1,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.880511999130249,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 1.5761280059814453,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.9546239972114563,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "AdaptiveHQ",
+                  "HQ",
+                  "TurboQuant-paper"
+                ],
+                "repeat": 2,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 1.471295952796936,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.976095974445343,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.9202880263328552,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "TurboQuant-paper",
+                  "AdaptiveHQ",
+                  "HQ"
+                ],
+                "repeat": 3,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.7062720060348511,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 1.5707199573516846,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.9604160189628601,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "AdaptiveHQ",
+                  "HQ",
+                  "TurboQuant-paper"
+                ],
+                "repeat": 4,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 1.5903359651565552,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.954367995262146,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.8889600038528442,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 2
+                  }
+                ]
+              }
+            ],
+            "summary": {
+              "AdaptiveHQ": {
+                "bootstrap_median_95ci": [
+                  1.471295952796936,
+                  1.583587184548378
+                ],
+                "bootstrap_resamples": 100,
+                "iqr": 0.024960041046142578,
+                "median": 1.5707199573516846,
+                "n": 5,
+                "p5": 1.4872703552246094,
+                "p95": 1.5874943733215332,
+                "q1": 1.5511679649353027,
+                "q3": 1.5761280059814453,
+                "unit": "ms_per_call"
+              },
+              "HQ": {
+                "bootstrap_median_95ci": [
+                  0.954367995262146,
+                  1.0135999917984009
+                ],
+                "bootstrap_resamples": 100,
+                "iqr": 0.02147197723388672,
+                "median": 0.9604160189628601,
+                "n": 5,
+                "p5": 0.9544191956520081,
+                "p95": 1.0060991883277892,
+                "q1": 0.9546239972114563,
+                "q3": 0.976095974445343,
+                "unit": "ms_per_call"
+              },
+              "TurboQuant-paper": {
+                "bootstrap_median_95ci": [
+                  0.7062720060348511,
+                  0.9054072156548503
+                ],
+                "bootstrap_resamples": 100,
+                "iqr": 0.05814403295516968,
+                "median": 0.880511999130249,
+                "n": 5,
+                "p5": 0.7311807990074158,
+                "p95": 0.914022421836853,
+                "q1": 0.8308159708976746,
+                "q3": 0.8889600038528442,
+                "unit": "ms_per_call"
+              }
+            },
+            "timer": "torch.cuda.Event",
+            "timer_completion_barrier": "end_event.synchronize before elapsed_time read",
+            "timer_native_unit": "milliseconds",
+            "warmup_orders": [
+              [
+                "TurboQuant-paper",
+                "AdaptiveHQ",
+                "HQ"
+              ],
+              [
+                "AdaptiveHQ",
+                "HQ",
+                "TurboQuant-paper"
+              ]
+            ]
+          }
+        },
+        "quality_query": {
+          "dtype": "float16",
+          "generated_on_device": true,
+          "gqa_kv_repeat_factor": 4,
+          "seed": 20260818,
+          "shape": [
+            1,
+            32,
+            8,
+            128
+          ]
+        },
+        "research_fake_quant": {
+          "fake_quant_roundtrip": {
+            "normalisation": "event elapsed time / 1 inner loop(s)",
+            "paired_speedups": {
+              "comparisons": {
+                "adaptive_hq_vs_turboquant": {
+                  "baseline_method": "TurboQuant-paper",
+                  "candidate_method": "AdaptiveHQ",
+                  "n_paired_repeats": 5,
+                  "raw_paired_ratios": [
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 1.003999948501587,
+                      "candidate_order_position": 0,
+                      "candidate_speedup_x": 0.3970814930203261,
+                      "candidate_value": 2.5284481048583984,
+                      "repeat": 0
+                    },
+                    {
+                      "baseline_order_position": 0,
+                      "baseline_value": 0.8880959749221802,
+                      "candidate_order_position": 2,
+                      "candidate_speedup_x": 0.5074602191239063,
+                      "candidate_value": 1.7500799894332886,
+                      "repeat": 1
+                    },
+                    {
+                      "baseline_order_position": 2,
+                      "baseline_value": 0.9379839897155762,
+                      "candidate_order_position": 1,
+                      "candidate_speedup_x": 0.56111332972017,
+                      "candidate_value": 1.6716480255126953,
+                      "repeat": 2
+                    },
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 0.8184639811515808,
+                      "candidate_order_position": 2,
+                      "candidate_speedup_x": 0.5090557978704513,
+                      "candidate_value": 1.607807993888855,
+                      "repeat": 3
+                    },
+                    {
+                      "baseline_order_position": 0,
+                      "baseline_value": 0.8990079760551453,
+                      "candidate_order_position": 1,
+                      "candidate_speedup_x": 0.5533909592569174,
+                      "candidate_value": 1.6245440244674683,
+                      "repeat": 4
+                    }
+                  ],
+                  "within_process_summary": {
+                    "bootstrap_median_95ci": [
+                      0.3970814930203261,
+                      0.5574452037501251
+                    ],
+                    "bootstrap_resamples": 100,
+                    "iqr": 0.04593074013301113,
+                    "median": 0.5090557978704513,
+                    "n": 5,
+                    "p5": 0.4191572382410422,
+                    "p95": 0.5595688556275195,
+                    "q1": 0.5074602191239063,
+                    "q3": 0.5533909592569174,
+                    "unit": "candidate_speedup_x"
+                  }
+                },
+                "hq_vs_turboquant": {
+                  "baseline_method": "TurboQuant-paper",
+                  "candidate_method": "HQ",
+                  "n_paired_repeats": 5,
+                  "raw_paired_ratios": [
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 1.003999948501587,
+                      "candidate_order_position": 2,
+                      "candidate_speedup_x": 3.111364249904388,
+                      "candidate_value": 0.3226880133152008,
+                      "repeat": 0
+                    },
+                    {
+                      "baseline_order_position": 0,
+                      "baseline_value": 0.8880959749221802,
+                      "candidate_order_position": 1,
+                      "candidate_speedup_x": 3.2214740171276866,
+                      "candidate_value": 0.2756800055503845,
+                      "repeat": 1
+                    },
+                    {
+                      "baseline_order_position": 2,
+                      "baseline_value": 0.9379839897155762,
+                      "candidate_order_position": 0,
+                      "candidate_speedup_x": 3.8989092574926065,
+                      "candidate_value": 0.24057599902153015,
+                      "repeat": 2
+                    },
+                    {
+                      "baseline_order_position": 1,
+                      "baseline_value": 0.8184639811515808,
+                      "candidate_order_position": 0,
+                      "candidate_speedup_x": 2.932805943378233,
+                      "candidate_value": 0.27907198667526245,
+                      "repeat": 3
+                    },
+                    {
+                      "baseline_order_position": 0,
+                      "baseline_value": 0.8990079760551453,
+                      "candidate_order_position": 2,
+                      "candidate_speedup_x": 3.699499466243267,
+                      "candidate_value": 0.24300800263881683,
+                      "repeat": 4
+                    }
+                  ],
+                  "within_process_summary": {
+                    "bootstrap_median_95ci": [
+                      2.932805943378233,
+                      3.8989092574926065
+                    ],
+                    "bootstrap_resamples": 100,
+                    "iqr": 0.5881352163388791,
+                    "median": 3.2214740171276866,
+                    "n": 5,
+                    "p5": 2.9685176046834645,
+                    "p95": 3.8590272992427384,
+                    "q1": 3.111364249904388,
+                    "q3": 3.699499466243267,
+                    "unit": "candidate_speedup_x"
+                  }
+                }
+              },
+              "inferential_unit": "independently_launched_fresh_process",
+              "interpretation": "greater_than_1_means_candidate_is_faster",
+              "pairing_unit": "same_counterbalanced_repeat_within_one_process",
+              "ratio_definition": "baseline_latency / candidate_latency",
+              "source_value_key": "elapsed_ms_per_call",
+              "source_value_unit": "ms_per_call",
+              "within_process_ci_warning": "technical-repeat bootstrap intervals are descriptive only; do not pool repeats across processes as independent samples"
+            },
+            "raw_paired_repeats": [
+              {
+                "order": [
+                  "AdaptiveHQ",
+                  "TurboQuant-paper",
+                  "HQ"
+                ],
+                "repeat": 0,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 2.5284481048583984,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 1.003999948501587,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.3226880133152008,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "TurboQuant-paper",
+                  "HQ",
+                  "AdaptiveHQ"
+                ],
+                "repeat": 1,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.8880959749221802,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.2756800055503845,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 1.7500799894332886,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "HQ",
+                  "AdaptiveHQ",
+                  "TurboQuant-paper"
+                ],
+                "repeat": 2,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.24057599902153015,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 1.6716480255126953,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.9379839897155762,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "HQ",
+                  "TurboQuant-paper",
+                  "AdaptiveHQ"
+                ],
+                "repeat": 3,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.27907198667526245,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.8184639811515808,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 1.607807993888855,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 2
+                  }
+                ]
+              },
+              {
+                "order": [
+                  "TurboQuant-paper",
+                  "AdaptiveHQ",
+                  "HQ"
+                ],
+                "repeat": 4,
+                "samples": [
+                  {
+                    "elapsed_ms_per_call": 0.8990079760551453,
+                    "inner_loops": 1,
+                    "method": "TurboQuant-paper",
+                    "order_position": 0
+                  },
+                  {
+                    "elapsed_ms_per_call": 1.6245440244674683,
+                    "inner_loops": 1,
+                    "method": "AdaptiveHQ",
+                    "order_position": 1
+                  },
+                  {
+                    "elapsed_ms_per_call": 0.24300800263881683,
+                    "inner_loops": 1,
+                    "method": "HQ",
+                    "order_position": 2
+                  }
+                ]
+              }
+            ],
+            "summary": {
+              "AdaptiveHQ": {
+                "bootstrap_median_95ci": [
+                  1.607807993888855,
+                  2.5284481048583984
+                ],
+                "bootstrap_resamples": 100,
+                "iqr": 0.1255359649658203,
+                "median": 1.6716480255126953,
+                "n": 5,
+                "p5": 1.6111552000045777,
+                "p95": 2.3727744817733765,
+                "q1": 1.6245440244674683,
+                "q3": 1.7500799894332886,
+                "unit": "ms_per_call"
+              },
+              "HQ": {
+                "bootstrap_median_95ci": [
+                  0.24057599902153015,
+                  0.3226880133152008
+                ],
+                "bootstrap_resamples": 100,
+                "iqr": 0.03606398403644562,
+                "median": 0.2756800055503845,
+                "n": 5,
+                "p5": 0.2410623997449875,
+                "p95": 0.31396480798721316,
+                "q1": 0.24300800263881683,
+                "q3": 0.27907198667526245,
+                "unit": "ms_per_call"
+              },
+              "TurboQuant-paper": {
+                "bootstrap_median_95ci": [
+                  0.8184639811515808,
+                  1.003999948501587
+                ],
+                "bootstrap_resamples": 100,
+                "iqr": 0.049888014793395996,
+                "median": 0.8990079760551453,
+                "n": 5,
+                "p5": 0.8323903799057008,
+                "p95": 0.9907967567443847,
+                "q1": 0.8880959749221802,
+                "q3": 0.9379839897155762,
+                "unit": "ms_per_call"
+              }
+            },
+            "timer": "torch.cuda.Event",
+            "timer_completion_barrier": "end_event.synchronize before elapsed_time read",
+            "timer_native_unit": "milliseconds",
+            "warmup_orders": [
+              [
+                "TurboQuant-paper",
+                "HQ",
+                "AdaptiveHQ"
+              ],
+              [
+                "HQ",
+                "AdaptiveHQ",
+                "TurboQuant-paper"
+              ]
+            ]
+          },
+          "warning": "TurboQuant is inherited unfused encode->decode; HayateQuant is fused. Do not treat this category as equal public-API kernel timing."
+        },
+        "tensor": {
+          "device": "cuda:0",
+          "distribution": "independent standard normal",
+          "dtype": "float16",
+          "elements_per_key_value_pair": 1048576,
+          "generated_on_device": true,
+          "key_seed": 20260816,
+          "shape": [
+            1,
+            8,
+            512,
+            128
+          ],
+          "value_seed": 20260817
+        },
+        "timed_recipe_sha256": {
+          "AdaptiveHQ": "510ba56bdaee475d145d1bef4e30e4181bd34cf327f0e151856b6717c64c2d9f",
+          "HQ": "4d27e043ea1d45cfec3408a57da59f1d037b9b42005189f6dbff57192b4ceea2",
+          "TurboQuant-paper": "262e08aee7bf835d26f4487617dfcbff98abd247bb08c0aeab7481c4833e0f66"
+        }
+      }
+    }
+  },
+  "model": "llama-3.1-8b-instruct",
+  "protocol": {
+    "arguments": {
+      "attention_implementation": "sdpa",
+      "avg_bits": 3,
+      "batch_size": 1,
+      "bootstrap_resamples": 100,
+      "compile_mode": "off",
+      "decode_seq_len": 1,
+      "device": "cuda:0",
+      "dtype": "float16",
+      "e2e_gen_len": 64,
+      "e2e_prompt_len": 4096,
+      "e2e_repeats": 5,
+      "e2e_warmup": 1,
+      "fused_backend": "triton",
+      "local_files_only": true,
+      "micro_inner_loops": 1,
+      "micro_repeats": 5,
+      "micro_seq_len": 512,
+      "micro_warmup": 2,
+      "mode": "micro",
+      "model": "/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct",
+      "output": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/results/smoke/gpu11/a887e6e-gpu11/fair_speed_b3.json",
+      "overwrite": false,
+      "quality_query_len": 8,
+      "recent_tokens": 0,
+      "revision": null,
+      "seed": 20260715,
+      "sink_tokens": 0,
+      "trust_remote_code": false
+    },
+    "average_bits": 3,
+    "comparison_rules": {
+      "baseline_method": "TurboQuant-paper",
+      "directional_speed_claim_allowed": false,
+      "do_not_compare_as_equal_api": [
+        "TurboQuant payload/unfused roundtrip",
+        "HQ/AdaptiveHQ fused fake_quant_roundtrip"
+      ],
+      "formal_inferential_unit": "independently launched fresh process",
+      "method_set_exact": true,
+      "packed_native_hybrid_measured": false,
+      "packed_native_hybrid_must_not_be_called_full_hayatequant": true,
+      "proposal_methods": [
+        "HQ",
+        "AdaptiveHQ"
+      ],
+      "speed_reporting_scope": "descriptive ratio and pointwise nominal CI only",
+      "speedup_ratio": "baseline_latency / candidate_latency",
+      "technical_repeats_must_not_be_pooled_across_processes": true,
+      "timing_pairing_unit": "same counterbalanced repeat"
+    },
+    "compile_runtime_audit": {
+      "compile_all_forbidden": true,
+      "decode_compiled_dispatch_created": false,
+      "matches_requested_mode": true,
+      "prefill_compile_forbidden": true,
+      "requested_mode": "off"
+    },
+    "dtype": "float16",
+    "method_taxonomy": {
+      "AdaptiveHQ": {
+        "fake_quant_implementation": "HayateQuant fused research fake_quant_roundtrip",
+        "proposal_method": true,
+        "proposal_variant": "causal_adaptive",
+        "semantic_role": "causal online-rate-allocation HQ paper proposal"
+      },
+      "HQ": {
+        "fake_quant_implementation": "HayateQuant fused research fake_quant_roundtrip",
+        "proposal_method": true,
+        "proposal_variant": "fixed_global",
+        "semantic_role": "canonical globally fixed HQ paper proposal"
+      },
+      "TurboQuant-paper": {
+        "fake_quant_implementation": "inherited unfused encode_then_decode",
+        "proposal_method": false,
+        "proposal_variant": null,
+        "semantic_role": "existing TurboQuant class; symmetric scalar Beta/L2 reference"
+      }
+    },
+    "model": "/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct",
+    "model_config_commit_hash": null,
+    "model_context_capacity": {
+      "derivation": "config:max_position_embeddings",
+      "original_max_position_embeddings": null,
+      "tokens": 131072
+    },
+    "model_evaluation_role": "development_and_recipe_selection",
+    "model_kv_shape": {
+      "gqa_group_size": 4,
+      "head_dim": 128,
+      "head_dim_derivation": "config:head_dim",
+      "kv_heads_derivation": "config:num_key_value_heads",
+      "num_attention_heads": 32,
+      "num_hidden_layers": 32,
+      "num_key_value_heads": 8
+    },
+    "model_revision_requested": null,
+    "model_type": "llama"
+  },
+  "provenance": {
+    "argv": [
+      "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/benchmark/kvcomp-codec/hayatequant_fair_speed.py",
+      "--model",
+      "/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct",
+      "--local-files-only",
+      "--device",
+      "cuda:0",
+      "--dtype",
+      "float16",
+      "--avg-bits",
+      "3",
+      "--mode",
+      "micro",
+      "--micro-seq-len",
+      "512",
+      "--micro-warmup",
+      "2",
+      "--micro-repeats",
+      "5",
+      "--bootstrap-resamples",
+      "100",
+      "--attention-implementation",
+      "sdpa",
+      "--compile-mode",
+      "off",
+      "--fused-backend",
+      "triton",
+      "--output",
+      "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/results/smoke/gpu11/a887e6e-gpu11/fair_speed_b3.json",
+      "--sink-tokens",
+      "0",
+      "--recent-tokens",
+      "0"
+    ],
+    "cuda_device": {
+      "compute_capability": [
+        10,
+        0
+      ],
+      "current_logical_index": 0,
+      "multi_processor_count": 148,
+      "name": "NVIDIA B200",
+      "requested": "cuda:0",
+      "total_memory_bytes": 191503007744,
+      "uuid_from_torch": "5c2cdd13-9017-19d0-215d-754b79509cea"
+    },
+    "effective_onecomp_environment": {
+      "ONECOMP_COMPILE_CODEC": "0",
+      "ONECOMP_COMPILE_DECODE_ONLY": "0",
+      "ONECOMP_TRITON_CODEC": "1",
+      "ONECOMP_TRITON_PREFILL": "0"
+    },
+    "finished_at_utc": "2026-07-16T03:38:51.231489+00:00",
+    "fresh_process_contract": {
+      "compile_all_allowed": false,
+      "granularity": "one {model, dtype, average bit rate, backend, compile mode} per process",
+      "multiple_average_rates_accepted_by_cli": false,
+      "only_allowed_compile_mode": "decode-only",
+      "reason": "device codebooks, torch.compile/CUDA-graph specialisations, and allocator state are process-global",
+      "required": true
+    },
+    "git": {
+      "branch": "agent/hayate-paper-refresh-20260715",
+      "commit": "a887e6e15a4ac830f058741ff8dac8f9233eabed",
+      "dirty": false,
+      "dirty_paths": [],
+      "repository_root": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness"
+    },
+    "hostname": "kagura-gpu11",
+    "nvidia_smi_after": {
+      "gpus_seen_by_nvidia_smi": [
+        {
+          "clocks.current.graphics": "1965",
+          "clocks.current.memory": "3996",
+          "clocks.current.sm": "1965",
+          "driver_version": "580.126.20",
+          "index": "0",
+          "memory.total": "183359",
+          "memory.used": "1034",
+          "name": "NVIDIA B200",
+          "power.draw": "242.32",
+          "power.limit": "1000.00",
+          "pstate": "P0",
+          "temperature.gpu": "29",
+          "uuid": "GPU-5c2cdd13-9017-19d0-215d-754b79509cea"
+        },
+        {
+          "clocks.current.graphics": "1965",
+          "clocks.current.memory": "3996",
+          "clocks.current.sm": "1965",
+          "driver_version": "580.126.20",
+          "index": "1",
+          "memory.total": "183359",
+          "memory.used": "4",
+          "name": "NVIDIA B200",
+          "power.draw": "246.56",
+          "power.limit": "1000.00",
+          "pstate": "P0",
+          "temperature.gpu": "35",
+          "uuid": "GPU-54518c01-1be8-1786-c413-ff5d430777cb"
+        },
+        {
+          "clocks.current.graphics": "1965",
+          "clocks.current.memory": "3996",
+          "clocks.current.sm": "1965",
+          "driver_version": "580.126.20",
+          "index": "2",
+          "memory.total": "183359",
+          "memory.used": "4",
+          "name": "NVIDIA B200",
+          "power.draw": "246.82",
+          "power.limit": "1000.00",
+          "pstate": "P0",
+          "temperature.gpu": "35",
+          "uuid": "GPU-0f41d145-e323-bdf4-090d-d663daeefdab"
+        },
+        {
+          "clocks.current.graphics": "1965",
+          "clocks.current.memory": "3996",
+          "clocks.current.sm": "1965",
+          "driver_version": "580.126.20",
+          "index": "3",
+          "memory.total": "183359",
+          "memory.used": "175190",
+          "name": "NVIDIA B200",
+          "power.draw": "240.41",
+          "power.limit": "1000.00",
+          "pstate": "P0",
+          "temperature.gpu": "29",
+          "uuid": "GPU-7c0f6a56-6690-7b39-21dd-f5ceb9e634fc"
+        },
+        {
+          "clocks.current.graphics": "1965",
+          "clocks.current.memory": "3996",
+          "clocks.current.sm": "1965",
+          "driver_version": "580.126.20",
+          "index": "4",
+          "memory.total": "183359",
+          "memory.used": "171306",
+          "name": "NVIDIA B200",
+          "power.draw": "243.81",
+          "power.limit": "1000.00",
+          "pstate": "P0",
+          "temperature.gpu": "29",
+          "uuid": "GPU-994aa4a3-7449-4dde-c241-989b814c99ae"
+        },
+        {
+          "clocks.current.graphics": "1965",
+          "clocks.current.memory": "3996",
+          "clocks.current.sm": "1965",
+          "driver_version": "580.126.20",
+          "index": "5",
+          "memory.total": "183359",
+          "memory.used": "173350",
+          "name": "NVIDIA B200",
+          "power.draw": "241.77",
+          "power.limit": "1000.00",
+          "pstate": "P0",
+          "temperature.gpu": "35",
+          "uuid": "GPU-820d8ea5-ca35-8f98-8471-f6291949f995"
+        },
+        {
+          "clocks.current.graphics": "1965",
+          "clocks.current.memory": "3996",
+          "clocks.current.sm": "1965",
+          "driver_version": "580.126.20",
+          "index": "6",
+          "memory.total": "183359",
+          "memory.used": "173388",
+          "name": "NVIDIA B200",
+          "power.draw": "246.24",
+          "power.limit": "1000.00",
+          "pstate": "P0",
+          "temperature.gpu": "35",
+          "uuid": "GPU-0da48003-6b46-96a4-05b8-8e3fac3f7600"
+        },
+        {
+          "clocks.current.graphics": "1965",
+          "clocks.current.memory": "3996",
+          "clocks.current.sm": "1965",
+          "driver_version": "580.126.20",
+          "index": "7",
+          "memory.total": "183359",
+          "memory.used": "169448",
+          "name": "NVIDIA B200",
+          "power.draw": "241.50",
+          "power.limit": "1000.00",
+          "pstate": "P0",
+          "temperature.gpu": "29",
+          "uuid": "GPU-7fcfa208-1908-17fa-8dba-7e50c2947931"
+        }
+      ],
+      "sampled_at_utc": "2026-07-16T03:38:51.231430+00:00",
+      "visible_devices_env": "0"
+    },
+    "nvidia_smi_before": {
+      "gpus_seen_by_nvidia_smi": [
+        {
+          "clocks.current.graphics": "1965",
+          "clocks.current.memory": "3996",
+          "clocks.current.sm": "1965",
+          "driver_version": "580.126.20",
+          "index": "0",
+          "memory.total": "183359",
+          "memory.used": "628",
+          "name": "NVIDIA B200",
+          "power.draw": "242.24",
+          "power.limit": "1000.00",
+          "pstate": "P0",
+          "temperature.gpu": "29",
+          "uuid": "GPU-5c2cdd13-9017-19d0-215d-754b79509cea"
+        },
+        {
+          "clocks.current.graphics": "1965",
+          "clocks.current.memory": "3996",
+          "clocks.current.sm": "1965",
+          "driver_version": "580.126.20",
+          "index": "1",
+          "memory.total": "183359",
+          "memory.used": "4",
+          "name": "NVIDIA B200",
+          "power.draw": "246.74",
+          "power.limit": "1000.00",
+          "pstate": "P0",
+          "temperature.gpu": "35",
+          "uuid": "GPU-54518c01-1be8-1786-c413-ff5d430777cb"
+        },
+        {
+          "clocks.current.graphics": "1965",
+          "clocks.current.memory": "3996",
+          "clocks.current.sm": "1965",
+          "driver_version": "580.126.20",
+          "index": "2",
+          "memory.total": "183359",
+          "memory.used": "4",
+          "name": "NVIDIA B200",
+          "power.draw": "246.85",
+          "power.limit": "1000.00",
+          "pstate": "P0",
+          "temperature.gpu": "35",
+          "uuid": "GPU-0f41d145-e323-bdf4-090d-d663daeefdab"
+        },
+        {
+          "clocks.current.graphics": "1965",
+          "clocks.current.memory": "3996",
+          "clocks.current.sm": "1965",
+          "driver_version": "580.126.20",
+          "index": "3",
+          "memory.total": "183359",
+          "memory.used": "175190",
+          "name": "NVIDIA B200",
+          "power.draw": "240.61",
+          "power.limit": "1000.00",
+          "pstate": "P0",
+          "temperature.gpu": "29",
+          "uuid": "GPU-7c0f6a56-6690-7b39-21dd-f5ceb9e634fc"
+        },
+        {
+          "clocks.current.graphics": "1965",
+          "clocks.current.memory": "3996",
+          "clocks.current.sm": "1965",
+          "driver_version": "580.126.20",
+          "index": "4",
+          "memory.total": "183359",
+          "memory.used": "171306",
+          "name": "NVIDIA B200",
+          "power.draw": "243.87",
+          "power.limit": "1000.00",
+          "pstate": "P0",
+          "temperature.gpu": "29",
+          "uuid": "GPU-994aa4a3-7449-4dde-c241-989b814c99ae"
+        },
+        {
+          "clocks.current.graphics": "1965",
+          "clocks.current.memory": "3996",
+          "clocks.current.sm": "1965",
+          "driver_version": "580.126.20",
+          "index": "5",
+          "memory.total": "183359",
+          "memory.used": "173350",
+          "name": "NVIDIA B200",
+          "power.draw": "241.86",
+          "power.limit": "1000.00",
+          "pstate": "P0",
+          "temperature.gpu": "35",
+          "uuid": "GPU-820d8ea5-ca35-8f98-8471-f6291949f995"
+        },
+        {
+          "clocks.current.graphics": "1965",
+          "clocks.current.memory": "3996",
+          "clocks.current.sm": "1965",
+          "driver_version": "580.126.20",
+          "index": "6",
+          "memory.total": "183359",
+          "memory.used": "173388",
+          "name": "NVIDIA B200",
+          "power.draw": "246.20",
+          "power.limit": "1000.00",
+          "pstate": "P0",
+          "temperature.gpu": "35",
+          "uuid": "GPU-0da48003-6b46-96a4-05b8-8e3fac3f7600"
+        },
+        {
+          "clocks.current.graphics": "1965",
+          "clocks.current.memory": "3996",
+          "clocks.current.sm": "1965",
+          "driver_version": "580.126.20",
+          "index": "7",
+          "memory.total": "183359",
+          "memory.used": "169448",
+          "name": "NVIDIA B200",
+          "power.draw": "241.54",
+          "power.limit": "1000.00",
+          "pstate": "P0",
+          "temperature.gpu": "29",
+          "uuid": "GPU-7fcfa208-1908-17fa-8dba-7e50c2947931"
+        }
+      ],
+      "sampled_at_utc": "2026-07-16T03:38:42.350886+00:00",
+      "visible_devices_env": "0"
+    },
+    "onecomp_import_file": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/__init__.py",
+    "packages": {
+      "cuda_runtime_reported_by_torch": "13.0",
+      "cudnn": 91900,
+      "torch": "2.11.0+cu130",
+      "transformers": "5.6.2",
+      "triton": "3.6.0"
+    },
+    "pid": 719040,
+    "platform": "Linux-6.8.0-106-generic-x86_64-with-glibc2.39",
+    "python": "3.13.12 (main, Mar 10 2026, 18:17:38) [Clang 21.1.4 ]",
+    "run_uuid": "927be135-34b9-4535-a47f-9291ef70b604",
+    "selected_environment": {
+      "CUDA_VISIBLE_DEVICES": "0",
+      "MKL_NUM_THREADS": null,
+      "NVIDIA_VISIBLE_DEVICES": null,
+      "OMP_NUM_THREADS": null,
+      "PYTHONPATH": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness",
+      "SLURMD_NODENAME": null,
+      "SLURM_JOB_ID": null,
+      "SLURM_JOB_NAME": null,
+      "SLURM_NODELIST": null,
+      "TOKENIZERS_PARALLELISM": "false"
+    },
+    "selected_gpu_nvidia_smi_match": [
+      {
+        "clocks.current.graphics": "1965",
+        "clocks.current.memory": "3996",
+        "clocks.current.sm": "1965",
+        "driver_version": "580.126.20",
+        "index": "0",
+        "memory.total": "183359",
+        "memory.used": "628",
+        "name": "NVIDIA B200",
+        "power.draw": "242.24",
+        "power.limit": "1000.00",
+        "pstate": "P0",
+        "temperature.gpu": "29",
+        "uuid": "GPU-5c2cdd13-9017-19d0-215d-754b79509cea"
+      }
+    ],
+    "started_at_utc": "2026-07-16T03:38:42.351259+00:00",
+    "wall_time_seconds": 24.47699612309225
+  },
+  "run_fingerprint": "931c8c363639b28b4e51f2965ec82e87898859f8a29e7c23ee706c375395778d",
+  "run_provenance": [
+    {
+      "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/provenance/gpu11-speed-a887e6e-gpu11_local-719040.json",
+      "record": {
+        "code": {
+          "commit": "a887e6e15a4ac830f058741ff8dac8f9233eabed",
+          "onecomp_module": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/__init__.py",
+          "repo": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness",
+          "tracked_dirty": false
+        },
+        "created_at_utc": "2026-07-16T03:38:23.123142+00:00",
+        "dataset_files": [
+          {
+            "bytes": 79588,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/manifests/hayatequant_paper_inputs.json",
+            "sha256": "db13cd58b290ac37ed16729ef531bd4aa714d013a20dca6d7de042b15539566b"
+          }
+        ],
+        "environment": {
+          "CUDA_VISIBLE_DEVICES": "0",
+          "HF_DATASETS_CACHE": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/hf_home/datasets",
+          "HF_DATASETS_OFFLINE": "1",
+          "HF_HOME": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/hf_home",
+          "HF_HUB_DISABLE_TELEMETRY": "1",
+          "HF_HUB_OFFLINE": "1",
+          "HOME": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/runtime/home",
+          "KVCOMP_CODEBOOK_DIR": null,
+          "ONECOMP_COMPILE_CODEC": "0",
+          "ONECOMP_COMPILE_DECODE_ONLY": "0",
+          "ONECOMP_TRITON_CODEC": "0",
+          "ONECOMP_TRITON_PREFILL": "0",
+          "PAPER_SMOKE_APPROVAL_MARKER": null,
+          "PAPER_SMOKE_APPROVAL_MARKER_SHA256": null,
+          "PAPER_SMOKE_VALIDATED_PLAN_SHA256": null,
+          "PAPER_SMOKE_VALIDATOR_CHECK_COMPLETED": null,
+          "PAPER_SPEED_ALLOCATION_CUDA_VISIBLE_DEVICES": null,
+          "PAPER_SPEED_MEASUREMENT_CUDA_VISIBLE_DEVICE": null,
+          "PYTHONHASHSEED": "0",
+          "SLURM_ARRAY_JOB_ID": null,
+          "SLURM_ARRAY_TASK_ID": null,
+          "SLURM_CPUS_PER_TASK": null,
+          "SLURM_GPUS_ON_NODE": null,
+          "SLURM_JOB_CPUS_PER_NODE": null,
+          "SLURM_JOB_GPUS": null,
+          "SLURM_JOB_ID": null,
+          "SLURM_JOB_NAME": null,
+          "SLURM_JOB_NODELIST": null,
+          "SLURM_JOB_PARTITION": null,
+          "SLURM_MEM_PER_NODE": null,
+          "TOKENIZERS_PARALLELISM": "false",
+          "TRANSFORMERS_OFFLINE": "1",
+          "WANDB_MODE": "disabled"
+        },
+        "gpu": {
+          "available": true,
+          "cudnn": 91900,
+          "devices": [
+            {
+              "compute_capability": [
+                10,
+                0
+              ],
+              "logical_index": 0,
+              "name": "NVIDIA B200",
+              "total_memory": 191503007744,
+              "uuid": "5c2cdd13-9017-19d0-215d-754b79509cea"
+            }
+          ],
+          "nvidia_smi_query": [
+            "0, GPU-5c2cdd13-9017-19d0-215d-754b79509cea, NVIDIA B200, 580.126.20, 183359, 628, 30, 1965, 3996, P0",
+            "1, GPU-54518c01-1be8-1786-c413-ff5d430777cb, NVIDIA B200, 580.126.20, 183359, 4, 35, 1965, 3996, P0",
+            "2, GPU-0f41d145-e323-bdf4-090d-d663daeefdab, NVIDIA B200, 580.126.20, 183359, 4, 36, 1965, 3996, P0",
+            "3, GPU-7c0f6a56-6690-7b39-21dd-f5ceb9e634fc, NVIDIA B200, 580.126.20, 183359, 175190, 30, 1965, 3996, P0",
+            "4, GPU-994aa4a3-7449-4dde-c241-989b814c99ae, NVIDIA B200, 580.126.20, 183359, 171306, 30, 1965, 3996, P0",
+            "5, GPU-820d8ea5-ca35-8f98-8471-f6291949f995, NVIDIA B200, 580.126.20, 183359, 173350, 36, 1965, 3996, P0",
+            "6, GPU-0da48003-6b46-96a4-05b8-8e3fac3f7600, NVIDIA B200, 580.126.20, 183359, 173388, 35, 1965, 3996, P0",
+            "7, GPU-7fcfa208-1908-17fa-8dba-7e50c2947931, NVIDIA B200, 580.126.20, 183359, 169448, 30, 1965, 3996, P0"
+          ],
+          "torch_cuda": "13.0"
+        },
+        "host": {
+          "hostname": "kagura-gpu11",
+          "platform": "Linux-6.8.0-106-generic-x86_64-with-glibc2.39",
+          "python": "3.13.12 (main, Mar 10 2026, 18:17:38) [Clang 21.1.4 ]",
+          "python_executable": "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/bin/python"
+        },
+        "model": {
+          "input_manifest": {
+            "bytes": 79588,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/manifests/hayatequant_paper_inputs.json",
+            "sha256": "db13cd58b290ac37ed16729ef531bd4aa714d013a20dca6d7de042b15539566b"
+          },
+          "key": "llama31-8b",
+          "metadata_files": {
+            "config.json": {
+              "bytes": 896,
+              "path": "/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct/config.json",
+              "sha256": "ad98082c6bc4ea7078915219241814762be259de16d6ca5f170ba02820b3928b"
+            },
+            "generation_config.json": {
+              "bytes": 239,
+              "path": "/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct/generation_config.json",
+              "sha256": "6d4f979915331212d7672c68b22a4ddad9e21ed8126cf2bd1ea6b2b88f595c1c"
+            },
+            "special_tokens_map.json": {
+              "bytes": 454,
+              "path": "/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct/special_tokens_map.json",
+              "sha256": "94e708c3f5e64acf85bbe5ad01467a1248faadb73e83b41793087ecced586e8f"
+            },
+            "tokenizer.json": {
+              "bytes": 17209920,
+              "path": "/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct/tokenizer.json",
+              "sha256": "6b9e4e7fb171f92fd137b777cc2714bf87d11576700a1dcd7a399e7bbe39537b"
+            },
+            "tokenizer_config.json": {
+              "bytes": 55492,
+              "path": "/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct/tokenizer_config.json",
+              "sha256": "671ecdff1a4241f7d3e0ad21d347ada7d90f673810906727c124972e3ce03465"
+            }
+          },
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct",
+          "revision": "4699cc75b550f9c6f3173fb80f4703b62d946aa5",
+          "snapshot_revisions": [
+            "4699cc75b550f9c6f3173fb80f4703b62d946aa5"
+          ],
+          "weight_verification_mode": "full_sha256",
+          "weights": {
+            "fingerprinted_bytes": 16060580326,
+            "fingerprinted_file_count": 5,
+            "format_preference": [
+              "safetensors",
+              "pytorch_bin"
+            ],
+            "layouts": {
+              "safetensors": {
+                "format": "safetensors",
+                "index": {
+                  "bytes": 23950,
+                  "relative_path": "model.safetensors.index.json",
+                  "sha256": "146776fce3f6db1103aa6f249e65ee5544c5923ce6f971b092eee79aa6e5d37b",
+                  "symlink": false
+                },
+                "kind": "sharded_index",
+                "shard_count": 4,
+                "shards": [
+                  {
+                    "bytes": 4976698672,
+                    "relative_path": "model-00001-of-00004.safetensors",
+                    "sha256": "2b1879f356aed350030bb40eb45ad362c89d9891096f79a3ab323d3ba5607668",
+                    "symlink": false
+                  },
+                  {
+                    "bytes": 4999802720,
+                    "relative_path": "model-00002-of-00004.safetensors",
+                    "sha256": "09d433f650646834a83c580877bd60c6d1f88f7755305c12576b5c7058f9af15",
+                    "symlink": false
+                  },
+                  {
+                    "bytes": 4915916176,
+                    "relative_path": "model-00003-of-00004.safetensors",
+                    "sha256": "fc1cdddd6bfa91128d6e94ee73d0ce62bfcdb7af29e978ddcab30c66ae9ea7fa",
+                    "symlink": false
+                  },
+                  {
+                    "bytes": 1168138808,
+                    "relative_path": "model-00004-of-00004.safetensors",
+                    "sha256": "92ecfe1a2414458b4821ac8c13cf8cb70aed66b5eea8dc5ad9eeb4ff309d6d7b",
+                    "symlink": false
+                  }
+                ],
+                "tensor_count": 291,
+                "total_shard_bytes": 16060556376
+              }
+            },
+            "schema_version": 1,
+            "selected_format": "safetensors",
+            "selected_kind": "sharded_index"
+          }
+        },
+        "packages": {
+          "datasets": "4.8.5",
+          "filelock": "3.29.0",
+          "fuzzywuzzy": "0.18.0",
+          "fuzzywuzzy-backend": "python-difflib",
+          "huggingface-hub": "1.12.0",
+          "hydra-core": "1.3.2",
+          "lm-eval": "0.4.11",
+          "math-verify": "0.9.0",
+          "omegaconf": "2.3.0",
+          "pyarrow": "24.0.0",
+          "rouge": "1.0.1",
+          "safetensors": "0.7.0",
+          "torch": "2.11.0",
+          "transformers": "5.6.2",
+          "triton": "3.6.0",
+          "vllm": "0.20.0"
+        },
+        "pinned_input_files": {
+          "file_count": 138,
+          "records_sha256": "9ddda4ef52975a5974a7fec95edcc709970168d9bf139af174034e53e2392c94",
+          "total_bytes": 614748746,
+          "verification_mode": "full_sha256"
+        },
+        "schema_version": 1
+      },
+      "sha256": "112e069d9f25818cabb3f69b692db9d70af53b18c401faf5e2c7502d49f62b79"
+    }
+  ],
+  "schema": {
+    "name": "onecomp.hayatequant_fair_speed",
+    "version": 3
+  },
+  "schema_version": 2,
+  "semantic_config": {
+    "attention_implementation": "sdpa",
+    "avg_bits": 3,
+    "batch_size": 1,
+    "bootstrap_resamples": 100,
+    "compile_mode": "off",
+    "decode_seq_len": 1,
+    "device": "cuda:0",
+    "dtype": "float16",
+    "e2e_gen_len": 64,
+    "e2e_prompt_len": 4096,
+    "e2e_repeats": 5,
+    "e2e_warmup": 1,
+    "fused_backend": "triton",
+    "local_files_only": true,
+    "micro_inner_loops": 1,
+    "micro_repeats": 5,
+    "micro_seq_len": 512,
+    "micro_warmup": 2,
+    "mode": "micro",
+    "model": "/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct",
+    "quality_query_len": 8,
+    "recent_tokens": 0,
+    "revision": null,
+    "seed": 20260715,
+    "sink_tokens": 0,
+    "trust_remote_code": false
+  }
+}

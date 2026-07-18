@@ -1,0 +1,1224 @@
+{
+  "hf_datasets": {
+    "datasets": {
+      "aime2024_source": {
+        "cache_files": [
+          {
+            "bytes": 521520,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/hf_home/datasets/AI-MO___aimo-validation-aime/default/0.0.0/13f9e12f613e720c2a2b2f345dd04b998a29494d/aimo-validation-aime-train.arrow",
+            "sha256": "5263589fe916c63aaeec0f374a1432d47eeb209e4ad29c09e263ee0bf4a914c9"
+          }
+        ],
+        "config": null,
+        "dataset_fingerprint": "a53ee7c2fd527c94",
+        "repo": "AI-MO/aimo-validation-aime",
+        "revision": "13f9e12f613e720c2a2b2f345dd04b998a29494d",
+        "rows": 90,
+        "split": "train"
+      },
+      "aime2025_train": {
+        "cache_files": [
+          {
+            "bytes": 18824,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/hf_home/datasets/yentinglin___aime_2025/default/0.0.0/6f71d77b0b89b9dabe07ab466c51df33f514df7f/aime_2025-train.arrow",
+            "sha256": "87d3def2139e746f659e9898d366a785024c60042fc09a29f7eff60b73f9673f"
+          }
+        ],
+        "config": null,
+        "dataset_fingerprint": "ab082f64aec680b7",
+        "repo": "yentinglin/aime_2025",
+        "revision": "6f71d77b0b89b9dabe07ab466c51df33f514df7f",
+        "rows": 30,
+        "split": "train"
+      },
+      "arc_challenge_test": {
+        "cache_files": [
+          {
+            "bytes": 377568,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/hf_home/datasets/allenai___ai2_arc/ARC-Challenge/0.0.0/210d026faf9955653af8916fad021475a3f00453/ai2_arc-test.arrow",
+            "sha256": "e56914301ff03032cabc30b284e0e8d612cc56bac7b6a5ab4e7f35b31d6c3e32"
+          }
+        ],
+        "config": "ARC-Challenge",
+        "dataset_fingerprint": "a4361c3f3e560fcd",
+        "repo": "allenai/ai2_arc",
+        "revision": "210d026faf9955653af8916fad021475a3f00453",
+        "rows": 1172,
+        "split": "test"
+      },
+      "arc_easy_test": {
+        "cache_files": [
+          {
+            "bytes": 660168,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/hf_home/datasets/allenai___ai2_arc/ARC-Easy/0.0.0/210d026faf9955653af8916fad021475a3f00453/ai2_arc-test.arrow",
+            "sha256": "8d1f615aaf6fd5256003a72e33b24394a8460806b59e11fe7e6586a9b6642f71"
+          }
+        ],
+        "config": "ARC-Easy",
+        "dataset_fingerprint": "b019ca21ba59e1f3",
+        "repo": "allenai/ai2_arc",
+        "revision": "210d026faf9955653af8916fad021475a3f00453",
+        "rows": 2376,
+        "split": "test"
+      },
+      "gsm8k_main_test": {
+        "cache_files": [
+          {
+            "bytes": 714584,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/hf_home/datasets/openai___gsm8k/main/0.0.0/740312add88f781978c0658806c59bc2815b9866/gsm8k-test.arrow",
+            "sha256": "45965b000311d1550e5619b60b5bf31cf76edebfd8b8eddc62a876fbf8c9be95"
+          }
+        ],
+        "config": "main",
+        "dataset_fingerprint": "59ec1b7f9357c7a2",
+        "repo": "openai/gsm8k",
+        "revision": "740312add88f781978c0658806c59bc2815b9866",
+        "rows": 1319,
+        "split": "test"
+      },
+      "hellaswag_validation": {
+        "cache_files": [
+          {
+            "bytes": 11186424,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/hf_home/datasets/Rowan___hellaswag/default/0.0.0/218ec52e09a7e7462a5400043bb9a69a41d06b76/hellaswag-validation.arrow",
+            "sha256": "fdd100245fae28e387869527dd0b8af1a0a931f7cf364abaf6f3138de7f0d27b"
+          }
+        ],
+        "config": null,
+        "dataset_fingerprint": "71a62ba9d49be089",
+        "repo": "Rowan/hellaswag",
+        "revision": "218ec52e09a7e7462a5400043bb9a69a41d06b76",
+        "rows": 10042,
+        "split": "validation"
+      },
+      "math500_test": {
+        "cache_files": [
+          {
+            "bytes": 401544,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/hf_home/datasets/HuggingFaceH4___math-500/default/0.0.0/6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be/math-500-test.arrow",
+            "sha256": "ff2663846092b986df3026f53904030cbaf8e061c9f978d319a7bd86b3a04ea4"
+          }
+        ],
+        "config": null,
+        "dataset_fingerprint": "f3124375297911ba",
+        "repo": "HuggingFaceH4/MATH-500",
+        "revision": "6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be",
+        "rows": 500,
+        "split": "test"
+      },
+      "piqa_validation": {
+        "cache_files": [
+          {
+            "bytes": 465608,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/hf_home/datasets/baber___piqa/default/0.0.0/142f6d7367fd9877f0fb3b5734ea6a545f54cdd1/piqa-validation.arrow",
+            "sha256": "6e14731c78016adc6a5738d661111f5cb4c6bce461c454561eb66be4abc39222"
+          }
+        ],
+        "config": null,
+        "dataset_fingerprint": "506e3cab853d8e73",
+        "repo": "baber/piqa",
+        "revision": "142f6d7367fd9877f0fb3b5734ea6a545f54cdd1",
+        "rows": 1838,
+        "split": "validation"
+      },
+      "wikitext2_test": {
+        "cache_files": [
+          {
+            "bytes": 1306200,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/hf_home/datasets/Salesforce___wikitext/wikitext-2-raw-v1/0.0.0/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext-test.arrow",
+            "sha256": "2b8a3efac7b468cbe6432edba5f55c21e435d93873acc6727431f08d5ed328ea"
+          }
+        ],
+        "config": "wikitext-2-raw-v1",
+        "dataset_fingerprint": "a46124b21ac53738",
+        "repo": "Salesforce/wikitext",
+        "revision": "b08601e04326c79dfdd32d625aee71d232d685c3",
+        "rows": 4358,
+        "split": "test"
+      },
+      "winogrande_xl_validation": {
+        "cache_files": [
+          {
+            "bytes": 165504,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/hf_home/datasets/allenai___winogrande/winogrande_xl/0.0.0/01e74176c63542e6b0bcb004dcdea22d94fb67b5/winogrande-validation.arrow",
+            "sha256": "992af8404b202ada4356228ed2ebb27f10495126efdf78678ced33e94e82b830"
+          }
+        ],
+        "config": "winogrande_xl",
+        "dataset_fingerprint": "5b125086384c0403",
+        "repo": "allenai/winogrande",
+        "revision": "01e74176c63542e6b0bcb004dcdea22d94fb67b5",
+        "rows": 1267,
+        "split": "validation"
+      }
+    },
+    "hf_home": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/hf_home",
+    "longbench_e": {
+      "artifact": {
+        "bytes": 113932529,
+        "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/hf_home/hub/datasets--THUDM--LongBench/blobs/cb45b11a4133c6bc1d6a44b0f8e701335ff1e543195db1103472e575857f7f64",
+        "sha256": "cb45b11a4133c6bc1d6a44b0f8e701335ff1e543195db1103472e575857f7f64"
+      },
+      "filename": "data.zip",
+      "repo": "THUDM/LongBench",
+      "revision": "5e628be450b7e67fb7ae6e201bd6d8f7056f7672"
+    },
+    "manifest": {
+      "bytes": 10498,
+      "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/pinned_hf_datasets_manifest.json",
+      "sha256": "bb2278324aa42b49820e3241c7b32619d443f23cf6a48dfc7cc921f628d0ee4d"
+    },
+    "packages": {
+      "datasets": "4.8.5",
+      "huggingface-hub": "1.12.0",
+      "pyarrow": "24.0.0"
+    },
+    "status": "validated"
+  },
+  "kind": "hayatequant_paper_input_validation",
+  "longcodeqa": {
+    "brackets": {
+      "128K": {
+        "bytes": 66899588,
+        "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/LongCodeQA/LQA/128K.json",
+        "rows": 92,
+        "sha256": "c4b44c40f4a2efbeea6f69c210b80ca9a90d3156f032335fcb1182eb2992e1d8"
+      },
+      "32K": {
+        "bytes": 19181798,
+        "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/LongCodeQA/LQA/32K.json",
+        "rows": 113,
+        "sha256": "a4de950aa887c97ed74d64d50a1202b28e566105b9b94e62b7c1a50a48b46d98"
+      },
+      "64K": {
+        "bytes": 31998101,
+        "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/LongCodeQA/LQA/64K.json",
+        "rows": 76,
+        "sha256": "c4c77b52582187753f94d4e3e78d68b6d2549791496b7305fc93b558166bdc74"
+      }
+    },
+    "context_fit_manifests": {
+      "llama31-8b": {
+        "all_rows_fit": true,
+        "brackets": {
+          "128K": {
+            "dataset_path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/LongCodeQA/LQA/128K.json",
+            "dataset_sha256": "c4b44c40f4a2efbeea6f69c210b80ca9a90d3156f032335fcb1182eb2992e1d8",
+            "input_tokens": {
+              "max": 128484,
+              "median": 79344.5,
+              "min": 67508
+            },
+            "minimum_margin_tokens": 2572,
+            "overflow_rows": [],
+            "rows": 92
+          },
+          "32K": {
+            "dataset_path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/LongCodeQA/LQA/32K.json",
+            "dataset_sha256": "a4de950aa887c97ed74d64d50a1202b28e566105b9b94e62b7c1a50a48b46d98",
+            "input_tokens": {
+              "max": 32088,
+              "median": 22495,
+              "min": 2954
+            },
+            "minimum_margin_tokens": 98968,
+            "overflow_rows": [],
+            "rows": 113
+          },
+          "64K": {
+            "dataset_path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/LongCodeQA/LQA/64K.json",
+            "dataset_sha256": "c4c77b52582187753f94d4e3e78d68b6d2549791496b7305fc93b558166bdc74",
+            "input_tokens": {
+              "max": 65422,
+              "median": 49143.0,
+              "min": 31018
+            },
+            "minimum_margin_tokens": 65634,
+            "overflow_rows": [],
+            "rows": 76
+          }
+        },
+        "created_at_utc": "2026-07-15T11:26:10.861277+00:00",
+        "manifest": {
+          "bytes": 31623,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/longcodeqa_context_llama31-8b.json",
+          "sha256": "e3a569b0d978b14a512bcd24366007160aa4b308d314ba7c696ea9b6ef642956"
+        },
+        "model": {
+          "chat_template_sha256": "e10ca381b1ccc5cf9db52e371f3b6651576caee0a630b452e2816b2d404d4b65",
+          "context_limit": 131072,
+          "key": "llama31-8b",
+          "metadata_files": {
+            "config.json": {
+              "bytes": 896,
+              "path": "/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct/config.json",
+              "sha256": "ad98082c6bc4ea7078915219241814762be259de16d6ca5f170ba02820b3928b"
+            },
+            "tokenizer.json": {
+              "bytes": 17209920,
+              "path": "/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct/tokenizer.json",
+              "sha256": "6b9e4e7fb171f92fd137b777cc2714bf87d11576700a1dcd7a399e7bbe39537b"
+            },
+            "tokenizer_config.json": {
+              "bytes": 55492,
+              "path": "/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct/tokenizer_config.json",
+              "sha256": "671ecdff1a4241f7d3e0ad21d347ada7d90f673810906727c124972e3ce03465"
+            }
+          },
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct",
+          "revision": "4699cc75b550f9c6f3173fb80f4703b62d946aa5",
+          "snapshot_revisions": [
+            "4699cc75b550f9c6f3173fb80f4703b62d946aa5"
+          ]
+        },
+        "protocol": {
+          "max_new_tokens": 16,
+          "prompt": "released prompt verbatim as one user message",
+          "thinking": "disabled when tokenizer supports enable_thinking",
+          "truncation": "none"
+        }
+      },
+      "qwen3-8b": {
+        "all_rows_fit": true,
+        "brackets": {
+          "32K": {
+            "dataset_path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/LongCodeQA/LQA/32K.json",
+            "dataset_sha256": "a4de950aa887c97ed74d64d50a1202b28e566105b9b94e62b7c1a50a48b46d98",
+            "input_tokens": {
+              "max": 32702,
+              "median": 22817,
+              "min": 2959
+            },
+            "minimum_margin_tokens": 8242,
+            "overflow_rows": [],
+            "rows": 113
+          }
+        },
+        "created_at_utc": "2026-07-15T11:25:47.490747+00:00",
+        "manifest": {
+          "bytes": 13266,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/longcodeqa_context_qwen3-8b.json",
+          "sha256": "d3bdbcb52ebd77b75e61f7b9fbf14c84a9b64dcb50a5deb589a0897696c16a83"
+        },
+        "model": {
+          "chat_template_sha256": "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8",
+          "context_limit": 40960,
+          "key": "qwen3-8b",
+          "metadata_files": {
+            "config.json": {
+              "bytes": 728,
+              "path": "/lustre/home/frj/yuma-ichikawa/conference/models/Qwen3-8B/config.json",
+              "sha256": "f7c4eadfbbf522470667b797a3c89be2524832d2d599797248dc304fff447c30"
+            },
+            "tokenizer.json": {
+              "bytes": 11422654,
+              "path": "/lustre/home/frj/yuma-ichikawa/conference/models/Qwen3-8B/tokenizer.json",
+              "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+            },
+            "tokenizer_config.json": {
+              "bytes": 9732,
+              "path": "/lustre/home/frj/yuma-ichikawa/conference/models/Qwen3-8B/tokenizer_config.json",
+              "sha256": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
+            }
+          },
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/Qwen3-8B",
+          "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+          "snapshot_revisions": [
+            "b968826d9c46dd6066d109eabc6255188de91218"
+          ]
+        },
+        "protocol": {
+          "max_new_tokens": 16,
+          "prompt": "released prompt verbatim as one user message",
+          "thinking": "disabled when tokenizer supports enable_thinking",
+          "truncation": "none"
+        }
+      }
+    },
+    "dataset": "LongCodeBench/LongCodeQA",
+    "total_rows": 281
+  },
+  "models": {
+    "llama2-7b": {
+      "metadata_files": {
+        "config.json": {
+          "bytes": 609,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/Llama-2-7b-hf/config.json",
+          "sha256": "9242e7db1bc2a17873e66084c3b1c6ed10883076e156b338fd6a7775748e2e3c"
+        },
+        "generation_config.json": {
+          "bytes": 188,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/Llama-2-7b-hf/generation_config.json",
+          "sha256": "11e70f5fd0a1a47346b5a941ff0049d226b353a1647735d9ec171a2b1521e881"
+        },
+        "special_tokens_map.json": {
+          "bytes": 414,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/Llama-2-7b-hf/special_tokens_map.json",
+          "sha256": "6fa06efa2785e450051989a6f8fb4416b10149ded485ddd3f127a40734f5cfd0"
+        },
+        "tokenizer.json": {
+          "bytes": 1842767,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/Llama-2-7b-hf/tokenizer.json",
+          "sha256": "bcd04f0eadf90287bd26e1a183ac487d8a141b09b06aecb7725bbdd343640f2e"
+        },
+        "tokenizer.model": {
+          "bytes": 499723,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/Llama-2-7b-hf/tokenizer.model",
+          "sha256": "9e556afd44213b6bd1be2b850ebbbd98f5481437a8021afaf58ee7fb1818d347"
+        },
+        "tokenizer_config.json": {
+          "bytes": 776,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/Llama-2-7b-hf/tokenizer_config.json",
+          "sha256": "f514e7c3008881b6ba7e6a0cdb44c71ce47dc335920dac143ae7bc788197e53a"
+        }
+      },
+      "path": "/lustre/home/frj/yuma-ichikawa/conference/models/Llama-2-7b-hf"
+    },
+    "llama31-8b": {
+      "metadata_files": {
+        "config.json": {
+          "bytes": 896,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct/config.json",
+          "sha256": "ad98082c6bc4ea7078915219241814762be259de16d6ca5f170ba02820b3928b"
+        },
+        "generation_config.json": {
+          "bytes": 239,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct/generation_config.json",
+          "sha256": "6d4f979915331212d7672c68b22a4ddad9e21ed8126cf2bd1ea6b2b88f595c1c"
+        },
+        "special_tokens_map.json": {
+          "bytes": 454,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct/special_tokens_map.json",
+          "sha256": "94e708c3f5e64acf85bbe5ad01467a1248faadb73e83b41793087ecced586e8f"
+        },
+        "tokenizer.json": {
+          "bytes": 17209920,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct/tokenizer.json",
+          "sha256": "6b9e4e7fb171f92fd137b777cc2714bf87d11576700a1dcd7a399e7bbe39537b"
+        },
+        "tokenizer_config.json": {
+          "bytes": 55492,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct/tokenizer_config.json",
+          "sha256": "671ecdff1a4241f7d3e0ad21d347ada7d90f673810906727c124972e3ce03465"
+        }
+      },
+      "path": "/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct"
+    },
+    "qwen3-4b": {
+      "metadata_files": {
+        "config.json": {
+          "bytes": 726,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/Qwen3-4B/config.json",
+          "sha256": "8ba006f74fecfaaeb392872a60f4a480e7ec9860153d2e1b769ec81f9a147f8a"
+        },
+        "generation_config.json": {
+          "bytes": 239,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/Qwen3-4B/generation_config.json",
+          "sha256": "2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2"
+        },
+        "merges.txt": {
+          "bytes": 1671853,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/Qwen3-4B/merges.txt",
+          "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
+        },
+        "tokenizer.json": {
+          "bytes": 11422654,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/Qwen3-4B/tokenizer.json",
+          "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+        },
+        "tokenizer_config.json": {
+          "bytes": 9732,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/Qwen3-4B/tokenizer_config.json",
+          "sha256": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
+        },
+        "vocab.json": {
+          "bytes": 2776833,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/Qwen3-4B/vocab.json",
+          "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+        }
+      },
+      "path": "/lustre/home/frj/yuma-ichikawa/conference/models/Qwen3-4B"
+    },
+    "qwen3-8b": {
+      "metadata_files": {
+        "config.json": {
+          "bytes": 728,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/Qwen3-8B/config.json",
+          "sha256": "f7c4eadfbbf522470667b797a3c89be2524832d2d599797248dc304fff447c30"
+        },
+        "generation_config.json": {
+          "bytes": 239,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/Qwen3-8B/generation_config.json",
+          "sha256": "2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2"
+        },
+        "merges.txt": {
+          "bytes": 1671853,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/Qwen3-8B/merges.txt",
+          "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
+        },
+        "tokenizer.json": {
+          "bytes": 11422654,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/Qwen3-8B/tokenizer.json",
+          "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+        },
+        "tokenizer_config.json": {
+          "bytes": 9732,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/Qwen3-8B/tokenizer_config.json",
+          "sha256": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
+        },
+        "vocab.json": {
+          "bytes": 2776833,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/Qwen3-8B/vocab.json",
+          "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+        }
+      },
+      "path": "/lustre/home/frj/yuma-ichikawa/conference/models/Qwen3-8B"
+    },
+    "r1-llama-8b": {
+      "metadata_files": {
+        "config.json": {
+          "bytes": 826,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Llama-8B/config.json",
+          "sha256": "54acfad3cffe057640904ca8a1e83525e6551c70c7a04c641f5a9eda0bbf64bd"
+        },
+        "generation_config.json": {
+          "bytes": 181,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Llama-8B/generation_config.json",
+          "sha256": "cd5194726d1e8f7361a8c8425fc11d33ade5e69de1fd7615eb23fae5601af68b"
+        },
+        "tokenizer.json": {
+          "bytes": 9084480,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Llama-8B/tokenizer.json",
+          "sha256": "b9c9eb63a8e03059914880f918cd28a880dec8b6e15e4461e1ff677e3743dbb8"
+        },
+        "tokenizer_config.json": {
+          "bytes": 3071,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Llama-8B/tokenizer_config.json",
+          "sha256": "8ac8c85fb242563c2260baec0909debd69d718af6a0b3d90e6cab62b4d341cd5"
+        }
+      },
+      "path": "/lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Llama-8B"
+    },
+    "r1-qwen-1.5b": {
+      "metadata_files": {
+        "config.json": {
+          "bytes": 679,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Qwen-1.5B/config.json",
+          "sha256": "37bd455e9679d2959536270fed49d25cc7c290a64f6e52abb97c71345a9cee41"
+        },
+        "generation_config.json": {
+          "bytes": 181,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Qwen-1.5B/generation_config.json",
+          "sha256": "72cbec1015da9ed03ad025483005cbf6481403abf947adfd54e504d1a66a2126"
+        },
+        "tokenizer.json": {
+          "bytes": 7031660,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Qwen-1.5B/tokenizer.json",
+          "sha256": "88145e3c3249adc2546ede277e9819d6e405e19072456e4b521cbc724bd60773"
+        },
+        "tokenizer_config.json": {
+          "bytes": 3071,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Qwen-1.5B/tokenizer_config.json",
+          "sha256": "8ac8c85fb242563c2260baec0909debd69d718af6a0b3d90e6cab62b4d341cd5"
+        }
+      },
+      "path": "/lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Qwen-1.5B"
+    },
+    "r1-qwen-7b": {
+      "metadata_files": {
+        "config.json": {
+          "bytes": 680,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Qwen-7B/config.json",
+          "sha256": "8290d3c1e385e2616572eb6926f7e2745f901d1c13da95970326a8a73f6c379c"
+        },
+        "generation_config.json": {
+          "bytes": 181,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Qwen-7B/generation_config.json",
+          "sha256": "72cbec1015da9ed03ad025483005cbf6481403abf947adfd54e504d1a66a2126"
+        },
+        "tokenizer.json": {
+          "bytes": 7031660,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Qwen-7B/tokenizer.json",
+          "sha256": "88145e3c3249adc2546ede277e9819d6e405e19072456e4b521cbc724bd60773"
+        },
+        "tokenizer_config.json": {
+          "bytes": 3071,
+          "path": "/lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Qwen-7B/tokenizer_config.json",
+          "sha256": "8ac8c85fb242563c2260baec0909debd69d718af6a0b3d90e6cab62b4d341cd5"
+        }
+      },
+      "path": "/lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Qwen-7B"
+    }
+  },
+  "models_root": "/lustre/home/frj/yuma-ichikawa/conference/models",
+  "ruler_v1": {
+    "llama31-8b": {
+      "lengths": {
+        "16384": {
+          "cwe": {
+            "bytes": 4397931,
+            "length_w_model_temp_max": 16332,
+            "length_w_model_temp_min": 15998,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/16384/cwe/test.jsonl",
+            "rows": 100,
+            "sha256": "9027a9a9f13dc5535a1111c65fdfbda904f5c41ba992d71445c2673c07562d65"
+          },
+          "fwe": {
+            "bytes": 4188695,
+            "length_w_model_temp_max": 16291,
+            "length_w_model_temp_min": 14540,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/16384/fwe/test.jsonl",
+            "rows": 100,
+            "sha256": "2f76b8de317b109278d48e8b09dc0b523d30c707daadc9c7845b9c45507eb502"
+          },
+          "niah_multikey_1": {
+            "bytes": 7575358,
+            "length_w_model_temp_max": 16334,
+            "length_w_model_temp_min": 15745,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/16384/niah_multikey_1/test.jsonl",
+            "rows": 100,
+            "sha256": "4765e5fac757d00ffd501f9216d3de27148104cd4418eaa8477688daa2c59ccb"
+          },
+          "niah_multikey_2": {
+            "bytes": 6070628,
+            "length_w_model_temp_max": 16334,
+            "length_w_model_temp_min": 15826,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/16384/niah_multikey_2/test.jsonl",
+            "rows": 100,
+            "sha256": "66ef5d48c386a8dbf72af2e041faee2517e47aa5db8c39ec48bb0fdc23686b72"
+          },
+          "niah_multikey_3": {
+            "bytes": 3141705,
+            "length_w_model_temp_max": 16332,
+            "length_w_model_temp_min": 14781,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/16384/niah_multikey_3/test.jsonl",
+            "rows": 100,
+            "sha256": "b13d3c7651efa3709b7b897f11dc4a51bbf69ed861f8b91f7e314127323c2186"
+          },
+          "niah_multiquery": {
+            "bytes": 7589446,
+            "length_w_model_temp_max": 16333,
+            "length_w_model_temp_min": 15735,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/16384/niah_multiquery/test.jsonl",
+            "rows": 100,
+            "sha256": "3c9164fa092bf3ab3da0111aea96ac36357ca872c41e0368627f01e0925fcc77"
+          },
+          "niah_multivalue": {
+            "bytes": 7637539,
+            "length_w_model_temp_max": 16332,
+            "length_w_model_temp_min": 15734,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/16384/niah_multivalue/test.jsonl",
+            "rows": 100,
+            "sha256": "1d638189d2ba87556768593f29d084bcc5884764e5b07328b590ab2860190d20"
+          },
+          "niah_single_1": {
+            "bytes": 6036848,
+            "length_w_model_temp_max": 16334,
+            "length_w_model_temp_min": 15731,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/16384/niah_single_1/test.jsonl",
+            "rows": 100,
+            "sha256": "ed50257e1735ceb17bdb41ff3a912919834513c5f972d0ad7356dc77cd8c5b8b"
+          },
+          "niah_single_2": {
+            "bytes": 7590166,
+            "length_w_model_temp_max": 16334,
+            "length_w_model_temp_min": 15744,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/16384/niah_single_2/test.jsonl",
+            "rows": 100,
+            "sha256": "f9c3d6c51ec224333fc961724f96ac4845a0dfea58201cd18670fc296d4f1a8e"
+          },
+          "niah_single_3": {
+            "bytes": 7482168,
+            "length_w_model_temp_max": 16334,
+            "length_w_model_temp_min": 15743,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/16384/niah_single_3/test.jsonl",
+            "rows": 100,
+            "sha256": "e55888fccb7b48ecb251e4d9602ede086853fd694699789d686da3c228eac2b2"
+          },
+          "qa_1": {
+            "bytes": 7347110,
+            "length_w_model_temp_max": 16315,
+            "length_w_model_temp_min": 12981,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/16384/qa_1/test.jsonl",
+            "rows": 100,
+            "sha256": "312ec187ac8d5c6fce4e4786e3fb7860455def2394606effa638bc048df47584"
+          },
+          "qa_2": {
+            "bytes": 6795127,
+            "length_w_model_temp_max": 16325,
+            "length_w_model_temp_min": 13261,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/16384/qa_2/test.jsonl",
+            "rows": 100,
+            "sha256": "2c6b915463d9fb4c60759e098ef492d99c505893123af347a975f338d2d087de"
+          },
+          "vt": {
+            "bytes": 6185480,
+            "length_w_model_temp_max": 16334,
+            "length_w_model_temp_min": 16086,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/16384/vt/test.jsonl",
+            "rows": 100,
+            "sha256": "9c7489ce7b48197450e8af4256ef0818524214d8787bb15052ae39242637e966"
+          }
+        },
+        "4096": {
+          "cwe": {
+            "bytes": 1171019,
+            "length_w_model_temp_max": 4046,
+            "length_w_model_temp_min": 3952,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/4096/cwe/test.jsonl",
+            "rows": 100,
+            "sha256": "16b548838ce29d662a442abf1ded167b58a50f326294f07351a04ae9f33fd4c9"
+          },
+          "fwe": {
+            "bytes": 1073423,
+            "length_w_model_temp_max": 4046,
+            "length_w_model_temp_min": 3631,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/4096/fwe/test.jsonl",
+            "rows": 100,
+            "sha256": "0b3a2d75b4364a3d2d789d613feb668363c05492185e9aa7b89c770d948c64e0"
+          },
+          "niah_multikey_1": {
+            "bytes": 1866555,
+            "length_w_model_temp_max": 4046,
+            "length_w_model_temp_min": 3411,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/4096/niah_multikey_1/test.jsonl",
+            "rows": 100,
+            "sha256": "b14bdb86230432c4cc3454d0def2851f24b05e688bb109f8e7cbe2d7b574ba93"
+          },
+          "niah_multikey_2": {
+            "bytes": 1488567,
+            "length_w_model_temp_max": 4045,
+            "length_w_model_temp_min": 3937,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/4096/niah_multikey_2/test.jsonl",
+            "rows": 100,
+            "sha256": "0649fb2b06355fdb0bd653e633507b34d6c34cfb473020466846dbd33522577a"
+          },
+          "niah_multikey_3": {
+            "bytes": 797689,
+            "length_w_model_temp_max": 4045,
+            "length_w_model_temp_min": 3747,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/4096/niah_multikey_3/test.jsonl",
+            "rows": 100,
+            "sha256": "7bf1c0a1027d4b8ce70206ee644c06fcf80d6f7d17240a8305d079a25c313dbb"
+          },
+          "niah_multiquery": {
+            "bytes": 1751857,
+            "length_w_model_temp_max": 4044,
+            "length_w_model_temp_min": 3408,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/4096/niah_multiquery/test.jsonl",
+            "rows": 100,
+            "sha256": "313b9c11e27a036f1abe8c5db93b660a29cb2cb32640f8284d7d89bd471b8b51"
+          },
+          "niah_multivalue": {
+            "bytes": 1702838,
+            "length_w_model_temp_max": 4041,
+            "length_w_model_temp_min": 3411,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/4096/niah_multivalue/test.jsonl",
+            "rows": 100,
+            "sha256": "442814a5ddab63d93c3e2bf27144553273b779379780792f01d83b8de4e8b1e9"
+          },
+          "niah_single_1": {
+            "bytes": 1498081,
+            "length_w_model_temp_max": 4034,
+            "length_w_model_temp_min": 4019,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/4096/niah_single_1/test.jsonl",
+            "rows": 100,
+            "sha256": "00a6163535ca87a7884e1c61acfe86407bf765e97f3100bafaec6c0c5daa0b74"
+          },
+          "niah_single_2": {
+            "bytes": 1803398,
+            "length_w_model_temp_max": 4046,
+            "length_w_model_temp_min": 3422,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/4096/niah_single_2/test.jsonl",
+            "rows": 100,
+            "sha256": "407f13b32fec4b68d725f3c3646aa3ee2b5c6cd78b7777d79ec415d5438d1028"
+          },
+          "niah_single_3": {
+            "bytes": 1610911,
+            "length_w_model_temp_max": 4046,
+            "length_w_model_temp_min": 3423,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/4096/niah_single_3/test.jsonl",
+            "rows": 100,
+            "sha256": "192f076705a5a1e1f378381700737c0524066563724ea46b744ce02bf3fe995a"
+          },
+          "qa_1": {
+            "bytes": 1615069,
+            "length_w_model_temp_max": 4043,
+            "length_w_model_temp_min": 1933,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/4096/qa_1/test.jsonl",
+            "rows": 100,
+            "sha256": "1331d59ceb3f095f882098594c251e2a6a75f59c8ba5866169df502ae5904a38"
+          },
+          "qa_2": {
+            "bytes": 1468435,
+            "length_w_model_temp_max": 4035,
+            "length_w_model_temp_min": 2448,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/4096/qa_2/test.jsonl",
+            "rows": 100,
+            "sha256": "743f0260ba36b05e59e5f2d4b6c48ec735fc87737205fddaa731a35631bfa7b3"
+          },
+          "vt": {
+            "bytes": 1526990,
+            "length_w_model_temp_max": 4043,
+            "length_w_model_temp_min": 4031,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/4096/vt/test.jsonl",
+            "rows": 100,
+            "sha256": "7ee89f37df0c7aa1e827bb656669be421db5aa4a8cd871f20cef5627e0c321fa"
+          }
+        },
+        "8192": {
+          "cwe": {
+            "bytes": 2268566,
+            "length_w_model_temp_max": 8139,
+            "length_w_model_temp_min": 7822,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/8192/cwe/test.jsonl",
+            "rows": 100,
+            "sha256": "f405c7073011b9a38e8e43ccaa54265691fe32a24dffd1ef35c325c7e7eaeb8f"
+          },
+          "fwe": {
+            "bytes": 2139730,
+            "length_w_model_temp_max": 8140,
+            "length_w_model_temp_min": 7445,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/8192/fwe/test.jsonl",
+            "rows": 100,
+            "sha256": "32070f860da31a1ef03c683137dd2483c60f9557bb38d81b4e145ee168c9215d"
+          },
+          "niah_multikey_1": {
+            "bytes": 3755156,
+            "length_w_model_temp_max": 8142,
+            "length_w_model_temp_min": 7552,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/8192/niah_multikey_1/test.jsonl",
+            "rows": 100,
+            "sha256": "99a8ea94ed66edbbedf3459575406ed4e3701cf85d34fdd53ddc89e297b6ebd5"
+          },
+          "niah_multikey_2": {
+            "bytes": 2920526,
+            "length_w_model_temp_max": 8142,
+            "length_w_model_temp_min": 7638,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/8192/niah_multikey_2/test.jsonl",
+            "rows": 100,
+            "sha256": "1f2619824d62965ac802567955e6fd88e85e293b29fd218fd32c5679bc848c0f"
+          },
+          "niah_multikey_3": {
+            "bytes": 1586076,
+            "length_w_model_temp_max": 8142,
+            "length_w_model_temp_min": 6565,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/8192/niah_multikey_3/test.jsonl",
+            "rows": 100,
+            "sha256": "295839682eed5b455a8e31148217a870d0079e2a430fe317f5b03ce4c2912bdc"
+          },
+          "niah_multiquery": {
+            "bytes": 3733192,
+            "length_w_model_temp_max": 8142,
+            "length_w_model_temp_min": 7547,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/8192/niah_multiquery/test.jsonl",
+            "rows": 100,
+            "sha256": "2834812398cf2ea9fd13741185f6b86f063ff079a45a6e2a0b7d0265e2b310af"
+          },
+          "niah_multivalue": {
+            "bytes": 3782643,
+            "length_w_model_temp_max": 8141,
+            "length_w_model_temp_min": 7542,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/8192/niah_multivalue/test.jsonl",
+            "rows": 100,
+            "sha256": "bf4f174db1ae668da95e154fcbeba290a1258d2b02f00756eebe54132e01e556"
+          },
+          "niah_single_1": {
+            "bytes": 3054212,
+            "length_w_model_temp_max": 8138,
+            "length_w_model_temp_min": 8123,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/8192/niah_single_1/test.jsonl",
+            "rows": 100,
+            "sha256": "f84ce62b6cef738a40047bf75fabd52d984c214ac9594eedd1a91aef48490c44"
+          },
+          "niah_single_2": {
+            "bytes": 3733410,
+            "length_w_model_temp_max": 8141,
+            "length_w_model_temp_min": 7548,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/8192/niah_single_2/test.jsonl",
+            "rows": 100,
+            "sha256": "7d38b4ab458d0a179f80d642617f2d75d434889a8d055b0d799f74210722f133"
+          },
+          "niah_single_3": {
+            "bytes": 3663798,
+            "length_w_model_temp_max": 8142,
+            "length_w_model_temp_min": 7552,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/8192/niah_single_3/test.jsonl",
+            "rows": 100,
+            "sha256": "04e2d906518c4261741d8d10b619180b06ab87502ed49c3d529d6f3702558024"
+          },
+          "qa_1": {
+            "bytes": 3410895,
+            "length_w_model_temp_max": 8139,
+            "length_w_model_temp_min": 6284,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/8192/qa_1/test.jsonl",
+            "rows": 100,
+            "sha256": "d5aca08872896b063212fe47f8cf303168a46341b083e93110e701f5f57a2531"
+          },
+          "qa_2": {
+            "bytes": 3218726,
+            "length_w_model_temp_max": 8136,
+            "length_w_model_temp_min": 5935,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/8192/qa_2/test.jsonl",
+            "rows": 100,
+            "sha256": "67e52ac42861d5a8f408adcc4929d5045f571541d9dc1d693f92d95d1fe0b646"
+          },
+          "vt": {
+            "bytes": 3051240,
+            "length_w_model_temp_max": 8142,
+            "length_w_model_temp_min": 7895,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/8192/vt/test.jsonl",
+            "rows": 100,
+            "sha256": "f62313b0ed237e8ea7d69a6b3c68dd210f2f6f23996813a9c33ec9fc0c01cd0c"
+          }
+        }
+      },
+      "manifest": {
+        "bytes": 20020,
+        "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/llama31-8b/manifest.json",
+        "sha256": "9b20b8bc88bd1ca659bcbafccea26ffce9a5d56d287907d9da9b3b5f3515648e"
+      },
+      "source_commits": {
+        "nemo_skills": "f4a3fd8e524acd9abd1fea4387e8f179f6d51cf3",
+        "ruler": "38da79d79519ef87aa46ae804f838e1eab7f86d7"
+      },
+      "total_rows": 3900
+    },
+    "qwen3-8b": {
+      "lengths": {
+        "16384": {
+          "cwe": {
+            "bytes": 3226193,
+            "length_w_model_temp_max": 16330,
+            "length_w_model_temp_min": 15896,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/16384/cwe/test.jsonl",
+            "rows": 100,
+            "sha256": "044b6147fa5014d6a2060ccb09013f76946b83112e375c95d37a147b58cf2eee"
+          },
+          "fwe": {
+            "bytes": 4188695,
+            "length_w_model_temp_max": 16291,
+            "length_w_model_temp_min": 14541,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/16384/fwe/test.jsonl",
+            "rows": 100,
+            "sha256": "9ecbb84b2922dfa3af8354852c9c58e44c1f53f3d4688e5e3e2588a6dba8f328"
+          },
+          "niah_multikey_1": {
+            "bytes": 7482538,
+            "length_w_model_temp_max": 16334,
+            "length_w_model_temp_min": 15744,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/16384/niah_multikey_1/test.jsonl",
+            "rows": 100,
+            "sha256": "442ce4190760d28cb7515084422bb02240ffea0f77f7a6f9f1c1d84b815355ee"
+          },
+          "niah_multikey_2": {
+            "bytes": 4925455,
+            "length_w_model_temp_max": 16334,
+            "length_w_model_temp_min": 15722,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/16384/niah_multikey_2/test.jsonl",
+            "rows": 100,
+            "sha256": "5ae31473cd5d7ef13e668982b9968fc91f72b39593cc7f0f00fc56f8b888cbc6"
+          },
+          "niah_multikey_3": {
+            "bytes": 2471831,
+            "length_w_model_temp_max": 16334,
+            "length_w_model_temp_min": 14363,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/16384/niah_multikey_3/test.jsonl",
+            "rows": 100,
+            "sha256": "bd14101bba3482f01358f4255a136cfcc5a0dff512bd9828c02e720c14b37c6e"
+          },
+          "niah_multiquery": {
+            "bytes": 7394884,
+            "length_w_model_temp_max": 16333,
+            "length_w_model_temp_min": 15746,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/16384/niah_multiquery/test.jsonl",
+            "rows": 100,
+            "sha256": "f9f33ecd8f2f0a29e807b8f4be0bcfddb6cb532c5f4eef2ed56cb09134599c1e"
+          },
+          "niah_multivalue": {
+            "bytes": 7555316,
+            "length_w_model_temp_max": 16334,
+            "length_w_model_temp_min": 15738,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/16384/niah_multivalue/test.jsonl",
+            "rows": 100,
+            "sha256": "2abaf46c9838bdf72593bb87ca84333569bf39f259ead24270093b152c50bd53"
+          },
+          "niah_single_1": {
+            "bytes": 6157562,
+            "length_w_model_temp_max": 16326,
+            "length_w_model_temp_min": 16311,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/16384/niah_single_1/test.jsonl",
+            "rows": 100,
+            "sha256": "f47c2a8cd73fa517e91cce07b10794fd7951359ed72b2aa634278065611e9219"
+          },
+          "niah_single_2": {
+            "bytes": 7543387,
+            "length_w_model_temp_max": 16334,
+            "length_w_model_temp_min": 15744,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/16384/niah_single_2/test.jsonl",
+            "rows": 100,
+            "sha256": "1256284ec85503ec39954b8227a6577f9113b832feada0cabf2b88e66421e58a"
+          },
+          "niah_single_3": {
+            "bytes": 7454049,
+            "length_w_model_temp_max": 16334,
+            "length_w_model_temp_min": 15744,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/16384/niah_single_3/test.jsonl",
+            "rows": 100,
+            "sha256": "4365dde1a2c987df4ea2144045592c7f95a38dfa34fda6a95e602144b32fdbc9"
+          },
+          "qa_1": {
+            "bytes": 7136652,
+            "length_w_model_temp_max": 16334,
+            "length_w_model_temp_min": 13280,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/16384/qa_1/test.jsonl",
+            "rows": 100,
+            "sha256": "7c9e2774e7252f3cf88872515bb7d78efc5cf05ca89842eb788df656e924f792"
+          },
+          "qa_2": {
+            "bytes": 6460287,
+            "length_w_model_temp_max": 16334,
+            "length_w_model_temp_min": 12679,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/16384/qa_2/test.jsonl",
+            "rows": 100,
+            "sha256": "0fb4ff518082e3214074eefefa6f89ad72c60a9c858b840223b45a96462070c0"
+          },
+          "vt": {
+            "bytes": 6177290,
+            "length_w_model_temp_max": 16330,
+            "length_w_model_temp_min": 16312,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/16384/vt/test.jsonl",
+            "rows": 100,
+            "sha256": "b68a93e12de45d355311fd1ce80408e0ba50979af3f62c104ca23d7c0310edf6"
+          }
+        },
+        "4096": {
+          "cwe": {
+            "bytes": 854058,
+            "length_w_model_temp_max": 4034,
+            "length_w_model_temp_min": 3925,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/4096/cwe/test.jsonl",
+            "rows": 100,
+            "sha256": "8c5e9b832e8f9652a08f7c98aa03deb6080030a7f231d2031a675d90fe080c03"
+          },
+          "fwe": {
+            "bytes": 1069670,
+            "length_w_model_temp_max": 4046,
+            "length_w_model_temp_min": 3632,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/4096/fwe/test.jsonl",
+            "rows": 100,
+            "sha256": "e3ffa2590d5cf3d9d31685e7c3c3343385ad18b26acec3fc9ddc0b9642b34ef8"
+          },
+          "niah_multikey_1": {
+            "bytes": 1692456,
+            "length_w_model_temp_max": 4046,
+            "length_w_model_temp_min": 3411,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/4096/niah_multikey_1/test.jsonl",
+            "rows": 100,
+            "sha256": "ae488d2c18a0de2dfa129300a393df81a05284197d74f14c2dc9ff43e2e65c51"
+          },
+          "niah_multikey_2": {
+            "bytes": 1223014,
+            "length_w_model_temp_max": 4045,
+            "length_w_model_temp_min": 3905,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/4096/niah_multikey_2/test.jsonl",
+            "rows": 100,
+            "sha256": "a685c562b1220a57c121d7c709fc5ba96ff5e143519f0d528f96526908baa8c1"
+          },
+          "niah_multikey_3": {
+            "bytes": 601602,
+            "length_w_model_temp_max": 4046,
+            "length_w_model_temp_min": 3627,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/4096/niah_multikey_3/test.jsonl",
+            "rows": 100,
+            "sha256": "683f8f8d5b14b58387df8bc0e368a7110a0ebbad99aed9733c7c4c54e9c2ed34"
+          },
+          "niah_multiquery": {
+            "bytes": 1735629,
+            "length_w_model_temp_max": 4046,
+            "length_w_model_temp_min": 3400,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/4096/niah_multiquery/test.jsonl",
+            "rows": 100,
+            "sha256": "a1269915d368a82b724ac19dcab714199f36f079de67e223a9c63f5f7258fcbd"
+          },
+          "niah_multivalue": {
+            "bytes": 1837204,
+            "length_w_model_temp_max": 4046,
+            "length_w_model_temp_min": 3397,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/4096/niah_multivalue/test.jsonl",
+            "rows": 100,
+            "sha256": "2925e900ed365f5b8d47f4f20a3e5dbc072c9c6c71b49f145ae7c8f55a1d683d"
+          },
+          "niah_single_1": {
+            "bytes": 1498081,
+            "length_w_model_temp_max": 4038,
+            "length_w_model_temp_min": 4023,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/4096/niah_single_1/test.jsonl",
+            "rows": 100,
+            "sha256": "8705b9aa4e4b467e047f52185b316924331749e497783e8daa2d3b3e74bbc759"
+          },
+          "niah_single_2": {
+            "bytes": 1852956,
+            "length_w_model_temp_max": 4046,
+            "length_w_model_temp_min": 3416,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/4096/niah_single_2/test.jsonl",
+            "rows": 100,
+            "sha256": "94df4a38f65ba6026759a8a8a9defcace195d9d145fdf0adcb4cc0f6b02673e3"
+          },
+          "niah_single_3": {
+            "bytes": 1671358,
+            "length_w_model_temp_max": 4046,
+            "length_w_model_temp_min": 3414,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/4096/niah_single_3/test.jsonl",
+            "rows": 100,
+            "sha256": "35ae91822f71a340ee26b10d2d09a5b2a97376f81ba0130dbeff993e313e9643"
+          },
+          "qa_1": {
+            "bytes": 1453129,
+            "length_w_model_temp_max": 4045,
+            "length_w_model_temp_min": 2059,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/4096/qa_1/test.jsonl",
+            "rows": 100,
+            "sha256": "9ad871b80a09a4994faaa0019daa13c1e6ebb46938745facf5024d7c62993010"
+          },
+          "qa_2": {
+            "bytes": 1370142,
+            "length_w_model_temp_max": 4039,
+            "length_w_model_temp_min": 2410,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/4096/qa_2/test.jsonl",
+            "rows": 100,
+            "sha256": "84a30d3c616ab21887c504a1367a526df40a346aa6ee96b354b24c58e16879be"
+          },
+          "vt": {
+            "bytes": 1517890,
+            "length_w_model_temp_max": 4037,
+            "length_w_model_temp_min": 4026,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/4096/vt/test.jsonl",
+            "rows": 100,
+            "sha256": "d02a12414665dfb04e6ec356d894a5abacca84023575cec937f28e0c847b7c7b"
+          }
+        },
+        "8192": {
+          "cwe": {
+            "bytes": 1673406,
+            "length_w_model_temp_max": 8139,
+            "length_w_model_temp_min": 7663,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/8192/cwe/test.jsonl",
+            "rows": 100,
+            "sha256": "1c50f2371a5f777e5290b2bf7ef012417760ea4bdbab0311af7986a8211bf26d"
+          },
+          "fwe": {
+            "bytes": 2131998,
+            "length_w_model_temp_max": 8139,
+            "length_w_model_temp_min": 7445,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/8192/fwe/test.jsonl",
+            "rows": 100,
+            "sha256": "94d9b15516aefba2b7a3f29c5dddff6c3ffdec131b48a5771e565f5c0381d2fb"
+          },
+          "niah_multikey_1": {
+            "bytes": 3621370,
+            "length_w_model_temp_max": 8142,
+            "length_w_model_temp_min": 7556,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/8192/niah_multikey_1/test.jsonl",
+            "rows": 100,
+            "sha256": "cfe66e8dbb8cc5a51327722aebb4f8aa80addf5c27dae02d2c7e73b3aa3b0c48"
+          },
+          "niah_multikey_2": {
+            "bytes": 2342253,
+            "length_w_model_temp_max": 8137,
+            "length_w_model_temp_min": 7580,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/8192/niah_multikey_2/test.jsonl",
+            "rows": 100,
+            "sha256": "8906fdb6b2414d3543d9ef6012edc8adf507b1c023ba4c7ff7fe330d6e4f90b9"
+          },
+          "niah_multikey_3": {
+            "bytes": 1094405,
+            "length_w_model_temp_max": 8140,
+            "length_w_model_temp_min": 6191,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/8192/niah_multikey_3/test.jsonl",
+            "rows": 100,
+            "sha256": "e22938b7eaddd510007161c02e6b91c137dbc712eb8ec95a399ae504ac03c9e9"
+          },
+          "niah_multiquery": {
+            "bytes": 3707124,
+            "length_w_model_temp_max": 8141,
+            "length_w_model_temp_min": 7546,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/8192/niah_multiquery/test.jsonl",
+            "rows": 100,
+            "sha256": "b09572e9071415a7c829ba92444762e56a37a602a37a9bf432f4ec7c14f5306c"
+          },
+          "niah_multivalue": {
+            "bytes": 3619107,
+            "length_w_model_temp_max": 8141,
+            "length_w_model_temp_min": 7554,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/8192/niah_multivalue/test.jsonl",
+            "rows": 100,
+            "sha256": "f0c3bd4dc80511dd5537561156a9330781085e6e23eedb1fe47b6e76fbbac1b4"
+          },
+          "niah_single_1": {
+            "bytes": 3054214,
+            "length_w_model_temp_max": 8142,
+            "length_w_model_temp_min": 8127,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/8192/niah_single_1/test.jsonl",
+            "rows": 100,
+            "sha256": "07514058b95bc79239c40af4ead139eac52cd7f384821ff0cb91787cdeccf19f"
+          },
+          "niah_single_2": {
+            "bytes": 3709949,
+            "length_w_model_temp_max": 8142,
+            "length_w_model_temp_min": 7556,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/8192/niah_single_2/test.jsonl",
+            "rows": 100,
+            "sha256": "7cb832203d7a5fb5ecd2ebbc534fe003420b5d7f210cc18f5fdeafbc2b44f757"
+          },
+          "niah_single_3": {
+            "bytes": 3619533,
+            "length_w_model_temp_max": 8142,
+            "length_w_model_temp_min": 7553,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/8192/niah_single_3/test.jsonl",
+            "rows": 100,
+            "sha256": "b7d6174c609a7351b840aad260a284c33084baf593191aa80d4ccd7686c7dffa"
+          },
+          "qa_1": {
+            "bytes": 3415098,
+            "length_w_model_temp_max": 8141,
+            "length_w_model_temp_min": 6104,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/8192/qa_1/test.jsonl",
+            "rows": 100,
+            "sha256": "f0dc6d7ac6698f8812cecfda43eda3c36ea514b2dea87191c50411f8fc5c7175"
+          },
+          "qa_2": {
+            "bytes": 3059034,
+            "length_w_model_temp_max": 8138,
+            "length_w_model_temp_min": 5582,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/8192/qa_2/test.jsonl",
+            "rows": 100,
+            "sha256": "27ab0fb2b97cad515bd8e75f21cce36a1cca1f2bf9352581229d9957708c7aaa"
+          },
+          "vt": {
+            "bytes": 3073080,
+            "length_w_model_temp_max": 8141,
+            "length_w_model_temp_min": 7894,
+            "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/8192/vt/test.jsonl",
+            "rows": 100,
+            "sha256": "3db03cbe8eccbf99e1b9d1e04db97013b592f30a0e6812537ecabf244545c25f"
+          }
+        }
+      },
+      "manifest": {
+        "bytes": 19925,
+        "path": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/ruler_v1/qwen3-8b/manifest.json",
+        "sha256": "33a3a8df63962375876ebc61225de731debdc9cce1ac72f3cde2ef0f14d50ed8"
+      },
+      "source_commits": {
+        "nemo_skills": "f4a3fd8e524acd9abd1fea4387e8f179f6d51cf3",
+        "ruler": "38da79d79519ef87aa46ae804f838e1eab7f86d7"
+      },
+      "total_rows": 3900
+    }
+  },
+  "run_root": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715",
+  "schema_version": 1,
+  "status": "ok",
+  "validated_at_utc": "2026-07-15T11:42:03.468419+00:00"
+}

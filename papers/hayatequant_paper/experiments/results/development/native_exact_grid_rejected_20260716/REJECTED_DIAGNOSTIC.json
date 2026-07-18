@@ -1,0 +1,51 @@
+{
+  "schema": {
+    "name": "onecomp.hq_native_rejected_exact_grid_diagnostic",
+    "version": 1
+  },
+  "status": "rejected",
+  "development_only": true,
+  "candidate": "conservative_cell_candidate_index_with_manual_fp16_score",
+  "reason": "manual Triton fp16 score was not code-identical to the public CUDA fp16 GEMM on rare near-ties",
+  "diagnostic_fixture": {
+    "rows_per_role": 1000000,
+    "rate": 4,
+    "key_mismatch_count": 2,
+    "value_mismatch_count": 2,
+    "reference_code_was_present_in_candidate_list": true,
+    "examples": [
+      {
+        "role": "key",
+        "query": [-0.07568359375, -1.0361328125],
+        "reference_code": 104,
+        "candidate_code": 125
+      },
+      {
+        "role": "key",
+        "query": [1.40234375, 0.358154296875],
+        "reference_code": 186,
+        "candidate_code": 220
+      },
+      {
+        "role": "value",
+        "query": [0.873046875, 0.007843017578125],
+        "reference_code": 34,
+        "candidate_code": 21
+      },
+      {
+        "role": "value",
+        "query": [1.236328125, 0.0033016204833984375],
+        "reference_code": 55,
+        "candidate_code": 34
+      }
+    ]
+  },
+  "rounding_root_cause": {
+    "public_gemm_shape_dependence_observed": true,
+    "m_equals_1_and_m_greater_or_equal_2_can_round_differently": true,
+    "candidate_set_omission": false
+  },
+  "raw_failure_log": "raw/failures/smoke_rate4.log",
+  "candidate_source_sha256_from_profile_rate4": "158409c08b4ac899f2663596e81e539788a564a78688e685f879946d4b405881",
+  "promotion_allowed": false
+}

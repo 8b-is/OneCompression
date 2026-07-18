@@ -1,0 +1,217 @@
+{
+  "schema_version": 1,
+  "audit_date": "2026-07-16",
+  "decision_timing": {
+    "phase": "precommit_source_contract_audit",
+    "formal_results_inspected": false,
+    "model_results_inspected": false,
+    "statement": "The carrier correction was selected from payload semantics and deterministic data-free QMC analysis without inspecting formal benchmark or model outcomes."
+  },
+  "scope": {
+    "kind": "development_implementation_audit",
+    "contains_formal_or_model_outcomes": false,
+    "changes_stored_bits": false,
+    "changes_candidate_pairs": false,
+    "changes_original_hq_main_story": false
+  },
+  "contract": {
+    "policy_version": "adaptive_hq_cache_causal_safe_two_pair_rd_v5",
+    "distortion_table_version": "source_qmc128_exact_codebook_fp16scale_safe_two_pair_update_carrier_v4",
+    "selector_carrier_version": "value_scale_fp16_fraction_lsb_v1",
+    "objective": "causal_raw_power_times_qmc_base_plus_one_carrier_per_update",
+    "selector_carrier_distortion_amortization": "signed_qmc_all_scales_delta_divided_by_current_update_vectors",
+    "selector_bits_per_encode": 1,
+    "selector_location": "first_value_fp16_scale_low_fraction_bits",
+    "scale_reconstruction": "clear_carrier_fraction_bits",
+    "update_vector_count": "batch_times_heads_times_sequence_length",
+    "formula": "value_relative_distortion_effective = value_relative_distortion_base + value_selector_carrier_relative_distortion_delta_per_vector / update_vectors"
+  },
+  "correction": {
+    "finding_id": "AHQ-CARRIER-005",
+    "severity": "scientific_contract",
+    "status": "fixed_and_frozen",
+    "prior_problem": "The prior proxy cleared one scale in a fixed 128-vector QMC panel, implicitly charging one carrier per 128 vectors regardless of the actual encode-update vector count.",
+    "resolution": "Compute a signed all-scales-cleared minus carrier-free QMC delta, then divide that per-vector delta by the actual positive integer update-vector count.",
+    "fail_closed_inputs": [
+      "boolean_update_vector_count",
+      "non_integer_update_vector_count",
+      "nonpositive_update_vector_count",
+      "missing_or_nonfinite_constants",
+      "nonpositive_effective_distortion"
+    ]
+  },
+  "qmc_contract": {
+    "vectors": 128,
+    "dimension": 128,
+    "sobol_scramble": true,
+    "sobol_seed": 20260716,
+    "source_law": "gaussian",
+    "source_dtype_after_inverse_cdf": "torch.float32",
+    "accumulation_dtype": "torch.float64",
+    "block_size": 2,
+    "codebook_init": "auto",
+    "value_scale_mode": "ls_iter",
+    "stored_scale_dtype": "torch.float16",
+    "base_scale_fraction_lsb_clear_bits": 0,
+    "all_clear_scale_fraction_lsb_clear_bits": 1
+  },
+  "raw_frozen_value_qmc_constants": [
+    {
+      "code_bits_per_block": 3,
+      "value_relative_distortion_base": 0.19907806689924892,
+      "value_relative_distortion_all_scales_one_fraction_lsb_cleared": 0.19907824431160054,
+      "value_selector_carrier_relative_distortion_delta_per_vector": 1.7741235161516933e-07,
+      "effective_by_update_vectors": {
+        "1": 0.19907824431160054,
+        "2": 0.19907815560542474,
+        "8": 0.19907808907579289,
+        "128": 0.19907806828528293
+      }
+    },
+    {
+      "code_bits_per_block": 4,
+      "value_relative_distortion_base": 0.10502050634228821,
+      "value_relative_distortion_all_scales_one_fraction_lsb_cleared": 0.1050207039983323,
+      "value_selector_carrier_relative_distortion_delta_per_vector": 1.9765604408750193e-07,
+      "effective_by_update_vectors": {
+        "1": 0.1050207039983323,
+        "2": 0.10502060517031025,
+        "8": 0.10502053104929372,
+        "128": 0.10502050788647606
+      }
+    },
+    {
+      "code_bits_per_block": 5,
+      "value_relative_distortion_base": 0.05611336809327964,
+      "value_relative_distortion_all_scales_one_fraction_lsb_cleared": 0.05611367154813694,
+      "value_selector_carrier_relative_distortion_delta_per_vector": 3.03454857304708e-07,
+      "effective_by_update_vectors": {
+        "1": 0.05611367154813694,
+        "2": 0.056113519820708294,
+        "8": 0.0561134060251368,
+        "128": 0.05611337046402071
+      }
+    },
+    {
+      "code_bits_per_block": 6,
+      "value_relative_distortion_base": 0.028687194082191444,
+      "value_relative_distortion_all_scales_one_fraction_lsb_cleared": 0.028687424213559833,
+      "value_selector_carrier_relative_distortion_delta_per_vector": 2.3013136838875847e-07,
+      "effective_by_update_vectors": {
+        "1": 0.028687424213559833,
+        "2": 0.028687309147875636,
+        "8": 0.02868722284861249,
+        "128": 0.028687195880092758
+      }
+    },
+    {
+      "code_bits_per_block": 7,
+      "value_relative_distortion_base": 0.01471564149679217,
+      "value_relative_distortion_all_scales_one_fraction_lsb_cleared": 0.014715996360337961,
+      "value_selector_carrier_relative_distortion_delta_per_vector": 3.5486354579145063e-07,
+      "effective_by_update_vectors": {
+        "1": 0.014715996360337961,
+        "2": 0.014715818928565065,
+        "8": 0.014715685854735393,
+        "128": 0.014715644269163622
+      }
+    },
+    {
+      "code_bits_per_block": 8,
+      "value_relative_distortion_base": 0.007529765782113408,
+      "value_relative_distortion_all_scales_one_fraction_lsb_cleared": 0.0075301018210839265,
+      "value_selector_carrier_relative_distortion_delta_per_vector": 3.360389705187386e-07,
+      "effective_by_update_vectors": {
+        "1": 0.0075301018210839265,
+        "2": 0.007529933801598667,
+        "8": 0.0075298077869847225,
+        "128": 0.007529768407417865
+      }
+    }
+  ],
+  "formal_rate_candidate_pairs": [
+    {
+      "average_rate_bits_per_coordinate": 2,
+      "candidate_pairs_key_value_code_bits_per_block": [
+        {
+          "pair": [4, 4],
+          "value_qmc_code_bits": 4,
+          "value_effective_by_update_vectors": {
+            "1": 0.1050207039983323,
+            "2": 0.10502060517031025,
+            "8": 0.10502053104929372,
+            "128": 0.10502050788647606
+          }
+        },
+        {
+          "pair": [5, 3],
+          "value_qmc_code_bits": 3,
+          "value_effective_by_update_vectors": {
+            "1": 0.19907824431160054,
+            "2": 0.19907815560542474,
+            "8": 0.19907808907579289,
+            "128": 0.19907806828528293
+          }
+        }
+      ]
+    },
+    {
+      "average_rate_bits_per_coordinate": 3,
+      "candidate_pairs_key_value_code_bits_per_block": [
+        {
+          "pair": [6, 6],
+          "value_qmc_code_bits": 6,
+          "value_effective_by_update_vectors": {
+            "1": 0.028687424213559833,
+            "2": 0.028687309147875636,
+            "8": 0.02868722284861249,
+            "128": 0.028687195880092758
+          }
+        },
+        {
+          "pair": [7, 5],
+          "value_qmc_code_bits": 5,
+          "value_effective_by_update_vectors": {
+            "1": 0.05611367154813694,
+            "2": 0.056113519820708294,
+            "8": 0.0561134060251368,
+            "128": 0.05611337046402071
+          }
+        }
+      ]
+    },
+    {
+      "average_rate_bits_per_coordinate": 4,
+      "candidate_pairs_key_value_code_bits_per_block": [
+        {
+          "pair": [8, 8],
+          "value_qmc_code_bits": 8,
+          "value_effective_by_update_vectors": {
+            "1": 0.0075301018210839265,
+            "2": 0.007529933801598667,
+            "8": 0.0075298077869847225,
+            "128": 0.007529768407417865
+          }
+        },
+        {
+          "pair": [9, 7],
+          "value_qmc_code_bits": 7,
+          "value_effective_by_update_vectors": {
+            "1": 0.014715996360337961,
+            "2": 0.014715818928565065,
+            "8": 0.014715685854735393,
+            "128": 0.014715644269163622
+          }
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "focused_tests_passed": 10,
+    "focused_tests_failed": 0,
+    "focused_tests_deselected": 302,
+    "warnings": 14,
+    "reported_duration_seconds": 12.15,
+    "credential_shape_matches": 0
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "status": "development_only_rejected_before_formal",
+  "source_commit": "3d6f264363d7291c1fd07fe40d310ae041e53425",
+  "slurm_jobs": {
+    "failed_transient_preflight": [69410],
+    "completed": [69411, 69412, 69413, 69414, 69415, 69416, 69417]
+  },
+  "formal_claim_eligible": false,
+  "formal_submission_started": false,
+  "rejection_reasons": [
+    "MATH full-generation grading retained an ambiguously named non-grading regex extraction field",
+    "non-eviction cache rows reported eviction_fired=true instead of marking eviction inapplicable",
+    "FullKV top-level compression aggregation label disagreed with its authoritative sufficient statistics",
+    "zero-shot CLI canonicalization filtered BlockQuant-paper at a synthetic bits=0 stage before the valid rate-3 execution",
+    "zero-shot saved scientific config omitted the device field required by the smoke provenance contract",
+    "formal aggregation checked the generic formal-schema rejection before the valid zero-shot config-only fingerprint branch, making correctly fingerprinted schema-v2 zero-shot rows unreachable"
+  ],
+  "metric_effect": "MATH correctness was independently replayed from full generated text with pinned Math-Verify and was not changed by the non-grading regex diagnostic",
+  "next_action": "fix raw provenance schema, rerun all exact smoke jobs from one new clean commit, and require a fresh smoke approval before formal submission"
+}

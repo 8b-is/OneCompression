@@ -10,24 +10,34 @@ ships native KV-cache dtypes well beyond FP8, so the bridge maps onto them:
 
 * **FP8** -> ``"fp8_e4m3"`` / ``"fp8_e5m2"`` (data-free, ``calculate_kv_scales``).
 * **TurboQuant** (and the TurboQuant-family **HALO**, **HayateQuant** at
-  ``block_size=1``) -> the native ``turboquant_*`` presets
+  ``block_size=1``) can explicitly opt into the native ``turboquant_*`` presets
   (``turboquant_k8v4``, ``turboquant_4bit_nc``, ``turboquant_k3v4_nc``,
   ``turboquant_3bit_nc``) chosen by ``(key_bits, value_bits)`` -- vLLM runs
   Hadamard rotation + Lloyd-Max keys + uniform values with automatic
-  boundary-layer protection (FlashAttention-2).  For HayateQuant block-VQ
-  (``block_size>1``), the bridge keeps the byte-compatible ``turboquant_*``
-  dtype but registers OneComp's native vLLM backend override for the supported
-  3/4-bit ``block_size=2`` key block-VQ path.  Set
-  ``KVCOMP_VLLM_HAYATEQUANT_MODE=scalar_fallback`` to force the older scalar
-  TurboQuant fallback, or ``strict`` to require the HF/custom path.
+  boundary-layer protection (FlashAttention-2). Since that differs from
+  OneComp's dense-QR / Lloyd-Max-on-both-roles reference, strict/custom is the
+  default; set ``KVCOMP_VLLM_TURBOQUANT_MODE=native`` to request the deployment
+  approximation explicitly. No native vLLM dtype
+  reproduces HayateQuant block-VQ (``block_size>1``), so the default is strict
+  and requires the HF/custom path.  An explicitly requested
+  ``KVCOMP_VLLM_HAYATEQUANT_MODE=native`` enables an experimental,
+  byte-compatible hybrid that applies block-VQ to keys but retains vLLM's
+  uniform scalar value quantizer; it must not be reported as faithful
+  HayateQuant.  ``scalar_fallback`` explicitly selects TurboQuant semantics.
 * **NVFP4** -> ``"nvfp4"``; **INT8** -> ``"int8_per_token_head"``.
-* Remaining low-bit/asymmetric codecs (INT4/INT3/INT2, KIVI, Ternary) and
+* Remaining low-bit/asymmetric codecs (INT4/INT3/INT2, KIVI, Ternary),
+  role-dependent precision policies, and
   token-eviction selectors (SnapKV, ThinKV TBE) / adaptive per-token policies
   (TaperKV, ThinKV) are not expressible as one ``kv_cache_dtype`` and require the
   custom attention-backend / HF cache path.  For those the module returns
   ``native_supported=False`` with an explicit reason rather than silently
   downgrading.  Native dtypes added only in recent vLLM are validated at
   apply-time so an older vLLM falls back gracefully.
+* vLLM's native paged cache quantizes every stored token and cannot preserve
+  OneComp's full-precision ``residual_window`` suffix.  A positive window
+  therefore fails closed to the HF/custom path.  Native deployments must set
+  ``residual_window=0`` explicitly; a missing field retains OneComp's historical
+  default of 128 rather than silently changing the requested algorithm.
 
 The module deliberately imports neither ``vllm`` nor ``torch`` so it can be
 unit-tested on a CPU-only login node.
@@ -81,6 +91,13 @@ _HAYATEQUANT_NATIVE_MODES = {
     "hayate",
     "hayate_native",
 }
+_HAYATEQUANT_FULL_NATIVE_MODES = {
+    "full",
+    "full_native",
+    "faithful_native",
+    "packed",
+    "packed_native",
+}
 _HAYATEQUANT_SCALAR_FALLBACK_MODES = {
     "scalar",
     "scalar_fallback",
@@ -117,7 +134,8 @@ def _check_rotation_for_native(codec: dict, name: str, plan: "KVCompVLLMPlan"):
             "kernel cannot apply a learned rotation/codebook -- the native "
             "preset would quantize under the data-free transform instead "
             "(the calibration gain would be lost). Use the HF cache path "
-            "for faithful calibrated results.")
+            "for faithful calibrated results."
+        )
         return
     mode = codec.get("rotation_mode")
     block_size = codec.get("block_size")
@@ -191,10 +209,10 @@ def _hayatequant_vllm_mode(codec: dict) -> str:
     """Resolve how block-VQ HayateQuant should be represented in vLLM.
 
     Upstream vLLM currently exposes TurboQuant scalar presets as dtype strings,
-    not HayateQuant-specific dtype strings.  For operational usability, the
-    default is OneComp's byte-compatible native backend override for supported
-    HayateQuant key block-VQ presets.  Scalar fallback and strict/custom modes
-    remain explicit escape hatches.
+    not HayateQuant-specific dtype strings.  Neither the scalar preset nor the
+    experimental key-only block-VQ override reproduces HayateQuant's value
+    block-VQ path, so strict/custom is the correctness-preserving default.
+    The two approximate serving modes remain explicit opt-ins.
     ``KVCOMP_VLLM_SCALAR_FALLBACK=0`` is kept as a backward-compatible way to
     force strict behavior from older scripts.
     """
@@ -208,9 +226,13 @@ def _hayatequant_vllm_mode(codec: dict) -> str:
     if raw is None:
         legacy = os.environ.get("KVCOMP_VLLM_SCALAR_FALLBACK")
         if legacy is not None:
-            raw = "scalar_fallback" if legacy.strip().lower() in ("1", "true", "yes", "on") else "strict"
+            raw = (
+                "scalar_fallback"
+                if legacy.strip().lower() in ("1", "true", "yes", "on")
+                else "strict"
+            )
     if raw is None:
-        return "native"
+        return "strict"
     mode = str(raw).strip().lower().replace("-", "_")
     if mode in ("1", "true", "yes", "on"):
         return "native"
@@ -229,6 +251,18 @@ def _hayatequant_native_key_scale_mode(codec: dict) -> str | None:
     if mode in {"nc", "ip"}:
         return mode
     return None
+
+
+def _turboquant_native_opted_in(codec: dict, name: str) -> bool:
+    """Whether an inexact native TurboQuant-family deployment was requested."""
+    if name == "hayatequant":
+        mode = _hayatequant_vllm_mode(codec)
+        return mode in (_HAYATEQUANT_NATIVE_MODES | _HAYATEQUANT_SCALAR_FALLBACK_MODES)
+    raw = codec.get("vllm_mode") or os.environ.get("KVCOMP_VLLM_TURBOQUANT_MODE")
+    if raw is None:
+        return False
+    mode = str(raw).strip().lower().replace("-", "_")
+    return mode in {"native", "approximate", "deployment", "vllm", "1", "true", "yes", "on"}
 
 
 @dataclass
@@ -255,11 +289,21 @@ class KVCompVLLMPlan:
     codec_name: Optional[str] = None
     calculate_kv_scales: bool = False
     needs_custom_backend: bool = False
-    # True when the plugin should override vLLM's TURBOQUANT backend with the
-    # OneComp HayateQuant key block-VQ implementation while retaining the same
-    # byte-compatible ``turboquant_*`` cache dtype.
+    # True only for the explicitly requested experimental hybrid: block-VQ
+    # keys plus upstream TurboQuant uniform scalar values. This is not a
+    # faithful HayateQuant result and is labelled accordingly in notes.
     hayate_native: bool = False
     hayate_config: dict = field(default_factory=dict)
+    # Faithful fixed-rate packed HQ owns both key and value cache layouts.
+    # It is distinct from ``hayate_native``, the historical key-only hybrid.
+    hayate_full_native: bool = False
+    hayate_full_config: dict = field(default_factory=dict)
+    # TapeKV has a deliberately explicit vLLM *semantic* backend.  It uses
+    # vLLM's ordinary FP16/BF16 paged allocation and fake-quantizes logical KV
+    # values before attention, so it is valid for inference/quality validation
+    # but never a packed-memory or throughput deployment result.
+    taper_native: bool = False
+    taper_config: dict = field(default_factory=dict)
     # Boundary / outlier layers vLLM should keep in full precision; mapped onto
     # ``--kv-cache-dtype-skip-layers`` so the codec's ``skip_layers`` are honoured
     # instead of silently dropped.
@@ -284,59 +328,42 @@ def _plan_rolekv(
     plan: "KVCompVLLMPlan",
     requested_kv_cache_dtype: str,
 ) -> "KVCompVLLMPlan":
-    """Map a role-aware precision policy ("rolekv") onto vLLM engine kwargs.
+    """Resolve a role-aware policy without silently collapsing its semantics.
 
-    vLLM applies one ``kv_cache_dtype`` uniformly to every token of every
-    sequence; per-role bit-widths are not expressible.  The mapping is
-    safe-side: the most precise role decides the dtype (8-bit -> native FP8
-    with online scales; >= 16 -> ``"auto"``), so no span is stored at lower
-    fidelity than the policy requested.  Role-aware compression below 8 bit
-    is only realised in the HF cache path (:class:`onecomp.kvcomp.cache.
-    role_cache.RoleKVCache` live, or ``.okv`` checkpoints offline).
+    The live RoleKV cache uses per-token affine quantization, optional fp16
+    sink tokens, and role-dependent bit widths. A uniform native vLLM dtype
+    reproduces none of those features except the degenerate all-fp16 policy.
     """
     bits_map = dict(policy.get("bits_per_role") or {})
     bits_map["<default>"] = int(policy.get("default_bits", 4))
-    max_bits = max(int(b) for b in bits_map.values())
+    bit_values = {int(value) for value in bits_map.values()}
+    sink_tokens = int(policy.get("sink_tokens", 4))
+    plan.skip_layers = [int(x) for x in (policy.get("skip_layers") or [])]
 
-    if max_bits >= 16:
+    if bit_values == {16} and sink_tokens >= 0:
         plan.kv_cache_dtype = "auto"
         plan.native_supported = True
         plan.notes.append(
-            "Policy 'rolekv': most precise role is uncompressed (>= 16 bit); "
-            "kv_cache_dtype='auto' keeps the model dtype."
+            "Policy 'rolekv' assigns fp16 to every role; kv_cache_dtype='auto' "
+            "faithfully keeps the model dtype."
         )
-    else:
-        dtype = _NATIVE_FP8["fp8"]
-        plan.kv_cache_dtype = dtype
-        plan.native_supported = True
-        plan.calculate_kv_scales = True
-        plan.notes.append(
-            f"Policy 'rolekv': most precise role bits={max_bits} -> native vLLM "
-            f"kv_cache_dtype='{dtype}' with online scale calculation (data-free, "
-            "mirrors the codec's tuning-free path)."
-        )
-        if requested_kv_cache_dtype not in ("auto", dtype):
-            plan.warnings.append(
-                f"Requested kv_cache_dtype='{requested_kv_cache_dtype}' conflicts "
-                f"with policy 'rolekv' -> '{dtype}'; using the policy's dtype."
-            )
-        if max_bits < 8:
-            plan.warnings.append(
-                f"Policy 'rolekv': most precise role bits={max_bits} is below vLLM's "
-                "lowest native KV cache dtype (fp8 = 8 bit); fp8 is a safe "
-                "higher-precision stand-in, so fidelity is preserved but the "
-                "expected memory saving below 8 bit is not realised inside vLLM."
-            )
-    below = sorted(role for role, bits in bits_map.items() if int(bits) < max_bits)
-    if below and plan.kv_cache_dtype != "auto":
+        return plan
+
+    plan.kv_cache_dtype = "auto"
+    plan.native_supported = False
+    plan.needs_custom_backend = True
+    plan.notes.append(
+        "Policy 'rolekv' requires the HF/custom path: vLLM applies one dtype "
+        "uniformly, whereas RoleKV uses per-role affine bit widths"
+        + (f" {sorted(bit_values)}" if len(bit_values) > 1 else f" {next(iter(bit_values))}")
+        + f" and sink_tokens={sink_tokens}. Mapping it to FP8 would change both "
+        "the quantizer and realised memory rate."
+    )
+    if requested_kv_cache_dtype != "auto":
         plan.warnings.append(
-            "vLLM applies one kv_cache_dtype to every token; the per-role "
-            f"bit-widths of roles {below} are collapsed to "
-            f"'{plan.kv_cache_dtype}'. Role-aware compression below the deciding "
-            "bit-width is only realised in the HF cache path (RoleKVCache / "
-            ".okv checkpoints)."
+            f"Requested kv_cache_dtype='{requested_kv_cache_dtype}' cannot "
+            "reproduce RoleKV and is ignored by the fail-closed plan."
         )
-    plan.skip_layers = [int(x) for x in (policy.get("skip_layers") or [])]
     return plan
 
 
@@ -366,7 +393,45 @@ def plan_from_kv_config(
     codec = kv_config.get("codec") or None
     selector = kv_config.get("selector") or None
     policy = kv_config.get("policy") or None
+    policy_name = policy.get("name") if policy else None
     plan.codec_name = codec.get("name") if codec else None
+    taper_hayate_combo = (
+        policy_name in ("taperkv", "block_taperkv") and plan.codec_name == "hayatequant"
+    )
+
+    # ``KVCompressionConfig.residual_window`` means that the newest N tokens
+    # stay in full precision.  A native vLLM ``kv_cache_dtype`` is uniform over
+    # every resident token, so mapping a positive window to it silently changes
+    # both the algorithm and its effective memory rate.  Preserve the serialized
+    # config default (128, including for pre-field legacy configs) and fail closed
+    # to the faithful HF/custom path.  Users who intentionally want the uniform
+    # native deployment approximation must opt out with an explicit zero.
+    raw_residual_window = kv_config.get("residual_window", 128)
+    try:
+        residual_window = int(raw_residual_window)
+    except (TypeError, ValueError):
+        residual_window = -1
+    if residual_window < 0:
+        plan.needs_custom_backend = True
+        plan.notes.append(
+            "Invalid kv_compression_config.residual_window="
+            f"{raw_residual_window!r}; expected a non-negative integer. "
+            "Native vLLM mapping is disabled rather than guessing."
+        )
+    elif (
+        residual_window > 0
+        and (codec is not None or policy_name == "rolekv")
+        and not taper_hayate_combo
+    ):
+        plan.needs_custom_backend = True
+        plan.notes.append(
+            f"residual_window={residual_window} keeps the newest tokens in full "
+            "precision in OneComp's HF cache, but native vLLM kv_cache_dtype "
+            "quantizes every stored token and cannot reproduce that window. "
+            "Native mapping is disabled; use the HF/custom path for faithful "
+            "results, or explicitly set residual_window=0 to request uniform "
+            "native quantization. (Missing fields default to 128.)"
+        )
 
     if selector is not None:
         plan.needs_custom_backend = True
@@ -375,17 +440,55 @@ def plan_from_kv_config(
             "attention backend; native kv_cache_dtype cannot evict tokens."
         )
 
+    # TapeKV is now available through an explicit reference FlashAttention
+    # backend.  Do this before the generic adaptive-policy rejection below:
+    # a generic vLLM dtype would still be incorrect, but the backend carries
+    # the actual age schedule.  It intentionally accepts only the standalone
+    # affine TapeKV policies; composing a second codec or eviction selector
+    # would silently change the algorithm, so those configurations remain
+    # fail-closed.
+    if policy_name in ("taperkv", "block_taperkv") and not plan.needs_custom_backend:
+        if codec is not None and plan.codec_name != "hayatequant":
+            plan.needs_custom_backend = True
+            plan.notes.append(
+                "TapeKV vLLM reference backend is affine-policy only; a separate "
+                f"codec '{plan.codec_name}' is not silently composed with it."
+            )
+        else:
+            try:
+                from vllm_plugins.kvcomp.taper_config import TaperVLLMRecipe
+
+                recipe = TaperVLLMRecipe.from_policy(
+                    policy, hayate_config=codec if plan.codec_name == "hayatequant" else None
+                )
+            except (TypeError, ValueError) as exc:
+                plan.needs_custom_backend = True
+                plan.notes.append(
+                    f"Invalid TapeKV vLLM policy; refusing an uncompressed fallback: {exc}"
+                )
+            else:
+                plan.kv_cache_dtype = "auto"
+                plan.native_supported = True
+                plan.taper_native = True
+                plan.taper_config = recipe.to_mapping()
+                plan.skip_layers = list(recipe.skip_layers)
+                plan.notes.append(
+                    "TapeKV will use the explicit vLLM reference backend: the "
+                    "age-dependent affine fake-quantisation is applied before "
+                    "FlashAttention, while the physical paged cache remains the "
+                    "model dtype. Do not report this path as packed-memory or "
+                    "throughput compression."
+                )
+                if requested_kv_cache_dtype != "auto":
+                    plan.warnings.append(
+                        f"Requested kv_cache_dtype='{requested_kv_cache_dtype}' is ignored: "
+                        "TapeKV reference semantics require the model-dtype cache."
+                    )
+                return plan
+
     # Per-token adaptive recipes (ThinKV graded eviction, TaperKV graded
     # quantization) are not a single kv_cache_dtype and need the custom backend.
-    policy_name = policy.get("name") if policy else None
     if policy_name == "rolekv" and not plan.needs_custom_backend:
-        # Role-aware precision (RolePrecisionPolicy) collapses safe-side: the
-        # most precise role decides the dtype, so no span is served below the
-        # fidelity the policy requested.  Unlike age/thought-graded policies
-        # this is a pure fidelity *upgrade* for the low-bit roles (their spans
-        # were only ever quantized harder, never softer), so a compressed
-        # native dtype is still honest -- the caveat is the unrealised extra
-        # compression, which is warned about explicitly.
         return _plan_rolekv(policy, plan, requested_kv_cache_dtype)
     if policy_name not in (None, "static", "rolekv"):
         plan.needs_custom_backend = True
@@ -448,6 +551,8 @@ def plan_from_kv_config(
             unsupported_native.append("calibration")
         if int(codec.get("n_outlier") or 0) > 0:
             unsupported_native.append("n_outlier")
+        if int(codec.get("key_n_outlier") or 0) > 0 or int(codec.get("value_n_outlier") or 0) > 0:
+            unsupported_native.append("role-specific n_outlier")
         if codec.get("use_qjl"):
             unsupported_native.append("use_qjl")
         if int(codec.get("max_codebook_bits") or 9) > 9:
@@ -466,7 +571,94 @@ def plan_from_kv_config(
         if key_scale_mode is None:
             unsupported_native.append(f"key_scale_mode={codec.get('key_scale_mode')!r}")
 
-        if (
+        if mode in _HAYATEQUANT_FULL_NATIVE_MODES:
+            full_supported_markers = {
+                "avg_bits",
+                "key_code_bits_per_block",
+                "value_code_bits_per_block",
+            }
+            full_unsupported = [
+                item for item in unsupported_native if item not in full_supported_markers
+            ]
+            encoder = str(codec.get("encoder") or "auto").strip().lower()
+            if encoder not in {"exact", "lut"}:
+                full_unsupported.append("encoder must be explicitly 'exact' or 'lut'")
+            elif encoder == "lut" and (
+                codec.get("lut_bins") is None or codec.get("lut_candidates") is None
+            ):
+                full_unsupported.append(
+                    "encoder='lut' requires serialized lut_bins and lut_candidates"
+                )
+            full_config = {
+                "dist": codec.get("dist") or "gaussian",
+                "codebook_init": codec.get("codebook_init") or "auto",
+                "rotation_mode": codec.get("rotation_mode") or "auto",
+                "key_scale_mode": codec.get("key_scale_mode") or "nc",
+                "value_scale_mode": codec.get("value_scale_mode") or "ls_iter",
+                "assignment_mode": encoder,
+                "lut_bins": codec.get("lut_bins"),
+                "lut_candidates": codec.get("lut_candidates"),
+                "seed": int(codec.get("seed") or 0),
+                "max_codebook_bits": int(codec.get("max_codebook_bits") or 9),
+            }
+            role_fields = (
+                codec.get("key_code_bits_per_block"),
+                codec.get("value_code_bits_per_block"),
+                codec.get("block_size"),
+            )
+            if role_fields[0] is not None or role_fields[1] is not None:
+                if any(value is None for value in role_fields):
+                    full_unsupported.append(
+                        "explicit role code bits require key/value fields and block_size"
+                    )
+                else:
+                    full_config.update(
+                        {
+                            "key_code_bits_per_block": int(role_fields[0]),
+                            "key_block_size": int(role_fields[2]),
+                            "value_code_bits_per_block": int(role_fields[1]),
+                            "value_block_size": int(role_fields[2]),
+                        }
+                    )
+            elif codec.get("avg_bits") is not None:
+                full_config.update({"avg_bits": int(codec["avg_bits"]), "recipe": "hq"})
+            else:
+                full_unsupported.append("avg_bits or explicit role code bits")
+            try:
+                from vllm_plugins.kvcomp.hayate_full_config import (
+                    full_hq_native_recipe_from_mapping,
+                )
+
+                full_recipe = full_hq_native_recipe_from_mapping(full_config)
+                full_rate = int(full_recipe.average_rate)
+                if full_recipe.average_rate != full_rate or full_rate not in (3, 4):
+                    full_unsupported.append(
+                        "packed vLLM generation currently requires average rate 3 or 4"
+                    )
+            except (TypeError, ValueError) as exc:
+                full_unsupported.append(str(exc))
+                full_rate = 0
+            if full_unsupported:
+                plan.needs_custom_backend = True
+                plan.native_supported = False
+                plan.notes.append(
+                    "Faithful packed full-HQ mode cannot represent this recipe: "
+                    + ", ".join(full_unsupported)
+                )
+            else:
+                preset = f"turboquant_{full_rate}bit_nc"
+                _set_native(
+                    preset,
+                    "HayateQuant will use OneComp's faithful packed fixed-HQ vLLM "
+                    f"backend at average rate {full_rate}; both key and value use "
+                    "the serialized block-VQ recipe.",
+                )
+                plan.hayate_full_native = True
+                plan.hayate_full_config = {
+                    key: value for key, value in full_config.items() if value is not None
+                }
+                plan.skip_layers = [int(x) for x in (codec.get("skip_layers") or [])]
+        elif (
             mode in _HAYATEQUANT_NATIVE_MODES
             and preset is not None
             and kb in (3, 4)
@@ -475,9 +667,9 @@ def plan_from_kv_config(
         ):
             _set_native(
                 preset,
-                f"Codec 'hayatequant' (k{kb}v{vb}, block-VQ) -> byte-compatible "
+                f"Codec 'hayatequant' (k{kb}v{vb}) -> experimental byte-compatible "
                 f"vLLM kv_cache_dtype='{preset}' with OneComp's native "
-                "HayateQuant key block-VQ backend override.",
+                "key-block-VQ/TurboQuant-value hybrid backend override.",
             )
             plan.hayate_native = True
             plan.hayate_config = {
@@ -493,17 +685,22 @@ def plan_from_kv_config(
             }
             plan.skip_layers = [int(x) for x in (codec.get("skip_layers") or [])]
             plan.notes.append(
-                "The native HayateQuant vLLM path preserves the TurboQuant byte "
-                "budget and paged-cache capacity while replacing scalar key "
-                "indices with block-VQ key indices (values keep vLLM's uniform "
-                "quantization for compatibility)."
+                "EXPERIMENTAL APPROXIMATION: keys use HayateQuant block-VQ, "
+                "but values keep vLLM's uniform TurboQuant quantizer. This is "
+                "not algorithmically equivalent to HayateQuant and must be "
+                "reported as 'Hayate-key-VQ/TurboQuant-value', not HayateQuant."
+            )
+            plan.warnings.append(
+                "Explicit native mode selected a key-only HayateQuant hybrid; "
+                "faithful HayateQuant quality comparisons require the HF/custom "
+                "path because value block-VQ is not reproduced."
             )
         elif mode in _HAYATEQUANT_SCALAR_FALLBACK_MODES and preset is not None:
             _set_native(
                 preset,
                 f"Codec 'hayatequant' (block-VQ) served via scalar fallback "
-                f"kv_cache_dtype='{preset}' (vllm_mode='{mode}'): equivalent "
-                "to HayateQuant at block_size=1.",
+                f"kv_cache_dtype='{preset}' (vllm_mode='{mode}'): an explicit "
+                "vLLM TurboQuant deployment approximation.",
             )
             _check_rotation_for_native(codec, name, plan)
             plan.skip_layers = [int(x) for x in (codec.get("skip_layers") or [])]
@@ -514,6 +711,11 @@ def plan_from_kv_config(
                 "accuracy and use the HF cache/custom backend path for faithful "
                 "block-VQ results."
             )
+            if unsupported_native:
+                plan.warnings.append(
+                    "The scalar fallback also drops native-inexpressible knobs: "
+                    f"{unsupported_native}."
+                )
         else:
             plan.needs_custom_backend = True
             plan.native_supported = False
@@ -522,22 +724,20 @@ def plan_from_kv_config(
                 mode not in _HAYATEQUANT_SCALAR_FALLBACK_MODES
                 and mode not in _HAYATEQUANT_NATIVE_MODES
                 and mode not in _HAYATEQUANT_STRICT_MODES
+                and mode not in _HAYATEQUANT_FULL_NATIVE_MODES
             ):
                 plan.warnings.append(
                     f"Unknown HayateQuant vLLM mode '{mode}'; treating it as "
                     "strict/custom to avoid silently changing accuracy."
                 )
-            if unsupported_native and mode in _HAYATEQUANT_NATIVE_MODES:
+            if unsupported_native:
                 plan.notes.append(
-                    "Codec 'hayatequant' requested native vLLM block-VQ, but "
-                    f"the config uses unsupported native knobs {unsupported_native}; "
-                    "use the HF cache/custom backend for faithful results or set "
-                    "vllm_mode='scalar_fallback' explicitly."
+                    "Codec 'hayatequant' requires the HF/custom path because "
+                    f"its config uses native-inexpressible knobs {unsupported_native}. "
+                    "The experimental key-only hybrid and scalar fallback would "
+                    "change the requested algorithm."
                 )
-            elif preset is None and (
-                mode in _HAYATEQUANT_SCALAR_FALLBACK_MODES
-                or mode in _HAYATEQUANT_NATIVE_MODES
-            ):
+            elif preset is None:
                 plan.notes.append(
                     f"Codec 'hayatequant' k{kb}v{vb} uses block-VQ but has no "
                     "native scalar TurboQuant preset in vLLM (presets: k8v4, "
@@ -551,6 +751,29 @@ def plan_from_kv_config(
                     f"(vllm_mode='{mode}'); use the HF cache/custom backend path "
                     "to get its accuracy gain over the scalar turboquant_* presets."
                 )
+    elif name in ("turboquant", "halo", "hayatequant") and not _turboquant_native_opted_in(
+        codec, name
+    ):
+        # vLLM's named presets are deployment approximations, not a serialization
+        # of OneComp's requested codec: the rotation may differ and values are
+        # uniformly quantized instead of Lloyd-Max. Correctness therefore wins by
+        # default; users can opt in explicitly when native paged-cache throughput
+        # is more important than algorithmic equivalence.
+        plan.needs_custom_backend = True
+        plan.native_supported = False
+        plan.kv_cache_dtype = "auto"
+        opt_in = (
+            "KVCOMP_VLLM_HAYATEQUANT_MODE=native"
+            if name == "hayatequant"
+            else "KVCOMP_VLLM_TURBOQUANT_MODE=native"
+        )
+        plan.notes.append(
+            f"Codec '{name}' remains on the HF/custom path: vLLM's native "
+            "TurboQuant presets use randomized Hadamard keys and uniform values, "
+            "which is not algorithmically equivalent to the serialized codec. "
+            f"Set {opt_in} for an explicitly labelled "
+            "deployment approximation."
+        )
     elif name in ("turboquant", "halo", "hayatequant"):
         tq_preset = resolve_turboquant_codec(codec)
         kb = tq_preset.key_bits if tq_preset is not None else int(codec.get("bits", 4))
@@ -593,7 +816,10 @@ def plan_from_kv_config(
                     "outlier split) has no preset equivalent and is dropped by the "
                     "native mapping; use the HF cache path to keep it."
                 )
-            if int(codec.get("key_n_outlier") or 0) > 0 or int(codec.get("value_n_outlier") or 0) > 0:
+            if (
+                int(codec.get("key_n_outlier") or 0) > 0
+                or int(codec.get("value_n_outlier") or 0) > 0
+            ):
                 plan.warnings.append(
                     f"Codec '{name}' role-specific outlier split "
                     f"(key_n_outlier={codec.get('key_n_outlier')}, "
@@ -638,8 +864,12 @@ def plan_from_kv_config(
         )
     else:
         plan.native_supported = False
-        plan.kv_cache_dtype = requested_kv_cache_dtype
-        plan.warnings.append(f"Unknown KV codec '{name}'; leaving kv_cache_dtype unchanged.")
+        plan.needs_custom_backend = True
+        plan.kv_cache_dtype = "auto"
+        plan.warnings.append(
+            f"Unknown KV codec '{name}'; refusing to preserve a caller dtype "
+            "that could silently run a different algorithm."
+        )
 
     return plan
 
@@ -658,4 +888,16 @@ def engine_kwargs_from_kv_config(
         kwargs = engine_kwargs_from_kv_config(cfg["kv_compression_config"])
         llm = LLM(model=path, **kwargs)
     """
-    return plan_from_kv_config(kv_config, requested_kv_cache_dtype).engine_kwargs()
+    plan = plan_from_kv_config(kv_config, requested_kv_cache_dtype)
+    if plan.needs_custom_backend or not plan.native_supported:
+        detail = "; ".join(plan.notes + plan.warnings) or "no faithful native mapping"
+        raise RuntimeError(
+            "KV compression recipe cannot be represented by native vLLM engine "
+            f"kwargs: {detail}"
+        )
+    if plan.taper_native or plan.hayate_full_native:
+        raise RuntimeError(
+            "This KV recipe requires the onecomp_kvcomp general plugin to install "
+            "its attention backend; do not launch it from bare engine kwargs."
+        )
+    return plan.engine_kwargs()

@@ -1,12 +1,12 @@
 # Focused downstream check for the optional SpinQuant-style calibration:
-# does the calibrated codec hold up on retrieval metrics (Needle / RULER),
+# does the calibrated codec hold up on legacy retrieval metrics (Needle / local multi-key),
 # not just PPL, vs the data-free default at the 2-bit headline point?
 #   srun --gres=gpu:1 python -u kv_benchmark.py --config-name calib_check_qwen3
 defaults:
   - benchmark_longcontext
   - _self_
 
-model_path: /lustre/home/frj/yuma-ichikawa/conference/models/Qwen3-8B
+model_path: ???  # supply an external local path or Hugging Face id
 attn_implementation: sdpa
 output_dir: ${hydra:runtime.cwd}/results_paper1/hayatequant_calib
 
@@ -21,7 +21,7 @@ methods:
 hayatequant_variants:
   - {label: "HayateQuant-2bit", bits: 2}
   - {label: "HayateQuant-calib-2bit", bits: 2,
-     calibration: /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/kvcomp_hayatequant/results/calib_Qwen3-8B_2bit.pt}
+     calibration: "${oc.env:KVCOMP_CALIBRATION_QWEN3,???}"}
 
 run_needle: true
 context_lens: [4096, 8192, 16384]

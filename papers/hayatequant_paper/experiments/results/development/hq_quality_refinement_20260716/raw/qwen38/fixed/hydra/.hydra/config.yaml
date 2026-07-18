@@ -1,0 +1,25 @@
+model_path: /lustre/home/frj/yuma-ichikawa/conference/models/Qwen3-8B
+device: cuda:0
+dtype: bfloat16
+output_dir: /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/papers/hayatequant_paper/experiments/results/development/hq_quality_refinement_20260716/raw/qwen38/fixed
+bits:
+- 2
+sink_tokens: 0
+recent_tokens: 0
+extra_skip_layers: []
+capture_tokens: 512
+timing_heads: 1
+timing_seq: 64
+timing_iters: 20
+sample_seed: 0
+run_ppl: true
+ppl_max_length: 512
+ppl_stride: 512
+ppl_windows: 1
+methods:
+- TurboQuant-paper
+- HQ
+- DEVONLY-HQ-b4-gaussian-auto
+- DEVONLY-HQ-b4-gaussian-fibinit
+- DEVONLY-HQ-b4-finite-beta
+skip_outliers: false

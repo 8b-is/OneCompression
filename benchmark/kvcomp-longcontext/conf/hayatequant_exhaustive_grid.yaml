@@ -8,7 +8,7 @@ defaults:
   - benchmark_longcontext
   - _self_
 
-model_path: /lustre/home/frj/yuma-ichikawa/conference/models/Qwen3-4B
+model_path: ???  # supply an external local path or Hugging Face id
 attn_implementation: sdpa
 output_dir: ${hydra:runtime.cwd}/results_paper1/hayatequant_exhaustive_grid
 
@@ -22,14 +22,14 @@ methods:
   - HQ-frontier-4bit
 
 turboquant_variants:
-  - {label: "TurboQuant-2bit", bits: 2, dist: beta}
-  - {label: "TurboQuant-3bit", bits: 3, dist: beta}
-  - {label: "TurboQuant-4bit", bits: 4, dist: beta}
+  - {label: "TurboQuant-2bit", bits: 2, dist: beta, rotation_mode: dense}
+  - {label: "TurboQuant-3bit", bits: 3, dist: beta, rotation_mode: dense}
+  - {label: "TurboQuant-4bit", bits: 4, dist: beta, rotation_mode: dense}
 
 hayatequant_variants:
-  - {label: "HQ-frontier-2bit", bits: 3, value_bits: 1, key_scale_mode: ub}
-  - {label: "HQ-frontier-3bit", bits: 4, value_bits: 2, key_scale_mode: ub}
-  - {label: "HQ-frontier-4bit", bits: 5, value_bits: 3, key_scale_mode: ub}
+  - {label: "HQ-frontier-2bit", bits: 3, value_bits: 1, key_scale_mode: ub, value_scale_mode: ls_iter}
+  - {label: "HQ-frontier-3bit", bits: 4, value_bits: 2, key_scale_mode: ub, value_scale_mode: ls_iter}
+  - {label: "HQ-frontier-4bit", bits: 5, value_bits: 3, key_scale_mode: ub, value_scale_mode: ls_iter}
 
 uniform_bits: []
 kivi_bits: []
@@ -42,24 +42,26 @@ depths: [0.1, 0.25, 0.5, 0.75, 0.9]
 seeds: 3
 max_new_needle: 32
 
-run_ruler: true
+run_ruler: false            # local multi-key diagnostic is not a RULER benchmark
 ruler_keys: 4
 ruler_seeds: 5
 
 run_longbench: true
 longbench_tasks: []
-longbench_max_length: 7500
-longbench_limit: 10
+longbench_max_length: 32768
+longbench_limit: 10         # explicitly a smoke subset: released_data_complete=false
 
 run_gsm8k: true
-gsm8k_limit: 100
+gsm8k_limit: 100            # smoke subset for the exhaustive grid
 max_new_reason: 4096
 
 run_math: true
-math_limit: 100
+math_limit: 100             # smoke subset for the exhaustive grid
 max_new_math: 4096
+math_grader: math_verify
+math_verify_version: "0.9.0"
 
 run_ppl: true
 ppl_max_length: 4096
 ppl_stride: 2048
-ppl_windows: 16
+ppl_windows: 16             # smoke subset for the exhaustive grid

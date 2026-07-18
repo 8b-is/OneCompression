@@ -14,7 +14,16 @@ import torch
 
 from .._base import KVCodec, CompressedKV
 from .._registry import register_kv_codec
-from ._quant_primitives import quantize_affine, dequantize_affine, effective_bits
+from ._quant_primitives import quantize_affine, dequantize_affine
+
+
+def _stored_bits(x, bits: int, axis: str, group_size: int) -> int:
+    """Logical packed payload plus one fp16 scale and b-bit zero per group."""
+    length = x.shape[-1] if axis == "token" else x.shape[-2]
+    gs = length if group_size is None or group_size <= 0 else group_size
+    vectors = x.numel() // length
+    groups = vectors * ((length + gs - 1) // gs)
+    return int(x.numel() * bits + groups * (16 + bits))
 
 
 @dataclass
@@ -45,8 +54,8 @@ class AffineKVCodec(KVCodec):
             value, self.bits, axis=self.value_axis, symmetric=self.symmetric,
             group_size=self.group_size,
         )
-        head_dim = key.shape[-1]
-        stored = (kq.numel() + vq.numel()) * effective_bits(self.bits, self.group_size, head_dim)
+        stored = _stored_bits(key, self.bits, self.key_axis, self.group_size)
+        stored += _stored_bits(value, self.bits, self.value_axis, self.group_size)
         return CompressedKV(
             key_q=kq,
             value_q=vq,
@@ -129,8 +138,8 @@ class KIVICodec(KVCodec):
             value, self.bits, axis=self.value_axis, symmetric=self.symmetric,
             group_size=self.group_size,
         )
-        head_dim = key.shape[-1]
-        stored = (kq.numel() + vq.numel()) * effective_bits(self.bits, self.group_size, head_dim)
+        stored = _stored_bits(key, self.bits, self.key_axis, self.group_size)
+        stored += _stored_bits(value, self.bits, self.value_axis, self.group_size)
         return CompressedKV(
             key_q=kq,
             value_q=vq,

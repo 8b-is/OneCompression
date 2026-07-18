@@ -4,26 +4,32 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import sys
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from onecomp.kvcomp.codec import HayateQuantCodec
-from onecomp.kvcomp.codec.hayate.recipes import hayate_frontier_bits
+from onecomp.kvcomp.codec.hayate.recipes import hayate_hq_kwargs, hayate_hq_role_rates
 from onecomp.kvcomp.codec.hayate.calibration import calibrate_hayatequant, capture_kv_samples
 
 
-def _kv_asym(bits: int) -> tuple[int, int]:
-    kv_bits = hayate_frontier_bits(bits)
+def _kv_asym(bits: int) -> tuple[float, float]:
+    kv_bits = hayate_hq_role_rates(bits)
     if kv_bits is None:
-        raise ValueError(f"average bits must be in [2, 7], got {bits}")
+        raise ValueError(f"average bits must be one of 2, 3, or 4, got {bits}")
     return kv_bits
 
 
 def main() -> None:
     args = parse_args()
     key_bits, value_bits = _kv_asym(args.avg_bits)
-    tok = AutoTokenizer.from_pretrained(args.model_path, trust_remote_code=True)
+    tok = AutoTokenizer.from_pretrained(
+        args.model_path, trust_remote_code=True, fix_mistral_regex=True
+    )
     model = AutoModelForCausalLM.from_pretrained(
         args.model_path,
         torch_dtype=getattr(torch, args.dtype),
@@ -39,12 +45,7 @@ def main() -> None:
         layer_stride=args.layer_stride,
         device=model.device,
     )
-    codec = HayateQuantCodec(
-        bits=key_bits,
-        value_bits=value_bits,
-        key_scale_mode="ub",
-        encoder="exact",
-    )
+    codec = HayateQuantCodec(**hayate_hq_kwargs(args.avg_bits, encoder="exact"))
     cal = calibrate_hayatequant(
         codec,
         ks,
@@ -59,18 +60,20 @@ def main() -> None:
         device=args.fit_device,
         verbose=True,
     )
-    # Preserve the frontier key path exactly; only values are calibrated.
+    # Preserve the fixed HQ key path exactly; only values are calibrated.
     cal.rot.pop("k", None)
     cal.codebook.pop("k", None)
     cal.cb_key.pop("k", None)
-    cal.meta.update({
-        "method": "value_only_cayley_codebook",
-        "model_path": str(args.model_path),
-        "avg_bits": args.avg_bits,
-        "key_bits": key_bits,
-        "value_bits": value_bits,
-        "recipe": "Kplus1_Vminus1_UBkey_ValueRotationCodebookOnly",
-    })
+    cal.meta.update(
+        {
+            "method": "value_only_cayley_codebook",
+            "model_path": str(args.model_path),
+            "avg_bits": args.avg_bits,
+            "key_bits": key_bits,
+            "value_bits": value_bits,
+            "recipe": "HQ_b2_Kplus0.5_Vminus0.5_NCkey_LSiterValue_ValueOnly",
+        }
+    )
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
     cal.save(str(out))

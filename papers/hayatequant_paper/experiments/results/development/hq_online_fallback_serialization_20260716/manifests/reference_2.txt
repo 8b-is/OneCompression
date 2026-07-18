@@ -1,0 +1,11 @@
+job_id=69363
+array_job_id=69360
+array_task_id=2
+node=kagura-gpu14
+start_utc=2026-07-15T21:17:52Z
+73f9aecea156efa8f44e6933fa73931e2ed0af2a9f47f2679c0974035140b359  /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/papers/hayatequant_paper/experiments/results/development/hq_online_fallback_serialization_20260716/PREREGISTRATION.md
+873b941cfce8126c7989af0b1930d936fe6c2481241b2f8281970b7dbe45954a  /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/papers/hayatequant_paper/experiments/results/development/hq_online_fallback_serialization_20260716/runtime/serialize_reference.py
+f8a0602ea4c852c2c765c9dc59a07d3c79a209b93a17c854dc51ad4791765c2d  /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/vq.py
+Python 3.13.12
+exit_status=0
+end_utc=2026-07-15T21:19:09Z

@@ -1,0 +1,23 @@
+Wheel command and contract:
+  uv build --wheel --out-dir /tmp/hqwheel_check2
+  inspect archive members for onecomp/kvcomp/codec/hayate/codebooks/*.pt and manifest.json
+  import the unpacked wheel in an isolated environment
+  call require_shipped_gaussian_codebook_bundle for fixed_hq_b2_v1 and adaptive_hq_b2_safe_v1
+
+Wheel:
+  /tmp/hqwheel_check2/onecomp-1.1.1-py3-none-any.whl
+  SHA-256 0ab857bf4c0b5dae3123bdf29e7bdd6f2dd09fd2c593355ef51984c9debaf774
+
+Required archive members:
+  2643 onecomp/kvcomp/codec/hayate/codebooks/gauss_b2_k128.pt
+  1868 onecomp/kvcomp/codec/hayate/codebooks/gauss_b2_k32.pt
+  5715 onecomp/kvcomp/codec/hayate/codebooks/gauss_b2_k512.pt
+  1669 onecomp/kvcomp/codec/hayate/codebooks/gauss_b2_k8.pt
+  3764 onecomp/kvcomp/codec/hayate/codebooks/manifest.json
+
+Runtime result:
+  fixed_hq_b2_v1: 4 artifacts
+  adaptive_hq_b2_safe_v1: 7 artifacts
+  artifact sources: shipped_manifest only
+  manifest SHA-256: df02ba5fd41fd0cc3fd2d39474fcfe7a628c15eb9ea012e8c70b1ffb3dabecde
+  result: PASS

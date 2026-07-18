@@ -37,8 +37,33 @@ Supported native TurboQuant presets are:
 | 3 | 4 | `turboquant_k3v4_nc` |
 | 3 | 3 | `turboquant_3bit_nc` |
 
-HayateQuant's supported native path uses the same byte-compatible TurboQuant
-cache dtypes and registers OneComp's HayateQuant block-VQ backend override.
+HayateQuant has two explicit native paths:
+
+| Mode | K/V implementation | Claim scope |
+|------|--------------------|-------------|
+| `full_native` | Faithful packed fixed-HQ block-VQ for both K and V | Quality, memory, and serving measurements at average rate 3 or 4 |
+| `native` | HayateQuant block-VQ keys plus scalar TurboQuant values | Compatibility/deployment ablation only; not full HayateQuant |
+
+Set `codec.vllm_mode="full_native"`, `encoder="exact"` (or an explicitly
+frozen `lut` recipe with both `lut_bins` and `lut_candidates` serialized), and
+`residual_window=0` in the saved KV config. Unsupported rates or knobs fail
+before engine construction rather than selecting a similar but different cache.
+
+TapeKV uses a separate semantic/reference backend. It retains vLLM's
+FP16/BF16 paged allocation and applies the age ladder before attention, so its
+outputs may be used for generation and parity checks but not packed-memory or
+throughput claims. A HayateQuant codec can be combined with a TapeKV policy;
+HayateQuant is applied exactly once to each arriving KV vector before TapeKV.
+This mutable-page backend forces eager execution and disables prefix caching,
+and rejects cascade attention and decode context parallelism.
+
+The standalone combined smoke launcher is:
+
+```bash
+python benchmark/kvcomp-codec/taperkv_vllm_reference_smoke.py \
+  --model /models/Qwen3-0.6B --output /tmp/hayate_taper.json \
+  --policy block_taperkv --hayate-bits 3 --hayate-encoder exact
+```
 
 !!! warning "Rotation-preprocessed models are not supported"
     Models quantized after rotation preprocessing (`prepare_rotated_model`) cannot be served with vLLM. vLLM kernels do not apply the online Hadamard transform on `down_proj` inputs that rotation-preprocessed models require for correct inference.

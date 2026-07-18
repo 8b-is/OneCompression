@@ -1,17 +1,33 @@
 # HayateQuant Paper: Block-VQ + Folded-Hybrid-Rotation KV Codec (supersedes HALO)
 
+> **Status (2026-07-15): legacy pre-formal lab notebook.** The numerical
+> tables and directional claims below were produced by older, non-equivalent
+> protocols and must not be cited as current results.  In particular, the old
+> fake/payload path used fp32 scales while charging fp16 data-plane storage, the
+> speed comparison was not paired, and several long-context runs were capped
+> proxies rather than complete pinned benchmark protocols.  Current paper values
+> are generated only from the fail-closed formal battery in
+> `benchmark/kvcomp-codec/submit_hayatequant_paper.sh` and its coverage-checked
+> aggregate.  Until that battery finishes, HayateQuant's empirical superiority
+> is **unresolved**.  This file is retained only as experiment history.
+> Unqualified `RULER` numbers in the historical sections are the old local
+> multi-key diagnostic, not either the pinned NeMo-Skills RULER-v1 100/task
+> protocol or the canonical NVIDIA/RULER 500/task configuration.
+
 ## 概要
 
-**主張:** HayateQuant は TurboQuant (arXiv:2504.19874) と HALO の**完全な上位互換**である
-データ不要 KV キャッシュ量子化 Codec。`block_size=1` で両者を数値的にもレイテンシ的にも完全再現しつつ
+**旧仮説（正式再検証中）:** HayateQuant は TurboQuant (arXiv:2504.19874) と HALO を拡張する
+データ不要 KV キャッシュ量子化 Codec。`block_size=1` は同じスカラー量子化式への
+compatibility control だが、Beta/L2 と RMS の fp16 scale 丸めは bit-identical ではなく、
+レイテンシや下流品質の優位も設計だけからは保証されない。以下の旧測定では
 (`test_hayatequant_block_size_1_matches_turboquant`, `test_hayatequant_block_size_1_matches_halo_scale_modes`)、
-**同じビット数で厳密に低い歪み・PPL・下流タスク精度**を達成し、v3-v5 のシステム最適化
+**同じビット数で低い歪み・PPL・下流タスク精度**が観測されたとしていたが、v3-v5 のシステム最適化
 (Folded Rotation + 候補リスト LUT + fp16 スコアリング + ギャザー経路修正)により
 **decode スループットでは TurboQuant を 1.34-1.38 倍上回り、TTFT も全ビット幅で
 TurboQuant と同等 (+2〜6%)** まで到達した(v5 実測、下記)。
 
 **TurboQuant 論文との精密比較:** `TURBOQUANT_COMPARISON.md` —
-arXiv:2504.19874 の主張・理論(下界 4^{-b}、上界 √3π/2≈2.72 倍)・実験プロトコル
+arXiv:2504.19874 の主張・理論(下界 4^{-b}、上界 π√3/2≈2.72 倍)・実験プロトコル
 に対する HayateQuant の相違点/強化点を軸ごとに整理(block-VQ による
 space-filling gain 回収、Folded Hybrid Rotation、役割非対称スケール、
 候補リスト LUT、QJL の扱い、同一土俵ベンチの勝敗)。
@@ -30,7 +46,7 @@ space-filling gain 回収、Folded Hybrid Rotation、役割非対称スケール
 **新規性 (4つのレバー、いずれもデータ不要・ストレージ中立):**
 
 1. **Block Vector Quantization** (`onecomp/kvcomp/codec/hayate/vq.py`) — TurboQuant 論文自身が
-   証明する「スカラー Lloyd-Max は距離-歪み最適値の高々 `sqrt(3π/2) ≈ 2.7×` 以内」という
+   証明する「スカラー Lloyd-Max は距離-歪み最適値の高々 `π√3/2 ≈ 2.72×` 以内」という
    スラックの正体は、古典的高レート量子化理論 (Gersho & Gray, 1992) が言う
    **space-filling gain / shape gain**(次元 >1 の同時量子化でしか得られない)である。
    HayateQuant は TurboQuant 自身の理論分布(ガウス極限 or 有限 `d` の厳密 Beta 分布)から
@@ -147,10 +163,10 @@ PPL 差も noise 範囲(例: Llama 2-bit 9.1377 vs 9.1246)。
 
 ## Paper-level ロングコンテキスト (kv_benchmark.py, Llama-3.1-8B-Instruct, job 58907 完了)
 
-TurboQuant 論文と同一プロトコル(Needle 4K/8K/16K x 5 depth x 3 seed、RULER、
-LongBench-E 13 タスク、WikiText-2 PPL@4096)。
+旧 harness の同一プロトコル(Needle 4K/8K/16K x 5 depth x 3 seed、local
+synthetic multi-key、LongBench-E 13 タスク、WikiText-2 PPL@4096)。
 
-| 手法 | Needle | RULER | LongBench | PPL | mem |
+| 手法 | Needle | local multi-key (legacy) | LongBench | PPL | mem |
 |---|---:|---:|---:|---:|---:|
 | FullKV | 1.000 | 0.933 | 27.40 | 6.486 | 1.000 |
 | TurboQuant-4bit | 1.000 | 0.933 | 30.03 | 6.565 | 0.258 |
@@ -166,15 +182,26 @@ LongBench-E 13 タスク、WikiText-2 PPL@4096)。
 | **HayateQuant-2bit** | **1.000** | **0.600** | **26.87** | **9.125** | 0.133 |
 
 **→ 実運用上重要な低ビット域(2/2.5/3-bit)で全指標勝利。**
-特に **2.5-bit の RULER 0.933 は FullKV と同値**(TurboQuant は 0.800)、
+特に **2.5-bit の local multi-key 0.933 は FullKV と同値**(TurboQuant は 0.800)、
 **2-bit の Needle 100%**(TurboQuant 93.3%、HALO 91.1%)、
 LongBench も 2-bit +5.5pt / 2.5-bit +3.5pt / 3-bit +3.4pt。
-KIVI-INT2 (needle 100%, RULER 0.6, PPL 7.42, mem 0.161) に対しても、同等の Needle/RULER を
+KIVI-INT2 (needle 100%, local multi-key 0.6, PPL 7.42, mem 0.161) に対しても、同等の Needle/local multi-key を
 より小さいメモリ (0.133) で達成しつつ LongBench では 26.87 vs 27.54 と拮抗。
 
 ---
 
 ## vLLM プラグイン
+
+> **vLLM version / comparator scope.** 以下の vLLM 0.24.0 記録は、過去の
+> plugin mapping・互換性・hybrid E2E smoke の証拠であり、現在の full packed
+> HQ formal native 比較ではない。現在の別建て native contract は vLLM 0.20.0
+> を固定し、faithful fixed HQ と unmodified upstream vLLM 0.20 TurboQuant を
+> nominal code-payload rate 3/4 で比較する。後者は公開 P-formal の
+> `TurboQuant-paper` Algorithm-1 baseline ではなく、物理 slot 幅も方式固有
+> (exact stored-bit matched ではない)。正式な scope と byte 幅は
+> `benchmark/kvcomp-codec/hayatequant_native_speed_formal_contract.json` および
+> `experiments/results/development/audits/`
+> `external_codec_math_audit_20260716_policy_supersession/` に固定する。
 
 - `vllm_plugins/kvcomp/mapping.py` が `hayatequant` を認識: `block_size=1` は vLLM
   ネイティブ `turboquant_*` プリセットへ、block-VQ(`block_size>1`/auto)はカスタム
@@ -397,27 +424,27 @@ paper_hayatequant_ablation`)を追加。各行は HayateQuant-auto から**ち�
 
 ### 3-way ロングコンテキスト最終結果 (job 59004 完了, Llama-3.1-8B-Instruct, 5h51m)
 
-TurboQuant / HALO / HayateQuant を同一プロトコル(Needle 45 prompts x 3 長,
-RULER, LongBench-E n=10, WikiText-2 PPL 16 windows)で比較(v5/v6 コード):
+TurboQuant / HALO / HayateQuant を同一の旧プロトコル(Needle 45 prompts x 3 長,
+local synthetic multi-key, LongBench-E n=10, WikiText-2 PPL 16 windows)で比較(v5/v6 コード):
 
 | bits | 指標 | TurboQuant | HALO | **HayateQuant** |
 |---|---|---:|---:|---:|
 | 2 | Needle acc | 0.933 | 0.911 | **1.000** |
-| 2 | RULER acc | 0.400 | 0.333 | **0.733** |
+| 2 | local multi-key acc | 0.400 | 0.333 | **0.733** |
 | 2 | PPL | 10.168 | 9.966 | **9.046** |
-| 2.5 | RULER acc | 0.800 | 0.667 | **0.800** |
+| 2.5 | local multi-key acc | 0.800 | 0.667 | **0.800** |
 | 2.5 | PPL | 7.772 | 7.393 | **7.192** |
 | 3 | PPL | 6.917 | 6.878 | **6.810** |
 | 3.5 | PPL | 6.696 | 6.659 | **6.631** |
 | 4 | PPL | 6.565 | 6.581 | 6.569 |
 
-- **2-bit が決定的**: Needle 満点(TQ/HALO は取りこぼし)、RULER +0.33/+0.40、
+- **2-bit が決定的**: Needle 満点(TQ/HALO は取りこぼし)、local multi-key +0.33/+0.40、
   PPL −1.12/−0.92。block-VQ の space-filling gain が最も効く動作点で
   ダウンストリームでも明確に勝つ。
 - 2.5/3/3.5-bit も全指標で最良または同率。4-bit は 3 手法が noise 内で並ぶ
   (量子化誤差自体が小さく差が出ない、想定どおり)。
 - 参考: Uniform-INT2 は PPL 407(崩壊)、KIVI-INT2 は PPL 7.42 だが
-  RULER 0.60 で HayateQuant-2.5bit(mem 同水準)に全面的に劣る。
+  local multi-key 0.60 で HayateQuant-2.5bit(mem 同水準)に全面的に劣る。
 - 生データ: `benchmark/kvcomp-longcontext/results_paper1/hayatequant_v4/results_llama-3.1-8b-instruct.json`
 
 ### vLLM 再 E2E (job 59051, DeepSeek-R1-Distill-Qwen-1.5B, A100)
@@ -502,7 +529,7 @@ b=8 @ 2-bit を本当に取るには構造化符号帳 (E8 lattice / QuIP# 系) 
 ## v8 オプショナル SpinQuant 風キャリブレーション + K/V 非対称ビット (2026-07-05)
 
 第 4 ラウンド。今回から検証モデルを 3 つ(Llama-3.1-8B-Instruct / **Qwen3-8B**(新規) /
-R1-Qwen-1.5B)に広げ、PPL だけでなく Needle / RULER でも採否を判定した。
+R1-Qwen-1.5B)に広げ、PPL だけでなく Needle / local multi-key でも採否を判定した。
 
 ### 候補 1: SpinQuant 風キャリブレーション → **optional として採用** (デフォルトは不変)
 
@@ -537,8 +564,8 @@ R1-Qwen-1.5B)に広げ、PPL だけでなく Needle / RULER でも採否を判�
   **rot+cb 同時学習は全 6 点で datafree 以上**。効果が大きいのはデータフリー回転と
   分布の相性が悪いモデル(Qwen3 2-bit −0.18)で、SpinQuant の動機と整合。
 - ダウンストリーム 2-bit(`calib_check_*`, jobs 59109-59110): Qwen3 は Needle
-  0.956→**1.000** / PPL 改善、RULER −0.067(±0.17 の noise 内)。Llama は全指標
-  noise 内で datafree と同等(Needle −0.044/RULER −0.067, いずれも 1σ 未満)。
+  0.956→**1.000** / PPL 改善、local multi-key −0.067(±0.17 の noise 内)。Llama は全指標
+  noise 内で datafree と同等(Needle −0.044/local multi-key −0.067, いずれも 1σ 未満)。
 - **結論**: 精度を最後まで搾りたいモデル(特に Qwen 系)向けの opt-in。
   デフォルトは従来どおり完全データフリー。
 
@@ -570,7 +597,7 @@ codec = HayateQuantCodec(bits=2, calibration="calib_llama_2bit.pt")
   配るだけで両モデルとも uniform 3-bit を上回る。逆配分 (K2V4) は大きく悪化 —
   attention ロジット経由で全トークンに波及するキー誤差の方が高くつく。
 - ダウンストリーム(`asym_check_*`, jobs 59121/59125): Needle は両モデル満点で
-  uniform と同点。RULER は Llama で **0.733→0.800 に改善**、Qwen3 で 1.0→0.933
+  uniform と同点。local multi-key は Llama で **0.733→0.800 に改善**、Qwen3 で 1.0→0.933
   (±0.14 の noise 内)。長文 PPL(4096 窓)も両モデルで K4V2 勝ち
   (Llama 6.832→6.738 / Qwen3 8.423→8.311)。値側を 2-bit に落としても
   検索系タスクは劣化しない — 感度が本当にキー側に集中していることの
@@ -608,7 +635,7 @@ cd ichikawa_works/kvcomp_hayatequant
 sbatch run_calib_v8.sh [model]     # キャリブレーション分解 (rot/cb/both x 2,3-bit)
 sbatch run_kvasym_v8.sh [model]    # K/V 非対称ビット (3.0/2.5 平均)
 sbatch run_combo_v8.sh [model]     # 全部乗せ (K4V2 + calib)
-sbatch run_calib_check.sh calib_check_llama   # Needle/RULER (calib_check_qwen3,
+sbatch run_calib_check.sh calib_check_llama   # Needle/local multi-key (calib_check_qwen3,
 sbatch run_calib_check.sh asym_check_llama    #  asym_check_qwen3 も同様)
 ```
 
@@ -620,7 +647,7 @@ sbatch run_calib_check.sh asym_check_llama    #  asym_check_qwen3 も同様)
 
 ## CPU-only 数理検証・テスト
 
-- `verify_hayatequant_vq_gain.py`: block_size=1 の TurboQuant bit-for-bit 一致、
+- `verify_hayatequant_vq_gain.py`: block_size=1 の TurboQuant scalar-control 一致、
   block-VQ の単調歪み削減(ガウス/厳密 Beta 両光源)、outlier 分離下の非退行、
   hybrid 回転のブロック等方性改善 — 全チェック pass(v3 コードで再実行済み)。
 - `tests/onecomp/kvcomp/test_kvcomp.py` + `tests/vllm_plugins/...`: **144 テスト pass** (v4 時点)。
@@ -637,7 +664,7 @@ sbatch run_calib_check.sh asym_check_llama    #  asym_check_qwen3 も同様)
 
 ```bash
 # 1. CPU-only 数理検証(GPU 不要)
-python benchmark/kvcomp-longcontext/paper/tests/verify_hayatequant_vq_gain.py
+uv run --frozen python benchmark/kvcomp-longcontext/paper/tests/verify_hayatequant_vq_gain.py
 
 # 2. ユニットテスト
 pytest tests/onecomp/kvcomp/test_kvcomp.py tests/vllm_plugins/kvcomp/test_kvcomp_vllm_plugin.py -q
@@ -649,7 +676,7 @@ sbatch run_hayatequant_bench_v3.sh        # codec_speed + e2e + codec_benchmark 
 # 4. 速度のみ再測(adaptive encoder + fp16 スコアリング)
 sbatch run_hayatequant_speed_v3b.sh
 
-# 5. Paper-level ロングコンテキスト (Needle/RULER/LongBench-E/PPL)
+# 5. Legacy long-context (Needle/local multi-key/LongBench-E/PPL)
 sbatch run_hayatequant_paper_bench.sh
 
 # 6. レバー分離 ablation (noscale / hadamard-bvq / beta / bs2)

@@ -1,0 +1,1680 @@
+{
+  "baseline": "TurboQuant-paper",
+  "formal_evidence": false,
+  "models": [
+    "Llama-2-7b-hf",
+    "llama-3.1-8b-instruct",
+    "Qwen3-4B",
+    "Qwen3-8B",
+    "DeepSeek-R1-Distill-Llama-8B",
+    "DeepSeek-R1-Distill-Qwen-7B",
+    "DeepSeek-R1-Distill-Qwen-1.5B"
+  ],
+  "n_cells": 21,
+  "rates": [
+    2,
+    3,
+    4
+  ],
+  "same_logical_stored_bits_verified": true,
+  "schema": "hayatequant.development_fixed_recipe_summary.v1",
+  "selection_scope": "one global recipe; no per-model/rate/task selection",
+  "summaries": [
+    {
+      "cells": [
+        {
+          "candidate_ppl": 6.608930501450198,
+          "model": "Llama-2-7b-hf",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9096297091397699,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.07409012131715773,
+          "tq_ppl": 7.265517424337662
+        },
+        {
+          "candidate_ppl": 5.737237324000652,
+          "model": "Llama-2-7b-hf",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.983932130810727,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.34428764739996137,
+          "tq_ppl": 5.8309279109254835
+        },
+        {
+          "candidate_ppl": 5.610924323536362,
+          "model": "Llama-2-7b-hf",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9985747031371365,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.3460076045627376,
+          "tq_ppl": 5.618932971072672
+        },
+        {
+          "candidate_ppl": 10.213890821952804,
+          "model": "llama-3.1-8b-instruct",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.8450081740632883,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.07436288390328903,
+          "tq_ppl": 12.08732783357409
+        },
+        {
+          "candidate_ppl": 8.482093284426846,
+          "model": "llama-3.1-8b-instruct",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9851291038022909,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.36702238962125966,
+          "tq_ppl": 8.610133688760806
+        },
+        {
+          "candidate_ppl": 8.154415667507685,
+          "model": "llama-3.1-8b-instruct",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9995973479420303,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.3770692826486818,
+          "tq_ppl": 8.15770038235494
+        },
+        {
+          "candidate_ppl": 68.23189373642882,
+          "model": "Qwen3-4B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.2227268576325935,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.0746998471949356,
+          "tq_ppl": 306.3478489378367
+        },
+        {
+          "candidate_ppl": 18.386554513730236,
+          "model": "Qwen3-4B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.743853441815903,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.330716200689391,
+          "tq_ppl": 24.717980021500985
+        },
+        {
+          "candidate_ppl": 15.649350893756308,
+          "model": "Qwen3-4B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.8185569011578507,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.3569361373721783,
+          "tq_ppl": 19.118219969339044
+        },
+        {
+          "candidate_ppl": 16.078775629116716,
+          "model": "Qwen3-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.4798132464692803,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.0722354468729712,
+          "tq_ppl": 33.510487147724355
+        },
+        {
+          "candidate_ppl": 12.315008592927272,
+          "model": "Qwen3-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9423696940173661,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.38034098084613766,
+          "tq_ppl": 13.068128857611935
+        },
+        {
+          "candidate_ppl": 10.881617226041026,
+          "model": "Qwen3-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.947139811245226,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.38233451660054296,
+          "tq_ppl": 11.488923912653107
+        },
+        {
+          "candidate_ppl": 39.166618626978845,
+          "model": "DeepSeek-R1-Distill-Llama-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.7268534407192235,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.07411571391507393,
+          "tq_ppl": 53.88516643496021
+        },
+        {
+          "candidate_ppl": 30.873290421336435,
+          "model": "DeepSeek-R1-Distill-Llama-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9642732473048649,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.3932634396609414,
+          "tq_ppl": 32.017159563046064
+        },
+        {
+          "candidate_ppl": 30.04180411530274,
+          "model": "DeepSeek-R1-Distill-Llama-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9994292335521887,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.4012724879333041,
+          "tq_ppl": 30.058960761561515
+        },
+        {
+          "candidate_ppl": 82315.54638894282,
+          "model": "DeepSeek-R1-Distill-Qwen-7B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.6116425083743209,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.07334688405483718,
+          "tq_ppl": 134581.14055500913
+        },
+        {
+          "candidate_ppl": 14339.282478560199,
+          "model": "DeepSeek-R1-Distill-Qwen-7B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.20988582844331516,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.3773226351351351,
+          "tq_ppl": 68319.44102616188
+        },
+        {
+          "candidate_ppl": 1227.6533849739515,
+          "model": "DeepSeek-R1-Distill-Qwen-7B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.03750462947585696,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.38422924074461406,
+          "tq_ppl": 32733.38257518941
+        },
+        {
+          "candidate_ppl": 39731.19740812461,
+          "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.632008161157409,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.07452609711763178,
+          "tq_ppl": 62865.0068938415
+        },
+        {
+          "candidate_ppl": 30747.169856220848,
+          "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.6793960244833028,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.3497459945291129,
+          "tq_ppl": 45256.62315967306
+        },
+        {
+          "candidate_ppl": 18877.51739512298,
+          "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.5222136317418878,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.35330618576691875,
+          "tq_ppl": 36149.03221150207
+        }
+      ],
+      "geometric_mean_ppl_ratio_candidate_over_tq": 0.6114824902100723,
+      "losses": 0,
+      "median_synthetic_public_encode_speedup_x": 0.3497459945291129,
+      "method": "HQ-dev-fixed-delta05-Gauss-NC-LSiter",
+      "synthetic_public_encode_speed_win_fraction": 0.0,
+      "ties": 0,
+      "win_fraction": 1.0,
+      "wins": 21,
+      "wins_by_rate": {
+        "2": 7,
+        "3": 7,
+        "4": 7
+      },
+      "worst_ppl_ratio_candidate_over_tq": 0.9995973479420303
+    },
+    {
+      "cells": [
+        {
+          "candidate_ppl": 6.748026283379728,
+          "model": "Llama-2-7b-hf",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9287743582825266,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.33158813263525305,
+          "tq_ppl": 7.265517424337662
+        },
+        {
+          "candidate_ppl": 5.737237324000652,
+          "model": "Llama-2-7b-hf",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.983932130810727,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.3423025177782049,
+          "tq_ppl": 5.8309279109254835
+        },
+        {
+          "candidate_ppl": 5.610924323536362,
+          "model": "Llama-2-7b-hf",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9985747031371365,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.3460076045627376,
+          "tq_ppl": 5.618932971072672
+        },
+        {
+          "candidate_ppl": 10.448452846678848,
+          "model": "llama-3.1-8b-instruct",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.8644137886007311,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.3476578411405295,
+          "tq_ppl": 12.08732783357409
+        },
+        {
+          "candidate_ppl": 8.482093284426846,
+          "model": "llama-3.1-8b-instruct",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9851291038022909,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.3641270500311397,
+          "tq_ppl": 8.610133688760806
+        },
+        {
+          "candidate_ppl": 8.154415667507685,
+          "model": "llama-3.1-8b-instruct",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9995973479420303,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.3826213189547905,
+          "tq_ppl": 8.15770038235494
+        },
+        {
+          "candidate_ppl": 105.63293231097919,
+          "model": "Qwen3-4B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.34481369031063097,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.3293551491819057,
+          "tq_ppl": 306.3478489378367
+        },
+        {
+          "candidate_ppl": 18.386554513730236,
+          "model": "Qwen3-4B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.743853441815903,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.33288357748650726,
+          "tq_ppl": 24.717980021500985
+        },
+        {
+          "candidate_ppl": 15.649350893756308,
+          "model": "Qwen3-4B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.8185569011578507,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.35748792270531404,
+          "tq_ppl": 19.118219969339044
+        },
+        {
+          "candidate_ppl": 17.83788878781507,
+          "model": "Qwen3-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.5323076536959988,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.3191814878561866,
+          "tq_ppl": 33.510487147724355
+        },
+        {
+          "candidate_ppl": 12.315008592927272,
+          "model": "Qwen3-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9423696940173661,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.38058129738837404,
+          "tq_ppl": 13.068128857611935
+        },
+        {
+          "candidate_ppl": 10.881617226041026,
+          "model": "Qwen3-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.947139811245226,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.38434089000839633,
+          "tq_ppl": 11.488923912653107
+        },
+        {
+          "candidate_ppl": 41.828368876070535,
+          "model": "DeepSeek-R1-Distill-Llama-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.7762501564611047,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.3815672306322351,
+          "tq_ppl": 53.88516643496021
+        },
+        {
+          "candidate_ppl": 30.873290421336435,
+          "model": "DeepSeek-R1-Distill-Llama-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9642732473048649,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.3863686171378479,
+          "tq_ppl": 32.017159563046064
+        },
+        {
+          "candidate_ppl": 30.04180411530274,
+          "model": "DeepSeek-R1-Distill-Llama-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9994292335521887,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.40197802197802196,
+          "tq_ppl": 30.058960761561515
+        },
+        {
+          "candidate_ppl": 61086.25677714832,
+          "model": "DeepSeek-R1-Distill-Qwen-7B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.4538990866419335,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.3204837490551776,
+          "tq_ppl": 134581.14055500913
+        },
+        {
+          "candidate_ppl": 14339.282478560199,
+          "model": "DeepSeek-R1-Distill-Qwen-7B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.20988582844331516,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.3731467947379411,
+          "tq_ppl": 68319.44102616188
+        },
+        {
+          "candidate_ppl": 1227.6533849739515,
+          "model": "DeepSeek-R1-Distill-Qwen-7B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.03750462947585696,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.3872259696458685,
+          "tq_ppl": 32733.38257518941
+        },
+        {
+          "candidate_ppl": 48884.10614912895,
+          "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.7776044029022102,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.33534566699123664,
+          "tq_ppl": 62865.0068938415
+        },
+        {
+          "candidate_ppl": 30747.169856220848,
+          "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.6793960244833028,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.34683200930052316,
+          "tq_ppl": 45256.62315967306
+        },
+        {
+          "candidate_ppl": 18877.51739512298,
+          "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.5222136317418878,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.34944380514000767,
+          "tq_ppl": 36149.03221150207
+        }
+      ],
+      "geometric_mean_ppl_ratio_candidate_over_tq": 0.6279843889735641,
+      "losses": 0,
+      "median_synthetic_public_encode_speedup_x": 0.34944380514000767,
+      "method": "HQ-dev-fixed-delta05-b2-Gauss-NC-LSiter",
+      "synthetic_public_encode_speed_win_fraction": 0.0,
+      "ties": 0,
+      "win_fraction": 1.0,
+      "wins": 21,
+      "wins_by_rate": {
+        "2": 7,
+        "3": 7,
+        "4": 7
+      },
+      "worst_ppl_ratio_candidate_over_tq": 0.9995973479420303
+    },
+    {
+      "cells": [
+        {
+          "candidate_ppl": 6.651651208198518,
+          "model": "Llama-2-7b-hf",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9155096354069917,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.07844396531951008,
+          "tq_ppl": 7.265517424337662
+        },
+        {
+          "candidate_ppl": 5.711104450420753,
+          "model": "Llama-2-7b-hf",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9794503615316156,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.5023977433004232,
+          "tq_ppl": 5.8309279109254835
+        },
+        {
+          "candidate_ppl": 5.599087013537455,
+          "model": "Llama-2-7b-hf",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9964680202384709,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.5144149236856981,
+          "tq_ppl": 5.618932971072672
+        },
+        {
+          "candidate_ppl": 10.312544212768923,
+          "model": "llama-3.1-8b-instruct",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.8531698945175062,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.0788489075707885,
+          "tq_ppl": 12.08732783357409
+        },
+        {
+          "candidate_ppl": 8.524672154158518,
+          "model": "llama-3.1-8b-instruct",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9900743080547234,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.5319987867758569,
+          "tq_ppl": 8.610133688760806
+        },
+        {
+          "candidate_ppl": 8.169450565760858,
+          "model": "llama-3.1-8b-instruct",
+          "outcome": "loss",
+          "ppl_ratio_candidate_over_tq": 1.0014403793784008,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.5527261833433194,
+          "tq_ppl": 8.15770038235494
+        },
+        {
+          "candidate_ppl": 60.63665934066475,
+          "model": "Qwen3-4B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.1979340137392934,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.07916531717022161,
+          "tq_ppl": 306.3478489378367
+        },
+        {
+          "candidate_ppl": 18.42667398140763,
+          "model": "Qwen3-4B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.7454765302576971,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.48881969997169544,
+          "tq_ppl": 24.717980021500985
+        },
+        {
+          "candidate_ppl": 15.594667003916733,
+          "model": "Qwen3-4B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.8156965987904088,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.5217146080090242,
+          "tq_ppl": 19.118219969339044
+        },
+        {
+          "candidate_ppl": 15.728275524717098,
+          "model": "Qwen3-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.4693538310971758,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.07644391517427747,
+          "tq_ppl": 33.510487147724355
+        },
+        {
+          "candidate_ppl": 12.243758910070104,
+          "model": "Qwen3-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9369175222769822,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.5553165334972341,
+          "tq_ppl": 13.068128857611935
+        },
+        {
+          "candidate_ppl": 10.84048572088386,
+          "model": "Qwen3-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9435597104916761,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.5606246172688304,
+          "tq_ppl": 11.488923912653107
+        },
+        {
+          "candidate_ppl": 38.04092182434086,
+          "model": "DeepSeek-R1-Distill-Llama-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.705962778648119,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.078544588030428,
+          "tq_ppl": 53.88516643496021
+        },
+        {
+          "candidate_ppl": 31.065777081294218,
+          "model": "DeepSeek-R1-Distill-Llama-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9702852315840683,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.5683430045132174,
+          "tq_ppl": 32.017159563046064
+        },
+        {
+          "candidate_ppl": 30.08460428253162,
+          "model": "DeepSeek-R1-Distill-Llama-8B",
+          "outcome": "loss",
+          "ppl_ratio_candidate_over_tq": 1.0008531073703284,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.5879138540662167,
+          "tq_ppl": 30.058960761561515
+        },
+        {
+          "candidate_ppl": 80899.61743541184,
+          "model": "DeepSeek-R1-Distill-Qwen-7B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.6011215026249883,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.0777268560953254,
+          "tq_ppl": 134581.14055500913
+        },
+        {
+          "candidate_ppl": 14410.1957404289,
+          "model": "DeepSeek-R1-Distill-Qwen-7B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.210923794515689,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.553422112109012,
+          "tq_ppl": 68319.44102616188
+        },
+        {
+          "candidate_ppl": 1227.8992731051947,
+          "model": "DeepSeek-R1-Distill-Qwen-7B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.037512141321926595,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.5654047399199753,
+          "tq_ppl": 32733.38257518941
+        },
+        {
+          "candidate_ppl": 40232.1007031528,
+          "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.6399760803508969,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.07891842346471127,
+          "tq_ppl": 62865.0068938415
+        },
+        {
+          "candidate_ppl": 28483.97326282185,
+          "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.6293879497444066,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.5039414414414414,
+          "tq_ppl": 45256.62315967306
+        },
+        {
+          "candidate_ppl": 18530.55203239748,
+          "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.5126154394391046,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.5133840518455903,
+          "tq_ppl": 36149.03221150207
+        }
+      ],
+      "geometric_mean_ppl_ratio_candidate_over_tq": 0.6042186342436866,
+      "losses": 2,
+      "median_synthetic_public_encode_speedup_x": 0.5133840518455903,
+      "method": "HQ-dev-fixed-delta05-Gauss-NC-LS",
+      "synthetic_public_encode_speed_win_fraction": 0.0,
+      "ties": 0,
+      "win_fraction": 0.9047619047619048,
+      "wins": 19,
+      "wins_by_rate": {
+        "2": 7,
+        "3": 7,
+        "4": 5
+      },
+      "worst_ppl_ratio_candidate_over_tq": 1.0014403793784008
+    },
+    {
+      "cells": [
+        {
+          "candidate_ppl": 6.908751212993673,
+          "model": "Llama-2-7b-hf",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9508959664525872,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.33249076414544043,
+          "tq_ppl": 7.265517424337662
+        },
+        {
+          "candidate_ppl": 5.728957599284732,
+          "model": "Llama-2-7b-hf",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9825121638959576,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.33788654904192755,
+          "tq_ppl": 5.8309279109254835
+        },
+        {
+          "candidate_ppl": 5.6465515187279545,
+          "model": "Llama-2-7b-hf",
+          "outcome": "loss",
+          "ppl_ratio_candidate_over_tq": 1.0049152655490763,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.3446316985419428,
+          "tq_ppl": 5.618932971072672
+        },
+        {
+          "candidate_ppl": 10.580778109839459,
+          "model": "llama-3.1-8b-instruct",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.8753612258658198,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.33675281120536593,
+          "tq_ppl": 12.08732783357409
+        },
+        {
+          "candidate_ppl": 8.384647641733311,
+          "model": "llama-3.1-8b-instruct",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9738115509957955,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.3645054031587697,
+          "tq_ppl": 8.610133688760806
+        },
+        {
+          "candidate_ppl": 8.169479251846328,
+          "model": "llama-3.1-8b-instruct",
+          "outcome": "loss",
+          "ppl_ratio_candidate_over_tq": 1.001443895821041,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.379083624409287,
+          "tq_ppl": 8.15770038235494
+        },
+        {
+          "candidate_ppl": 83.7846221035716,
+          "model": "Qwen3-4B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.2734950560092653,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.3294819949932602,
+          "tq_ppl": 306.3478489378367
+        },
+        {
+          "candidate_ppl": 17.224354934945648,
+          "model": "Qwen3-4B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.6968350536719833,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.33651597817614964,
+          "tq_ppl": 24.717980021500985
+        },
+        {
+          "candidate_ppl": 15.9124867889775,
+          "model": "Qwen3-4B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.8323205201371907,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.3535932721712538,
+          "tq_ppl": 19.118219969339044
+        },
+        {
+          "candidate_ppl": 18.734989400124093,
+          "model": "Qwen3-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.559078395892444,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.3151435045317221,
+          "tq_ppl": 33.510487147724355
+        },
+        {
+          "candidate_ppl": 12.049696270701286,
+          "model": "Qwen3-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9220674514303223,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.37645833333333334,
+          "tq_ppl": 13.068128857611935
+        },
+        {
+          "candidate_ppl": 10.905093675982855,
+          "model": "Qwen3-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9491832097497607,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.385068349106204,
+          "tq_ppl": 11.488923912653107
+        },
+        {
+          "candidate_ppl": 41.38712249818601,
+          "model": "DeepSeek-R1-Distill-Llama-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.7680615137032297,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.3755477651183173,
+          "tq_ppl": 53.88516643496021
+        },
+        {
+          "candidate_ppl": 30.13405937022457,
+          "model": "DeepSeek-R1-Distill-Llama-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9411846578984179,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.38969938107869145,
+          "tq_ppl": 32.017159563046064
+        },
+        {
+          "candidate_ppl": 29.841846754786996,
+          "model": "DeepSeek-R1-Distill-Llama-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9927770621048164,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.40590324012427875,
+          "tq_ppl": 30.058960761561515
+        },
+        {
+          "candidate_ppl": 67391.40797612704,
+          "model": "DeepSeek-R1-Distill-Qwen-7B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.5007492706497109,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.33372687918142463,
+          "tq_ppl": 134581.14055500913
+        },
+        {
+          "candidate_ppl": 14448.062920930026,
+          "model": "DeepSeek-R1-Distill-Qwen-7B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.21147806106020925,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.3793249840798132,
+          "tq_ppl": 68319.44102616188
+        },
+        {
+          "candidate_ppl": 1566.654463617679,
+          "model": "DeepSeek-R1-Distill-Qwen-7B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.04786106232739724,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.38673684210526316,
+          "tq_ppl": 32733.38257518941
+        },
+        {
+          "candidate_ppl": 46741.55239479395,
+          "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.743522584412107,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.33534566699123664,
+          "tq_ppl": 62865.0068938415
+        },
+        {
+          "candidate_ppl": 37707.14381017933,
+          "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.8331850937517393,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.3466305189775368,
+          "tq_ppl": 45256.62315967306
+        },
+        {
+          "candidate_ppl": 27172.921945754,
+          "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.7516915470037948,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.35119506553585195,
+          "tq_ppl": 36149.03221150207
+        }
+      ],
+      "geometric_mean_ppl_ratio_candidate_over_tq": 0.646554693010662,
+      "losses": 2,
+      "median_synthetic_public_encode_speedup_x": 0.35119506553585195,
+      "method": "HQ-dev-fixed-delta05-b2-Beta-NC-LSiter",
+      "synthetic_public_encode_speed_win_fraction": 0.0,
+      "ties": 0,
+      "win_fraction": 0.9047619047619048,
+      "wins": 19,
+      "wins_by_rate": {
+        "2": 7,
+        "3": 7,
+        "4": 5
+      },
+      "worst_ppl_ratio_candidate_over_tq": 1.0049152655490763
+    },
+    {
+      "cells": [
+        {
+          "candidate_ppl": 6.731024107605765,
+          "model": "Llama-2-7b-hf",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9264342392268611,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.07411259914185411,
+          "tq_ppl": 7.265517424337662
+        },
+        {
+          "candidate_ppl": 5.728957599284732,
+          "model": "Llama-2-7b-hf",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9825121638959576,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.34158036056770236,
+          "tq_ppl": 5.8309279109254835
+        },
+        {
+          "candidate_ppl": 5.6465515187279545,
+          "model": "Llama-2-7b-hf",
+          "outcome": "loss",
+          "ppl_ratio_candidate_over_tq": 1.0049152655490763,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.3477264042797096,
+          "tq_ppl": 5.618932971072672
+        },
+        {
+          "candidate_ppl": 10.033541426754851,
+          "model": "llama-3.1-8b-instruct",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.8300876392948833,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.07451220044523986,
+          "tq_ppl": 12.08732783357409
+        },
+        {
+          "candidate_ppl": 8.384647641733311,
+          "model": "llama-3.1-8b-instruct",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9738115509957955,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.36518842390172807,
+          "tq_ppl": 8.610133688760806
+        },
+        {
+          "candidate_ppl": 8.169479251846328,
+          "model": "llama-3.1-8b-instruct",
+          "outcome": "loss",
+          "ppl_ratio_candidate_over_tq": 1.001443895821041,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.38064782339591496,
+          "tq_ppl": 8.15770038235494
+        },
+        {
+          "candidate_ppl": 61.993153648540144,
+          "model": "Qwen3-4B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.20236196814660717,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.07477166455447275,
+          "tq_ppl": 306.3478489378367
+        },
+        {
+          "candidate_ppl": 17.224354934945648,
+          "model": "Qwen3-4B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.6968350536719833,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.33397795397408625,
+          "tq_ppl": 24.717980021500985
+        },
+        {
+          "candidate_ppl": 15.9124867889775,
+          "model": "Qwen3-4B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.8323205201371907,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.36453201970443355,
+          "tq_ppl": 19.118219969339044
+        },
+        {
+          "candidate_ppl": 17.705129210446362,
+          "model": "Qwen3-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.5283459214542839,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.0723419010879459,
+          "tq_ppl": 33.510487147724355
+        },
+        {
+          "candidate_ppl": 12.049696270701286,
+          "model": "Qwen3-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9220674514303223,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.37732303194821465,
+          "tq_ppl": 13.068128857611935
+        },
+        {
+          "candidate_ppl": 10.905093675982855,
+          "model": "Qwen3-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9491832097497607,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.37482088024564997,
+          "tq_ppl": 11.488923912653107
+        },
+        {
+          "candidate_ppl": 37.931200924405175,
+          "model": "DeepSeek-R1-Distill-Llama-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.7039265800577681,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.07426343154246101,
+          "tq_ppl": 53.88516643496021
+        },
+        {
+          "candidate_ppl": 30.13405937022457,
+          "model": "DeepSeek-R1-Distill-Llama-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9411846578984179,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.3516154766653371,
+          "tq_ppl": 32.017159563046064
+        },
+        {
+          "candidate_ppl": 29.841846754786996,
+          "model": "DeepSeek-R1-Distill-Llama-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9927770621048164,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.4015367727771679,
+          "tq_ppl": 30.058960761561515
+        },
+        {
+          "candidate_ppl": 112245.38803787701,
+          "model": "DeepSeek-R1-Distill-Qwen-7B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.8340350481128332,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.07343898848185676,
+          "tq_ppl": 134581.14055500913
+        },
+        {
+          "candidate_ppl": 14448.062920930026,
+          "model": "DeepSeek-R1-Distill-Qwen-7B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.21147806106020925,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.3390248529690761,
+          "tq_ppl": 68319.44102616188
+        },
+        {
+          "candidate_ppl": 1566.654463617679,
+          "model": "DeepSeek-R1-Distill-Qwen-7B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.04786106232739724,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.3841488916771225,
+          "tq_ppl": 32733.38257518941
+        },
+        {
+          "candidate_ppl": 51755.22484658629,
+          "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.8232755773650672,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.07450997360564232,
+          "tq_ppl": 62865.0068938415
+        },
+        {
+          "candidate_ppl": 37707.14381017933,
+          "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.8331850937517393,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.350293542074364,
+          "tq_ppl": 45256.62315967306
+        },
+        {
+          "candidate_ppl": 27172.921945754,
+          "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.7516915470037948,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.3531692188408606,
+          "tq_ppl": 36149.03221150207
+        }
+      ],
+      "geometric_mean_ppl_ratio_candidate_over_tq": 0.6492677412240616,
+      "losses": 2,
+      "median_synthetic_public_encode_speedup_x": 0.3477264042797096,
+      "method": "HQ-dev-fixed-delta05-Beta-NC-LSiter",
+      "synthetic_public_encode_speed_win_fraction": 0.0,
+      "ties": 0,
+      "win_fraction": 0.9047619047619048,
+      "wins": 19,
+      "wins_by_rate": {
+        "2": 7,
+        "3": 7,
+        "4": 5
+      },
+      "worst_ppl_ratio_candidate_over_tq": 1.0049152655490763
+    },
+    {
+      "cells": [
+        {
+          "candidate_ppl": 8.431894514245464,
+          "model": "Llama-2-7b-hf",
+          "outcome": "loss",
+          "ppl_ratio_candidate_over_tq": 1.1605359978906293,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.17849686847599167,
+          "tq_ppl": 7.265517424337662
+        },
+        {
+          "candidate_ppl": 5.858721709374354,
+          "model": "Llama-2-7b-hf",
+          "outcome": "loss",
+          "ppl_ratio_candidate_over_tq": 1.004766616715805,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.3030973451327434,
+          "tq_ppl": 5.8309279109254835
+        },
+        {
+          "candidate_ppl": 5.676564032449437,
+          "model": "Llama-2-7b-hf",
+          "outcome": "loss",
+          "ppl_ratio_candidate_over_tq": 1.0102565845995068,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.3686449260684626,
+          "tq_ppl": 5.618932971072672
+        },
+        {
+          "candidate_ppl": 11.901934723976302,
+          "model": "llama-3.1-8b-instruct",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9846621923265095,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.17751663893510813,
+          "tq_ppl": 12.08732783357409
+        },
+        {
+          "candidate_ppl": 8.524717013614199,
+          "model": "llama-3.1-8b-instruct",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9900795181312799,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.31943179748679656,
+          "tq_ppl": 8.610133688760806
+        },
+        {
+          "candidate_ppl": 8.137564662606001,
+          "model": "llama-3.1-8b-instruct",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9975316916771676,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.40380827314510837,
+          "tq_ppl": 8.15770038235494
+        },
+        {
+          "candidate_ppl": 67.18281474072852,
+          "model": "Qwen3-4B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.2193023877062087,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.17845223195661244,
+          "tq_ppl": 306.3478489378367
+        },
+        {
+          "candidate_ppl": 16.08402095417404,
+          "model": "Qwen3-4B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.6507012684767656,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.29201893811295226,
+          "tq_ppl": 24.717980021500985
+        },
+        {
+          "candidate_ppl": 16.264571102917255,
+          "model": "Qwen3-4B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.8507366862083214,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.3772430668841762,
+          "tq_ppl": 19.118219969339044
+        },
+        {
+          "candidate_ppl": 21.39678067216911,
+          "model": "Qwen3-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.6385099857798436,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.17343863659981293,
+          "tq_ppl": 33.510487147724355
+        },
+        {
+          "candidate_ppl": 11.222608242066181,
+          "model": "Qwen3-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.8587769805720294,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.3278896751950644,
+          "tq_ppl": 13.068128857611935
+        },
+        {
+          "candidate_ppl": 10.96629575277172,
+          "model": "Qwen3-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9545102601553658,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.4057168180810991,
+          "tq_ppl": 11.488923912653107
+        },
+        {
+          "candidate_ppl": 49.10248685476061,
+          "model": "DeepSeek-R1-Distill-Llama-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9112431138916064,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.17818900093564818,
+          "tq_ppl": 53.88516643496021
+        },
+        {
+          "candidate_ppl": 30.9840739988887,
+          "model": "DeepSeek-R1-Distill-Llama-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9677333786551839,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.3374162679425838,
+          "tq_ppl": 32.017159563046064
+        },
+        {
+          "candidate_ppl": 29.878291106481022,
+          "model": "DeepSeek-R1-Distill-Llama-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.993989490970309,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.42863838762596673,
+          "tq_ppl": 30.058960761561515
+        },
+        {
+          "candidate_ppl": 63424.68020864617,
+          "model": "DeepSeek-R1-Distill-Qwen-7B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.47127465220672404,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.17560571546904122,
+          "tq_ppl": 134581.14055500913
+        },
+        {
+          "candidate_ppl": 5653.602438943423,
+          "model": "DeepSeek-R1-Distill-Qwen-7B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.08275246919509285,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.33098721985552876,
+          "tq_ppl": 68319.44102616188
+        },
+        {
+          "candidate_ppl": 328.38819848172784,
+          "model": "DeepSeek-R1-Distill-Qwen-7B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.0100322109310705,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.4081315263274828,
+          "tq_ppl": 32733.38257518941
+        },
+        {
+          "candidate_ppl": 49575.69870280412,
+          "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.7886056353500654,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.1794497707378074,
+          "tq_ppl": 62865.0068938415
+        },
+        {
+          "candidate_ppl": 24849.527712474,
+          "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.5490804655221544,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.305304451645915,
+          "tq_ppl": 45256.62315967306
+        },
+        {
+          "candidate_ppl": 8084.26048520909,
+          "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.22363698253135536,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.37397372742200324,
+          "tq_ppl": 36149.03221150207
+        }
+      ],
+      "geometric_mean_ppl_ratio_candidate_over_tq": 0.5401825386463736,
+      "losses": 3,
+      "median_synthetic_public_encode_speedup_x": 0.31943179748679656,
+      "method": "HQ-dev-paper-NC-LSiter-Gauss",
+      "synthetic_public_encode_speed_win_fraction": 0.0,
+      "ties": 0,
+      "win_fraction": 0.8571428571428571,
+      "wins": 18,
+      "wins_by_rate": {
+        "2": 6,
+        "3": 6,
+        "4": 6
+      },
+      "worst_ppl_ratio_candidate_over_tq": 1.1605359978906293
+    },
+    {
+      "cells": [
+        {
+          "candidate_ppl": 8.44408193855699,
+          "model": "Llama-2-7b-hf",
+          "outcome": "loss",
+          "ppl_ratio_candidate_over_tq": 1.162213431664403,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.178329335697153,
+          "tq_ppl": 7.265517424337662
+        },
+        {
+          "candidate_ppl": 5.847294269814846,
+          "model": "Llama-2-7b-hf",
+          "outcome": "loss",
+          "ppl_ratio_candidate_over_tq": 1.002806818938491,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.29812520924004016,
+          "tq_ppl": 5.8309279109254835
+        },
+        {
+          "candidate_ppl": 5.614250006337292,
+          "model": "Llama-2-7b-hf",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9991665740169016,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.36827195467422097,
+          "tq_ppl": 5.618932971072672
+        },
+        {
+          "candidate_ppl": 12.423452739153408,
+          "model": "llama-3.1-8b-instruct",
+          "outcome": "loss",
+          "ppl_ratio_candidate_over_tq": 1.0278080408016805,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.17766444629475436,
+          "tq_ppl": 12.08732783357409
+        },
+        {
+          "candidate_ppl": 8.534336937507852,
+          "model": "llama-3.1-8b-instruct",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9911967974025891,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.3187931661214104,
+          "tq_ppl": 8.610133688760806
+        },
+        {
+          "candidate_ppl": 8.19710799492269,
+          "model": "llama-3.1-8b-instruct",
+          "outcome": "loss",
+          "ppl_ratio_candidate_over_tq": 1.0048307256605047,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.4068357221609702,
+          "tq_ppl": 8.15770038235494
+        },
+        {
+          "candidate_ppl": 50.47562741612938,
+          "model": "Qwen3-4B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.16476573147530654,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.17835922026477638,
+          "tq_ppl": 306.3478489378367
+        },
+        {
+          "candidate_ppl": 16.751809241637076,
+          "model": "Qwen3-4B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.6777175653943195,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.290789695234888,
+          "tq_ppl": 24.717980021500985
+        },
+        {
+          "candidate_ppl": 16.31134225592585,
+          "model": "Qwen3-4B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.8531831039754361,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.37571080422420794,
+          "tq_ppl": 19.118219969339044
+        },
+        {
+          "candidate_ppl": 24.12303163894635,
+          "model": "Qwen3-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.7198651434879099,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.17338458341990443,
+          "tq_ppl": 33.510487147724355
+        },
+        {
+          "candidate_ppl": 11.432275046617551,
+          "model": "Qwen3-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.8748211141152369,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.3340728415603623,
+          "tq_ppl": 13.068128857611935
+        },
+        {
+          "candidate_ppl": 11.06018265190944,
+          "model": "Qwen3-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9626822090560212,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.402506045284678,
+          "tq_ppl": 11.488923912653107
+        },
+        {
+          "candidate_ppl": 48.43252871172353,
+          "model": "DeepSeek-R1-Distill-Llama-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.8988100420953871,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.17785617930891356,
+          "tq_ppl": 53.88516643496021
+        },
+        {
+          "candidate_ppl": 31.534617810046083,
+          "model": "DeepSeek-R1-Distill-Llama-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9849286520233067,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.3383227787372865,
+          "tq_ppl": 32.017159563046064
+        },
+        {
+          "candidate_ppl": 30.28383250043441,
+          "model": "DeepSeek-R1-Distill-Llama-8B",
+          "outcome": "loss",
+          "ppl_ratio_candidate_over_tq": 1.0074810217377992,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.42406677486668215,
+          "tq_ppl": 30.058960761561515
+        },
+        {
+          "candidate_ppl": 57916.9260375919,
+          "model": "DeepSeek-R1-Distill-Qwen-7B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.4303494962127977,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.17618948680656554,
+          "tq_ppl": 134581.14055500913
+        },
+        {
+          "candidate_ppl": 5262.48970932136,
+          "model": "DeepSeek-R1-Distill-Qwen-7B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.07702770441734398,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.32819100091827363,
+          "tq_ppl": 68319.44102616188
+        },
+        {
+          "candidate_ppl": 344.59289063884387,
+          "model": "DeepSeek-R1-Distill-Qwen-7B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.010527261881576254,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.4099531354608346,
+          "tq_ppl": 32733.38257518941
+        },
+        {
+          "candidate_ppl": 39700.49356746239,
+          "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.6315197520697577,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.17969320672023373,
+          "tq_ppl": 62865.0068938415
+        },
+        {
+          "candidate_ppl": 22949.032341117927,
+          "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.5070867143611189,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.31664602865735003,
+          "tq_ppl": 45256.62315967306
+        },
+        {
+          "candidate_ppl": 7135.247440888544,
+          "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.19738418995953694,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.37259713701431496,
+          "tq_ppl": 36149.03221150207
+        }
+      ],
+      "geometric_mean_ppl_ratio_candidate_over_tq": 0.5254864451142323,
+      "losses": 5,
+      "median_synthetic_public_encode_speedup_x": 0.3187931661214104,
+      "method": "HQ-dev-fixed-delta1-Beta-NC-LSiter",
+      "synthetic_public_encode_speed_win_fraction": 0.0,
+      "ties": 0,
+      "win_fraction": 0.7619047619047619,
+      "wins": 16,
+      "wins_by_rate": {
+        "2": 5,
+        "3": 6,
+        "4": 5
+      },
+      "worst_ppl_ratio_candidate_over_tq": 1.162213431664403
+    },
+    {
+      "cells": [
+        {
+          "candidate_ppl": 6.522163703812835,
+          "model": "Llama-2-7b-hf",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.8976874354419991,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.28590536699548574,
+          "tq_ppl": 7.265517424337662
+        },
+        {
+          "candidate_ppl": 5.753122757910873,
+          "model": "Llama-2-7b-hf",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9866564714564854,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.34223674096848583,
+          "tq_ppl": 5.8309279109254835
+        },
+        {
+          "candidate_ppl": 5.605317216252233,
+          "model": "Llama-2-7b-hf",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9975768077514832,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.3495966192854399,
+          "tq_ppl": 5.618932971072672
+        },
+        {
+          "candidate_ppl": 10.525157635009945,
+          "model": "llama-3.1-8b-instruct",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.8707596732650025,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.3038988784048424,
+          "tq_ppl": 12.08732783357409
+        },
+        {
+          "candidate_ppl": 8.498444170364698,
+          "model": "llama-3.1-8b-instruct",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9870281319160117,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.36292158079867576,
+          "tq_ppl": 8.610133688760806
+        },
+        {
+          "candidate_ppl": 8.194400056196821,
+          "model": "llama-3.1-8b-instruct",
+          "outcome": "loss",
+          "ppl_ratio_candidate_over_tq": 1.0044987768760498,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.3797077587981066,
+          "tq_ppl": 8.15770038235494
+        },
+        {
+          "candidate_ppl": 263.5062924824787,
+          "model": "Qwen3-4B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.8601538851867333,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.28450282673761224,
+          "tq_ppl": 306.3478489378367
+        },
+        {
+          "candidate_ppl": 28.602904277401077,
+          "model": "Qwen3-4B",
+          "outcome": "loss",
+          "ppl_ratio_candidate_over_tq": 1.1571699731337586,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.33651597817614964,
+          "tq_ppl": 24.717980021500985
+        },
+        {
+          "candidate_ppl": 16.220110622777838,
+          "model": "Qwen3-4B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.848411130784714,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.354474037171872,
+          "tq_ppl": 19.118219969339044
+        },
+        {
+          "candidate_ppl": 113.90472707069296,
+          "model": "Qwen3-8B",
+          "outcome": "loss",
+          "ppl_ratio_candidate_over_tq": 3.3990770282916656,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.3024098568581265,
+          "tq_ppl": 33.510487147724355
+        },
+        {
+          "candidate_ppl": 12.212166058319982,
+          "model": "Qwen3-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9344999725195263,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.374974061008508,
+          "tq_ppl": 13.068128857611935
+        },
+        {
+          "candidate_ppl": 10.947172398471933,
+          "model": "Qwen3-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9528457566348293,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.3799543473749741,
+          "tq_ppl": 11.488923912653107
+        },
+        {
+          "candidate_ppl": 44.097513451084126,
+          "model": "DeepSeek-R1-Distill-Llama-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.8183609027970646,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.3274116523400191,
+          "tq_ppl": 53.88516643496021
+        },
+        {
+          "candidate_ppl": 33.39912070433915,
+          "model": "DeepSeek-R1-Distill-Llama-8B",
+          "outcome": "loss",
+          "ppl_ratio_candidate_over_tq": 1.0431631400209571,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.38645330995177557,
+          "tq_ppl": 32.017159563046064
+        },
+        {
+          "candidate_ppl": 30.016627439099835,
+          "model": "DeepSeek-R1-Distill-Llama-8B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9985916571501762,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.4025974025974026,
+          "tq_ppl": 30.058960761561515
+        },
+        {
+          "candidate_ppl": 156477.14347971918,
+          "model": "DeepSeek-R1-Distill-Qwen-7B",
+          "outcome": "loss",
+          "ppl_ratio_candidate_over_tq": 1.1626974094171851,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.3106227106227106,
+          "tq_ppl": 134581.14055500913
+        },
+        {
+          "candidate_ppl": 39903.297865138884,
+          "model": "DeepSeek-R1-Distill-Qwen-7B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.5840694429841504,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.37198168193172354,
+          "tq_ppl": 68319.44102616188
+        },
+        {
+          "candidate_ppl": 5387.075254063994,
+          "model": "DeepSeek-R1-Distill-Qwen-7B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.1645743528549103,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.3827083333333334,
+          "tq_ppl": 32733.38257518941
+        },
+        {
+          "candidate_ppl": 63080.48554302208,
+          "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+          "outcome": "loss",
+          "ppl_ratio_candidate_over_tq": 1.0034276405877829,
+          "rate": 2,
+          "synthetic_public_encode_speedup_x": 0.2859990034877927,
+          "tq_ppl": 62865.0068938415
+        },
+        {
+          "candidate_ppl": 43604.475308719484,
+          "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.9634937886301301,
+          "rate": 3,
+          "synthetic_public_encode_speedup_x": 0.3425181783390739,
+          "tq_ppl": 45256.62315967306
+        },
+        {
+          "candidate_ppl": 26883.540434775186,
+          "model": "DeepSeek-R1-Distill-Qwen-1.5B",
+          "outcome": "win",
+          "ppl_ratio_candidate_over_tq": 0.7436863116413185,
+          "rate": 4,
+          "synthetic_public_encode_speedup_x": 0.35194127873285685,
+          "tq_ppl": 36149.03221150207
+        }
+      ],
+      "geometric_mean_ppl_ratio_candidate_over_tq": 0.9085833680527701,
+      "losses": 6,
+      "median_synthetic_public_encode_speedup_x": 0.3495966192854399,
+      "method": "HQ-dev-fixed-delta0-Gauss-NC-LSiter",
+      "synthetic_public_encode_speed_win_fraction": 0.0,
+      "ties": 0,
+      "win_fraction": 0.7142857142857143,
+      "wins": 15,
+      "wins_by_rate": {
+        "2": 4,
+        "3": 5,
+        "4": 6
+      },
+      "worst_ppl_ratio_candidate_over_tq": 3.3990770282916656
+    }
+  ]
+}

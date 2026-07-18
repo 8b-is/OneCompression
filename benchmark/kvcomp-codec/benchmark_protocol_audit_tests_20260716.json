@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "audit_id": "hayatequant-benchmark-protocol-audit-20260716",
+  "executed_at_date": "2026-07-16",
+  "source_commit_before_patch": "7096e8b374fefb430878e433cc0b18fb3bdca03b",
+  "working_branch": "agent/benchmark-protocol-audit-20260716",
+  "python_environment": "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/.venv/bin/pytest",
+  "command": [
+    "pytest",
+    "-q",
+    "tests/onecomp/kvcomp/test_eval_correctness.py",
+    "tests/onecomp/kvcomp/test_longcontext_protocol.py",
+    "tests/onecomp/kvcomp/test_ruler_eval.py",
+    "tests/onecomp/kvcomp/test_zeroshot_sharding.py",
+    "tests/onecomp/kvcomp/test_zeroshot_benchmark_cli.py",
+    "tests/onecomp/kvcomp/test_hayatequant_ruler_aggregate.py",
+    "tests/onecomp/kvcomp/test_hayatequant_paper_shards.py",
+    "tests/onecomp/kvcomp/test_hayatequant_run_archive.py",
+    "tests/onecomp/kvcomp/test_submit_hayatequant_paper.py",
+    "tests/onecomp/kvcomp/test_hayatequant_formal_renderer.py",
+    "tests/onecomp/kvcomp/test_hayatequant_paper_inputs.py",
+    "tests/onecomp/kvcomp/test_hayatequant_smoke_gate.py"
+  ],
+  "result": {
+    "status": "passed",
+    "passed": 483,
+    "failed": 0,
+    "errors": 0,
+    "warnings": 15,
+    "duration_seconds": 451.91
+  },
+  "warning_classes": [
+    {
+      "count": 14,
+      "category": "DeprecationWarning",
+      "source": "torch.jit.script_method"
+    },
+    {
+      "count": 1,
+      "category": "UserWarning",
+      "source": "fuzzywuzzy pure-Python SequenceMatcher"
+    }
+  ],
+  "covered_contracts": [
+    "PPL exact global target coverage and denominator boundary cases",
+    "PPL fp64/host accumulation and cache peak-live=1",
+    "lm-eval-compatible zero-shot prompt, metric, probe release, and choice cache peak-live=1",
+    "LongBench released scorer fixture parity and cache peak-live=1",
+    "LongCodeQA cache peak-live=1",
+    "RULER and longcontext cache peak-live=1",
+    "formal shard aggregation and fail-closed protocol provenance",
+    "repo-local linked-worktree submission/worker lifecycle",
+    "archive scope, formal renderer, input manifest, and smoke gate"
+  ],
+  "paper_files_in_test_scope": false,
+  "gpu_benchmark_measurements_generated": false
+}

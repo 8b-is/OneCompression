@@ -1,0 +1,29 @@
+Development run launch source state
+===================================
+
+Slurm array job: 69320 (tasks 0-6)
+Launch date: 2026-07-16 JST
+Git HEAD: e50379c225259b3e5d5df1facafa7133b36915d5
+Git tree at launch: dirty (pre-existing HayateQuant task worktree)
+Tracked binary diff SHA256: 7b0b74705b475ea7a9bd1970b84738377b86890cea649081492553e7cfcd32fb
+Porcelain status SHA256: bc49dd1b32a08178695119d089d9b800fc6aba5dff0e7398af2149751f1fc854
+Porcelain status lines: 127
+Tracked diff summary: 75 files changed, 12512 insertions(+), 2743 deletions(-)
+
+Relevant file SHA256 values at launch:
+
+c598f42efdca5311128f7472bce225782308c778e006a09d7cd5503175f3ba18  benchmark/kvcomp-codec/codec_benchmark.py
+6706b32f86a7c37b4c349c6c51a5225d9fcdaf30730712e1165a25d6d3b1008f  onecomp/kvcomp/cache/compressed_cache.py
+6cdff32eeb4d2178e602b6733e5898c873705448034a666a6e3077b1159af550  onecomp/kvcomp/codec/turboquant.py
+a4258253646a8e80950619fe8dfa9dd1b8159c102adb8c9487da4005a3443394  onecomp/kvcomp/codec/fibquant.py
+dcca30a0206ede11b1fbc6fa8e15a21c226287e1047fcea18df4d84571ad9955  onecomp/kvcomp/codec/blockquant.py
+c5608752399a605a730996df6876a4f6b613bd167ddde45c21d579db224b043b  onecomp/kvcomp/codec/hayate/codec.py
+04b28eb73af881e0f4369aa84ed8af2258629c347f2f5bd46f07ce705be0436d  onecomp/kvcomp/codec/hayate/recipes.py
+ee5c7ca7afcbca66b24ea77935df9247f204951b320060d1cadc51facfd7b4d4  onecomp/kvcomp/eval/_teacher_forcing.py
+8d8a60631f9395b7bd55a72d206633d2b0cbd7675523a07ac74726709a309fd9  onecomp/kvcomp/eval/ppl.py
+5f54b66f1dc4a9a42c72bfa91a44aa7c986aa2a4634d2f5c2739f2c78ff6f1ab  papers/hayatequant_paper/experiments/results/development/baseline_quality_20260716/runtime/submit_dev_baseline_quality.sh
+
+The full working tree was intentionally not copied into this result bundle.
+The immutable commit, dirty-tree digests, exact runtime script, benchmark JSON
+codec configs, and hashes above identify the development source used.  Runtime
+manifests independently record the state observed by every array task.

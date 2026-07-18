@@ -1,0 +1,13 @@
+job_id=69342
+array_job_id=69341
+array_task_id=0
+node=kagura-gpu13
+start_utc=2026-07-15T20:44:51Z
+e20d32a2066984ec1231123c6c4888f97c1bab91e853210800aee91620e164db  /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/benchmark/kvcomp-codec/hayatequant_vllm_full_native_smoke.py
+194f4ffb1f434091ada1358e0af6ef42e7e8b27f2444dbd85cefbf2ad987a7ad  /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/papers/hayatequant_paper/experiments/results/development/hq_quality_refinement_20260716/runtime/hq_rate2_native_abba.py
+4e34762a1c3aea05868c2b9574daac1ae866b8c5779062f044f54c12049f40b5  /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/vllm_plugins/kvcomp/hayate_full_config.py
+c629008e82d30f9a0ad2e5dc31b791eef8722b9e8a23203dead622b711150026  /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/vllm_plugins/kvcomp/hayate_full_native.py
+37cb6e4e1390f5b633b6adf246c3b0a9937d182616a7f690de983e34f04dec76  /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/vllm_plugins/kvcomp/hayate_full_triton.py
+NVIDIA B200, GPU-3c095bc9-d907-bb7f-0066-846f3c158dad, 580.126.20
+end_utc=2026-07-15T20:45:10Z
+exit_status=0

@@ -1,0 +1,12 @@
+Traceback (most recent call last):
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/benchmark/kvcomp-codec/hayatequant_vllm_full_native_smoke.py", line 409, in <module>
+    main()
+    ~~~~^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/benchmark/kvcomp-codec/hayatequant_vllm_full_native_smoke.py", line 400, in main
+    result = run(args)
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/benchmark/kvcomp-codec/hayatequant_vllm_full_native_smoke.py", line 303, in run
+    direct = torch.einsum("bht,thd->bhd", weights, v_ref.float())
+  File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/torch/functional.py", line 373, in einsum
+    return _VF.einsum(equation, operands)  # type: ignore[attr-defined]
+           ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+RuntimeError: einsum(): subscript h has size 2 for operand 1 which does not broadcast with previously seen size 4

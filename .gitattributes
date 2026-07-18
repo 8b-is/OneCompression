@@ -1,0 +1,4 @@
+# Audited result archives preserve tool-emitted bytes exactly because their
+# SHA256SUMS manifests are part of the reproducibility record.  Raw CSV/log
+# whitespace is therefore data, not a source-formatting error.
+papers/hayatequant_paper/experiments/results/** -whitespace

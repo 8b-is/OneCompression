@@ -1,0 +1,18 @@
+Traceback (most recent call last):
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/papers/hayatequant_paper/experiments/results/development/hq_codebook_artifacts_20260716/runtime/fit_one_artifact.py", line 179, in <module>
+    main()
+    ~~~~^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/papers/hayatequant_paper/experiments/results/development/hq_codebook_artifacts_20260716/runtime/fit_one_artifact.py", line 172, in main
+    meta_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
+                         ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/.local/share/uv/python/cpython-3.13.12-linux-x86_64-gnu/lib/python3.13/json/__init__.py", line 242, in dumps
+    **kw).encode(obj)
+          ~~~~~~^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/.local/share/uv/python/cpython-3.13.12-linux-x86_64-gnu/lib/python3.13/json/encoder.py", line 202, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+  File "/lustre/home/frj/yuma-ichikawa/.local/share/uv/python/cpython-3.13.12-linux-x86_64-gnu/lib/python3.13/json/encoder.py", line 263, in iterencode
+    return _iterencode(o, 0)
+  File "/lustre/home/frj/yuma-ichikawa/.local/share/uv/python/cpython-3.13.12-linux-x86_64-gnu/lib/python3.13/json/encoder.py", line 182, in default
+    raise TypeError(f'Object of type {o.__class__.__name__} '
+                    f'is not JSON serializable')
+TypeError: Object of type _CUuuid is not JSON serializable

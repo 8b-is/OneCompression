@@ -2,9 +2,10 @@
 
 > **⚠️ superseded by HayateQuant (2026-07-04):** HALO は
 > [`papers/hayatequant_paper/`](../hayatequant_paper/README.md) の HayateQuant に
-> 全面的に置き換えられた。HayateQuant は `block_size=1` で HALO を bit-for-bit
-> 再現する厳密な上位互換であり (`test_hayatequant_block_size_1_matches_halo_scale_modes`)、
-> 以下の全テーブルで HALO の結果を更新している。本 README は比較対象・再現性の
+> 全面的に置き換えられた。`block_size=1` は、rotation/source-law/scale と
+> metadata precision を明示的に揃えた scalar-path compatibility control であり、
+> 任意の fp16 丸め順まで含む bit-for-bit strict superset の主張ではない。
+> 以下の旧テーブルは HALO の比較履歴である。本 README は比較対象・再現性の
 > ために保存し、各テーブルに HayateQuant との対応比較を付記する。
 > 新規開発は `hayatequant` codec を使うこと。
 

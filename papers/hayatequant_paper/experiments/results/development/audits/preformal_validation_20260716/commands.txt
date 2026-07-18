@@ -1,0 +1,11 @@
+uv run --frozen pytest -q tests/onecomp/kvcomp/test_model_weight_manifest.py tests/onecomp/kvcomp/test_submit_hayatequant_paper.py tests/onecomp/kvcomp/test_hayatequant_smoke_gate.py tests/onecomp/kvcomp/test_hayatequant_paper_shards.py tests/onecomp/kvcomp/test_hayatequant_formal_renderer.py tests/onecomp/kvcomp/test_hayatequant_run_archive.py tests/onecomp/kvcomp/test_eval_correctness.py tests/onecomp/kvcomp/test_code_accounting.py tests/onecomp/kvcomp/test_zeroshot_benchmark_cli.py --junitxml=papers/hayatequant_paper/experiments/results/development/audits/preformal_validation_20260716/focused-junit.xml
+uv run --frozen pytest -q tests/onecomp/kvcomp --junitxml=papers/hayatequant_paper/experiments/results/development/audits/preformal_validation_20260716/full-kvcomp-failed-missing-ruler-fixture-junit.xml
+uv run --frozen pytest -q tests/onecomp/kvcomp/test_hayatequant_ruler_aggregate.py
+uv run --frozen pytest -q tests/onecomp/kvcomp --junitxml=papers/hayatequant_paper/experiments/results/development/audits/preformal_validation_20260716/full-kvcomp-junit.xml
+uv run --frozen black --check --fast <18 changed Python files>
+uv run --frozen python -m py_compile <18 changed Python files>
+bash -n benchmark/kvcomp-codec/run_paper_job.sh
+bash -n benchmark/kvcomp-codec/submit_hayatequant_paper.sh
+git diff --check 3d6f264363d7291c1fd07fe40d310ae041e53425 --
+xmllint --noout focused-junit.xml full-kvcomp-failed-missing-ruler-fixture-junit.xml full-kvcomp-junit.xml
+DRYRUN=1 SKIP_INPUT_PREFLIGHT=1 ALLOW_DIRTY_DRYRUN=0 SPEED_REPLICATES=5 PREFERRED_NODE= RUN_ROOT=/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715 bash benchmark/kvcomp-codec/submit_hayatequant_paper.sh formal-plan

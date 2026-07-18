@@ -17,16 +17,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from onecomp.kvcomp.codec.hayate.recipes import hayate_frontier_variant
-
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
-KV_BENCH = REPO_ROOT / "benchmark" / "kvcomp-longcontext" / "kv_benchmark.py"
-DEFAULT_MODELS_ROOT = Path("/lustre/home/frj/yuma-ichikawa/conference/models")
-DEFAULT_OUTPUT_ROOT = Path(
-    "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/"
-    "kvcomp_hayatequant/exhaustive_long_reason"
+sys.path.insert(0, str(REPO_ROOT))
+
+from onecomp.kvcomp.codec.hayate.recipes import (
+    hayate_adaptive_rate_variant,
+    hayate_frontier_variant,
+    hayate_hq_frontier_variant,
 )
+from benchmark.kvcomp_common.paths import resolve_model_ref, resolve_output_root, resolve_python
+
+
+KV_BENCH = REPO_ROOT / "benchmark" / "kvcomp-longcontext" / "kv_benchmark.py"
+DEFAULT_MODELS_ROOT = None
+DEFAULT_OUTPUT_ROOT = None
 
 
 @dataclass(frozen=True)
@@ -52,8 +56,8 @@ MODEL_MAP = {m.key: m for m in MODELS}
 MODEL_MAP.update({m.path_name: m for m in MODELS})
 
 
-def _frontier_variant(bits: int, label: str) -> dict[str, Any]:
-    return hayate_frontier_variant(bits, label=label)
+def _frontier_variant(bits: int, label: str, **overrides: Any) -> dict[str, Any]:
+    return hayate_frontier_variant(bits, label=label, **overrides)
 
 
 def _fmt_value(value: Any) -> str:
@@ -77,16 +81,25 @@ def _variants(spec: ModelSpec, bits: list[int]) -> tuple[list[str], list[dict[st
     hayate: list[dict[str, Any]] = []
     for b in bits:
         tq = f"TurboQuant-{b}bit"
-        hq = f"HQ-frontier-{b}bit"
-        methods.extend([tq, hq])
+        hq = f"HQ-{b}bit"
+        frontier = f"HQ-Frontier-{b}bit"
+        adaptive = f"AdaptiveHQ-{b}bit"
+        rotation = f"RotationHQ-{b}bit"
+        methods.extend([tq, hq, frontier, adaptive, rotation])
         turbo.append({"label": tq, "bits": b, "dist": "beta"})
-        hayate.append(_frontier_variant(b, hq))
+        hayate.extend(
+            [
+                _frontier_variant(b, hq),
+                hayate_hq_frontier_variant(b, frontier),
+                hayate_adaptive_rate_variant(b, adaptive),
+                _frontier_variant(b, rotation, rotation_mode="dense"),
+            ]
+        )
     return methods, turbo, hayate
 
 
-def _model_path(spec: ModelSpec, root: Path) -> Path:
-    p = Path(spec.path_name)
-    return p if p.is_absolute() else root / p
+def _model_path(spec: ModelSpec, root: Path | None) -> Path:
+    return Path(resolve_model_ref(spec.path_name, root))
 
 
 def _resolve_models(names: list[str] | None) -> list[ModelSpec]:
@@ -95,8 +108,12 @@ def _resolve_models(names: list[str] | None) -> list[ModelSpec]:
     out = []
     for name in names:
         if name not in MODEL_MAP:
+            path = Path(name).expanduser()
+            if path.exists() or "/" in name or os.sep in name:
+                out.append(ModelSpec(path.name, str(path)))
+                continue
             known = ", ".join(sorted(MODEL_MAP))
-            raise SystemExit(f"Unknown model {name!r}. Known: {known}")
+            raise SystemExit(f"Unknown model {name!r}. Known: {known}; or pass a model path")
         out.append(MODEL_MAP[name])
     return out
 
@@ -193,11 +210,17 @@ def _submit(args: argparse.Namespace, spec: ModelSpec, task: str, cmd: list[str]
 
 def main() -> None:
     args = parse_args()
+    args.models_root = args.models_root.expanduser().resolve() if args.models_root else None
+    args.output_root = resolve_output_root(
+        args.output_root, default_relative="results/hayatequant/exhaustive_long_reason"
+    )
+    args.python = resolve_python(args.python)
     args.output_root.mkdir(parents=True, exist_ok=True)
     tasks = ["long", "reason"] if args.task == "both" else [args.task]
     for spec in _resolve_models(args.models):
         model_path = _model_path(spec, args.models_root)
-        if not model_path.exists():
+        is_hf_id = "/" in spec.path_name and not spec.path_name.startswith((".", "/", "~"))
+        if not model_path.exists() and not is_hf_id:
             raise SystemExit(f"Missing model directory: {model_path}")
         for task in tasks:
             cmd = [str(args.python), "-u", str(KV_BENCH), *_task_overrides(args, spec, task)]
@@ -211,10 +234,10 @@ def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser()
     ap.add_argument("--task", choices=["long", "reason", "both"], default="both")
     ap.add_argument("--models", nargs="*")
-    ap.add_argument("--models-root", type=Path, default=DEFAULT_MODELS_ROOT)
+    ap.add_argument("--models-root", type=Path, default=DEFAULT_MODELS_ROOT, help="External model directory.")
     ap.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     ap.add_argument("--bits", type=int, nargs="+", default=[2, 3, 4])
-    ap.add_argument("--python", type=Path, default=REPO_ROOT / ".venv" / "bin" / "python")
+    ap.add_argument("--python", type=Path, default=None)
     ap.add_argument("--run-local", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--smoke", action="store_true", help="Use tiny task/sample settings for command validation.")

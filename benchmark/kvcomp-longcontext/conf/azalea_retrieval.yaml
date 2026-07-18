@@ -1,11 +1,11 @@
 # CPU-feasible retrieval run on azalea (no GPU): HayateQuant vs TurboQuant turf.
 # Small grid/contexts so it finishes on CPU; produces every retrieval metric
-# (Needle, RULER, PPL) for the full codec method set with error bars.
+# (Needle, local multi-key diagnostic, PPL) for the full codec method set with error bars.
 defaults:
   - benchmark_longcontext
   - _self_
 
-model_path: /home/frj/yuma-ichikwa1/models/Qwen--Qwen3-0.6B
+model_path: ???  # external local path or Hugging Face id
 device: cpu
 dtype: float32
 attn_implementation: sdpa

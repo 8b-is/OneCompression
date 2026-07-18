@@ -12,8 +12,15 @@ Scope of this plugin (agreed scaffold):
   :class:`onecomp.runner.Runner`.
 * Map the **FP8** codec onto vLLM's *native* ``kv_cache_dtype`` (the recommended
   baseline), via :func:`vllm_plugins.kvcomp.mapping.engine_kwargs_from_kv_config`.
-* For low-bit / eviction recipes, surface that the experimental custom attention
-  backend is required (not silently downgrade).
+* Run standalone affine TapeKV through an explicit, FP16/BF16-reference
+  FlashAttention backend.  The backend is marked non-packed and is excluded
+  from memory/throughput claims.
+* Run explicitly selected fixed-rate full HayateQuant through its faithful
+  packed key/value backend, and compose HayateQuant with TapeKV in the
+  reference backend's defined one-time-HQ-then-age-regrade order.
+* For every other low-bit / eviction recipe, fail closed when the experimental
+  custom attention backend is required (never start an uncompressed look-alike
+  run).
 
 ``vllm`` is imported lazily inside the registration hook so that importing this
 module (e.g. in the smoke test) does not require vLLM to be installed.
@@ -35,6 +42,13 @@ from vllm_plugins.kvcomp.mapping import (
 
 _PLUGIN_NAME = "onecomp_kvcomp"
 _HAYATE_NATIVE_CONFIG_ENV = "KVCOMP_VLLM_HAYATE_NATIVE_CONFIG"
+_HAYATE_FULL_NATIVE_CONFIG_ENV = "KVCOMP_VLLM_HAYATE_FULL_NATIVE_CONFIG"
+_TAPER_NATIVE_CONFIG_ENV = "KVCOMP_VLLM_TAPER_CONFIG"
+# Dedicated launchers can opt into a TapeKV recipe even when the base model
+# has no serialized kv_compression_config.  This is intentionally separate
+# from the recipe payload so ordinary model-to-model transitions still clear
+# stale state; it is only appropriate for a fresh-process smoke/validation run.
+_TAPER_NATIVE_EXPLICIT_ENV = "KVCOMP_VLLM_TAPER_CONFIG_EXPLICIT"
 
 
 def _get_logger():
@@ -62,7 +76,8 @@ def read_kv_compression_config(model_path: str) -> Optional[dict]:
         _get_logger().info(
             "[kvcomp] no local config.json at '%s' (HF Hub id?); KV-comp config "
             "not read -- pass a local path or apply engine kwargs manually.",
-            model_path)
+            model_path,
+        )
         return None
     with open(cfg_path, "r", encoding="utf-8") as fh:
         cfg = json.load(fh)
@@ -86,8 +101,8 @@ def _vllm_accepts_dtype(dtype: Optional[str]) -> bool:
     if dtype in (None, "auto"):
         return True
     import typing  # pylint: disable=import-outside-toplevel
-    for modname, attr in (("vllm.config.cache", "CacheDType"),
-                          ("vllm.config", "CacheDType")):
+
+    for modname, attr in (("vllm.config.cache", "CacheDType"), ("vllm.config", "CacheDType")):
         try:
             mod = __import__(modname, fromlist=[attr])
             choices = set(typing.get_args(getattr(mod, attr)))
@@ -111,39 +126,192 @@ def apply_to_engine_args(engine_args, model_path: Optional[str] = None):
     if not path:
         return engine_args
     plan = plan_for_model(path, getattr(engine_args, "kv_cache_dtype", "auto") or "auto")
+    # The TURBOQUANT registry override is process-global, while the selected
+    # codec is per model/engine. Remove a prior Hayate payload when a serialized
+    # model explicitly selects any other codec (including scalar fallback), so
+    # the override delegates to upstream TurboQuant instead of reusing stale
+    # block-VQ settings. A model with no kv_compression_config is left alone:
+    # the standalone native smoke/generation harness configures the override
+    # manually and intentionally has no serialized block.
+    if plan.codec_name is not None and not (plan.hayate_native or plan.hayate_full_native):
+        os.environ.pop(_HAYATE_NATIVE_CONFIG_ENV, None)
+        # A manually requested full-HQ backend is likewise scoped to its fresh
+        # engine process.  Never let its process-global TURBOQUANT override
+        # leak into a subsequently serialized non-HQ model.
+        os.environ.pop(_HAYATE_FULL_NATIVE_CONFIG_ENV, None)
+    elif plan.hayate_native:
+        # A serialized historical hybrid is an explicit, different backend;
+        # it must not coexist with a manual full-HQ override.
+        os.environ.pop(_HAYATE_FULL_NATIVE_CONFIG_ENV, None)
+    elif plan.hayate_full_native:
+        os.environ.pop(_HAYATE_NATIVE_CONFIG_ENV, None)
+    if not plan.taper_native and not os.environ.get(_TAPER_NATIVE_EXPLICIT_ENV):
+        # The registry override delegates to ordinary FlashAttention without a
+        # payload (see taper_native.py), so clearing this process-scoped recipe
+        # prevents it being applied to a subsequently constructed model.
+        os.environ.pop(_TAPER_NATIVE_CONFIG_ENV, None)
     for msg in plan.notes:
         logger.info("[kvcomp] %s", msg)
     for msg in plan.warnings:
         logger.warning("[kvcomp] %s", msg)
+    if plan.needs_custom_backend or not plan.native_supported:
+        detail = "; ".join(plan.notes + plan.warnings) or "no faithful native mapping"
+        raise RuntimeError(
+            "Serialized KV compression recipe cannot run through native vLLM: " f"{detail}"
+        )
+    if plan.taper_native:
+        _install_taper_native_backend(plan, logger)
+        # Shared prefix blocks are intentionally disabled: independently
+        # regrading two sequences which alias a prefix page would mutate a
+        # page according to whichever request ran last.  This is a correctness
+        # requirement of the reference backend, not a performance knob.
+        if hasattr(engine_args, "enable_prefix_caching"):
+            engine_args.enable_prefix_caching = False
+        if hasattr(engine_args, "enforce_eager"):
+            engine_args.enforce_eager = True
+        if hasattr(engine_args, "attention_backend"):
+            engine_args.attention_backend = "FLASH_ATTN"
+        logger.info("[kvcomp] enabled TapeKV FP16-reference semantic backend")
+        return engine_args
     if plan.native_supported and plan.kv_cache_dtype != "auto":
         if not _vllm_accepts_dtype(plan.kv_cache_dtype):
-            logger.warning(
-                "[kvcomp] installed vLLM does not support kv_cache_dtype='%s' "
-                "(needs a newer vLLM); leaving 'auto'. Upgrade vLLM or use the HF "
-                "cache path.", plan.kv_cache_dtype)
-            return engine_args
-        if plan.hayate_native:
+            raise RuntimeError(
+                "Installed vLLM does not support the required kv_cache_dtype="
+                f"{plan.kv_cache_dtype!r}; upgrade vLLM or use the faithful HF "
+                "cache path"
+            )
+        if plan.hayate_full_native:
+            _install_hayate_full_native_backend(plan, logger)
+        elif plan.hayate_native:
             _install_hayate_native_backend(plan, logger)
         engine_args.kv_cache_dtype = plan.kv_cache_dtype
         if plan.calculate_kv_scales and hasattr(engine_args, "calculate_kv_scales"):
             engine_args.calculate_kv_scales = True
         if plan.skip_layers and hasattr(engine_args, "kv_cache_dtype_skip_layers"):
             engine_args.kv_cache_dtype_skip_layers = ",".join(str(i) for i in plan.skip_layers)
-            logger.info("[kvcomp] set kv_cache_dtype_skip_layers=%s",
-                        engine_args.kv_cache_dtype_skip_layers)
+            logger.info(
+                "[kvcomp] set kv_cache_dtype_skip_layers=%s",
+                engine_args.kv_cache_dtype_skip_layers,
+            )
         logger.info("[kvcomp] set kv_cache_dtype=%s", plan.kv_cache_dtype)
-    elif plan.needs_custom_backend:
-        logger.warning(
-            "[kvcomp] codec=%s needs the experimental custom attention backend; "
-            "kv_cache_dtype left at 'auto'. Use the HF cache path for faithful "
-            "low-bit/eviction results today.",
-            plan.codec_name,
-        )
     return engine_args
 
 
 _PATCHED = False
 _HAYATE_NATIVE_INSTALLED = False
+_HAYATE_FULL_NATIVE_INSTALLED = False
+_HAYATE_FULL_SPEC_PATCHED = False
+_TAPER_NATIVE_INSTALLED = False
+
+
+def _install_hayate_full_cache_spec_hook() -> bool:
+    """Make vLLM budget the same full-HQ slot width it later reshapes.
+
+    vLLM 0.20 computes ``TQFullAttentionSpec.tq_slot_size`` directly from the
+    named upstream TurboQuant preset, independently of the registered
+    backend's ``get_kv_cache_shape``.  Full HQ deliberately has a different
+    physical slot (for example 52 rather than 54 bytes at D=64, rate 3), so
+    overriding shape alone would allocate a TQ-sized raw buffer and fail its
+    final view.  Patch only the explicit full-HQ process and replace that one
+    spec field; normal TQ and hybrid paths call the original method unchanged.
+    """
+
+    global _HAYATE_FULL_SPEC_PATCHED
+    if not os.environ.get(_HAYATE_FULL_NATIVE_CONFIG_ENV):
+        return False
+    if _HAYATE_FULL_SPEC_PATCHED:
+        return True
+    from dataclasses import replace  # pylint: disable=import-outside-toplevel
+    from vllm.model_executor.layers.attention.attention import (  # pylint: disable=import-outside-toplevel
+        Attention,
+    )
+    from vllm.v1.kv_cache_interface import (  # pylint: disable=import-outside-toplevel
+        TQFullAttentionSpec,
+    )
+    from vllm_plugins.kvcomp.hayate_full_config import (  # pylint: disable=import-outside-toplevel
+        full_hq_native_recipe_from_mapping,
+    )
+
+    original = Attention.get_kv_cache_spec
+
+    def _full_hq_spec(self, vllm_config):
+        spec = original(self, vllm_config)
+        raw = os.environ.get(_HAYATE_FULL_NATIVE_CONFIG_ENV)
+        if not raw:
+            return spec
+        recipe = full_hq_native_recipe_from_mapping(json.loads(raw))
+        # vLLM's boundary-layer protection intentionally leaves the first and
+        # last layers uncompressed.  Those layers return the ordinary full
+        # attention spec and must keep their upstream allocation unchanged;
+        # only the layers for which vLLM actually selected its TurboQuant
+        # data plane need the HQ physical slot substitution.
+        if not isinstance(spec, TQFullAttentionSpec):
+            return spec
+        slot = recipe.layout(self.head_size)["slot_size_aligned"]
+        return replace(spec, tq_slot_size=slot)
+
+    _full_hq_spec._onecomp_full_hq_original = original
+    Attention.get_kv_cache_spec = _full_hq_spec
+    _HAYATE_FULL_SPEC_PATCHED = True
+    return True
+
+
+def _register_hayate_full_native_backend(logger) -> bool:
+    """Re-register explicit full HQ in vLLM spawn children.
+
+    Registry state does not cross vLLM's spawned EngineCore boundary, while
+    environment variables do.  This hook is intentionally inert unless the
+    dedicated full-HQ environment payload is present; normal upstream
+    TurboQuant and serialized mapping behavior are unchanged.
+    """
+
+    global _HAYATE_FULL_NATIVE_INSTALLED
+    payload = os.environ.get(_HAYATE_FULL_NATIVE_CONFIG_ENV)
+    if not payload:
+        return False
+    if os.environ.get(_HAYATE_NATIVE_CONFIG_ENV):
+        raise RuntimeError(
+            "both full-HQ and historical hybrid Hayate native configs are set; "
+            "refusing ambiguous TURBOQUANT backend registration"
+        )
+    # Validate before mutating the process-global registry.  A malformed or
+    # partial recipe must not silently start upstream TQ under an HQ label.
+    try:
+        config = json.loads(payload)
+        if not isinstance(config, dict):
+            raise ValueError("full HQ native payload must be a JSON object")
+        from vllm_plugins.kvcomp.hayate_full_config import (  # pylint: disable=import-outside-toplevel
+            full_hq_native_recipe_from_mapping,
+        )
+
+        full_hq_native_recipe_from_mapping(config)
+    except Exception as exc:
+        raise RuntimeError(
+            "invalid explicit full-HQ native config; refusing registration"
+        ) from exc
+    if _HAYATE_FULL_NATIVE_INSTALLED:
+        return True
+    try:
+        from vllm.v1.attention.backends.registry import (  # pylint: disable=import-outside-toplevel
+            AttentionBackendEnum,
+            register_backend,
+        )
+
+        register_backend(
+            AttentionBackendEnum.TURBOQUANT,
+            "vllm_plugins.kvcomp.hayate_full_native.FullHayateQuantNativeBackend",
+        )
+        _HAYATE_FULL_NATIVE_INSTALLED = True
+        logger.info(
+            "[kvcomp] registered explicit faithful packed full-HQ backend "
+            "for vLLM TURBOQUANT attention."
+        )
+        return True
+    except Exception as exc:  # pragma: no cover - vLLM absent/version dependent
+        raise RuntimeError(
+            "Could not register requested full-HQ native backend; refusing "
+            "to fall back to upstream TurboQuant"
+        ) from exc
 
 
 def _register_hayate_native_backend(logger) -> bool:
@@ -171,24 +339,82 @@ def _register_hayate_native_backend(logger) -> bool:
         )
         return True
     except Exception as exc:  # pragma: no cover - vLLM absent/version dependent
-        logger.warning(
-            "[kvcomp] could not register native HayateQuant vLLM backend (%s); "
-            "kv_cache_dtype will still map to the byte-compatible TurboQuant "
-            "preset, but block-VQ will not be active unless the backend is "
-            "registered before engine creation.",
-            exc,
-        )
+        raise RuntimeError(
+            "Could not register the requested native HayateQuant backend; "
+            "refusing to run the byte-compatible TurboQuant preset without "
+            "block-VQ"
+        ) from exc
+
+
+def _install_hayate_full_native_backend(plan: KVCompVLLMPlan, logger) -> bool:
+    """Install the faithful packed full-HQ backend from a serialized plan."""
+    if not plan.hayate_full_native:
         return False
+    os.environ[_HAYATE_FULL_NATIVE_CONFIG_ENV] = json.dumps(
+        plan.hayate_full_config, sort_keys=True
+    )
+    if not _register_hayate_full_native_backend(logger):
+        raise RuntimeError("full-HQ native plan did not install its required backend")
+    if not _install_hayate_full_cache_spec_hook():
+        raise RuntimeError("full-HQ native plan did not install its cache-spec hook")
+    return True
 
 
 def _install_hayate_native_backend(plan: KVCompVLLMPlan, logger) -> bool:
     """Install OneComp's native HayateQuant backend from a resolved plan."""
     if not plan.hayate_native:
         return False
-    os.environ[_HAYATE_NATIVE_CONFIG_ENV] = json.dumps(
-        plan.hayate_config, sort_keys=True
-    )
-    return _register_hayate_native_backend(logger)
+    os.environ[_HAYATE_NATIVE_CONFIG_ENV] = json.dumps(plan.hayate_config, sort_keys=True)
+    if not _register_hayate_native_backend(logger):
+        raise RuntimeError("HayateQuant native plan did not install its required backend")
+    return True
+
+
+def _register_taper_native_backend(logger) -> bool:
+    """Register the explicit TapeKV semantic backend in this vLLM process."""
+    global _TAPER_NATIVE_INSTALLED
+    payload = os.environ.get(_TAPER_NATIVE_CONFIG_ENV)
+    if not payload:
+        return False
+    try:
+        config = json.loads(payload)
+        from vllm_plugins.kvcomp.taper_config import (  # pylint: disable=import-outside-toplevel
+            TaperVLLMRecipe,
+        )
+
+        TaperVLLMRecipe.from_mapping(config)
+    except Exception as exc:
+        raise RuntimeError("invalid TapeKV native config; refusing registration") from exc
+    if _TAPER_NATIVE_INSTALLED:
+        return True
+    try:
+        from vllm.v1.attention.backends.registry import (  # pylint: disable=import-outside-toplevel
+            AttentionBackendEnum,
+            register_backend,
+        )
+
+        register_backend(
+            AttentionBackendEnum.FLASH_ATTN,
+            "vllm_plugins.kvcomp.taper_native.TaperKVNativeBackend",
+        )
+        _TAPER_NATIVE_INSTALLED = True
+        logger.info("[kvcomp] registered TapeKV FP16-reference FlashAttention backend")
+        return True
+    except Exception as exc:  # pragma: no cover - depends on installed vLLM
+        raise RuntimeError(
+            "Could not register requested TapeKV vLLM reference backend; refusing "
+            "to run an uncompressed look-alike"
+        ) from exc
+
+
+def _install_taper_native_backend(plan: KVCompVLLMPlan, logger) -> bool:
+    """Export a validated TapeKV recipe and install its required backend."""
+    if not plan.taper_native:
+        return False
+    os.environ[_TAPER_NATIVE_CONFIG_ENV] = json.dumps(plan.taper_config, sort_keys=True)
+    if not _register_taper_native_backend(logger):
+        raise RuntimeError("TapeKV vLLM plan did not install its required backend")
+    return True
 
 
 def _install_engine_args_hook(logger) -> bool:
@@ -201,8 +427,8 @@ def _install_engine_args_hook(logger) -> bool:
     ``LLM(model=...)`` / ``vllm serve``, we idempotently wrap
     ``EngineArgs.create_engine_config`` and call :func:`apply_to_engine_args`
     just before the engine config is built -- this sets ``kv_cache_dtype`` (and
-    ``calculate_kv_scales``) from the model's config.json.  Non-FP8 codecs are
-    only *warned* about (never silently mis-applied).
+    ``calculate_kv_scales``) from the model's config.json. Recipes without a
+    faithful native representation raise before engine construction.
 
     Returns ``True`` if the hook is installed (or already was).
     """
@@ -218,12 +444,7 @@ def _install_engine_args_hook(logger) -> bool:
     _orig_create = EngineArgs.create_engine_config
 
     def _patched_create(self, *args, **kwargs):
-        try:
-            apply_to_engine_args(self)
-        except Exception as exc:  # pragma: no cover - never block engine start
-            _get_logger().warning(
-                "[kvcomp] auto-apply skipped (%s); call apply_to_engine_args() "
-                "or engine_kwargs_from_kv_config() manually.", exc)
+        apply_to_engine_args(self)
         return _orig_create(self, *args, **kwargs)
 
     _patched_create._onecomp_orig = _orig_create  # introspection / un-patch
@@ -238,10 +459,9 @@ def register_vllm_plugin():
 
     Installs a non-invasive ``EngineArgs`` hook that auto-applies the FP8 ->
     ``kv_cache_dtype`` mapping for models carrying a ``kv_compression_config``,
-    so the FP8 path needs no manual launcher call.  If the hook cannot be
-    installed (unexpected vLLM version), the plugin degrades gracefully: the
-    explicit :func:`apply_to_engine_args` / :func:`engine_kwargs_from_kv_config`
-    helpers still work.
+    so the FP8 path needs no manual launcher call. If the hook cannot be
+    installed, registration fails visibly instead of leaving a compressed
+    model on an uncompressed or mismatched cache path.
     """
     logger = _get_logger()
     try:
@@ -250,19 +470,22 @@ def register_vllm_plugin():
         # boundary, but environment variables do.  If a launcher set the Hayate
         # native config before engine creation, re-install the override here so
         # child workers use Hayate block-VQ instead of default TurboQuant.
+        if _register_hayate_full_native_backend(logger):
+            _install_hayate_full_cache_spec_hook()
         _register_hayate_native_backend(logger)
+        _register_taper_native_backend(logger)
         _install_engine_args_hook(logger)
         logger.info(
             "Registered OneComp KV compression plugin '%s' (FP8 and supported "
             "HayateQuant native block-VQ auto-applied to kv_cache_dtype; "
-            "remaining low-bit/eviction recipes require the HF cache path or "
-            "the experimental attention backend).",
+            "TapeKV reference semantics, and supported HayateQuant native "
+            "block-VQ auto-applied; remaining low-bit/eviction recipes require "
+            "the HF cache path or an experimental attention backend).",
             _PLUGIN_NAME,
         )
     except Exception as exc:  # pragma: no cover - vLLM internals changed
-        logger.warning(
-            "[kvcomp] could not install EngineArgs hook (%s); use "
-            "apply_to_engine_args()/engine_kwargs_from_kv_config() manually.", exc)
+        logger.error("[kvcomp] could not install required EngineArgs hook: %s", exc)
+        raise
 
 
 __all__ = [

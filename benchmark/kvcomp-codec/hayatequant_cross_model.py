@@ -38,14 +38,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
+
+from onecomp.kvcomp.codec.hayate.recipes import hayate_result_method_candidates  # noqa: E402
+from benchmark.kvcomp_common.paths import resolve_model_ref, resolve_output_root, resolve_python  # noqa: E402
+
 CODEC_BENCH = REPO_ROOT / "benchmark" / "kvcomp-codec" / "codec_benchmark.py"
-DEFAULT_MODELS_ROOT = Path("/lustre/home/frj/yuma-ichikawa/conference/models")
-DEFAULT_OUTPUT_ROOT = Path(
-    "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/"
-    "kvcomp_hayatequant/results_cross_model_v1"
-)
+DEFAULT_MODELS_ROOT = None
+DEFAULT_OUTPUT_ROOT = None
 
 
 @dataclass(frozen=True)
@@ -132,7 +133,14 @@ def _resolve_specs(names: list[str] | None) -> list[ModelSpec]:
     for name in names:
         if os.sep in name or name.startswith("."):
             p = Path(name)
-            specs.append(ModelSpec(p.name, str(p), None, p.name))
+            if p.exists():
+                specs.append(ModelSpec(p.name, str(p), None, p.name))
+            elif name.startswith(("/", "~", ".")):
+                specs.append(ModelSpec(p.name, str(p), None, p.name))
+            else:
+                # A slash-containing non-local value is a valid Hugging Face
+                # repository id; weights remain outside this repository.
+                specs.append(ModelSpec(name.replace("/", "-"), name, name, name))
         elif name in ALL_SPECS:
             specs.append(ALL_SPECS[name])
         else:
@@ -141,9 +149,15 @@ def _resolve_specs(names: list[str] | None) -> list[ModelSpec]:
     return specs
 
 
-def _model_path(spec: ModelSpec, models_root: Path) -> Path:
-    p = Path(spec.path_name)
-    return p if p.is_absolute() else models_root / p
+def _model_ref(spec: ModelSpec, models_root: Path | None) -> str:
+    """Return a local external path when available, otherwise a HF id."""
+
+    local = resolve_model_ref(spec.path_name, models_root)
+    if Path(local).exists():
+        return local
+    if models_root is None and spec.hf_id:
+        return spec.hf_id
+    return local
 
 
 def _benchmark_cmd(args: argparse.Namespace, spec: ModelSpec, model_path: Path) -> list[str]:
@@ -189,19 +203,25 @@ def _submit_sbatch(args: argparse.Namespace, spec: ModelSpec, model_path: Path) 
 def _launch(args: argparse.Namespace) -> None:
     args.output_root.mkdir(parents=True, exist_ok=True)
     for spec in _resolve_specs(args.models):
-        model_path = _model_path(spec, args.models_root)
-        if not model_path.exists():
-            if args.download_missing:
-                _download_model(spec, model_path, args.dry_run)
-            else:
+        model_ref = _model_ref(spec, args.models_root)
+        model_path = Path(model_ref)
+        if not model_path.exists() and args.download_missing:
+            if args.models_root is None or not spec.hf_id:
                 raise SystemExit(
-                    f"Missing model directory for {spec.key}: {model_path}. "
-                    "Pass --download-missing for public models or choose another path."
+                    f"Cannot download {spec.key!r} without --models-root and a registered hf id."
                 )
+            model_path = args.models_root / spec.path_name
+            _download_model(spec, model_path, args.dry_run)
+            model_ref = str(model_path)
+        elif not model_path.exists() and model_ref != spec.hf_id:
+            raise SystemExit(
+                f"Missing model directory for {spec.key}: {model_ref}. "
+                "Pass --models-root with external weights or use a Hugging Face id."
+            )
         if args.run_local:
-            _run(_benchmark_cmd(args, spec, model_path), dry_run=args.dry_run, cwd=REPO_ROOT)
+            _run(_benchmark_cmd(args, spec, Path(model_ref)), dry_run=args.dry_run, cwd=REPO_ROOT)
         else:
-            _submit_sbatch(args, spec, model_path)
+            _submit_sbatch(args, spec, Path(model_ref))
 
 
 def _iter_result_files(root: Path) -> Iterable[Path]:
@@ -209,7 +229,13 @@ def _iter_result_files(root: Path) -> Iterable[Path]:
 
 
 def _entry(data: dict, bits: str, method: str) -> dict | None:
-    return (data.get("results") or {}).get(str(bits), {}).get(method)
+    methods = (data.get("results") or {}).get(str(bits), {})
+    # Canonical proxy key first; legacy aliases are read-only compatibility for
+    # historical bundles and are never emitted by the current benchmark.
+    for candidate in hayate_result_method_candidates(method):
+        if candidate in methods:
+            return methods[candidate]
+    return None
 
 
 def _ppl(data: dict, bits: str, method: str) -> float | None:
@@ -231,44 +257,82 @@ def _paper_model_names() -> set[str]:
     return names
 
 
+def _require_complete_matrix(payloads: list[dict], specs: list[ModelSpec]) -> None:
+    """Reject a partial paper matrix instead of rendering missing cells as ``--``."""
+    required = ("TurboQuant-paper", "FibQuant-paper", "HQ", "HQ-Frontier", "AdaptiveHQ", "RotationHQ")
+    by_model: dict[str, dict] = {}
+    for payload in payloads:
+        model = str(payload.get("model") or "")
+        if model:
+            by_model[model] = payload
+    failures: list[str] = []
+    for spec in specs:
+        payload = next(
+            (by_model[name] for name in (spec.path_name, spec.key, spec.display) if name in by_model),
+            None,
+        )
+        if payload is None:
+            failures.append(f"{spec.display}: missing results JSON")
+            continue
+        for bits in ("2", "3", "4"):
+            expected = list(required)
+            if bits == "3":
+                expected.append("BlockQuant-paper")
+            missing = [method for method in expected if _entry(payload, bits, method) is None]
+            if missing:
+                failures.append(f"{spec.display} {bits}bit: missing {', '.join(missing)}")
+    if failures:
+        raise SystemExit("Incomplete codec paper matrix:\n" + "\n".join(failures))
+
+
 def _fmt(value: float | None, ndigits: int = 2) -> str:
     return "--" if value is None else f"{value:.{ndigits}f}"
 
 
 def _summarize(args: argparse.Namespace) -> None:
     rows: list[str] = []
-    rows.append("| Model | 2b TQ | 2b Fib | 2b Block | 2b HayateQuant | 2b AdaptiveHQ | 3b TQ | 3b Fib | 3b Block | 3b HayateQuant | 3b AdaptiveHQ | 4b TQ | 4b Fib | 4b Block | 4b HayateQuant | 4b AdaptiveHQ | 3b dist(K) gain |")
-    rows.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
-    for path in _iter_result_files(args.output_root):
-        data = json.loads(path.read_text())
+    rows.append(
+        "| Model | 2b TQ | 2b HQ | 2b HQ-Frontier | 2b AdaptiveHQ | 2b RotationHQ | 3b TQ | 3b HQ | 3b HQ-Frontier | 3b AdaptiveHQ | 3b RotationHQ | 4b TQ | 4b HQ | 4b HQ-Frontier | 4b AdaptiveHQ | 4b RotationHQ | 3b dist(K) gain |"
+    )
+    rows.append(
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
+    )
+    payloads = [json.loads(path.read_text()) for path in _iter_result_files(args.output_root)]
+    if args.require_complete:
+        _require_complete_matrix(payloads, _resolve_specs(args.models))
+    for data in payloads:
         model = data.get("model") or path.stem.replace("results_", "")
         if not args.include_extra_results and model not in _paper_model_names():
             continue
-        tq2 = _ppl(data, "2", "TurboQuant-hadamard")
-        fib2 = _ppl(data, "2", "FibQuant")
-        bq2 = _ppl(data, "2", "BlockQuant")
+        tq2 = _ppl(data, "2", "TurboQuant-paper")
         hq2 = _ppl(data, "2", args.hq_method)
+        frontier2 = _ppl(data, "2", "HQ-Frontier")
         ahq2 = _ppl(data, "2", args.adaptive_method)
-        tq3 = _ppl(data, "3", "TurboQuant-hadamard")
-        fib3 = _ppl(data, "3", "FibQuant")
-        bq3 = _ppl(data, "3", "BlockQuant")
+        rot2 = _ppl(data, "2", "RotationHQ")
+        tq3 = _ppl(data, "3", "TurboQuant-paper")
         hq3 = _ppl(data, "3", args.hq_method)
+        frontier3 = _ppl(data, "3", "HQ-Frontier")
         ahq3 = _ppl(data, "3", args.adaptive_method)
-        tq4 = _ppl(data, "4", "TurboQuant-hadamard")
-        fib4 = _ppl(data, "4", "FibQuant")
-        bq4 = _ppl(data, "4", "BlockQuant")
+        rot3 = _ppl(data, "3", "RotationHQ")
+        tq4 = _ppl(data, "4", "TurboQuant-paper")
         hq4 = _ppl(data, "4", args.hq_method)
+        frontier4 = _ppl(data, "4", "HQ-Frontier")
         ahq4 = _ppl(data, "4", args.adaptive_method)
-        tq3_d = _dist_k(data, "3", "TurboQuant-hadamard")
+        rot4 = _ppl(data, "4", "RotationHQ")
+        tq3_d = _dist_k(data, "3", "TurboQuant-paper")
         hq3_d = _dist_k(data, "3", args.hq_method)
         gain = None if tq3_d in (None, 0) or hq3_d is None else 100.0 * (1.0 - hq3_d / tq3_d)
         rows.append(
-            f"| {model} | {_fmt(tq2)} | {_fmt(fib2)} | {_fmt(bq2)} | {_fmt(hq2)} | {_fmt(ahq2)} "
-            f"| {_fmt(tq3)} | {_fmt(fib3)} "
-            f"| {_fmt(bq3)} | {_fmt(hq3)} | {_fmt(ahq3)} | {_fmt(tq4)} "
-            f"| {_fmt(fib4)} | {_fmt(bq4)} | {_fmt(hq4)} | {_fmt(ahq4)} "
+            f"| {model} | {_fmt(tq2)} | {_fmt(hq2)} | {_fmt(frontier2)} | {_fmt(ahq2)} | {_fmt(rot2)} "
+            f"| {_fmt(tq3)} | {_fmt(hq3)} | {_fmt(frontier3)} | {_fmt(ahq3)} | {_fmt(rot3)} | {_fmt(tq4)} "
+            f"| {_fmt(hq4)} | {_fmt(frontier4)} | {_fmt(ahq4)} | {_fmt(rot4)} "
             f"| {_fmt(gain, 1)}% |"
         )
+    rows += [
+        "",
+        "Only HQ, HQ-Frontier, AdaptiveHQ, and RotationHQ are emitted as HayateQuant variants; "
+        "development proxies are excluded from paper summaries.",
+    ]
     text = "\n".join(rows)
     print(text)
     if args.summary_out:
@@ -280,22 +344,50 @@ def _summarize(args: argparse.Namespace) -> None:
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser()
     ap.add_argument("--models", nargs="*", help="Model keys, path names, or absolute model paths.")
-    ap.add_argument("--models-root", type=Path, default=DEFAULT_MODELS_ROOT)
+    ap.add_argument("--models-root", type=Path, default=DEFAULT_MODELS_ROOT, help="External model directory (optional).")
     ap.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
-    ap.add_argument("--python", type=Path, default=REPO_ROOT / ".venv" / "bin" / "python")
+    ap.add_argument("--python", type=Path, default=None)
     ap.add_argument("--config-name", default="paper_hayatequant")
-    ap.add_argument("--override", action="append", default=[], help="Extra Hydra override, e.g. ppl_windows=16")
+    ap.add_argument(
+        "--override", action="append", default=[], help="Extra Hydra override, e.g. ppl_windows=16"
+    )
     ap.add_argument("--download-missing", action="store_true")
-    ap.add_argument("--submit", action="store_true", help="Submit Slurm jobs. This is the default unless --run-local/--summarize is set.")
-    ap.add_argument("--run-local", action="store_true", help="Run sequentially in the current process allocation.")
-    ap.add_argument("--summarize", action="store_true", help="Summarize existing JSON results instead of launching jobs.")
+    ap.add_argument(
+        "--submit",
+        action="store_true",
+        help="Submit Slurm jobs. This is the default unless --run-local/--summarize is set.",
+    )
+    ap.add_argument(
+        "--run-local",
+        action="store_true",
+        help="Run sequentially in the current process allocation.",
+    )
+    ap.add_argument(
+        "--summarize",
+        action="store_true",
+        help="Summarize existing JSON results instead of launching jobs.",
+    )
     ap.add_argument("--summary-out", type=Path)
-    ap.add_argument("--hq-method", default="HayateQuant-frontier",
-                    help="Fixed implementation method reported as HQ in the paper tables.")
-    ap.add_argument("--adaptive-method", default="AdaptiveHQ",
-                    help="Implementation method reported as Adaptive HQ.")
-    ap.add_argument("--include-extra-results", action="store_true",
-                    help="Summarize every result JSON instead of the current seven-model paper grid.")
+    ap.add_argument(
+        "--require-complete",
+        action="store_true",
+        help="Fail summary generation unless every requested model/method/rate result is present.",
+    )
+    ap.add_argument(
+        "--hq-method",
+        default="HQ",
+        help="Fixed implementation method reported as HQ in the paper tables.",
+    )
+    ap.add_argument(
+        "--adaptive-method",
+        default="AdaptiveHQ",
+        help="Implementation method reported as Adaptive HQ.",
+    )
+    ap.add_argument(
+        "--include-extra-results",
+        action="store_true",
+        help="Summarize every result JSON instead of the current seven-model paper grid.",
+    )
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--partition", default="debug")
     ap.add_argument("--gpus", type=int, default=1)
@@ -307,6 +399,9 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    args.models_root = args.models_root.expanduser().resolve() if args.models_root else None
+    args.output_root = resolve_output_root(args.output_root, default_relative="results/hayatequant/cross_model")
+    args.python = resolve_python(args.python)
     if args.summarize:
         _summarize(args)
         return

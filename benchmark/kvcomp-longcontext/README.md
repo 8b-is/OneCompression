@@ -1,16 +1,24 @@
 # KV-cache compression: long-context retrieval + reasoning
 
+> **Protocol boundary.** Much of this directory is a historical, multi-method
+> development harness.  Presets labelled `hayatequant_paper` and the local
+> `codec_speed.py` matrix are not the refreshed HayateQuant formal protocol.
+> Formal HQ/AdaptiveHQ claims are produced only by the fail-closed launcher,
+> validators, and renderer under `benchmark/kvcomp-codec/`; old numeric tables
+> below remain provenance-labelled development evidence and are not citable.
+
 Main experiment for the KV-cache compression methods, the analogue of the
 weight-side `benchmark/<model>-<recipe>/` runs (GPTQ / JointQ). It compares,
-**at a matched memory budget**, the two compression *families* the design memo
-contrasts, plus the proposed method:
+on a shared prompt grid with each method's **realised memory** recorded.  It is
+a Pareto harness by default: pairwise iso-memory claims require a separately
+verified matched operating point.
 
 | Method | Family | Mechanism | Evicts? |
 |---|---|---|:---:|
 | **FullKV** | — | fp16 upper bound | no |
 | **Uniform-INT4 / INT2** | quant | uniform per-token affine | no |
 | **StreamingLLM** | evict | keep sink + recent, drop middle | **yes** |
-| **ThinKV** | quant (+evict) | static per-thought bits (R/E=4, T=2); **faithful**: outlier-layer skip + calibrated L\*/thresholds + attention-sparsity thought classification. TBE eviction is vLLM-only | HF: no |
+| **ThinKV-TBQ** | quant | static per-thought bits (R/E=4, T=2), outlier-layer skip + calibrated L\*/thresholds + attention-sparsity classification. Paper TBE eviction is not implemented in this HF path | no |
 | **PM-KVQ** | quant | **progressive / dynamic** precision: fixed high-precision window, older KV shrinks to a floor as memory saturates; block-wise (layer) allocation | no |
 | **TaperKV** | quant | **static** age-graded precision ladder, non-zero floor (proposed) | no |
 
@@ -21,15 +29,30 @@ every token recoverable, whereas *dynamic* progressive precision (PM-KVQ)
 collapses old tokens to a 2-bit floor over a fixed absolute window. TaperKV's
 length-proportional ladder spends bits where retrieval needs them.
 
-### Models and benchmarks (aligned with the competing papers)
+### Models and benchmark scope
 
-The model/benchmark grid mirrors the papers we compete against, so the numbers are
-directly comparable (no off-target architectures):
+The model grid mirrors the competing papers. Only official harnesses are directly
+comparable; the local synthetic multi-key and functional-code axes below are
+diagnostics and are deliberately not reported as RULER or LiveCodeBench scores:
+
+The dedicated `ruler_v1` evaluator is a separately named **NeMo-Skills RULER
+v1 100-sample/task protocol**. It consumes all 13 tokenizer-specific task files
+from the pinned adapter and must not be relabelled as the canonical
+NVIDIA/RULER v1 configuration, which uses 500 samples per task. Historical
+`run_ruler=true` rows below remain only the local synthetic multi-key diagnostic.
+
+LongCodeQA uses the final-filtered `Steefano/LCB` release, its verbatim raw
+prompt and released parser, and primary per-bracket accuracy.  Its fixed
+16-token greedy decoding is a deterministic paired-cache adaptation because
+the upstream wrappers do not publish one uniform decoding configuration; it is
+not labelled as exact reproduction of the original model-table decoding.  See
+[LONGCODEQA_PROTOCOL_AUDIT.md](LONGCODEQA_PROTOCOL_AUDIT.md) for the pins,
+known upstream evaluator bug, hashes, and feasible-bracket limits.
 
 | Proposed method | Competitor | Models | Benchmarks |
 |---|---|---|---|
-| **HayateQuant** (codec; supersedes HALO) | TurboQuant (arXiv:2504.19874), HALO | Llama-3.1-8B-Instruct, Ministral-8B-Instruct-2410 | Needle-in-a-Haystack, RULER, LongBench-E, WikiText-2 PPL |
-| **TaperKV / TurboTaper** (recipe) | ThinKV (ICLR 2026), PM-KVQ | DeepSeek-R1-Distill-Llama-8B / Qwen-14B / Qwen-7B / 1.5B, QwQ-32B | GSM8K, MATH-500, AIME-2024/2025, **LiveCodeBench**, PPL |
+| **HayateQuant** (codec; supersedes HALO) | TurboQuant (arXiv:2504.19874), HALO | Llama-3.1-8B-Instruct, Ministral-8B-Instruct-2410 | Needle, local synthetic multi-key, official LongBench-E, WikiText-2 PPL |
+| **TaperKV / TurboTaper** (recipe) | ThinKV (ICLR 2026), PM-KVQ | DeepSeek-R1-Distill-Llama-8B / Qwen-14B / Qwen-7B / 1.5B, QwQ-32B | GSM8K, MATH-500, AIME-2024/2025, HumanEval-shaped code smoke, PPL |
 
 The retrieval grid (`conf/turboquant_paper.yaml`, `conf/turboquant_paper_ministral.yaml`)
 runs HayateQuant against TurboQuant's full bit-grid on **both** TurboQuant models
@@ -55,7 +78,7 @@ srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py \
     model_path=/lustre/.../models/llama-3.1-8b-instruct
 ```
 
-**TaperKV paper preset** (`conf/paper_taperkv.yaml`, iso-memory ~3-bit;
+**TaperKV paper preset** (`conf/paper_taperkv.yaml`, ~3-bit candidate schedule;
 TaperKV vs ThinKV/PM-KVQ/StreamingLLM/KIVI/TurboQuant/HayateQuant/Uniform-INT3):
 ```bash
 srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py \
@@ -77,7 +100,8 @@ srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py \
 ```
 
 **Reasoning headline** (`conf/paper_aime.yaml`, ThinKV/PM-KVQ turf; GSM8K + MATH-500
-+ AIME-2024/2025 + LiveCodeBench, carrying TaperKV + TurboTaper + HayateQuant):
++ AIME-2024/2025 + HumanEval-shaped functional-code smoke, carrying TaperKV +
+TurboTaper + HayateQuant):
 ```bash
 srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py \
     --config-name paper_aime \
@@ -112,12 +136,14 @@ python codec_speed.py --device cuda --heads 32 --seq 4096 --dim 128 \
 python codec_speed.py --device cuda --model /lustre/.../llama-3.1-8b-instruct
 ```
 
-Rows: `HayateQuant-auto` (**proposed**: block-VQ + folded hybrid rotation +
-grid-LUT encoder) · `HayateQuant-bs1` (superset guard) · `HayateQuant-exact` /
+Historical rows: `HayateQuant-auto` (old auto block-VQ + folded hybrid rotation +
+grid-LUT development recipe) · `HayateQuant-bs1` (scalar-path compatibility control) · `HayateQuant-exact` /
 `HayateQuant-K12` / `HayateQuant-dense-LS` (encoder/codebook/rotation
-ablations) · `TurboQuant-hadamard` (shipped default) · `HALO-*` (prior-best
-scale/rotation levers).  This substantiates "HayateQuant is more accurate than
-TurboQuant/HALO with an honestly measured latency trade-off".
+ablations) · `TurboQuant-paper` (Algorithm-1 MSE dense-QR reference, not a
+Table-1 mixed-precision reproduction) ·
+`TurboQuant-hadamard` (fast deployment approximation) · `HALO-*` (historical
+scale/rotation levers).  These are exploratory diagnostics only; the current
+fixed HQ recipe and its formal claim gates are not defined by this matrix.
 
 **2. End-task lever ablation** (`conf/paper_ablation.yaml`).  Does each codec lever
 / TaperKV design choice carry through to needle retrieval + PPL on a real model?
@@ -133,22 +159,27 @@ srun --gres=gpu:1 .venv/bin/python -u kv_benchmark.py --config-name paper_ablati
   `TaperKV-revsym` (K3V6, reversed — expected to regress since keys are more
   sensitive).
 
-All accuracy/pass@1 results now carry a **95% CI** (Wilson for retrieval, normal
-for reasoning) in both the JSON and the Markdown table (`value±half-width`), so a
-claimed win is backed by an error bar rather than a single point.
+This historical harness also reports **95% CIs** (Wilson for retrieval, normal
+for reasoning) in its JSON and Markdown table.  In the refreshed HayateQuant
+paper, predeclared point estimates are primary, while a separate simultaneous
+global gate governs any aggregate superiority statement; per-endpoint intervals
+remain descriptive and are not used to hide or discard point-estimate losses.
 
-Config: `conf/benchmark_longcontext.yaml`. Knobs are kept identical across
-methods (`sink_tokens`, `recent_tokens`, `target_mem`) for a fair iso-memory
-comparison; the eviction window is sized to `target_mem * ctx` so eviction gets
-the **same** memory budget as the quant methods. Results (JSON + Markdown
-table) are written to `output_dir`.
+Config: `conf/benchmark_longcontext.yaml`. `sink_tokens` and `recent_tokens`
+are shared; `target_mem` is the explicit StreamingLLM operating point, while
+every method's stored/fp16 fraction is measured from the same generated
+prompts. Needle v2 retains rendered lengths, depth, prompt hashes, golds,
+predictions, and per-trial cache-accounting ledgers. Results (JSON + Markdown table) are
+written to `output_dir`.
 
-**Outlier-layer handling (applied uniformly).** A small set of layers carry
+**Historical outlier-layer handling (applied uniformly in these presets).** A small set of layers carry
 massive activations whose keys span orders of magnitude; quantizing them at low
 bit-width destroys generation on reasoning models. The harness detects these
 layers once and keeps them in FP16 for **every** quantization method, which is
 the standard StreamingLLM/KIVI robustness trick. Keeping it uniform is what makes
-the comparison fair — it is not a privilege granted only to the proposed method.
+the comparison fair within these legacy presets.  The refreshed formal HQ/TQ/
+FibQ/BlockQ quality grid does not silently skip FP16 layers: every stored bit
+and every included/excluded endpoint is fixed and validated by its manifest.
 
 **Faithful ThinKV.** With `thinkv.auto_configure=true` (default) the harness runs
 `auto_configure_thinkv(model, tok)`: it reuses the shared outlier set, then
@@ -161,9 +192,9 @@ it is disabled for long-context retrieval, where materializing full attention ma
 would exhaust memory and is unnecessary.
 
 Metrics: needle-in-a-haystack accuracy over a depth × length grid
-(`needle_in_haystack`); **RULER multi-key** retrieval, where several competing
-keys force the model to disambiguate rather than merely locate (`ruler_multikey`,
-`run_ruler=true`); GSM8K and MATH-500 pass@1 for reasoning non-degradation
+(`needle_in_haystack`); a **local synthetic multi-key** diagnostic (not NVIDIA
+RULER), where several competing keys force disambiguation (`ruler_multikey`,
+historical flag `run_ruler=true`); GSM8K and MATH-500 pass@1 for reasoning non-degradation
 (`gsm8k_pass_at_1`, `math500_pass_at_1`, `run_math=true`); WikiText-2 perplexity
 as a sanity check (`wikitext2_perplexity`); and the realized whole-cache
 compression ratio (stored bits / fp16 bits, including outlier-skip and sink layers).
@@ -171,6 +202,17 @@ compression ratio (stored bits / fp16 bits, including outlier-skip and sink laye
 ---
 
 ## Results
+
+> **Historical PPL invalidation.** The tables below predate the causal
+> cache-state scorer. Their PPL columns for KIVI/ThinKV, PM-KVQ/TaperKV/
+> TurboTaper, and StreamingLLM are not valid conditional likelihoods: a
+> full-window update could use future-token group statistics or final-window
+> age schedules, while the eviction row did not evict between targets. Those
+> PPL values and every conclusion/Pareto claim that depends on them must not be
+> cited. The current evaluator uses causal prefix + token-step scoring for
+> these caches and explicit eviction with absolute positions; fresh results
+> are required. Retrieval/generation columns have separate autoregressive
+> harnesses and are not invalidated by this specific teacher-forcing bug.
 
 Four architectures were evaluated on hardware (B200 GPU, batch-1gpu partition).
 All runs use the same config knobs (`sink_tokens=4`, `recent_tokens=64`,
@@ -182,10 +224,16 @@ methods including eviction).
 
 ### llama-3.1-8b-instruct — retrieval + reasoning instruct model
 
-Needle = 63 cells (7 depths × 3 ctx lengths × 3 seeds); RULER = 15 cells
-(4 distractor keys × 3 lengths × 5 seeds); GSM8K n=40; PPL = WikiText-2 (16 windows).
+Needle = 63 cells (7 depths × 3 ctx lengths × 3 seeds); synthetic multi-key = 15 prompts
+(4 facts: one queried + three distractors, × 3 lengths × 5 seeds); GSM8K n=40;
+PPL = WikiText-2 (16 windows).
 
-| Method | Needle ↑ | RULER ↑ | Mem | GSM8K p@1 ↑ | PPL ↓ |
+> **Historical snapshot — not citable.** The Needle rows in this table were
+> produced before Needle v2 retained its rendered-prompt and per-trial ledger.
+> They do not establish a matched-memory or quality result; rerun the v2 preset
+> and use the emitted JSON grid instead.
+
+| Method | Needle ↑ | synthetic multi-key ↑ | Mem | GSM8K p@1 ↑ | PPL ↓ |
 |---|---:|---:|---:|---:|---:|
 | FullKV | 1.00 | 1.00 | 1.00 | 0.825 | 6.10 |
 | Uniform-INT4 | 1.00 | 1.00 | 0.26 | 0.825 | 6.17 |
@@ -198,15 +246,17 @@ Needle = 63 cells (7 depths × 3 ctx lengths × 3 seeds); RULER = 15 cells
 **Key findings:**
 
 1. **Eviction structurally fails retrieval.** At an equal memory budget (~0.28),
-   StreamingLLM recovers only 30% of needles and 60% of RULER keys — once a
+   StreamingLLM recovers only 30% of needles and 60% of synthetic keys — once a
    token is evicted the answer is unrecoverable. Every length-preserving quant
    method retrieves perfectly. Uniform-INT2 keeps all tokens but loses nearly
    half the needles (PPL 28.5); keeping tokens *and* a sensible precision floor
    is what makes them usable.
 
-2. **TaperKV matches FullKV on all three axes simultaneously.** It is the only
-   method with perfect retrieval (Needle/RULER 1.00), FullKV-level reasoning
-   (GSM8K 0.825), and near-FullKV perplexity (6.24 vs 6.10) at iso-memory.
+2. **Historical development observation (not a formal conclusion).** The old
+   development table suggests TaperKV may match FullKV on all three axes.  It is the only
+   method with perfect retrieval (Needle/synthetic multi-key 1.00), FullKV-level reasoning
+   (GSM8K 0.825), and near-FullKV perplexity (6.24 vs 6.10) at the reported
+   development memory point.  This requires a Needle v2 rerun before use.
    PM-KVQ matches retrieval but pays with higher PPL (7.42) and a small reasoning
    drop. ThinKV retrieves perfectly but over-compresses on an instruct model
    (GSM8K 0.575 — it is designed for long chain-of-thought models).
@@ -264,7 +314,7 @@ confirming that a non-zero precision floor is critical at aggressive compression
 
 ## Cross-architecture summary
 
-| Model | TaperKV Needle | TaperKV RULER | TaperKV GSM8K | TaperKV PPL / FullKV PPL |
+| Model | TaperKV Needle | TaperKV synthetic multi-key | TaperKV GSM8K | TaperKV PPL / FullKV PPL |
 |---|:---:|:---:|:---:|---:|
 | llama-3.1-8b-instruct | **1.00** | **1.00** | **0.825** (= FullKV) | 6.24 / 6.10 |
 | DeepSeek-R1-7B (reasoning) | — | — | 0.650 (≈ FullKV 0.675) | 53.6 / 50.8 |
@@ -288,10 +338,10 @@ operating point. Config: `conf/paper_run.yaml` with
 
 ### llama-3.1-8b-instruct — Pareto sweep (9 methods)
 
-Needle = 42 cells (7 depths × 3 lengths × 2 seeds); RULER = 9 cells
+Needle = 42 cells (7 depths × 3 lengths × 2 seeds); local synthetic multi-key = 9 cells
 (4 distractor keys × 3 lengths × 3 seeds); GSM8K n=40; PPL = 16 windows.
 
-| Method | Needle ↑ | RULER ↑ | Mem | GSM8K p@1 ↑ | PPL ↓ | cr ↑ |
+| Method | Needle ↑ | Synthetic multi-key ↑ | Mem | GSM8K p@1 ↑ | PPL ↓ | cr ↑ |
 |---|---:|---:|---:|---:|---:|---:|
 | FullKV | 1.00 | 1.00 | 1.00 | 0.825 | 6.10 | 1.0× |
 | Uniform-INT4 | 1.00 | 1.00 | 0.26 | 0.750 | 6.34 | 3.8× |
@@ -304,7 +354,7 @@ Needle = 42 cells (7 depths × 3 lengths × 2 seeds); RULER = 9 cells
 | TaperKV-aggr (4/2-bit, b_min=2) | 0.38 | 0.56 | 0.16 | 0.500 | 37.4 | 6.4× |
 
 The default TaperKV is the unique Pareto-optimal point: it reaches FullKV needle
-and RULER accuracy at lower memory than ThinKV (0.28 vs 0.31) and lower PPL than
+and local multi-key accuracy at lower memory than ThinKV (0.28 vs 0.31) and lower PPL than
 PM-KVQ (6.24 vs 7.42). Aggressive variants follow a graceful degradation curve —
 TaperKV-mid at 4.9× already retrieves 69% of needles, which is better than
 StreamingLLM at the same memory.
@@ -317,7 +367,7 @@ Result JSON: `results_pareto/results_llama-3.1-8b-instruct.json`.
 
 All component and codec verification is in-repo and self-contained:
 
-* `tests/onecomp/kvcomp/test_kvcomp.py` — the unit suite (93 pass): every codec
+* `tests/onecomp/kvcomp/` — the full unit suite: every codec
   round-trip + bit-accounting, HALO scale modes / outlier split, fallback + QJL
   accounting, and the vLLM mapping warnings / skip-layer propagation.
 * `paper/tests/verify_halo_asym_scale.py`, `paper/tests/verify_halo_outlier.py`

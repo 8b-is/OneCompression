@@ -87,7 +87,7 @@ Legend: ✅ implemented/fixed · 📝 documented (deliberate, with rationale) ·
 
 | Item | Issue | Status | Resolution |
 |---|---|---|---|
-| **B-1** | "strictly higher quality" contradicted by own PPL (no error bars; R1 regime unreliable) | ✅ | Docstring no longer claims strict dominance; it claims the *speed-quality Pareto* vs the shipped default and is explicit that preconditioning is OFF by default (no robust PPL win). PPL is now paired-window with CIs (`eval/ppl.py`); the headline is base Llama. |
+| **B-1** | "strictly higher quality" contradicted by own PPL (no error bars; R1 regime unreliable) | ✅ | Docstring no longer claims strict dominance; it claims the *speed-quality Pareto* vs the shipped default and is explicit that preconditioning is OFF by default (no robust PPL win). PPL now records FullKV-relative values, exact token/window denominators, non-finite failures, and full-vs-capped status (`eval/ppl.py`); the headline is base Llama. |
 | **B-2** | LS scale can hurt keys (logit shrink) — the central point | ✅ | This is exactly what lever 1 fixes: NC keys. The whole role-asymmetric design is the answer to B-2; closed-form + array-verified. |
 | **B-3** | HALO had no `n_outlier` → could not reach 2.5/3.5-bit | ✅ | Lever 3 implemented; HALO now produces the 2.5/3.5-bit operating points iso-memory to TurboQuant (`test_halo_outlier_matches_turboquant_storage`). |
 
@@ -96,7 +96,7 @@ Legend: ✅ implemented/fixed · 📝 documented (deliberate, with rationale) ·
 | Item | Issue | Status | Resolution |
 |---|---|---|---|
 | C-timing | `_ms_per_encode` is encode+decode, S=1024 only; CUDA-sync breaks CPU | ✅ | `codec_speed.py` now reports encode **and** decode separately, in **both** prefill (S=4096) and decode (S=1) regimes, with throughput (Melem/s, tok/s/layer); CPU path guarded. |
-| C-needle | haystack was the same 4 sentences repeated (low-entropy, too forgiving) | ✅ | `eval/longcontext.py` now samples a 30-sentence diverse bank without immediate repetition (`_build_filler`), seeded/deterministic. Applies to both needle and RULER multi-key. |
+| C-needle | haystack was the same 4 sentences repeated (low-entropy, too forgiving) | ✅ | `eval/longcontext.py` now samples a 30-sentence diverse bank without immediate repetition (`_build_filler`), seeded/deterministic. Applies to both needle and the local synthetic multi-key diagnostic. |
 | C-position | `greedy_answer` position/cache_position after eviction | 📝 (already correct) | Confirmed correct; kept. |
 
 ### vLLM plugin
@@ -173,7 +173,7 @@ The four superiority axes, in decreasing strength:
   direct rebuttal of the paper's "unbiased IP needs QJL" thesis.
 
 **What we must concede** (reviewer-proofing): TurboQuant proves a near-optimal
-*generic* distortion-rate (≤ √3π/2 ≈ 2.7× the Shannon lower bound, exponential
+*generic* distortion-rate (≤ π√3/2 ≈ 2.72× the Shannon lower bound, exponential
 4⁻ᵇ rate). HALO does not beat that *generic* theory. Our framing: generic VQ
 optimality ≠ attention-end-to-end optimality; HALO optimises a **task-aligned**
 distortion (keys→logit, values→reconstruction MSE), which is the right objective
@@ -189,16 +189,16 @@ dedicated `results_halo_enh_*` dirs so they never clobber other paper JSONs.
 
 | Axis | Harness / config | Operating points | Result dir |
 |---|---|---|---|
-| Retrieval (Needle/RULER/PPL) | `kv_benchmark.py` `turboquant_paper[_ministral]` | 2 / **2.5** / 3 / **3.5** / 4-bit × {TurboQuant, HALO, HALO-NC, HALO-NCIT} | `results_halo_enh_{llama,minis}_retr` |
+| Retrieval (Needle/local multi-key/PPL) | `kv_benchmark.py` `turboquant_paper[_ministral]` | 2 / **2.5** / 3 / **3.5** / 4-bit × {TurboQuant, HALO, HALO-NC, HALO-NCIT} | `results_halo_enh_{llama,minis}_retr` |
 | LongBench-E downstream | same, `run_longbench=true` | same | `results_halo_enh_llama_lb` |
 | Reasoning (GSM8K/MATH/PPL) | `paper_aime` | 3 / 4-bit × {HALO, HALO-NC, HALO-NCIT} | `results_halo_enh_basic_{r1q15,r1l8,r1q7,r1q14,qwq}` |
 | Codec speed × quality | `codec_speed.py` | prefill S=4096 + decode S=1, bits 2/3/4, incl. NC/NCIT | `results_codec_speed/codec_speed_enh_*` |
 | End-to-end speed | `e2e_speed.py` | TTFT / decode tok/s / ms-tok / peak mem | `results_codec_speed/e2e_*` |
 
-The 2.5/3.5-bit points are **true** 2.5/3.5-bit: `64 ch @ b+1 + 64 @ b` on
-head_dim=128 (the earlier `n_outlier=32` was an effective 2.25/3.25-bit; both
-TurboQuant and HALO now use the same 64-split so the comparison is exactly
-iso-memory).
+The 2.5/3.5-bit points follow the paper's `32 ch @ b+1 + 96 @ b` split on
+head_dim=128. The payload is 2.25/3.25 bits/coordinate and the two fp16 subset
+norms add 0.25, for 2.5/3.5 stored bits/coordinate. TurboQuant and HALO use the
+same split, so the comparison is iso-memory.
 
 Submit:
 

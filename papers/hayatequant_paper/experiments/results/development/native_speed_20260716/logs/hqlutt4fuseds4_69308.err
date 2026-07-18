@@ -1,0 +1,79 @@
+Traceback (most recent call last):
+  File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/triton/language/core.py", line 43, in wrapper
+    return fn(*args, **kwargs)
+  File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/triton/language/core.py", line 1101, in __getitem__
+    raise ValueError(f"unsupported tensor index: {sl}")
+ValueError: unsupported tensor index: constexpr[0]
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/benchmark/kvcomp-codec/hayatequant_vllm_full_native_smoke.py", line 612, in <module>
+    main()
+    ~~~~^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/benchmark/kvcomp-codec/hayatequant_vllm_full_native_smoke.py", line 603, in main
+    result = run(args)
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/benchmark/kvcomp-codec/hayatequant_vllm_full_native_smoke.py", line 288, in run
+    public_k = _public_payload(key, recipe, "k")
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/benchmark/kvcomp-codec/hayatequant_vllm_full_native_smoke.py", line 169, in _public_payload
+    return codec._quant_rotor(  # pylint: disable=protected-access
+           ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        x,
+        ^^
+    ...<2 lines>...
+        code_bits_override=code_bits,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codec.py", line 1570, in _quant_rotor
+    codes, chat = _lookup(xr / rms)
+                  ~~~~~~~^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codec.py", line 1542, in _lookup
+    codes_ = quantize_via_lut(
+        vb,
+    ...<4 lines>...
+        scoring_csq=exact_csq,
+    )
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/vq.py", line 876, in quantize_via_lut
+    return quantize_lut_canonical_t4_triton(
+        z,
+    ...<4 lines>...
+        lim=lim,
+    )
+  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/triton_step.py", line 427, in quantize_lut_canonical_t4_triton
+    _hq_lut_canonical_t4_kernel[(triton.cdiv(rows, block_n),)](
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        flat_z,
+        ^^^^^^^
+    ...<10 lines>...
+        num_warps=4,
+        ^^^^^^^^^^^^
+    )
+    ^
+  File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/triton/runtime/jit.py", line 370, in <lambda>
+    return lambda *args, **kwargs: self.run(grid=grid, warmup=False, *args, **kwargs)
+                                   ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/triton/runtime/jit.py", line 720, in run
+    kernel = self._do_compile(key, signature, device, constexprs, options, attrs, warmup)
+  File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/triton/runtime/jit.py", line 849, in _do_compile
+    kernel = self.compile(src, target=target, options=options.__dict__)
+  File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/triton/compiler/compiler.py", line 304, in compile
+    module = src.make_ir(target, options, codegen_fns, module_map, context)
+  File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/.venv/lib/python3.13/site-packages/triton/compiler/compiler.py", line 80, in make_ir
+    return ast_to_ttir(self.fn, self, context=context, options=options, codegen_fns=codegen_fns,
+                       module_map=module_map)
+triton.compiler.errors.CompilationError: at 22:11:
+    STEP: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+):
+    """Fused b=2,T=4 lookup with canonical half-GEMM score rounding."""
+    rows = tl.program_id(0) * BLOCK_N + tl.arange(0, BLOCK_N)
+    row_mask = rows < N
+    offs_b = tl.arange(0, 2)
+    z = tl.load(Z + rows[:, None] * 2 + offs_b[None, :], mask=row_mask[:, None])
+    z_clamped = tl.maximum(tl.minimum(z, LIM), -LIM)
+    zi = ((z_clamped + LIM) * STEP).to(tl.int32)
+    zi = tl.maximum(0, tl.minimum(zi, BINS - 1))
+    flat = zi[:, 0] * BINS + zi[:, 1]
+           ^
+unsupported tensor index: constexpr[0]
