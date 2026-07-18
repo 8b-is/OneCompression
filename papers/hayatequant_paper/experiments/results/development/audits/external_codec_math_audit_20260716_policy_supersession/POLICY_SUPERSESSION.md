@@ -1,11 +1,11 @@
-# External-codec formal-policy supersession (2026-07-16)
+# External-codec formal-policy supersession (updated 2026-07-19)
 
 ## Authority and integrity
 
 This is the current repository policy for interpreting the immutable
 `external_codec_math_audit_20260716` evidence bundle. It is a maintainer policy
 attestation rooted at source commit
-`8d2c073595de29a63dda4161792fad3b82c054f0`. The machine-readable statement is
+`82e176a93ca23cea262bb9ce63ed727afdb5e8a7`. The machine-readable statement is
 `policy_supersession.json`; `SHA256SUMS` binds both files. The final Git commit
 that introduces this directory supplies the repository's content-addressed
 attestation. No external identity-signature claim is made.
@@ -35,15 +35,15 @@ bundle are not superseded.
 
 `TurboQuant-paper` and `FibQuant-paper` are the matched quality baselines.
 Each contributes 164 quality cells per proposal. TurboQuant additionally
-contributes 60 public/research speed cells per proposal. With HQ and AdaptiveHQ,
-the strict point-estimate gate therefore contains
-`2 * (164 + 164 + 60) = 776` cells.
+contributes 60 public/research speed cells per proposal. With HQ, HQ-Frontier,
+AdaptiveHQ, and RotationHQ, the strict point-estimate gate therefore contains
+`4 * (164 + 164 + 60) = 1552` cells.
 
 `BlockQuant-paper` remains a required independent quality baseline. Its 80
-applicable cells per proposal, 160 in total, must be retained in the complete
+applicable cells per proposal, 320 in total, must be retained in the complete
 report and descriptive ledger. Its dynamic top-32 identity-bit-counted source
 payload is not rate-matched to HQ, however, so it has no dominance threshold,
-pass/fail decision, or cells in the 776-cell gate. Counting an unmatched
+pass/fail decision, or cells in the 1552-cell gate. Counting an unmatched
 operating point as a matched dominance win would be scientifically incoherent.
 
 The integer labels 2/3/4 are scalar or block-code **payload-rate slots**.
@@ -75,4 +75,3 @@ smoke evidence, not part of the current packed-native formal matrix.
 - `benchmark/kvcomp-codec/hayatequant_native_speed_formal_contract.json`
 - `onecomp/kvcomp/codec/quality_baselines.py`
 - `onecomp/kvcomp/codec/{turboquant,fibquant,blockquant}.py`
-

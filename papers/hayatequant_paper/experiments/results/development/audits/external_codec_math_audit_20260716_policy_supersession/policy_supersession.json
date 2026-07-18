@@ -4,11 +4,11 @@
     "version": 1
   },
   "status": "authoritative_current_repository_policy",
-  "issued_on": "2026-07-16",
+  "issued_on": "2026-07-19",
   "signed_statement": {
     "issuer": "HayateQuant formal-policy maintainers",
     "attestation_type": "repository_commit_bound_sha256",
-    "policy_source_commit": "8d2c073595de29a63dda4161792fad3b82c054f0",
+    "policy_source_commit": "82e176a93ca23cea262bb9ce63ed727afdb5e8a7",
     "integrity_manifest": "SHA256SUMS",
     "external_identity_signature_claimed": false,
     "statement": "The current fail-closed formal policy keeps every BlockQuant-paper quality cell as unmatched descriptive evidence and excludes it from the matched 90-percent dominance denominator."
@@ -59,7 +59,9 @@
     "formal_point_estimate_gate": {
       "proposals": [
         "HQ",
-        "AdaptiveHQ"
+        "HQ-Frontier",
+        "AdaptiveHQ",
+        "RotationHQ"
       ],
       "quality_axes": {
         "ppl": 21,
@@ -83,9 +85,9 @@
         "FibQuant-paper"
       ],
       "turboquant_speed_cells_per_proposal": 60,
-      "total_gate_cells": 776,
+      "total_gate_cells": 1552,
       "blockquant_descriptive_cells_per_proposal": 80,
-      "blockquant_descriptive_cells_total": 160,
+      "blockquant_descriptive_cells_total": 320,
       "blockquant_included_in_denominator": false,
       "blockquant_threshold": null,
       "blockquant_passed": null,

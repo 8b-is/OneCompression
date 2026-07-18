@@ -29,7 +29,7 @@ NATIVE_AGGREGATOR = REPO / "benchmark/kvcomp-codec/aggregate_hayatequant_native_
 FORMAL_AGGREGATOR = REPO / "benchmark/kvcomp-codec/aggregate_hayatequant_paper_shards.py"
 FULL_HQ_CONFIG = REPO / "vllm_plugins/kvcomp/hayate_full_config.py"
 
-SOURCE_COMMIT = "8d2c073595de29a63dda4161792fad3b82c054f0"
+SOURCE_COMMIT = "82e176a93ca23cea262bb9ce63ed727afdb5e8a7"
 HISTORICAL_SHA256SUMS_SHA256 = (
     "c2c0a474360d316ff9c743df2954e73b51da04215661428bd0731d23cf236125"
 )
@@ -143,14 +143,16 @@ def test_formal_gate_cardinalities_derive_from_frozen_axes_and_exclude_blockquan
     block_descriptive = sum(per_axis_block.values())
     speed = len(formal.LONG_MODELS) * 3 * len(formal.SPEED_PAIRED_TIMING_METRICS)
     total_gate = len(formal.PROPOSAL_METHODS) * (2 * matched_quality + speed)
+    block_descriptive_total = len(formal.PROPOSAL_METHODS) * block_descriptive
 
+    assert tuple(policy["proposals"]) == formal.PROPOSAL_METHODS
     assert per_axis_matched == policy["quality_axes"]
     assert per_axis_block == policy["blockquant_descriptive_quality_axes"]
     assert matched_quality == policy["matched_quality_cells_per_proposal_and_baseline"] == 164
     assert block_descriptive == policy["blockquant_descriptive_cells_per_proposal"] == 80
-    assert policy["blockquant_descriptive_cells_total"] == 2 * block_descriptive == 160
+    assert policy["blockquant_descriptive_cells_total"] == block_descriptive_total == 320
     assert speed == policy["turboquant_speed_cells_per_proposal"] == 60
-    assert total_gate == policy["total_gate_cells"] == 776
+    assert total_gate == policy["total_gate_cells"] == 1552
     assert formal.QUALITY_BASELINE_METHODS == (
         "TurboQuant-paper",
         "FibQuant-paper",

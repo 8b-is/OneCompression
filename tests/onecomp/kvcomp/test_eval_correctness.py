@@ -1051,6 +1051,12 @@ def test_longcodeqa_aggregate_does_not_claim_full_dataset_for_one_bracket():
     assert doc["brackets"]["32K"]["released_data_complete_bracket"]
     assert not doc["released_data_complete_dataset"]
     assert doc["official_primary_reporting"] == "per_bracket_exact_match_accuracy"
+    assert doc["example_cache_lifetime"] == (
+        "released_after_scalar_accounting_before_next_cache_factory"
+    )
+    assert doc["cross_iteration_tensor_retention"] == (
+        "none; retained_records_are_host_scalar_text_and_mappings_only"
+    )
     bracket_doc = doc["brackets"]["32K"]
     assert bracket_doc["prompt_protocol"] == "released_prompt_verbatim_raw_causal_text"
     assert bracket_doc["chat_template"] == "none"

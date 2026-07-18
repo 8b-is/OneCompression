@@ -33,6 +33,7 @@ if _SCRIPT_DIR not in sys.path:
 from model_weight_manifest import (  # noqa: E402
     ModelWeightError,
     fingerprint_model_weights,
+    verify_model_weights as verify_model_weights,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
