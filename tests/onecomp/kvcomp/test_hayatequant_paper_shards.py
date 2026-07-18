@@ -164,23 +164,30 @@ def _fixture_declared_codec(method: str, rate: int) -> dict:
         assert rate == 3
         return shards._blockquant_declared_config()
     if method in shards.PROPOSAL_METHODS:
+        frontier = method == "HQ-Frontier"
+        adaptive = method == "AdaptiveHQ"
+        rotation = method == "RotationHQ"
         return {
             "name": "hayatequant",
             "bits": rate,
             "value_bits": rate,
             "dist": "gaussian",
             "block_size": 2,
-            "max_codebook_bits": 9,
+            "max_codebook_bits": 10 if frontier else 9,
             "codebook_init": "auto",
             "required_codebook_bundle": (
-                shards.HQ_CODEBOOK_BUNDLE if method == "HQ" else shards.ADAPTIVE_HQ_CODEBOOK_BUNDLE
+                shards.HQ_FRONTIER_CODEBOOK_BUNDLE
+                if frontier
+                else shards.ADAPTIVE_HQ_CODEBOOK_BUNDLE
+                if adaptive
+                else shards.HQ_CODEBOOK_BUNDLE
             ),
-            "rotation_mode": "auto",
+            "rotation_mode": "dense" if rotation else "auto",
             "seed": 0,
             "encoder": "exact",
             "hadamard_gemm_max_dim": 4096,
             "ls_scale": True,
-            "key_scale_mode": "nc",
+            "key_scale_mode": "ub" if frontier else "nc",
             "value_scale_mode": "ls_iter",
             "n_outlier": 0,
             "outlier_bits": None,
@@ -188,11 +195,15 @@ def _fixture_declared_codec(method: str, rate: int) -> dict:
             "value_n_outlier": None,
             "use_qjl": False,
             "calibration": None,
-            "adaptive_bit_split": (None if method == "HQ" else "online_stats"),
+            "adaptive_bit_split": "online_stats" if adaptive else None,
             "avg_bits": float(rate),
-            "key_bit_fraction": (None if method == "HQ" else (2 * rate + 1) / (4 * rate)),
-            "key_code_bits_per_block": (2 * rate + 1 if method == "HQ" else None),
-            "value_code_bits_per_block": (2 * rate - 1 if method == "HQ" else None),
+            "key_bit_fraction": (2 * rate + 1) / (4 * rate) if adaptive else None,
+            "key_code_bits_per_block": (
+                None if adaptive else 2 * rate + (2 if frontier else 1)
+            ),
+            "value_code_bits_per_block": (
+                None if adaptive else 2 * rate - (2 if frontier else 1)
+            ),
             "adaptive_bit_margin": 4,
             "adaptive_stats_min_tokens": 16,
             "key_error_weight": 4.0,
@@ -235,8 +246,7 @@ def _add_formal_recipe_fixture(document: dict) -> None:
         "TurboQuant-paper",
         "FibQuant-paper",
         "BlockQuant-paper",
-        "HQ",
-        "AdaptiveHQ",
+        *shards.PROPOSAL_METHODS,
         "HayateQuant-scalar-matched",
         "HayateQuant-blockvq-matched",
     }
@@ -713,7 +723,7 @@ def test_complete_matrix_preserves_negative_point_estimate_gate_result(tmp_path)
     assert all(cell["baseline"] != "BlockQuant-paper" for cell in gate["cells"])
     descriptive = gate["unmatched_descriptive_comparisons"]
     assert descriptive["included_in_point_estimate_gate"] is False
-    assert len(descriptive["cells"]) == 160
+    assert len(descriptive["cells"]) == 320
     assert all(cell["matched_comparison"] is False for cell in descriptive["cells"])
     assert set(gate["proposal_baseline_summaries"]["HQ"]) == {
         "TurboQuant-paper",
@@ -1262,28 +1272,20 @@ def _ppl_doc(
                 "stored_bits_per_coord": rate_i + 0.1,
             }
         )
-        hq = row(hq_ppl)
-        hq.update(
-            {
-                "codec_config": _fixture_declared_codec("HQ", rate_i),
-                "distortion_key": 0.08,
-                "distortion_value": 0.18,
-                "stored_bits": rate_i * 10 + 1,
-                "stored_coordinates": 10,
-                "stored_bits_per_coord": rate_i + 0.1,
-            }
-        )
-        adaptive = row(hq_ppl * 0.99)
-        adaptive.update(
-            {
-                "codec_config": _fixture_declared_codec("AdaptiveHQ", rate_i),
-                "distortion_key": 0.07,
-                "distortion_value": 0.17,
-                "stored_bits": rate_i * 10 + 1,
-                "stored_coordinates": 10,
-                "stored_bits_per_coord": rate_i + 0.1,
-            }
-        )
+        proposals = {}
+        for proposal_index, proposal in enumerate(shards.PROPOSAL_METHODS):
+            proposal_row = row(hq_ppl * (1.0 - 0.003 * proposal_index))
+            proposal_row.update(
+                {
+                    "codec_config": _fixture_declared_codec(proposal, rate_i),
+                    "distortion_key": 0.08 - 0.002 * proposal_index,
+                    "distortion_value": 0.18 - 0.002 * proposal_index,
+                    "stored_bits": rate_i * 10 + 1,
+                    "stored_coordinates": 10,
+                    "stored_bits_per_coord": rate_i + 0.1,
+                }
+            )
+            proposals[proposal] = proposal_row
         fib = row(turbo_ppl)
         fib.update(
             {
@@ -1301,8 +1303,7 @@ def _ppl_doc(
         results[rate] = {
             "TurboQuant-paper": turbo,
             "FibQuant-paper": fib,
-            "HQ": hq,
-            "AdaptiveHQ": adaptive,
+            **proposals,
         }
         if rate == "3":
             block = row(turbo_ppl)
@@ -1372,7 +1373,9 @@ def _ppl_doc(
                 "FibQuant-paper",
                 "BlockQuant-paper",
                 "HQ",
+                "HQ-Frontier",
                 "AdaptiveHQ",
+                "RotationHQ",
             ],
             "run_ppl": True,
             "ppl_windows": None,
@@ -1650,8 +1653,7 @@ def test_mechanism_control_joins_primary_curve_and_isolates_block_size(tmp_path)
         "TurboQuant-paper",
         "HayateQuant-scalar-matched",
         "HayateQuant-blockvq-matched",
-        "HQ",
-        "AdaptiveHQ",
+        *shards.PROPOSAL_METHODS,
     }
     assert rate["causal_block_vq_ratio_block_over_scalar"] == 0.95
     assert rate["causal_block_vq_relative_ppl_change_percent"] == -5.0
@@ -2704,11 +2706,15 @@ def test_math500_rejects_tampered_dataset_row_audit(tmp_path):
 _SPEED_METHODS = (
     "TurboQuant-paper",
     "HQ",
+    "HQ-Frontier",
     "AdaptiveHQ",
+    "RotationHQ",
 )
 _SPEED_COMPARISONS = {
     "hq_vs_turboquant": (_SPEED_METHODS[0], _SPEED_METHODS[1]),
-    "adaptive_hq_vs_turboquant": (_SPEED_METHODS[0], _SPEED_METHODS[2]),
+    "hq_frontier_vs_turboquant": (_SPEED_METHODS[0], _SPEED_METHODS[2]),
+    "adaptive_hq_vs_turboquant": (_SPEED_METHODS[0], _SPEED_METHODS[3]),
+    "rotation_hq_vs_turboquant": (_SPEED_METHODS[0], _SPEED_METHODS[4]),
 }
 
 
@@ -2791,9 +2797,11 @@ def _speed_doc(process_index: int) -> dict:
     codec_values = {
         _SPEED_METHODS[0]: 10.0,
         _SPEED_METHODS[1]: 5.0 + 0.25 * process_index,
-        _SPEED_METHODS[2]: 4.0 + 0.3 * process_index,
+        _SPEED_METHODS[2]: 5.5 + 0.20 * process_index,
+        _SPEED_METHODS[3]: 4.0 + 0.30 * process_index,
+        _SPEED_METHODS[4]: 6.0 + 0.10 * process_index,
     }
-    tq, scalar, frontier = _SPEED_METHODS
+    tq, fixed, frontier, adaptive, rotation = _SPEED_METHODS
     taxonomy = {
         tq: {
             "semantic_role": "existing TurboQuant class; symmetric scalar Beta/L2 reference",
@@ -2801,17 +2809,29 @@ def _speed_doc(process_index: int) -> dict:
             "proposal_method": False,
             "proposal_variant": None,
         },
-        scalar: {
+        fixed: {
             "semantic_role": "canonical globally fixed HQ paper proposal",
             "fake_quant_implementation": "HayateQuant fused research fake_quant_roundtrip",
             "proposal_method": True,
             "proposal_variant": "fixed_global",
         },
         frontier: {
+            "semantic_role": "integer K(r+1)/V(r-1) HQ frontier proposal",
+            "fake_quant_implementation": shards.HQ_FAKE_QUANT_IMPLEMENTATION,
+            "proposal_method": True,
+            "proposal_variant": "integer_frontier",
+        },
+        adaptive: {
             "semantic_role": "causal online-rate-allocation HQ paper proposal",
             "fake_quant_implementation": shards.ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION,
             "proposal_method": True,
             "proposal_variant": "causal_adaptive",
+        },
+        rotation: {
+            "semantic_role": "fixed HQ payload with dense rotation proposal",
+            "fake_quant_implementation": shards.HQ_FAKE_QUANT_IMPLEMENTATION,
+            "proposal_method": True,
+            "proposal_variant": "rotation_dense",
         },
     }
     common = {
@@ -2891,8 +2911,8 @@ def _speed_doc(process_index: int) -> dict:
                 },
             },
         },
-        scalar: {
-            **taxonomy[scalar],
+        fixed: {
+            **taxonomy[fixed],
             "codec": {
                 "declared": {
                     **hayate_defaults,
@@ -2991,8 +3011,8 @@ def _speed_doc(process_index: int) -> dict:
             },
         },
     }
-    # Replace the historical control/frontier fixture above with the exact
-    # formal TQ/HQ/AdaptiveHQ taxonomy admitted by the current boundary.
+    # Replace the historical control fixture above with the exact five-row
+    # formal taxonomy admitted by the current paper boundary.
     hq_declared = {
         **hayate_defaults,
         "required_codebook_bundle": shards.HQ_CODEBOOK_BUNDLE,
@@ -3021,6 +3041,22 @@ def _speed_doc(process_index: int) -> dict:
         "adaptive_bit_split": "online_stats",
         "n_outlier": 0,
     }
+    frontier_declared = {
+        **hayate_defaults,
+        "required_codebook_bundle": shards.HQ_FRONTIER_CODEBOOK_BUNDLE,
+        "max_codebook_bits": 10,
+        "bits": 3,
+        "value_bits": 3,
+        "dist": "gaussian",
+        "rotation_mode": "auto",
+        "block_size": 2,
+        "key_scale_mode": "ub",
+        "value_scale_mode": "ls_iter",
+        "key_code_bits_per_block": 8,
+        "value_code_bits_per_block": 4,
+        "n_outlier": 0,
+    }
+    rotation_declared = {**hq_declared, "rotation_mode": "dense"}
     method_configs = {
         tq: {
             **taxonomy[tq],
@@ -3040,28 +3076,44 @@ def _speed_doc(process_index: int) -> dict:
                 },
                 "effective": {},
             },
-            "resolved_at_model_head_dim": shards._expected_speed_resolved_config(
-                codec="turboquant", bits=3, head_dim=128
-            ),
+            "resolved_at_model_head_dim": renderer._expected_speed_resolved_recipe(3, "tq"),
         },
-        scalar: {
-            **taxonomy[scalar],
+        fixed: {
+            **taxonomy[fixed],
             "codec": {
                 "declared": hq_declared,
                 "effective": {"key_scale_mode": "nc", "value_scale_mode": "ls_iter"},
             },
-            "resolved_at_model_head_dim": shards._expected_speed_resolved_config(
-                codec="hq", bits=3, head_dim=128
-            ),
+            "resolved_at_model_head_dim": renderer._expected_speed_resolved_recipe(3, "hq"),
         },
         frontier: {
             **taxonomy[frontier],
             "codec": {
+                "declared": frontier_declared,
+                "effective": {"key_scale_mode": "ub", "value_scale_mode": "ls_iter"},
+            },
+            "resolved_at_model_head_dim": renderer._expected_speed_resolved_recipe(
+                3, "frontier"
+            ),
+        },
+        adaptive: {
+            **taxonomy[adaptive],
+            "codec": {
                 "declared": adaptive_declared,
                 "effective": {"key_scale_mode": "nc", "value_scale_mode": "ls_iter"},
             },
-            "resolved_at_model_head_dim": shards._expected_speed_resolved_config(
-                codec="adaptive_hq", bits=3, head_dim=128
+            "resolved_at_model_head_dim": renderer._expected_speed_resolved_recipe(
+                3, "adaptive"
+            ),
+        },
+        rotation: {
+            **taxonomy[rotation],
+            "codec": {
+                "declared": rotation_declared,
+                "effective": {"key_scale_mode": "nc", "value_scale_mode": "ls_iter"},
+            },
+            "resolved_at_model_head_dim": renderer._expected_speed_resolved_recipe(
+                3, "rotation"
             ),
         },
     }
@@ -3092,8 +3144,8 @@ def _speed_doc(process_index: int) -> dict:
         for label in _SPEED_METHODS:
             index_elements = (
                 regime_input_elements
-                if label != frontier
-                else regime_vectors_per_role * (128 // 2 + 128 // 4)
+                if label == tq
+                else regime_vectors_per_role * (128 // 2 + 128 // 2)
             )
             payload_runtime_audits[regime][label] = {
                 "index_tensor_count": 2,
@@ -3132,17 +3184,18 @@ def _speed_doc(process_index: int) -> dict:
                         "hayate_override_entered": False,
                         "runtime_probe": "codec_has_no_hayate_rt_support_probe",
                     },
-                    scalar: {
-                        "effective_path": "hayate_fused_roundtrip",
-                        "payload_materialized": False,
-                        "hayate_override_entered": True,
-                        "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
-                    },
-                    frontier: {
-                        "effective_path": "inherited_encode_then_decode",
-                        "payload_materialized": True,
-                        "hayate_override_entered": False,
-                        "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
+                    **{
+                        proposal: {
+                            "effective_path": (
+                                "inherited_encode_then_decode"
+                                if proposal == adaptive
+                                else "hayate_fused_roundtrip"
+                            ),
+                            "payload_materialized": proposal == adaptive,
+                            "hayate_override_entered": proposal != adaptive,
+                            "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
+                        }
+                        for proposal in shards.PROPOSAL_METHODS
                     },
                 },
                 "fake_quant_roundtrip": measurement,
@@ -3240,11 +3293,13 @@ def _speed_doc(process_index: int) -> dict:
             "declared_key_bits": 3,
             "declared_value_bits": 3,
             "nominal_average_code_bits_per_coordinate": 3.0,
-            "allocation": (
-                "symmetric_scalar"
-                if label == tq
-                else "fixed_global" if label == scalar else "causal_adaptive"
-            ),
+            "allocation": {
+                tq: "symmetric_scalar",
+                fixed: "fixed_global",
+                frontier: "integer_frontier",
+                adaptive: "causal_adaptive",
+                rotation: "rotation_dense",
+            }[label],
             "accounted_payload_bits": stored_bits,
             "input_kv_elements": input_elements,
             "accounted_payload_bits_per_kv_element": stored_bits / input_elements,
@@ -3296,16 +3351,16 @@ def _speed_doc(process_index: int) -> dict:
             },
             "comparison_rules": {
                 "baseline_method": "TurboQuant-paper",
-                "proposal_methods": ["HQ", "AdaptiveHQ"],
+                "proposal_methods": list(shards.PROPOSAL_METHODS),
                 "method_set_exact": True,
-                "real_arithmetic_matched_scalar_control": [tq, scalar],
+                "real_arithmetic_matched_scalar_control": [tq, fixed],
                 "implementation_only_claim_allowed": False,
                 "scalar_control_residual_difference": (
                     "TurboQuant stores fp16 L2 scale; Hayate stores equivalent fp16 "
                     "RMS scale with a sqrt(head_dim)-rescaled Beta codebook, so metadata "
                     "rounding and norm-kernel work differ"
                 ),
-                "canonical_hq_operating_point": frontier,
+                "canonical_hq_operating_point": fixed,
                 "speedup_ratio": "baseline_latency / candidate_latency",
                 "formal_inferential_unit": "independently launched fresh process",
                 "technical_repeats_must_not_be_pooled_across_processes": True,
@@ -3372,22 +3427,38 @@ def _speed_doc(process_index: int) -> dict:
                 "methods": rate_methods,
             },
             "proposal_contract": {
-                "formal_proposals": ["HQ", "AdaptiveHQ"],
+                "formal_proposals": list(shards.PROPOSAL_METHODS),
                 "same_total_pair_code_bit_budget": True,
                 "rows": {
                     "HQ": {
                         "proposal_variant": "fixed_global",
                         "pair_code_bits_per_block": 12,
+                        "fixed_pair_code_bits_per_block": [7, 5],
+                        "exact_assignment": True,
+                        "selector": None,
+                    },
+                    "HQ-Frontier": {
+                        "proposal_variant": "integer_frontier",
+                        "pair_code_bits_per_block": 12,
+                        "fixed_pair_code_bits_per_block": [8, 4],
                         "exact_assignment": True,
                         "selector": None,
                     },
                     "AdaptiveHQ": {
                         "proposal_variant": "causal_adaptive",
                         "pair_code_bits_per_block": 12,
+                        "fixed_pair_code_bits_per_block": None,
                         "exact_assignment": True,
-                        "selector": method_configs[frontier]["resolved_at_model_head_dim"][
+                        "selector": method_configs[adaptive]["resolved_at_model_head_dim"][
                             "adaptive_allocation"
                         ],
+                    },
+                    "RotationHQ": {
+                        "proposal_variant": "rotation_dense",
+                        "pair_code_bits_per_block": 12,
+                        "fixed_pair_code_bits_per_block": [7, 5],
+                        "exact_assignment": True,
+                        "selector": None,
                     },
                 },
             },
@@ -3397,26 +3468,21 @@ def _speed_doc(process_index: int) -> dict:
                     {
                         "method": label,
                         "role": role,
-                        "effective_implementation": (
-                            {
-                                "effective_path": "hayate_fused_roundtrip",
-                                "payload_materialized": False,
-                                "hayate_override_entered": True,
-                                "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
-                            }
-                            if label == scalar
-                            else {
-                                "effective_path": "inherited_encode_then_decode",
-                                "payload_materialized": True,
-                                "hayate_override_entered": False,
-                                "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
-                            }
-                        ),
+                        "effective_implementation": {
+                            "effective_path": (
+                                "inherited_encode_then_decode"
+                                if label == adaptive
+                                else "hayate_fused_roundtrip"
+                            ),
+                            "payload_materialized": label == adaptive,
+                            "hayate_override_entered": label != adaptive,
+                            "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
+                        },
                         "stored_bits_from_fake_quant": stored_bits,
                         "stored_bits_from_quality_payload": stored_bits,
                         "stored_bits_match": True,
                     }
-                    for label in (scalar, frontier)
+                    for label in shards.PROPOSAL_METHODS
                     for role in ("key", "value")
                 ],
             },
@@ -3537,7 +3603,7 @@ def test_speed_aggregation_uses_process_level_paired_ratios_and_t_ci(tmp_path):
     assert memory["difference"]["n_independent_processes"] == 5
     assert len(memory["processes"][0]["raw_paired_memory"]) == 5
     assert result["pareto_contract"]["all_predeclared_axes_present"] is True
-    assert result["pareto_contract"]["n_simultaneous_stochastic_endpoints"] == 22
+    assert result["pareto_contract"]["n_simultaneous_stochastic_endpoints"] == 44
     assert result["independent_process_audit"] == {
         "n_unique_run_uuid4": 5,
         "n_unique_slurm_job_ids": 5,

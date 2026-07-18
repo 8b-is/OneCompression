@@ -11,12 +11,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from .recipes import HQ_ADAPTIVE_NAME, HQ_FRONTIER_NAME, HQ_NAME, HQ_PUBLIC_METHODS, HQ_ROTATION_NAME
+from .recipes import (
+    HQ_ADAPTIVE_NAME,
+    HQ_FRONTIER_NAME,
+    HQ_NAME,
+    HQ_PUBLIC_METHODS,
+    HQ_ROTATION_NAME,
+)
 
-# Public labels are deliberately distinct from the current two-row primary
-# aggregate.  RotationHQ requires a content-addressed, held-out calibration
-# artifact; including it before that artifact's complete rerun would turn a
-# development retry into a paper result.
+# The public family and formal matrix are identical. Every recipe is
+# data-free: RotationHQ is the fixed HQ payload with a deterministic dense
+# rotation, while HQ-Frontier requires its own content-addressed codebook
+# bundle across all three rates.
 PAPER_HAYATE_METHODS = HQ_PUBLIC_METHODS
 FORMAL_HAYATE_METHODS = HQ_PUBLIC_METHODS
 LEGACY_HAYATE_RESULT_LABELS = ("HayateQuant-frontier",)

@@ -123,15 +123,31 @@ ZERO_TASKS = {
 }
 ZERO_RATE_METHODS = {
     "full": ("FullKV",),
-    "2": ("TurboQuant-paper", "FibQuant-paper", "HQ", "AdaptiveHQ"),
+    "2": (
+        "TurboQuant-paper",
+        "FibQuant-paper",
+        "HQ",
+        "HQ-Frontier",
+        "AdaptiveHQ",
+        "RotationHQ",
+    ),
     "3": (
         "TurboQuant-paper",
         "FibQuant-paper",
         "BlockQuant-paper",
         "HQ",
+        "HQ-Frontier",
         "AdaptiveHQ",
+        "RotationHQ",
     ),
-    "4": ("TurboQuant-paper", "FibQuant-paper", "HQ", "AdaptiveHQ"),
+    "4": (
+        "TurboQuant-paper",
+        "FibQuant-paper",
+        "HQ",
+        "HQ-Frontier",
+        "AdaptiveHQ",
+        "RotationHQ",
+    ),
 }
 
 LONG_METHODS = (
@@ -140,9 +156,17 @@ LONG_METHODS = (
     "FibQuant-paper",
     "BlockQuant-paper",
     "HQ",
+    "HQ-Frontier",
     "AdaptiveHQ",
+    "RotationHQ",
 )
-PROPOSAL_METHODS = ("HQ", "AdaptiveHQ")
+PROPOSAL_METHODS = ("HQ", "HQ-Frontier", "AdaptiveHQ", "RotationHQ")
+SPEED_PROPOSAL_COMPARISONS = {
+    "HQ": "hq_vs_turboquant",
+    "HQ-Frontier": "hq_frontier_vs_turboquant",
+    "AdaptiveHQ": "adaptive_hq_vs_turboquant",
+    "RotationHQ": "rotation_hq_vs_turboquant",
+}
 QUALITY_BASELINE_METHODS = ("TurboQuant-paper", "FibQuant-paper", "BlockQuant-paper")
 POINT_ESTIMATE_WIN_THRESHOLD = 0.90
 ADAPTIVE_HQ_POLICY_VERSION = "adaptive_hq_cache_causal_fixed_incumbent_hysteresis_v6"
@@ -164,8 +188,9 @@ ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION = (
     "inherited encode_then_decode fallback; AdaptiveHQ fused path unsupported"
 )
 HQ_CODEBOOK_BUNDLE = "fixed_hq_b2_v1"
+HQ_FRONTIER_CODEBOOK_BUNDLE = "frontier_hq_b2_v1"
 ADAPTIVE_HQ_CODEBOOK_BUNDLE = "adaptive_hq_b2_safe_v1"
-HQ_CODEBOOK_MANIFEST_SHA256 = "df02ba5fd41fd0cc3fd2d39474fcfe7a628c15eb9ea012e8c70b1ffb3dabecde"
+HQ_CODEBOOK_MANIFEST_SHA256 = "818df8a17a0cac464e4b7d844e63c48ab56dabf70c6693b80af6099f5d83e573"
 ADAPTIVE_HQ_CANDIDATE_PAIRS = {
     rate: ((2 * rate, 2 * rate), (2 * rate + 1, 2 * rate - 1)) for rate in (2, 3, 4)
 }
@@ -181,6 +206,17 @@ HAYATE_FORMAL_PROVENANCE = {
         "formal_rate_slots": [2, 3, 4],
         "allocation_scope": "globally_fixed_kv_code_bits",
     },
+    "HQ-Frontier": {
+        "method_role": "paper_proposal_frontier",
+        "external_quality_baseline": False,
+        "proposal_method": True,
+        "proposal_family": "HayateQuant",
+        "proposal_variant": "integer_frontier",
+        "paper_comparable": True,
+        "speed_comparison": True,
+        "formal_rate_slots": [2, 3, 4],
+        "allocation_scope": "integer_key_value_code_bits",
+    },
     "AdaptiveHQ": {
         "method_role": "paper_proposal_adaptive",
         "external_quality_baseline": False,
@@ -191,6 +227,17 @@ HAYATE_FORMAL_PROVENANCE = {
         "speed_comparison": True,
         "formal_rate_slots": [2, 3, 4],
         "allocation_scope": "cache_local_layer_local_causal_online_stats",
+    },
+    "RotationHQ": {
+        "method_role": "paper_proposal_rotation",
+        "external_quality_baseline": False,
+        "proposal_method": True,
+        "proposal_family": "HayateQuant",
+        "proposal_variant": "rotation_dense",
+        "paper_comparable": True,
+        "speed_comparison": True,
+        "formal_rate_slots": [2, 3, 4],
+        "allocation_scope": "globally_fixed_kv_code_bits_dense_rotation",
     },
 }
 # ``TurboQuant-paper`` is retained as the stable internal row key.  The raw
@@ -517,9 +564,7 @@ WIKITEXT2_REVISION = "b08601e04326c79dfdd32d625aee71d232d685c3"
 WIKITEXT2_TEXT_SHA256 = "696cca6b65a171b0a358a4be6732cdfdf2dd6164a32e20fd70e3c13fc4dfae83"
 PPL_MAX_LENGTH = 2048
 PPL_STRIDE = 1024
-PPL_NLL_ACCUMULATION = (
-    "fp32_token_cross_entropy_per_window_fp64_sum_host_binary64_math_fsum"
-)
+PPL_NLL_ACCUMULATION = "fp32_token_cross_entropy_per_window_fp64_sum_host_binary64_math_fsum"
 PPL_WINDOW_CACHE_LIFETIME = "released_before_next_cache_factory"
 PPL_CROSS_WINDOW_TENSOR_RETENTION = (
     "tokenized_input_ids_only; window_cache_logits_targets_losses_released; "
@@ -780,7 +825,11 @@ def _expected_hayate_codebook_artifacts(bundle: str) -> dict[str, Any]:
     development-only codebook fail before any paper value is aggregated.
     """
 
-    if bundle not in {HQ_CODEBOOK_BUNDLE, ADAPTIVE_HQ_CODEBOOK_BUNDLE}:
+    if bundle not in {
+        HQ_CODEBOOK_BUNDLE,
+        HQ_FRONTIER_CODEBOOK_BUNDLE,
+        ADAPTIVE_HQ_CODEBOOK_BUNDLE,
+    }:
         raise AggregateError(f"Unexpected formal HayateQuant codebook bundle {bundle!r}")
     codebook_dir = REPO_ROOT / "onecomp/kvcomp/codec/hayate/codebooks"
     manifest_path = (codebook_dir / "manifest.json").resolve()
@@ -1064,11 +1113,7 @@ def _longbench_retrieval(prediction: str, gold: str) -> float:
 
 def _longbench_count(prediction: str, gold: str) -> float:
     predicted = re.findall(r"\d+", prediction)
-    return (
-        sum(value == str(gold) for value in predicted) / len(predicted)
-        if predicted
-        else 0.0
-    )
+    return sum(value == str(gold) for value in predicted) / len(predicted) if predicted else 0.0
 
 
 def _longbench_code_similarity(prediction: str, gold: str) -> float:
@@ -1286,9 +1331,7 @@ def _ppl_target_coverage_contract(
         raise AggregateError(f"PPL target coverage is not contiguous_exact_once for {label}")
     if row.get("ppl_n_skipped_nonfinite") != 0:
         raise AggregateError(f"PPL skipped a non-finite window for {label}")
-    n_windows = _integer(
-        row.get("ppl_n_windows"), label=f"{label} n_windows", minimum=1
-    )
+    n_windows = _integer(row.get("ppl_n_windows"), label=f"{label} n_windows", minimum=1)
     ranges = row.get("ppl_scored_target_ranges")
     if not isinstance(ranges, list) or len(ranges) != n_windows:
         raise AggregateError(f"PPL target-range ledger/window count changed for {label}")
@@ -1352,9 +1395,7 @@ def _load_frozen_ppl_denominator_contract() -> dict:
             )
         ):
             raise AggregateError(f"Frozen formal PPL model contract is malformed for {model}")
-        n_tokens = _integer(
-            record.get("n_tokens"), label=f"frozen {model} n_tokens", minimum=1
-        )
+        n_tokens = _integer(record.get("n_tokens"), label=f"frozen {model} n_tokens", minimum=1)
         traversed = _integer(
             record.get("traversed_tokens"),
             label=f"frozen {model} traversed_tokens",
@@ -1432,13 +1473,10 @@ def _validated_ppl_numbers(
     if (
         row.get("ppl_nll_accumulation") != PPL_NLL_ACCUMULATION
         or row.get("ppl_window_cache_lifetime") != PPL_WINDOW_CACHE_LIFETIME
-        or row.get("ppl_cross_window_tensor_retention")
-        != PPL_CROSS_WINDOW_TENSOR_RETENTION
+        or row.get("ppl_cross_window_tensor_retention") != PPL_CROSS_WINDOW_TENSOR_RETENTION
     ):
         raise AggregateError(f"PPL accumulation/cache-lifetime provenance changed for {label}")
-    n_tokens, _ = _ppl_target_coverage_contract(
-        row, label=label, expected_tokens=expected_tokens
-    )
+    n_tokens, _ = _ppl_target_coverage_contract(row, label=label, expected_tokens=expected_tokens)
     ppl = _number(row.get("ppl"), label=f"{label} ppl")
     mean_nll = _number(row.get("ppl_nll"), label=f"{label} mean NLL")
     nll_sum = _number(row.get("ppl_nll_sum"), label=f"{label} NLL numerator")
@@ -2588,8 +2626,7 @@ def aggregate_zeroshot(
                         or result.get("teacher_forced_temporal_dependency") != expected_dependency
                         or result.get("protocol_probe_cache_lifetime")
                         != ZEROSHOT_PROTOCOL_PROBE_CACHE_LIFETIME
-                        or result.get("choice_cache_lifetime")
-                        != PER_EXAMPLE_CACHE_LIFETIME
+                        or result.get("choice_cache_lifetime") != PER_EXAMPLE_CACHE_LIFETIME
                         or result.get("cross_iteration_tensor_retention")
                         != PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
                     ):
@@ -3528,8 +3565,7 @@ def aggregate_longcodeqa(
                     or generation.get("official_reference_decoding_exact") is not False
                     or result.get("max_new_tokens") != 16
                     or config.get("longcodeqa_max_new") != 16
-                    or result.get("example_cache_lifetime")
-                    != PER_EXAMPLE_CACHE_LIFETIME
+                    or result.get("example_cache_lifetime") != PER_EXAMPLE_CACHE_LIFETIME
                     or result.get("cross_iteration_tensor_retention")
                     != PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
                 ):
@@ -4179,14 +4215,21 @@ def _expected_resolved_codec_config(method: str, rate: int, head_dim: int) -> di
         "shape_independent": True,
         "tie_break": "smallest_global_codebook_index",
     }
-    if method == "HQ":
-        key_code_bits, value_code_bits = 2 * rate + 1, 2 * rate - 1
+    if method in {"HQ", "HQ-Frontier", "RotationHQ"}:
+        if method == "HQ-Frontier":
+            key_code_bits, value_code_bits = 2 * rate + 2, 2 * rate - 2
+            key_scale = "ub"
+            bundle = HQ_FRONTIER_CODEBOOK_BUNDLE
+        else:
+            key_code_bits, value_code_bits = 2 * rate + 1, 2 * rate - 1
+            key_scale = "nc"
+            bundle = HQ_CODEBOOK_BUNDLE
 
         def _fixed_role(code_bits: int, scale: str) -> dict:
             role = _role(
                 bits=rate,
                 block=2,
-                rotation=_auto_rotation(code_bits),
+                rotation=("dense" if method == "RotationHQ" else _auto_rotation(code_bits)),
                 scale=scale,
                 mathematical_scale=scale,
                 source="gaussian",
@@ -4198,11 +4241,11 @@ def _expected_resolved_codec_config(method: str, rate: int, head_dim: int) -> di
         return {
             **common,
             "codebook_artifacts": json.loads(
-                json.dumps(_expected_hayate_codebook_artifacts(HQ_CODEBOOK_BUNDLE))
+                json.dumps(_expected_hayate_codebook_artifacts(bundle))
             ),
             "assignment": assignment,
             "roles": {
-                "key": _fixed_role(key_code_bits, "nc"),
+                "key": _fixed_role(key_code_bits, key_scale),
                 "value": _fixed_role(value_code_bits, "ls_iter"),
             },
         }
@@ -4361,34 +4404,44 @@ def _require_formal_codec_recipe(
                 f"BlockQuant quality-baseline provenance changed for {model}/{rate_i}: {path}"
             )
     elif method in PROPOSAL_METHODS:
+        adaptive = method == "AdaptiveHQ"
+        frontier = method == "HQ-Frontier"
+        fixed_pair = not adaptive
+        required_bundle = (
+            ADAPTIVE_HQ_CODEBOOK_BUNDLE
+            if adaptive
+            else HQ_FRONTIER_CODEBOOK_BUNDLE if frontier else HQ_CODEBOOK_BUNDLE
+        )
         expected_declared = {
             "name": "hayatequant",
             "bits": rate_i,
             "value_bits": rate_i,
             "dist": "gaussian",
             "block_size": 2,
-            "max_codebook_bits": 9,
+            "max_codebook_bits": 10 if frontier else 9,
             "codebook_init": "auto",
-            "required_codebook_bundle": (
-                HQ_CODEBOOK_BUNDLE if method == "HQ" else ADAPTIVE_HQ_CODEBOOK_BUNDLE
-            ),
-            "rotation_mode": "auto",
+            "required_codebook_bundle": required_bundle,
+            "rotation_mode": "dense" if method == "RotationHQ" else "auto",
             "seed": 0,
             "encoder": "exact",
             "hadamard_gemm_max_dim": 4096,
             "ls_scale": True,
-            "key_scale_mode": "nc",
+            "key_scale_mode": "ub" if frontier else "nc",
             "value_scale_mode": "ls_iter",
             "n_outlier": 0,
             "key_n_outlier": None,
             "value_n_outlier": None,
             "use_qjl": False,
             "calibration": None,
-            "adaptive_bit_split": (None if method == "HQ" else "online_stats"),
+            "adaptive_bit_split": "online_stats" if adaptive else None,
             "avg_bits": float(rate_i),
-            "key_bit_fraction": (None if method == "HQ" else (2 * rate_i + 1) / (4 * rate_i)),
-            "key_code_bits_per_block": (2 * rate_i + 1 if method == "HQ" else None),
-            "value_code_bits_per_block": (2 * rate_i - 1 if method == "HQ" else None),
+            "key_bit_fraction": ((2 * rate_i + 1) / (4 * rate_i) if adaptive else None),
+            "key_code_bits_per_block": (
+                2 * rate_i + (2 if frontier else 1) if fixed_pair else None
+            ),
+            "value_code_bits_per_block": (
+                2 * rate_i - (2 if frontier else 1) if fixed_pair else None
+            ),
             "adaptive_bit_margin": 4,
             "adaptive_stats_min_tokens": 16,
             "key_error_weight": 4.0,
@@ -4949,7 +5002,9 @@ def verify_ppl(
                 "FibQuant-paper",
                 "BlockQuant-paper",
                 "HQ",
+                "HQ-Frontier",
                 "AdaptiveHQ",
+                "RotationHQ",
             ]
         ):
             raise AggregateError(f"PPL formal config contract changed in {path}")
@@ -5089,18 +5144,28 @@ def verify_ppl(
                     ):
                         raise AggregateError(f"Missing BlockQuant speed-omission marker in {path}")
                 elif method in PROPOSAL_METHODS:
+                    frontier = method == "HQ-Frontier"
+                    adaptive = method == "AdaptiveHQ"
+                    rotation = method == "RotationHQ"
                     expected_fields = {
                         "name": "hayatequant",
                         "bits": rate_i,
                         "value_bits": rate_i,
                         "dist": "gaussian",
                         "block_size": 2,
-                        "max_codebook_bits": 9,
+                        "max_codebook_bits": 10 if frontier else 9,
                         "codebook_init": "auto",
-                        "rotation_mode": "auto",
+                        "required_codebook_bundle": (
+                            HQ_FRONTIER_CODEBOOK_BUNDLE
+                            if frontier
+                            else ADAPTIVE_HQ_CODEBOOK_BUNDLE
+                            if adaptive
+                            else HQ_CODEBOOK_BUNDLE
+                        ),
+                        "rotation_mode": "dense" if rotation else "auto",
                         "encoder": "exact",
                         "ls_scale": True,
-                        "key_scale_mode": "nc",
+                        "key_scale_mode": "ub" if frontier else "nc",
                         "value_scale_mode": "ls_iter",
                         "n_outlier": 0,
                         "outlier_bits": None,
@@ -5109,9 +5174,13 @@ def verify_ppl(
                         "use_qjl": False,
                         "calibration": None,
                         "avg_bits": float(rate_i),
-                        "adaptive_bit_split": (None if method == "HQ" else "online_stats"),
-                        "key_code_bits_per_block": (2 * rate_i + 1 if method == "HQ" else None),
-                        "value_code_bits_per_block": (2 * rate_i - 1 if method == "HQ" else None),
+                        "adaptive_bit_split": "online_stats" if adaptive else None,
+                        "key_code_bits_per_block": (
+                            None if adaptive else 2 * rate_i + (2 if frontier else 1)
+                        ),
+                        "value_code_bits_per_block": (
+                            None if adaptive else 2 * rate_i - (2 if frontier else 1)
+                        ),
                     }
                 else:  # pragma: no cover - closed by ZERO_RATE_METHODS
                     raise AggregateError(f"Unexpected PPL method {method!r}")
@@ -5137,9 +5206,7 @@ def verify_ppl(
                     "ppl_n_tokens": n_tokens,
                     "ppl_n_windows": row.get("ppl_n_windows"),
                     "ppl_traversed_tokens": row.get("ppl_traversed_tokens"),
-                    "ppl_scored_target_index_set": row.get(
-                        "ppl_scored_target_index_set"
-                    ),
+                    "ppl_scored_target_index_set": row.get("ppl_scored_target_index_set"),
                     "ppl_scored_target_ranges": row.get("ppl_scored_target_ranges"),
                     "ppl_scored_target_coverage": row.get("ppl_scored_target_coverage"),
                     **accounting,
@@ -5320,7 +5387,9 @@ def verify_ppl(
                 "FibQuant-paper",
                 "BlockQuant-paper",
                 "HQ",
+                "HQ-Frontier",
                 "AdaptiveHQ",
+                "RotationHQ",
             ],
         },
         "teacher_forced_scoring_contract": {
@@ -5343,21 +5412,15 @@ def verify_ppl(
         "frozen_denominator_contract": {
             "kind": "repo_pinned_tokenizer_specific_wikitext2_contract",
             "path": (
-                str(PPL_DENOMINATOR_CONTRACT_PATH)
-                if _expected_denominators is None
-                else None
+                str(PPL_DENOMINATOR_CONTRACT_PATH) if _expected_denominators is None else None
             ),
             "sha256": (
-                _sha256(PPL_DENOMINATOR_CONTRACT_PATH)
-                if _expected_denominators is None
-                else None
+                _sha256(PPL_DENOMINATOR_CONTRACT_PATH) if _expected_denominators is None else None
             ),
             "models": {
                 model: {
                     "n_tokens": by_model[model]["fullkv"]["ppl_n_tokens"],
-                    "traversed_tokens": by_model[model]["fullkv"][
-                        "ppl_traversed_tokens"
-                    ],
+                    "traversed_tokens": by_model[model]["fullkv"]["ppl_traversed_tokens"],
                 }
                 for model in expected_models
             },
@@ -5567,8 +5630,7 @@ def verify_mechanism(
             combined = {
                 "TurboQuant-paper": primary["TurboQuant-paper"],
                 **compact_controls,
-                "HQ": primary["HQ"],
-                "AdaptiveHQ": primary["AdaptiveHQ"],
+                **{proposal: primary[proposal] for proposal in PROPOSAL_METHODS},
             }
             scalar_log_ppl = combined[controls[0]]["ppl_nll"]
             block_log_ppl = combined[controls[1]]["ppl_nll"]
@@ -5586,9 +5648,17 @@ def verify_mechanism(
                 "applicability": {
                     "single_lever_causal_block_vq_contrast": list(controls),
                     "HQ": "contextual formal proposal row; not part of the single-lever contrast",
+                    "HQ-Frontier": (
+                        "contextual formal proposal row; its integer K/V frontier changes "
+                        "allocation and is not part of the single-lever contrast"
+                    ),
                     "AdaptiveHQ": (
                         "contextual formal proposal row; causal selector changes allocation "
                         "and is not part of the single-lever contrast"
+                    ),
+                    "RotationHQ": (
+                        "contextual formal proposal row; its forced dense rotation changes "
+                        "the transform and is not part of the single-lever contrast"
                     ),
                 },
             }
@@ -7500,7 +7570,9 @@ def _speed_comparisons(protocol: dict, *, path: Path) -> dict[str, tuple[str, st
         raise AggregateError(f"Fair-speed paired inference contract is missing in {path}")
     return {
         "hq_vs_turboquant": ("TurboQuant-paper", "HQ"),
+        "hq_frontier_vs_turboquant": ("TurboQuant-paper", "HQ-Frontier"),
         "adaptive_hq_vs_turboquant": ("TurboQuant-paper", "AdaptiveHQ"),
+        "rotation_hq_vs_turboquant": ("TurboQuant-paper", "RotationHQ"),
     }
 
 
@@ -7510,9 +7582,9 @@ def _speed_recipe_digest(record: Mapping[str, Any]) -> str:
     ).hexdigest()
 
 
-def _expected_speed_labels(bits: int) -> tuple[str, str, str]:
+def _expected_speed_labels(bits: int) -> tuple[str, ...]:
     _ = bits
-    return ("TurboQuant-paper", "HQ", "AdaptiveHQ")
+    return ("TurboQuant-paper", *PROPOSAL_METHODS)
 
 
 def _expected_auto_block_size(bits: int, head_dim: int) -> int:
@@ -7547,7 +7619,9 @@ def _expected_speed_resolved_config(*, codec: str, bits: int, head_dim: int) -> 
     method = {
         "turboquant": "TurboQuant-paper",
         "hq": "HQ",
+        "hq_frontier": "HQ-Frontier",
         "adaptive_hq": "AdaptiveHQ",
+        "rotation_hq": "RotationHQ",
     }.get(codec)
     if method is None:  # pragma: no cover - closed internal enum
         raise AssertionError(f"unknown speed codec role: {codec}")
@@ -7650,7 +7724,7 @@ def _validate_speed_recipe_contract(
         or not isinstance(e2e, dict)
     ):
         raise AggregateError(f"Fair-speed method taxonomy/result categories changed in {path}")
-    tq, fixed, adaptive = labels
+    tq, fixed, frontier, adaptive, rotation = labels
     if (
         taxonomy[tq].get("proposal_method") is not False
         or taxonomy[tq].get("proposal_variant") is not None
@@ -7658,10 +7732,16 @@ def _validate_speed_recipe_contract(
         or taxonomy[fixed].get("proposal_method") is not True
         or taxonomy[fixed].get("proposal_variant") != "fixed_global"
         or taxonomy[fixed].get("fake_quant_implementation") != HQ_FAKE_QUANT_IMPLEMENTATION
+        or taxonomy[frontier].get("proposal_method") is not True
+        or taxonomy[frontier].get("proposal_variant") != "integer_frontier"
+        or taxonomy[frontier].get("fake_quant_implementation") != HQ_FAKE_QUANT_IMPLEMENTATION
         or taxonomy[adaptive].get("proposal_method") is not True
         or taxonomy[adaptive].get("proposal_variant") != "causal_adaptive"
         or taxonomy[adaptive].get("fake_quant_implementation")
         != ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION
+        or taxonomy[rotation].get("proposal_method") is not True
+        or taxonomy[rotation].get("proposal_variant") != "rotation_dense"
+        or taxonomy[rotation].get("fake_quant_implementation") != HQ_FAKE_QUANT_IMPLEMENTATION
     ):
         raise AggregateError(f"Formal proposal taxonomy changed in {path}")
 
@@ -7759,6 +7839,21 @@ def _validate_speed_recipe_contract(
             "value_code_bits_per_block": 2 * bits - 1,
             "n_outlier": 0,
         },
+        frontier: {
+            **hayate_defaults,
+            "required_codebook_bundle": HQ_FRONTIER_CODEBOOK_BUNDLE,
+            "max_codebook_bits": 10,
+            "bits": bits,
+            "dist": "gaussian",
+            "value_bits": bits,
+            "block_size": 2,
+            "rotation_mode": "auto",
+            "key_scale_mode": "ub",
+            "value_scale_mode": "ls_iter",
+            "key_code_bits_per_block": 2 * bits + 2,
+            "value_code_bits_per_block": 2 * bits - 2,
+            "n_outlier": 0,
+        },
         adaptive: {
             **hayate_defaults,
             "required_codebook_bundle": ADAPTIVE_HQ_CODEBOOK_BUNDLE,
@@ -7773,12 +7868,32 @@ def _validate_speed_recipe_contract(
             "adaptive_bit_split": "online_stats",
             "n_outlier": 0,
         },
+        rotation: {
+            **hayate_defaults,
+            "required_codebook_bundle": HQ_CODEBOOK_BUNDLE,
+            "bits": bits,
+            "dist": "gaussian",
+            "value_bits": bits,
+            "block_size": 2,
+            "rotation_mode": "dense",
+            "key_scale_mode": "nc",
+            "value_scale_mode": "ls_iter",
+            "key_code_bits_per_block": 2 * bits + 1,
+            "value_code_bits_per_block": 2 * bits - 1,
+            "n_outlier": 0,
+        },
     }
     expected_resolved = {
         tq: _expected_speed_resolved_config(codec="turboquant", bits=bits, head_dim=head_dim),
         fixed: _expected_speed_resolved_config(codec="hq", bits=bits, head_dim=head_dim),
+        frontier: _expected_speed_resolved_config(
+            codec="hq_frontier", bits=bits, head_dim=head_dim
+        ),
         adaptive: _expected_speed_resolved_config(
             codec="adaptive_hq", bits=bits, head_dim=head_dim
+        ),
+        rotation: _expected_speed_resolved_config(
+            codec="rotation_hq", bits=bits, head_dim=head_dim
         ),
     }
     for label in labels:
@@ -7800,10 +7915,11 @@ def _validate_speed_recipe_contract(
             raise AggregateError(f"Missing codec config for {label} in {path}")
         if declared != expected_codec[label]:
             raise AggregateError(f"Wrong scientific codec recipe for {label} in {path}")
-        if label in PROPOSAL_METHODS and effective != {
-            "key_scale_mode": "nc",
+        expected_effective_scales = {
+            "key_scale_mode": "ub" if label == "HQ-Frontier" else "nc",
             "value_scale_mode": "ls_iter",
-        }:
+        }
+        if label in PROPOSAL_METHODS and effective != expected_effective_scales:
             raise AggregateError(f"Formal proposal scale modes changed in {path}")
         resolved = record.get("resolved_at_model_head_dim")
         if resolved != expected_resolved[label]:
@@ -7944,7 +8060,9 @@ def _validate_speed_recipe_contract(
     expected_allocations = {
         tq: "symmetric_scalar",
         fixed: "fixed_global",
+        frontier: "integer_frontier",
         adaptive: "causal_adaptive",
+        rotation: "rotation_dense",
     }
     for label in labels:
         rate = rate_contract["methods"][label]
@@ -7968,20 +8086,36 @@ def _validate_speed_recipe_contract(
             raise AggregateError(f"Rate audit changed for {label} in {path}")
 
     expected_proposal_contract = {
-        "formal_proposals": ["HQ", "AdaptiveHQ"],
+        "formal_proposals": list(PROPOSAL_METHODS),
         "same_total_pair_code_bit_budget": True,
         "rows": {
             "HQ": {
                 "proposal_variant": "fixed_global",
                 "pair_code_bits_per_block": 4 * bits,
+                "fixed_pair_code_bits_per_block": [2 * bits + 1, 2 * bits - 1],
+                "exact_assignment": True,
+                "selector": None,
+            },
+            "HQ-Frontier": {
+                "proposal_variant": "integer_frontier",
+                "pair_code_bits_per_block": 4 * bits,
+                "fixed_pair_code_bits_per_block": [2 * bits + 2, 2 * bits - 2],
                 "exact_assignment": True,
                 "selector": None,
             },
             "AdaptiveHQ": {
                 "proposal_variant": "causal_adaptive",
                 "pair_code_bits_per_block": 4 * bits,
+                "fixed_pair_code_bits_per_block": None,
                 "exact_assignment": True,
                 "selector": expected_resolved[adaptive]["adaptive_allocation"],
+            },
+            "RotationHQ": {
+                "proposal_variant": "rotation_dense",
+                "pair_code_bits_per_block": 4 * bits,
+                "fixed_pair_code_bits_per_block": [2 * bits + 1, 2 * bits - 1],
+                "exact_assignment": True,
+                "selector": None,
             },
         },
     }
@@ -7999,8 +8133,12 @@ def _validate_speed_recipe_contract(
     } != {
         (fixed, "key"),
         (fixed, "value"),
+        (frontier, "key"),
+        (frontier, "value"),
         (adaptive, "key"),
         (adaptive, "value"),
+        (rotation, "key"),
+        (rotation, "value"),
     }:
         raise AggregateError(f"Fake-quant quality parity coverage changed in {path}")
     expected_effective = {
@@ -8010,10 +8148,22 @@ def _validate_speed_recipe_contract(
             "hayate_override_entered": True,
             "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
         },
+        frontier: {
+            "effective_path": "hayate_fused_roundtrip",
+            "payload_materialized": False,
+            "hayate_override_entered": True,
+            "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
+        },
         adaptive: {
             "effective_path": "inherited_encode_then_decode",
             "payload_materialized": True,
             "hayate_override_entered": False,
+            "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
+        },
+        rotation: {
+            "effective_path": "hayate_fused_roundtrip",
+            "payload_materialized": False,
+            "hayate_override_entered": True,
             "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
         },
     }
@@ -8607,10 +8757,7 @@ def _build_speed_pareto_contract(
         for rate_int in expected_rates:
             rate = str(rate_int)
             row = nested[model][rate][SPEED_PRIMARY_COMPILE_MODE]
-            for proposal, comparison_name in (
-                ("HQ", "hq_vs_turboquant"),
-                ("AdaptiveHQ", "adaptive_hq_vs_turboquant"),
-            ):
+            for proposal, comparison_name in SPEED_PROPOSAL_COMPARISONS.items():
                 for metric in SPEED_PAIRED_TIMING_METRICS:
                     comparison = row["paired_speedups"][metric][comparison_name]
                     values = comparison["process_median_paired_speedups"]
@@ -8660,9 +8807,8 @@ def _build_speed_pareto_contract(
                         "candidate_strictly_better": (mean_log - critical * standard_error > 0.0),
                     }
                 )
-            names = _expected_speed_labels(rate_int)
-            tq, fixed, adaptive = names
-            for proposal in (fixed, adaptive):
+            tq, *proposals = _expected_speed_labels(rate_int)
+            for proposal in proposals:
                 for regime in ("prefill", "decode"):
                     footprints = row["public_payload_footprints"][regime]
                     tq_physical = footprints[tq]["materialized_payload_tensor_bytes"]
@@ -8699,13 +8845,10 @@ def _build_speed_pareto_contract(
     established = all_endpoints_better and all_footprints_not_larger and all_logical_rates_equal
     return {
         "scope": (
-            "HQ and AdaptiveHQ versus TurboQuant Algorithm-1 reference; speed and "
+            "All four HayateQuant proposals versus TurboQuant Algorithm-1 reference; speed and "
             "the measured memory representations only, not downstream quality"
         ),
-        "candidate_comparisons": {
-            "HQ": "hq_vs_turboquant",
-            "AdaptiveHQ": "adaptive_hq_vs_turboquant",
-        },
+        "candidate_comparisons": dict(SPEED_PROPOSAL_COMPARISONS),
         "primary_compile_mode": SPEED_PRIMARY_COMPILE_MODE,
         "predeclared_timing_metrics": list(SPEED_PAIRED_TIMING_METRICS),
         "predeclared_memory_metric": SPEED_PRIMARY_MEMORY_METRIC,
@@ -9327,7 +9470,9 @@ def verify_speed(
             "methods": {
                 "TurboQuant-paper": TURBOQUANT_FAKE_QUANT_IMPLEMENTATION,
                 "HQ": HQ_FAKE_QUANT_IMPLEMENTATION,
+                "HQ-Frontier": HQ_FAKE_QUANT_IMPLEMENTATION,
                 "AdaptiveHQ": ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION,
+                "RotationHQ": HQ_FAKE_QUANT_IMPLEMENTATION,
             },
         },
         "multiplicity_contract": {
@@ -9477,15 +9622,12 @@ def _validate_formal_job_receipts(
             raise AggregateError(f"Receipt immutable identity is malformed: {path}")
         return job_key, attempt_id
 
-    def validate_evidence(
-        evidence: Any, *, expected_path: Any, label: str, receipt: Path
-    ) -> Path:
+    def validate_evidence(evidence: Any, *, expected_path: Any, label: str, receipt: Path) -> Path:
         if not isinstance(evidence, dict) or evidence.get("path") != expected_path:
             raise AggregateError(f"{label} evidence identity is malformed: {receipt}")
         retained = _receipt_file(root, expected_path, label=label, receipt=receipt)
-        if (
-            evidence.get("bytes") != retained.stat().st_size
-            or evidence.get("sha256") != _sha256(retained)
+        if evidence.get("bytes") != retained.stat().st_size or evidence.get("sha256") != _sha256(
+            retained
         ):
             raise AggregateError(f"{label} evidence changed after receipt: {receipt}")
         return retained
@@ -9498,8 +9640,7 @@ def _validate_formal_job_receipts(
         if (
             row.get("kind") != "hayatequant_paper_submission_receipt"
             or row.get("terminal") is not True
-            or row.get("status")
-            not in {"submitted", "submission_failed", "skipped_existing"}
+            or row.get("status") not in {"submitted", "submission_failed", "skipped_existing"}
         ):
             raise AggregateError(f"Malformed or nonterminal formal submission receipt: {path}")
         key = (job_key, attempt_id)
@@ -9630,9 +9771,7 @@ def _validate_formal_job_receipts(
                 f"Worker and scheduler receipts both exist for formal attempt: {key}"
             )
         schedulers_by_attempt[key] = (path, row)
-        scheduler_status_counts[row["status"]] = (
-            scheduler_status_counts.get(row["status"], 0) + 1
-        )
+        scheduler_status_counts[row["status"]] = scheduler_status_counts.get(row["status"], 0) + 1
         submission_entry = submissions.get(key)
         if submission_entry is None:
             raise AggregateError(f"Scheduler receipt has no matching submission: {path}")
@@ -9693,7 +9832,9 @@ def _validate_formal_job_receipts(
             slurm.get("submission_tag"),
         ]
         if sacct_fields != expected_sacct:
-            raise AggregateError(f"Structured scheduler receipt disagrees with raw sacct row: {path}")
+            raise AggregateError(
+                f"Structured scheduler receipt disagrees with raw sacct row: {path}"
+            )
 
     missing_terminal_execution = [
         (path, row)
@@ -9725,7 +9866,9 @@ def _validate_formal_job_receipts(
         try:
             relative = source.relative_to(root).as_posix()
         except ValueError as exc:
-            raise AggregateError(f"Formal source is not repo-local below RUN_ROOT: {source}") from exc
+            raise AggregateError(
+                f"Formal source is not repo-local below RUN_ROOT: {source}"
+            ) from exc
         if not relative.startswith("results/formal/"):
             raise AggregateError(f"Formal source is outside results/formal: {source}")
         source_relatives.append(relative)
@@ -10229,7 +10372,7 @@ def _point_estimate_win_gate(document: Mapping[str, Any]) -> dict[str, Any]:
                         )
 
     # The mechanism axis is intentionally not duplicated in a dominance
-    # denominator: HQ/AdaptiveHQ are contextual rows and not members of its
+    # denominator: all proposal rows are contextual and not members of its
     # preregistered single-lever scalar-vs-block contrast.
 
     ruler = document.get("ruler")
@@ -10396,11 +10539,7 @@ def _point_estimate_win_gate(document: Mapping[str, Any]) -> dict[str, Any]:
     # Speed admits only the TurboQuant baseline.  Every primary compile=off
     # timing endpoint is a cell; intervals remain secondary robustness output.
     speed = document.get("speed")
-    comparisons = {
-        "HQ": "hq_vs_turboquant",
-        "AdaptiveHQ": "adaptive_hq_vs_turboquant",
-    }
-    for proposal, comparison_name in comparisons.items():
+    for proposal, comparison_name in SPEED_PROPOSAL_COMPARISONS.items():
         for model in LONG_MODELS:
             for rate in (2, 3, 4):
                 for metric in SPEED_PAIRED_TIMING_METRICS:

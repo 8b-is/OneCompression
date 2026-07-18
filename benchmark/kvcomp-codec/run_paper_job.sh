@@ -10,7 +10,7 @@ usage() {
     '       --model DIR --input-manifest FILE --input-manifest-sha256 HEX' \
     '       [--smoke-approval-marker FILE --smoke-approval-marker-sha256 HEX' \
     '        --smoke-validated-plan-sha256 HEX]' \
-    '       --expected-result FILE' \
+    '       --expected-result FILE [--no-cuda]' \
     '       [--dataset-file FILE ...]' \
     '       -- COMMAND [ARGS ...]'
 }
@@ -30,6 +30,7 @@ SMOKE_APPROVAL_MARKER=
 SMOKE_APPROVAL_MARKER_SHA256=
 SMOKE_VALIDATED_PLAN_SHA256=
 EXPECTED_RESULT=
+NO_CUDA=0
 DATASET_FILES=()
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -48,6 +49,7 @@ while [ "$#" -gt 0 ]; do
     --smoke-approval-marker-sha256) SMOKE_APPROVAL_MARKER_SHA256=$2; shift 2 ;;
     --smoke-validated-plan-sha256) SMOKE_VALIDATED_PLAN_SHA256=$2; shift 2 ;;
     --expected-result) EXPECTED_RESULT=$2; shift 2 ;;
+    --no-cuda) NO_CUDA=1; shift ;;
     --dataset-file) DATASET_FILES+=("$2"); shift 2 ;;
     --) shift; break ;;
     -h|--help) usage; exit 0 ;;
@@ -79,6 +81,12 @@ fi
 case "$JOB_KEY" in
   *[!A-Za-z0-9._-]*) printf 'Unsafe job key: %s\n' "$JOB_KEY" >&2; exit 2 ;;
 esac
+if [ "$NO_CUDA" = 1 ]; then
+  case "$JOB_KEY" in
+    formal-ppl-merge-*) ;;
+    *) printf '%s\n' '--no-cuda is restricted to formal PPL merge jobs' >&2; exit 2 ;;
+  esac
+fi
 case "$ATTEMPT_ID" in
   ''|*[!A-Za-z0-9._-]*) printf 'Unsafe attempt ID: %s\n' "$ATTEMPT_ID" >&2; exit 2 ;;
 esac
@@ -465,6 +473,7 @@ esac
 for file in "${DATASET_FILES[@]}"; do
   PREFLIGHT+=(--dataset-file "$file")
 done
+[ "$NO_CUDA" != 1 ] || PREFLIGHT+=(--no-cuda)
 "${PREFLIGHT[@]}"
 
 # A job can wait in Slurm after the submitter's existence check.  Recheck just

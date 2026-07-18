@@ -22,10 +22,25 @@ from onecomp.kvcomp.cache.taper_cache import taper_bits
 from vllm.v1.attention.backends.flash_attn import FlashAttentionBackend, FlashAttentionImpl
 
 from vllm_plugins.kvcomp.taper_config import TaperVLLMRecipe
+from vllm_plugins.kvcomp.runtime_evidence import emit_runtime_evidence_once
 
 TAPER_CONFIG_ENV = "KVCOMP_VLLM_TAPER_CONFIG"
 _RECIPE_MARKER: str | None = None
 _RECIPE: TaperVLLMRecipe | None = None
+
+
+def _upstream_kv_axis() -> int:
+    """Resolve the K/V axis from the installed upstream backend contract."""
+
+    probe = FlashAttentionBackend.get_kv_cache_shape(3, 16, 1, 16)
+    if probe[:2] == (3, 2):
+        return 1
+    if probe[:2] == (2, 3):
+        return 0
+    raise RuntimeError(f"unsupported vLLM FlashAttention KV cache shape: {probe}")
+
+
+_UPSTREAM_KV_AXIS = _upstream_kv_axis()
 
 
 def taper_native_recipe() -> TaperVLLMRecipe:
@@ -54,6 +69,27 @@ class TaperKVNativeBackend(FlashAttentionBackend):
 
 class TaperKVNativeImpl(FlashAttentionImpl):
     """Reference-only implementation; physical cache layout remains vLLM native."""
+
+    @staticmethod
+    def _split_kv_cache(kv_cache: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Validate and split vLLM FlashAttention's canonical paged cache.
+
+        vLLM has changed this axis across releases.  Resolve it from the
+        installed upstream backend rather than guessing from a version string,
+        then use that same contract next to every cache mutation.
+        """
+
+        if kv_cache.ndim != 5 or kv_cache.shape[_UPSTREAM_KV_AXIS] != 2:
+            expected = (
+                "[blocks, 2, block_size, kv_heads, head_size]"
+                if _UPSTREAM_KV_AXIS == 1
+                else "[2, blocks, block_size, kv_heads, head_size]"
+            )
+            raise RuntimeError(
+                "TapeKV vLLM reference backend requires FlashAttention cache shape "
+                + expected
+            )
+        return kv_cache.unbind(_UPSTREAM_KV_AXIS)
 
     @staticmethod
     def _layer_index(layer: Any) -> int | None:
@@ -152,10 +188,10 @@ class TaperKVNativeImpl(FlashAttentionImpl):
         slots = slots[slots >= 0]
         if slots.numel() == 0:
             return
-        slots = slots.to(dtype=torch.long)
-        key_cache, value_cache = kv_cache.unbind(1)
+        key_cache, value_cache = self._split_kv_cache(kv_cache)
         flat_keys = key_cache.flatten(0, 1)
         flat_values = value_cache.flatten(0, 1)
+        slots = slots.to(device=flat_keys.device, dtype=torch.long)
         keys = flat_keys.index_select(0, slots)
         values = flat_values.index_select(0, slots)
         keys, values = self._quantize_new_tokens(keys, values, recipe)
@@ -164,14 +200,10 @@ class TaperKVNativeImpl(FlashAttentionImpl):
 
     def _requantize_cache(self, kv_cache: torch.Tensor, attn_metadata, layer: Any) -> None:
         recipe = taper_native_recipe()
-        _layer_idx, skipped = self._layer_selection(layer, recipe)
+        layer_idx, skipped = self._layer_selection(layer, recipe)
         if skipped:
             return
-        if kv_cache.ndim != 5 or kv_cache.shape[1] != 2:
-            raise RuntimeError(
-                "TapeKV vLLM reference backend requires FlashAttention cache shape "
-                "[blocks, 2, block_size, kv_heads, head_size]"
-            )
+        key_cache, value_cache = self._split_kv_cache(kv_cache)
         if attn_metadata.use_cascade:
             raise RuntimeError("TapeKV vLLM reference backend does not support cascade attention")
         block_table = attn_metadata.block_table
@@ -186,15 +218,18 @@ class TaperKVNativeImpl(FlashAttentionImpl):
         # makes the reference path deterministic.  This backend is not used in
         # throughput claims; packed TapeKV needs a separate data plane.
         lengths = [int(length) for length in seq_lens.detach().to("cpu").tolist()]
-        key_cache, value_cache = kv_cache.unbind(1)
+        max_pages = 0
+        regraded_requests = 0
         for request_index, total in enumerate(lengths):
             if total <= 0:
                 continue
             n_pages = (total + page_size - 1) // page_size
+            max_pages = max(max_pages, n_pages)
+            regraded_requests += 1
             page_ids = block_table[request_index, :n_pages]
             if page_ids.numel() != n_pages or bool((page_ids < 0).any().item()):
                 raise RuntimeError("invalid paged KV block table in TapeKV reference backend")
-            page_ids = page_ids.to(dtype=torch.long)
+            page_ids = page_ids.to(device=key_cache.device, dtype=torch.long)
             key_pages = key_cache.index_select(0, page_ids)
             value_pages = value_cache.index_select(0, page_ids)
             keys = key_pages.reshape(-1, key_cache.shape[-2], key_cache.shape[-1])[:total]
@@ -269,6 +304,26 @@ class TaperKVNativeImpl(FlashAttentionImpl):
             )
             key_cache.index_copy_(0, page_ids, key_pages)
             value_cache.index_copy_(0, page_ids, value_pages)
+        if regraded_requests:
+            emit_runtime_evidence_once(
+                self,
+                "taper_regrade",
+                {
+                    "backend": ("vllm_plugins.kvcomp.taper_native.TaperKVNativeBackend"),
+                    "implementation": recipe.implementation,
+                    "event": "logical_paged_cache_regraded",
+                    "policy_name": recipe.policy_name,
+                    "hayate_then_taper": recipe.hayate_config is not None,
+                    "layer_index": layer_idx,
+                    "physical_cache_shape": list(kv_cache.shape),
+                    "physical_cache_dtype": str(kv_cache.dtype).removeprefix("torch."),
+                    "physical_cache_device": str(kv_cache.device),
+                    "page_size": int(page_size),
+                    "request_count": regraded_requests,
+                    "maximum_pages_per_request": max_pages,
+                    "maximum_sequence_length": max(lengths),
+                },
+            )
 
     def forward(
         self,

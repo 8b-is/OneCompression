@@ -13,9 +13,10 @@ from onecomp.kvcomp.codec.hayate import vq
 from onecomp.kvcomp.codec.hayate.recipes import (
     build_hayate_adaptive_rate,
     build_hayate_hq,
+    build_hayate_hq_frontier,
 )
 
-MANIFEST_SHA256 = "df02ba5fd41fd0cc3fd2d39474fcfe7a628c15eb9ea012e8c70b1ffb3dabecde"
+MANIFEST_SHA256 = "818df8a17a0cac464e4b7d844e63c48ab56dabf70c6693b80af6099f5d83e573"
 
 
 def _clear_codebook_caches() -> None:
@@ -69,6 +70,14 @@ def test_canonical_recipes_pin_complete_shipped_bundles_and_safe_pairs():
     assert fixed["manifest_sha256"] == MANIFEST_SHA256
     assert len(fixed["artifacts"]) == 4
     assert {record["source"] for record in fixed["artifacts"]} == {"shipped_manifest"}
+
+    for rate in (2, 3, 4):
+        frontier = build_hayate_hq_frontier(rate).get_resolved_kv_config(128)["codebook_artifacts"]
+        assert frontier["required"] is True
+        assert frontier["bundle"] == "frontier_hq_b2_v1"
+        assert frontier["manifest_sha256"] == MANIFEST_SHA256
+        assert len(frontier["artifacts"]) == 5
+        assert {record["source"] for record in frontier["artifacts"]} == {"shipped_manifest"}
 
     expected_pairs = {
         2: [[4, 4], [5, 3]],

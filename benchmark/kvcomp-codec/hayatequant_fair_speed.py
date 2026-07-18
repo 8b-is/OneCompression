@@ -11,16 +11,17 @@ This runner deliberately keeps three different contracts separate:
   memory footprint.  The TurboQuant row in this category is the repository's
   unmodified :class:`TurboQuantCodec`; no HayateQuant fusion is credited to it.
 * ``research_fake_quant`` times ``fake_quant_roundtrip``.  TurboQuant inherits
-  the unfused ``encode -> decode`` implementation.  Fixed HQ has a fused
-  research implementation, whereas AdaptiveHQ currently falls back to the
-  inherited payload chain because its selected K/V pair is update-dependent.
-  Every tensor regime persists a runtime probe; results are never silently
-  presented as the same API or as packed serving.
+  the unfused ``encode -> decode`` implementation.  The fixed HQ, frontier,
+  and dense-rotation recipes use the fused research implementation, whereas
+  AdaptiveHQ currently falls back to the inherited payload chain because its
+  selected K/V pair is update-dependent.  Every tensor regime persists a
+  runtime probe; results are never silently presented as the same API or as
+  packed serving.
 * ``research_fake_quant_e2e`` measures that fake-quant path inside a real
   Transformers generation loop.  It is not a packed low-bit serving result.
 
-The formal matrix contains exactly three methods: ``TurboQuant-paper``, the
-globally fixed ``HQ`` proposal, and the causal ``AdaptiveHQ`` proposal.  Both
+The formal matrix contains ``TurboQuant-paper`` and all four public proposal
+recipes: ``HQ``, ``HQ-Frontier``, ``AdaptiveHQ``, and ``RotationHQ``.  The
 proposal rows use the same named recipes as every quality runner.  The
 adaptive selector is carried in low fraction bits of an existing fp16 value
 scale and therefore adds zero logical data-plane bits.
@@ -121,9 +122,11 @@ ADAPTIVE_HQ_HYSTERESIS = (
 )
 TURBOQUANT_FAKE_QUANT_IMPLEMENTATION = "inherited unfused encode_then_decode"
 HQ_FAKE_QUANT_IMPLEMENTATION = "HayateQuant fused research fake_quant_roundtrip"
+HQ_FRONTIER_FAKE_QUANT_IMPLEMENTATION = "HayateQuant fused research fake_quant_roundtrip"
 ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION = (
     "inherited encode_then_decode fallback; AdaptiveHQ fused path unsupported"
 )
+ROTATION_HQ_FAKE_QUANT_IMPLEMENTATION = "HayateQuant fused research fake_quant_roundtrip"
 
 
 def _model_evaluation_role(model: str) -> str:
@@ -150,7 +153,8 @@ def _run_fingerprint(semantic_config: Mapping[str, Any], code_commit: str | None
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Paired CUDA-event benchmark for exactly TurboQuant-paper, HQ, " "and AdaptiveHQ."
+            "Paired CUDA-event benchmark for TurboQuant-paper and all four "
+            "public HayateQuant recipes."
         ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
@@ -688,6 +692,7 @@ def _method_specs(avg_bits: int) -> list[_MethodSpec]:
     from onecomp.kvcomp.codec.hayate.recipes import (
         build_hayate_adaptive_rate,
         build_hayate_hq,
+        build_hayate_hq_frontier,
     )
     from onecomp.kvcomp.codec.turboquant import TurboQuantCodec
 
@@ -712,12 +717,28 @@ def _method_specs(avg_bits: int) -> list[_MethodSpec]:
             proposal_variant="fixed_global",
         ),
         _MethodSpec(
+            label="HQ-Frontier",
+            codec_factory=lambda: build_hayate_hq_frontier(r),
+            semantic_role="integer K(r+1)/V(r-1) HQ frontier proposal",
+            fake_quant_implementation=HQ_FRONTIER_FAKE_QUANT_IMPLEMENTATION,
+            proposal_method=True,
+            proposal_variant="integer_frontier",
+        ),
+        _MethodSpec(
             label="AdaptiveHQ",
             codec_factory=lambda: build_hayate_adaptive_rate(r),
             semantic_role="causal online-rate-allocation HQ paper proposal",
             fake_quant_implementation=ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION,
             proposal_method=True,
             proposal_variant="causal_adaptive",
+        ),
+        _MethodSpec(
+            label="RotationHQ",
+            codec_factory=lambda: build_hayate_hq(r, rotation_mode="dense"),
+            semantic_role="fixed HQ payload with dense rotation proposal",
+            fake_quant_implementation=ROTATION_HQ_FAKE_QUANT_IMPLEMENTATION,
+            proposal_method=True,
+            proposal_variant="rotation_dense",
         ),
     ]
 
@@ -727,12 +748,19 @@ def _speedup_comparisons(
 ) -> dict[str, tuple[str, str]]:
     """Predeclared paired latency comparisons used by micro and E2E runs."""
 
-    if len(specs) != 3:
-        raise ValueError("fair-speed protocol requires exactly three codec methods")
-    turbo, fixed, adaptive = (spec.label for spec in specs)
+    if [spec.label for spec in specs] != [
+        "TurboQuant-paper",
+        "HQ",
+        "HQ-Frontier",
+        "AdaptiveHQ",
+        "RotationHQ",
+    ]:
+        raise ValueError("fair-speed protocol requires the exact five-method matrix")
     return {
-        "hq_vs_turboquant": (turbo, fixed),
-        "adaptive_hq_vs_turboquant": (turbo, adaptive),
+        "hq_vs_turboquant": ("TurboQuant-paper", "HQ"),
+        "hq_frontier_vs_turboquant": ("TurboQuant-paper", "HQ-Frontier"),
+        "adaptive_hq_vs_turboquant": ("TurboQuant-paper", "AdaptiveHQ"),
+        "rotation_hq_vs_turboquant": ("TurboQuant-paper", "RotationHQ"),
     }
 
 
@@ -936,7 +964,7 @@ def _validate_rate_contract(
     quality_rows: Mapping[str, Mapping[str, Any]],
     avg_bits: int,
 ) -> dict[str, Any]:
-    """Prove nominal and accounted payload-rate equality for the three rows."""
+    """Prove nominal and accounted payload-rate equality for every method row."""
 
     nominal_rows: dict[str, dict[str, Any]] = {}
     stored_bits = set()
@@ -1050,9 +1078,10 @@ def _parity_checks(
 ) -> dict[str, Any]:
     _ = dtype_name
     # Verify each timed proposal fake-quant path remains quality-equivalent to
-    # its payload API. Fixed HQ is fused; AdaptiveHQ is an explicitly recorded
-    # inherited encode/decode fallback. This is not expected to be bit-identical
-    # across Triton/eager implementations, hence MSE relative deltas are kept.
+    # its payload API. Fixed recipes are fused; AdaptiveHQ is an explicitly
+    # recorded inherited encode/decode fallback. This is not expected to be
+    # bit-identical across Triton/eager implementations, hence MSE relative
+    # deltas are kept.
     fake_quant_rows = []
     for spec in specs:
         if not spec.proposal_method:
@@ -1094,7 +1123,7 @@ def _parity_checks(
 def _validate_proposal_contract(
     specs: Sequence[_MethodSpec], codecs: dict[str, Any], avg_bits: int
 ) -> dict[str, Any]:
-    """Fail if either proposal drifts from its public fixed/adaptive identity."""
+    """Fail if any public proposal drifts from its named recipe identity."""
 
     rate = int(avg_bits)
     rows: dict[str, Any] = {}
@@ -1105,53 +1134,78 @@ def _validate_proposal_contract(
         declared = codec.get_kv_config()
         resolved = codec.get_resolved_kv_config(128)
         codebook_artifacts = resolved.get("codebook_artifacts")
-        expected_bundle = "fixed_hq_b2_v1" if spec.label == "HQ" else "adaptive_hq_b2_safe_v1"
-        expected_artifact_count = 4 if spec.label == "HQ" else 7
         if (
             declared.get("bits") != rate
             or declared.get("value_bits") != rate
             or declared.get("avg_bits") != float(rate)
             or declared.get("block_size") != 2
             or declared.get("dist") != "gaussian"
-            or declared.get("rotation_mode") != "auto"
             or declared.get("encoder") != "exact"
-            or declared.get("max_codebook_bits") != 9
-            or declared.get("key_scale_mode") != "nc"
-            or declared.get("value_scale_mode") != "ls_iter"
-            or declared.get("required_codebook_bundle") != expected_bundle
             or not isinstance(codebook_artifacts, dict)
-            or codebook_artifacts.get("required") is not True
-            or codebook_artifacts.get("bundle") != expected_bundle
             or codebook_artifacts.get("development_override_dir") is not None
-            or codebook_artifacts.get("manifest_sha256")
-            != "df02ba5fd41fd0cc3fd2d39474fcfe7a628c15eb9ea012e8c70b1ffb3dabecde"
             or not isinstance(codebook_artifacts.get("artifacts"), list)
-            or len(codebook_artifacts["artifacts"]) != expected_artifact_count
             or any(
                 artifact.get("source") != "shipped_manifest"
                 or artifact.get("manifest_pinned") is not True
                 or artifact.get("manifest_sha256")
-                != "df02ba5fd41fd0cc3fd2d39474fcfe7a628c15eb9ea012e8c70b1ffb3dabecde"
+                != "818df8a17a0cac464e4b7d844e63c48ab56dabf70c6693b80af6099f5d83e573"
                 for artifact in codebook_artifacts["artifacts"]
             )
         ):
             raise AssertionError(f"{spec.label} drifted from the formal HQ common contract")
-        if spec.label == "HQ":
+        selector = None
+        if spec.label in {"HQ", "RotationHQ"}:
             expected_pair = [2 * rate + 1, 2 * rate - 1]
             if (
-                declared.get("adaptive_bit_split") is not None
+                declared.get("max_codebook_bits") != 9
+                or declared.get("key_scale_mode") != "nc"
+                or declared.get("value_scale_mode") != "ls_iter"
+                or declared.get("required_codebook_bundle") != "fixed_hq_b2_v1"
+                or declared.get("rotation_mode")
+                != ("dense" if spec.label == "RotationHQ" else "auto")
+                or declared.get("adaptive_bit_split") is not None
                 or [
                     declared.get("key_code_bits_per_block"),
                     declared.get("value_code_bits_per_block"),
                 ]
                 != expected_pair
+                or codebook_artifacts.get("required") is not True
+                or codebook_artifacts.get("bundle") != "fixed_hq_b2_v1"
+                or codebook_artifacts.get("manifest_sha256")
+                != "818df8a17a0cac464e4b7d844e63c48ab56dabf70c6693b80af6099f5d83e573"
+                or len(codebook_artifacts["artifacts"]) != 4
             ):
-                raise AssertionError("HQ fixed code-bit split changed")
-            selector = None
-        else:
+                raise AssertionError(f"{spec.label} fixed recipe changed")
+        elif spec.label == "HQ-Frontier":
+            expected_pair = [2 * rate + 2, 2 * rate - 2]
+            if (
+                declared.get("max_codebook_bits") != 10
+                or declared.get("key_scale_mode") != "ub"
+                or declared.get("value_scale_mode") != "ls_iter"
+                or declared.get("required_codebook_bundle") != "frontier_hq_b2_v1"
+                or declared.get("rotation_mode") != "auto"
+                or declared.get("adaptive_bit_split") is not None
+                or [
+                    declared.get("key_code_bits_per_block"),
+                    declared.get("value_code_bits_per_block"),
+                ]
+                != expected_pair
+                or codebook_artifacts.get("required") is not True
+                or codebook_artifacts.get("bundle") != "frontier_hq_b2_v1"
+                or codebook_artifacts.get("manifest_sha256")
+                != "818df8a17a0cac464e4b7d844e63c48ab56dabf70c6693b80af6099f5d83e573"
+                or len(codebook_artifacts["artifacts"]) != 5
+            ):
+                raise AssertionError("HQ-Frontier integer frontier recipe changed")
+        elif spec.label == "AdaptiveHQ":
+            expected_pair = None
             allocation = resolved.get("adaptive_allocation")
             if (
-                spec.label != "AdaptiveHQ"
+                declared.get("max_codebook_bits") != 9
+                or declared.get("key_scale_mode") != "nc"
+                or declared.get("value_scale_mode") != "ls_iter"
+                or declared.get("required_codebook_bundle") != "adaptive_hq_b2_safe_v1"
+                or declared.get("rotation_mode") != "auto"
                 or declared.get("adaptive_bit_split") != "online_stats"
                 or declared.get("key_bit_fraction") != (2 * rate + 1) / (4 * rate)
                 or declared.get("adaptive_stats_min_tokens") != 16
@@ -1161,6 +1215,11 @@ def _validate_proposal_contract(
                 or declared.get("key_code_bits_per_block") is not None
                 or declared.get("value_code_bits_per_block") is not None
                 or not isinstance(allocation, dict)
+                or codebook_artifacts.get("required") is not True
+                or codebook_artifacts.get("bundle") != "adaptive_hq_b2_safe_v1"
+                or codebook_artifacts.get("manifest_sha256")
+                != "818df8a17a0cac464e4b7d844e63c48ab56dabf70c6693b80af6099f5d83e573"
+                or len(codebook_artifacts["artifacts"]) != 7
                 or allocation.get("pair_code_bits_per_block") != 4 * rate
                 or allocation.get("policy_version") != ADAPTIVE_HQ_POLICY_VERSION
                 or allocation.get("distortion_table_version")
@@ -1189,16 +1248,20 @@ def _validate_proposal_contract(
             ):
                 raise AssertionError("AdaptiveHQ causal selector contract changed")
             selector = allocation
+        else:
+            raise AssertionError(f"unexpected formal proposal {spec.label}")
         rows[spec.label] = {
             "proposal_variant": spec.proposal_variant,
             "pair_code_bits_per_block": 4 * rate,
+            "fixed_pair_code_bits_per_block": expected_pair,
             "exact_assignment": True,
             "selector": selector,
         }
-    if set(rows) != {"HQ", "AdaptiveHQ"}:
-        raise AssertionError("formal speed runner must contain exactly HQ and AdaptiveHQ")
+    formal_proposals = ["HQ", "HQ-Frontier", "AdaptiveHQ", "RotationHQ"]
+    if list(rows) != formal_proposals:
+        raise AssertionError("formal speed runner must contain all four public HQ recipes")
     return {
-        "formal_proposals": ["HQ", "AdaptiveHQ"],
+        "formal_proposals": formal_proposals,
         "same_total_pair_code_bit_budget": True,
         "rows": rows,
     }
@@ -1365,9 +1428,9 @@ def _run_micro(
             },
             "research_fake_quant": {
                 "warning": (
-                    "TurboQuant and AdaptiveHQ use inherited encode->decode; fixed HQ is "
-                    "fused when its persisted runtime probe says so. Do not treat this "
-                    "category as equal public-API or packed-native kernel timing."
+                    "TurboQuant and AdaptiveHQ use inherited encode->decode; fixed HQ "
+                    "recipes are fused when their persisted runtime probe says so. Do not "
+                    "treat this category as equal public-API or packed-native kernel timing."
                 ),
                 "effective_implementations": fake_quant_effective,
                 "fake_quant_roundtrip": measured["fake_quant_roundtrip"],
@@ -1413,8 +1476,8 @@ def _run_micro(
                 "indices are unpacked int64 tensors"
             ),
             "research_fake_quant": (
-                "dequantized research cache helper; fixed HQ may fuse, AdaptiveHQ currently "
-                "uses the inherited payload fallback"
+                "dequantized research cache helper; fixed recipes may fuse, AdaptiveHQ "
+                "currently uses the inherited payload fallback"
             ),
         },
         "public_payload_scope": dict(PUBLIC_LOGICAL_PAYLOAD_SCOPE),
@@ -1909,12 +1972,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             },
             "comparison_rules": {
                 "baseline_method": specs[0].label,
-                "proposal_methods": [specs[1].label, specs[2].label],
+                "proposal_methods": [spec.label for spec in specs if spec.proposal_method],
                 "method_set_exact": True,
                 "do_not_compare_as_equal_api": [
                     "TurboQuant payload/unfused roundtrip",
                     "HQ fused fake_quant_roundtrip",
+                    "HQ-Frontier fused fake_quant_roundtrip",
                     "AdaptiveHQ inherited encode_then_decode fake_quant_roundtrip",
+                    "RotationHQ fused fake_quant_roundtrip",
                 ],
                 "packed_native_hybrid_measured": False,
                 "packed_native_hybrid_must_not_be_called_full_hayatequant": True,

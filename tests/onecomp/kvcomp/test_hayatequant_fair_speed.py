@@ -269,7 +269,12 @@ def test_proposal_recipes_record_exact_rate_specific_role_resolution(
     proposal_contract = fair._validate_proposal_contract(  # pylint: disable=protected-access
         specs, codecs, rate
     )
-    assert proposal_contract["formal_proposals"] == ["HQ", "AdaptiveHQ"]
+    assert proposal_contract["formal_proposals"] == [
+        "HQ",
+        "HQ-Frontier",
+        "AdaptiveHQ",
+        "RotationHQ",
+    ]
     assert proposal_contract["same_total_pair_code_bit_budget"] is True
     selector = proposal_contract["rows"]["AdaptiveHQ"]["selector"]
     assert selector["policy_version"] == fair.ADAPTIVE_HQ_POLICY_VERSION
@@ -287,7 +292,7 @@ def test_proposal_recipes_record_exact_rate_specific_role_resolution(
     records, hashes = fair._method_config_records(  # pylint: disable=protected-access
         specs, codecs, 128
     )
-    fixed = records[specs[1].label]["resolved_at_model_head_dim"]
+    fixed = records["HQ"]["resolved_at_model_head_dim"]
     key = fixed["roles"]["key"]
     value = fixed["roles"]["value"]
     assert (
@@ -309,14 +314,23 @@ def test_proposal_recipes_record_exact_rate_specific_role_resolution(
     assert key["code_bits_per_block"] == 2 * rate + 1
     assert value["code_bits_per_block"] == 2 * rate - 1
 
-    adaptive = records[specs[-1].label]["resolved_at_model_head_dim"]
+    frontier = records["HQ-Frontier"]["resolved_at_model_head_dim"]
+    assert frontier["roles"]["key"]["code_bits_per_block"] == 2 * rate + 2
+    assert frontier["roles"]["value"]["code_bits_per_block"] == 2 * rate - 2
+    assert frontier["roles"]["key"]["scale_mode"] == "ub"
+    assert frontier["codebook_artifacts"]["bundle"] == "frontier_hq_b2_v1"
+
+    adaptive = records["AdaptiveHQ"]["resolved_at_model_head_dim"]
     assert {adaptive["roles"][role]["rotation_mode"] for role in ("key", "value")} == {
         "payload_dependent_candidate_rate"
     }
     assert adaptive["adaptive_allocation"]["selector_incremental_stored_bits_per_encode"] == 0
-    assert hashes[specs[-1].label] == fair._recipe_sha256(  # pylint: disable=protected-access
-        records[specs[-1].label]
+    assert hashes["AdaptiveHQ"] == fair._recipe_sha256(  # pylint: disable=protected-access
+        records["AdaptiveHQ"]
     )
+
+    rotation = records["RotationHQ"]["resolved_at_model_head_dim"]
+    assert {rotation["roles"][role]["rotation_mode"] for role in ("key", "value")} == {"dense"}
 
     tq = records[specs[0].label]["resolved_at_model_head_dim"]["roles"]
     hq = records[specs[1].label]["resolved_at_model_head_dim"]["roles"]
@@ -334,7 +348,9 @@ def test_fake_quant_contract_does_not_label_adaptive_fallback_as_fused():
     assert labels == {
         "TurboQuant-paper": fair.TURBOQUANT_FAKE_QUANT_IMPLEMENTATION,
         "HQ": fair.HQ_FAKE_QUANT_IMPLEMENTATION,
+        "HQ-Frontier": fair.HQ_FRONTIER_FAKE_QUANT_IMPLEMENTATION,
         "AdaptiveHQ": fair.ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION,
+        "RotationHQ": fair.ROTATION_HQ_FAKE_QUANT_IMPLEMENTATION,
     }
     effective = {
         label: fair._fake_quant_effective_implementation(codec, 128)
@@ -342,6 +358,8 @@ def test_fake_quant_contract_does_not_label_adaptive_fallback_as_fused():
     }
     assert effective["HQ"]["effective_path"] == "hayate_fused_roundtrip"
     assert effective["HQ"]["payload_materialized"] is False
+    assert effective["HQ-Frontier"]["effective_path"] == "hayate_fused_roundtrip"
+    assert effective["RotationHQ"]["effective_path"] == "hayate_fused_roundtrip"
     assert effective["AdaptiveHQ"] == {
         "effective_path": "inherited_encode_then_decode",
         "payload_materialized": True,

@@ -29,6 +29,7 @@ HQ_BLOCK_SIZE = 2
 HQ_KEY_SCALE_MODE = "nc"
 HQ_VALUE_SCALE_MODE = "ls_iter"
 HQ_CODEBOOK_BUNDLE = "fixed_hq_b2_v1"
+HQ_FRONTIER_CODEBOOK_BUNDLE = "frontier_hq_b2_v1"
 HQ_ADAPTIVE_CODEBOOK_BUNDLE = "adaptive_hq_b2_safe_v1"
 
 # Scale constants for the fixed HQ recipe.  The frontier row has its own
@@ -209,6 +210,7 @@ def hayate_hq_frontier_kwargs(avg_bits: int | float, **overrides: Any) -> dict[s
         "value_code_bits_per_block": value_code_bits,
         "max_codebook_bits": 10,
         "dist": "gaussian",
+        "required_codebook_bundle": HQ_FRONTIER_CODEBOOK_BUNDLE,
         "key_scale_mode": "ub",
         "value_scale_mode": HQ_VALUE_SCALE_MODE,
         "rotation_mode": "auto",
@@ -447,6 +449,7 @@ __all__ = [
     "HQ_KEY_SCALE_MODE",
     "HQ_VALUE_SCALE_MODE",
     "HQ_CODEBOOK_BUNDLE",
+    "HQ_FRONTIER_CODEBOOK_BUNDLE",
     "HQ_ADAPTIVE_CODEBOOK_BUNDLE",
     "HQ_FRONTIER_KEY_SCALE_MODE",
     "HQ_FRONTIER_VALUE_SCALE_MODE",

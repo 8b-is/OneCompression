@@ -952,28 +952,6 @@ def main(cfg: DictConfig):
                 entry.update(blockquant_quality_provenance(codec))
             elif name in FORMAL_HAYATE_METHODS:
                 entry.update(hayate_formal_provenance(name))
-            elif name == HQ_ROTATION_NAME:
-                # RotationHQ is a named public recipe, but its calibration
-                # artifact must be completed and independently rerun before
-                # it can enter a formal aggregate.  Carry that claim boundary
-                # in any explicitly requested diagnostic result instead of
-                # making an unlabelled third HQ-looking row.
-                entry.update(
-                    {
-                        "method_role": "paper_proposal_rotation_pending_calibration_rerun",
-                        "external_quality_baseline": False,
-                        "proposal_method": True,
-                        "proposal_family": "HayateQuant",
-                        "proposal_variant": "rotation_only",
-                        "paper_comparable": False,
-                        "speed_comparison": False,
-                        "formal_aggregate_eligible": False,
-                        "formal_exclusion_reason": (
-                            "requires completed content-addressed calibration "
-                            "and complete held-out rerun"
-                        ),
-                    }
-                )
             resolved_config = getattr(codec, "get_resolved_kv_config", None)
             if callable(resolved_config):
                 entry["resolved_codec_config"] = resolved_config(D)

@@ -34,25 +34,22 @@ MARKER_KIND = "hayatequant_formal_smoke_approval"
 MARKER_SCHEMA_VERSION = 1
 SMOKE_PLAN_VERSION = 4
 REPO_ROOT = Path(__file__).resolve().parents[2]
+PROPOSAL_METHODS = ("HQ", "HQ-Frontier", "AdaptiveHQ", "RotationHQ")
 LONG_METHODS = (
     "FullKV",
     "TurboQuant-paper",
     "FibQuant-paper",
     "BlockQuant-paper",
-    "HQ",
-    "AdaptiveHQ",
+    *PROPOSAL_METHODS,
 )
 COMPRESSED_METHODS = (
     "TurboQuant-paper",
     "FibQuant-paper",
     "BlockQuant-paper",
-    "HQ",
-    "AdaptiveHQ",
+    *PROPOSAL_METHODS,
 )
 PPL_TEACHER_FORCED_PROTOCOL = "single_forward_causal_mask_token_local_cache"
-PPL_NLL_ACCUMULATION = (
-    "fp32_token_cross_entropy_per_window_fp64_sum_host_binary64_math_fsum"
-)
+PPL_NLL_ACCUMULATION = "fp32_token_cross_entropy_per_window_fp64_sum_host_binary64_math_fsum"
 PPL_WINDOW_CACHE_LIFETIME = "released_before_next_cache_factory"
 PPL_CROSS_WINDOW_TENSOR_RETENTION = (
     "tokenized_input_ids_only; window_cache_logits_targets_losses_released; "
@@ -91,12 +88,12 @@ ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION = (
     "inherited encode_then_decode fallback; AdaptiveHQ fused path unsupported"
 )
 HQ_CODEBOOK_BUNDLE = "fixed_hq_b2_v1"
+HQ_FRONTIER_CODEBOOK_BUNDLE = "frontier_hq_b2_v1"
 ADAPTIVE_HQ_CODEBOOK_BUNDLE = "adaptive_hq_b2_safe_v1"
-HQ_CODEBOOK_MANIFEST_SHA256 = "df02ba5fd41fd0cc3fd2d39474fcfe7a628c15eb9ea012e8c70b1ffb3dabecde"
+HQ_CODEBOOK_MANIFEST_SHA256 = "818df8a17a0cac464e4b7d844e63c48ab56dabf70c6693b80af6099f5d83e573"
 SPEED_METHODS = (
     "TurboQuant-paper",
-    "HQ",
-    "AdaptiveHQ",
+    *PROPOSAL_METHODS,
 )
 LONGBENCH_REVISION = "5e628be450b7e67fb7ae6e201bd6d8f7056f7672"
 LONGCODEQA_REVISION = "989d5eff750d65a72c522e47f8f745ef2e22906b"
@@ -135,7 +132,9 @@ LONG_RECIPE_CONFIG = {
     "blockquant_variants": [{"label": "BlockQuant-paper", "bits": 3}],
     "hayatequant_variants": [
         {"label": "HQ", "bits": 3},
+        {"label": "HQ-Frontier", "bits": 3},
         {"label": "AdaptiveHQ", "bits": 3},
+        {"label": "RotationHQ", "bits": 3},
     ],
     "uniform_bits": [],
     "kivi_bits": [],
@@ -219,9 +218,7 @@ SMOKE_PLAN = (
         "model": "llama-3.1-8b-instruct",
         "model_key": "llama31-8b",
         "kind": "ruler_v1",
-        "dataset_selectors": [
-            {"kind": "ruler_manifest", "model_key": "llama31-8b"}
-        ],
+        "dataset_selectors": [{"kind": "ruler_manifest", "model_key": "llama31-8b"}],
         "n": 2,
         "config": {
             "run_official_ruler_v1": True,
@@ -398,7 +395,11 @@ def _load_json(path: Path, *, label: str) -> dict:
 
 
 def _expected_hayate_codebook_artifacts(bundle: str) -> dict[str, Any]:
-    if bundle not in {HQ_CODEBOOK_BUNDLE, ADAPTIVE_HQ_CODEBOOK_BUNDLE}:
+    if bundle not in {
+        HQ_CODEBOOK_BUNDLE,
+        HQ_FRONTIER_CODEBOOK_BUNDLE,
+        ADAPTIVE_HQ_CODEBOOK_BUNDLE,
+    }:
         raise SmokeGateError(f"Unexpected HayateQuant codebook bundle {bundle!r}")
     directory = REPO_ROOT / "onecomp/kvcomp/codec/hayate/codebooks"
     manifest_path = (directory / "manifest.json").resolve()
@@ -882,9 +883,7 @@ def _validate_preflight_record(
         raise SmokeGateError(f"{label} used a different paper input manifest")
     dataset_files = record.get("dataset_files")
     expected_datasets = [expected_manifest]
-    expected_datasets.extend(
-        _expected_dataset_records(input_manifest, spec["dataset_selectors"])
-    )
+    expected_datasets.extend(_expected_dataset_records(input_manifest, spec["dataset_selectors"]))
     if dataset_files != expected_datasets:
         raise SmokeGateError(f"{label} did not preflight the exact pinned dataset/protocol set")
 
@@ -981,7 +980,7 @@ def _validate_blockquant_identity(row: Any, *, label: str) -> None:
 
 
 def _validate_hayate_identity(row: Any, *, method: str, label: str) -> None:
-    if method not in {"HQ", "AdaptiveHQ"} or not isinstance(row, dict):
+    if method not in PROPOSAL_METHODS or not isinstance(row, dict):
         raise SmokeGateError(f"{label} formal HayateQuant result is missing")
     config = row.get("codec_config")
     resolved = row.get("resolved_codec_config")
@@ -994,10 +993,7 @@ def _validate_hayate_identity(row: Any, *, method: str, label: str) -> None:
         "avg_bits": 3.0,
         "dist": "gaussian",
         "block_size": 2,
-        "max_codebook_bits": 9,
-        "rotation_mode": "auto",
         "encoder": "exact",
-        "key_scale_mode": "nc",
         "value_scale_mode": "ls_iter",
         "n_outlier": 0,
         "key_error_weight": 4.0,
@@ -1005,17 +1001,39 @@ def _validate_hayate_identity(row: Any, *, method: str, label: str) -> None:
     }
     if any(config.get(key) != value for key, value in common.items()):
         raise SmokeGateError(f"{label} formal HayateQuant common recipe changed")
-    expected_bundle = HQ_CODEBOOK_BUNDLE if method == "HQ" else ADAPTIVE_HQ_CODEBOOK_BUNDLE
+    expected_bundle = {
+        "HQ": HQ_CODEBOOK_BUNDLE,
+        "HQ-Frontier": HQ_FRONTIER_CODEBOOK_BUNDLE,
+        "AdaptiveHQ": ADAPTIVE_HQ_CODEBOOK_BUNDLE,
+        "RotationHQ": HQ_CODEBOOK_BUNDLE,
+    }[method]
+    expected_recipe_fields = {
+        "max_codebook_bits": 10 if method == "HQ-Frontier" else 9,
+        "rotation_mode": "dense" if method == "RotationHQ" else "auto",
+        "key_scale_mode": "ub" if method == "HQ-Frontier" else "nc",
+    }
+    if any(config.get(key) != value for key, value in expected_recipe_fields.items()):
+        raise SmokeGateError(f"{label} named HayateQuant recipe changed")
     if config.get("required_codebook_bundle") != expected_bundle or resolved.get(
         "codebook_artifacts"
     ) != _expected_hayate_codebook_artifacts(expected_bundle):
         raise SmokeGateError(f"{label} formal HayateQuant codebook provenance changed")
     expected_provenance = {
         "HQ": ("paper_proposal_fixed", "fixed_global", "globally_fixed_kv_code_bits"),
+        "HQ-Frontier": (
+            "paper_proposal_frontier",
+            "integer_frontier",
+            "integer_key_value_code_bits",
+        ),
         "AdaptiveHQ": (
             "paper_proposal_adaptive",
             "causal_adaptive",
             "cache_local_layer_local_causal_online_stats",
+        ),
+        "RotationHQ": (
+            "paper_proposal_rotation",
+            "rotation_dense",
+            "globally_fixed_kv_code_bits_dense_rotation",
         ),
     }[method]
     if (
@@ -1028,7 +1046,7 @@ def _validate_hayate_identity(row: Any, *, method: str, label: str) -> None:
         or row.get("allocation_scope") != expected_provenance[2]
     ):
         raise SmokeGateError(f"{label} formal HayateQuant proposal identity changed")
-    if method == "HQ":
+    if method in {"HQ", "RotationHQ"}:
         if (
             config.get("adaptive_bit_split") is not None
             or config.get("key_code_bits_per_block") != 7
@@ -1036,6 +1054,14 @@ def _validate_hayate_identity(row: Any, *, method: str, label: str) -> None:
             or resolved.get("adaptive_allocation") is not None
         ):
             raise SmokeGateError(f"{label} fixed HQ code-bit split changed")
+    elif method == "HQ-Frontier":
+        if (
+            config.get("adaptive_bit_split") is not None
+            or config.get("key_code_bits_per_block") != 8
+            or config.get("value_code_bits_per_block") != 4
+            or resolved.get("adaptive_allocation") is not None
+        ):
+            raise SmokeGateError(f"{label} HQ-Frontier code-bit split changed")
     else:
         allocation = resolved.get("adaptive_allocation")
         if (
@@ -1245,14 +1271,19 @@ def _validate_speed_payload(micro: Any, *, label: str) -> None:
     for method in SPEED_METHODS:
         if recipes[method] != _canonical_sha256(method_configs[method]):
             raise SmokeGateError(f"{label} recipe digest mismatch for {method}")
-        if method in {"HQ", "AdaptiveHQ"}:
+        if method in PROPOSAL_METHODS:
             config_record = method_configs[method]
             codec_record = (
                 config_record.get("codec") if isinstance(config_record, Mapping) else None
             )
             declared = codec_record.get("declared") if isinstance(codec_record, Mapping) else None
             resolved = config_record.get("resolved_at_model_head_dim")
-            expected_bundle = HQ_CODEBOOK_BUNDLE if method == "HQ" else ADAPTIVE_HQ_CODEBOOK_BUNDLE
+            expected_bundle = {
+                "HQ": HQ_CODEBOOK_BUNDLE,
+                "HQ-Frontier": HQ_FRONTIER_CODEBOOK_BUNDLE,
+                "AdaptiveHQ": ADAPTIVE_HQ_CODEBOOK_BUNDLE,
+                "RotationHQ": HQ_CODEBOOK_BUNDLE,
+            }[method]
             if (
                 not isinstance(declared, Mapping)
                 or not isinstance(resolved, Mapping)
@@ -1305,10 +1336,22 @@ def _validate_speed_payload(micro: Any, *, label: str) -> None:
             "hayate_override_entered": True,
             "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
         },
+        "HQ-Frontier": {
+            "effective_path": "hayate_fused_roundtrip",
+            "payload_materialized": False,
+            "hayate_override_entered": True,
+            "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
+        },
         "AdaptiveHQ": {
             "effective_path": "inherited_encode_then_decode",
             "payload_materialized": True,
             "hayate_override_entered": False,
+            "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
+        },
+        "RotationHQ": {
+            "effective_path": "hayate_fused_roundtrip",
+            "payload_materialized": False,
+            "hayate_override_entered": True,
             "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
         },
     }
@@ -1324,8 +1367,12 @@ def _validate_speed_payload(micro: Any, *, label: str) -> None:
         != {
             ("HQ", "key"),
             ("HQ", "value"),
+            ("HQ-Frontier", "key"),
+            ("HQ-Frontier", "value"),
             ("AdaptiveHQ", "key"),
             ("AdaptiveHQ", "value"),
+            ("RotationHQ", "key"),
+            ("RotationHQ", "value"),
         }
         or any(
             not isinstance(row, dict)
@@ -1339,17 +1386,24 @@ def _validate_speed_payload(micro: Any, *, label: str) -> None:
     rows = proposal_contract.get("rows") if isinstance(proposal_contract, dict) else None
     if (
         not isinstance(proposal_contract, dict)
-        or proposal_contract.get("formal_proposals") != ["HQ", "AdaptiveHQ"]
+        or proposal_contract.get("formal_proposals") != list(PROPOSAL_METHODS)
         or proposal_contract.get("same_total_pair_code_bit_budget") is not True
         or not isinstance(rows, dict)
-        or set(rows) != {"HQ", "AdaptiveHQ"}
-        or any(not isinstance(rows[name], dict) for name in ("HQ", "AdaptiveHQ"))
+        or set(rows) != set(PROPOSAL_METHODS)
+        or any(not isinstance(rows[name], dict) for name in PROPOSAL_METHODS)
         or rows["HQ"].get("proposal_variant") != "fixed_global"
         or rows["HQ"].get("pair_code_bits_per_block") != 12
         or rows["HQ"].get("exact_assignment") is not True
         or rows["HQ"].get("selector") is not None
+        or rows["HQ"].get("fixed_pair_code_bits_per_block") != [7, 5]
+        or rows["HQ-Frontier"].get("proposal_variant") != "integer_frontier"
+        or rows["HQ-Frontier"].get("pair_code_bits_per_block") != 12
+        or rows["HQ-Frontier"].get("fixed_pair_code_bits_per_block") != [8, 4]
+        or rows["HQ-Frontier"].get("exact_assignment") is not True
+        or rows["HQ-Frontier"].get("selector") is not None
         or rows["AdaptiveHQ"].get("proposal_variant") != "causal_adaptive"
         or rows["AdaptiveHQ"].get("pair_code_bits_per_block") != 12
+        or rows["AdaptiveHQ"].get("fixed_pair_code_bits_per_block") is not None
         or rows["AdaptiveHQ"].get("exact_assignment") is not True
         or not isinstance(rows["AdaptiveHQ"].get("selector"), dict)
         or rows["AdaptiveHQ"]["selector"].get("candidate_pairs") != [[6, 6], [7, 5]]
@@ -1374,6 +1428,11 @@ def _validate_speed_payload(micro: Any, *, label: str) -> None:
         or rows["AdaptiveHQ"]["selector"].get("selector_carrier_distortion_amortization")
         != ADAPTIVE_HQ_CARRIER_AMORTIZATION
         or rows["AdaptiveHQ"]["selector"].get("selector_incremental_stored_bits_per_encode") != 0
+        or rows["RotationHQ"].get("proposal_variant") != "rotation_dense"
+        or rows["RotationHQ"].get("pair_code_bits_per_block") != 12
+        or rows["RotationHQ"].get("fixed_pair_code_bits_per_block") != [7, 5]
+        or rows["RotationHQ"].get("exact_assignment") is not True
+        or rows["RotationHQ"].get("selector") is not None
     ):
         raise SmokeGateError(f"{label} formal HQ/AdaptiveHQ proposal contract changed")
     for regime_name, regime in regimes.items():
@@ -1711,9 +1770,7 @@ def _validate_smoke_ppl_contract(row: Any, *, label: str) -> dict[str, Any]:
             rel_tol=0.0,
             abs_tol=1e-10,
         )
-        or not math.isclose(
-            math.log(float(ppl)), float(mean_nll), rel_tol=0.0, abs_tol=1e-10
-        )
+        or not math.isclose(math.log(float(ppl)), float(mean_nll), rel_tol=0.0, abs_tol=1e-10)
     ):
         raise SmokeGateError(f"{label} PPL numerator/denominator does not replay")
     return expected
@@ -1761,9 +1818,7 @@ def _validate_axis_results(
             or set(rate) != set(COMPRESSED_METHODS)
         ):
             raise SmokeGateError(f"{label} omitted FullKV or 3-bit PPL results")
-        denominator_contract = _validate_smoke_ppl_contract(
-            fullkv, label=f"{label}/FullKV"
-        )
+        denominator_contract = _validate_smoke_ppl_contract(fullkv, label=f"{label}/FullKV")
         for method in COMPRESSED_METHODS:
             row = rate.get(method)
             expected_protocol = (
@@ -1787,21 +1842,22 @@ def _validate_axis_results(
                 or row.get("ppl_teacher_forced_temporal_dependency") != expected_dependency
             ):
                 raise SmokeGateError(f"{label} omitted {method} PPL output")
-            if _validate_smoke_ppl_contract(
-                row, label=f"{label}/{method}"
-            ) != denominator_contract:
+            if (
+                _validate_smoke_ppl_contract(row, label=f"{label}/{method}")
+                != denominator_contract
+            ):
                 raise SmokeGateError(f"{label}/{method} PPL denominator differs from FullKV")
             if method == "BlockQuant-paper":
                 _validate_blockquant_identity(row, label=f"{label}/{method}")
                 _validate_blockquant_stored_bits(row, label=f"{label}/{method}")
-            elif method in {"HQ", "AdaptiveHQ"}:
+            elif method in PROPOSAL_METHODS:
                 _validate_hayate_identity(row, method=method, label=f"{label}/{method}")
         tq = rate["TurboQuant-paper"]
         expected_counters = (
             tq.get("ppl_compression_fp16_bits"),
             tq.get("ppl_compression_stored_bits"),
         )
-        for method in ("FibQuant-paper", "HQ", "AdaptiveHQ"):
+        for method in ("FibQuant-paper", *PROPOSAL_METHODS):
             row = rate[method]
             if (
                 row.get("ppl_compression_fp16_bits"),
@@ -1850,8 +1906,7 @@ def _validate_axis_results(
                 or len(task["per_example"]) != 4
                 or task.get("teacher_forced_scoring_protocol") != expected_protocol
                 or task.get("teacher_forced_temporal_dependency") != expected_dependency
-                or task.get("lm_eval_task_metadata_version")
-                != LM_EVAL_TASK_METADATA_VERSION
+                or task.get("lm_eval_task_metadata_version") != LM_EVAL_TASK_METADATA_VERSION
                 or task.get("protocol_probe_cache_lifetime")
                 != ZEROSHOT_PROTOCOL_PROBE_CACHE_LIFETIME
                 or task.get("choice_cache_lifetime") != PER_EXAMPLE_CACHE_LIFETIME
@@ -1861,7 +1916,7 @@ def _validate_axis_results(
                 raise SmokeGateError(f"{label} omitted exact four-row piqa output for {method}")
             if method == "BlockQuant-paper":
                 _validate_blockquant_identity(row, label=f"{label}/{method}")
-            elif method in {"HQ", "AdaptiveHQ"}:
+            elif method in PROPOSAL_METHODS:
                 _validate_hayate_identity(row, method=method, label=f"{label}/{method}")
         zero_rate = results["3"]
         tq_task = zero_rate["TurboQuant-paper"]["tasks"]["piqa"]
@@ -1869,7 +1924,7 @@ def _validate_axis_results(
             tq_task.get("compression_fp16_bits"),
             tq_task.get("compression_stored_bits"),
         )
-        for method in ("FibQuant-paper", "HQ", "AdaptiveHQ"):
+        for method in ("FibQuant-paper", *PROPOSAL_METHODS):
             task = zero_rate[method]["tasks"]["piqa"]
             if (
                 task.get("compression_fp16_bits"),
@@ -1893,9 +1948,15 @@ def _validate_axis_results(
             != TURBOQUANT_FAKE_QUANT_IMPLEMENTATION
             or taxonomy["HQ"].get("proposal_variant") != "fixed_global"
             or taxonomy["HQ"].get("fake_quant_implementation") != HQ_FAKE_QUANT_IMPLEMENTATION
+            or taxonomy["HQ-Frontier"].get("proposal_variant") != "integer_frontier"
+            or taxonomy["HQ-Frontier"].get("fake_quant_implementation")
+            != HQ_FAKE_QUANT_IMPLEMENTATION
             or taxonomy["AdaptiveHQ"].get("proposal_variant") != "causal_adaptive"
             or taxonomy["AdaptiveHQ"].get("fake_quant_implementation")
             != ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION
+            or taxonomy["RotationHQ"].get("proposal_variant") != "rotation_dense"
+            or taxonomy["RotationHQ"].get("fake_quant_implementation")
+            != HQ_FAKE_QUANT_IMPLEMENTATION
         ):
             raise SmokeGateError(f"{label} fair-speed formal method taxonomy changed")
         _expect_subset(arguments, spec["arguments"], label=f"{label} arguments")
@@ -1931,19 +1992,18 @@ def _validate_axis_results(
             raise SmokeGateError(f"{label} has an ambiguous LongCodeQA dataset selector")
         expected_root = Path(selected[0]["path"]).parents[1]
         raw_root = config.get("longcodeqa_data_root")
-        if (
-            not isinstance(raw_root, str)
-            or Path(raw_root).expanduser().resolve() != expected_root
-        ):
+        if not isinstance(raw_root, str) or Path(raw_root).expanduser().resolve() != expected_root:
             raise SmokeGateError(f"{label} did not execute the pinned LongCodeQA root")
     results = document.get("results")
     if not isinstance(results, dict) or set(results) != set(LONG_METHODS):
-        raise SmokeGateError(f"{label} does not contain exactly the six quality methods")
+        raise SmokeGateError(
+            f"{label} does not contain exactly the {len(LONG_METHODS)} quality methods"
+        )
     ledgers = {}
     for method in LONG_METHODS:
         if method == "BlockQuant-paper":
             _validate_blockquant_identity(results[method], label=f"{label}/BlockQuant-paper")
-        elif method in {"HQ", "AdaptiveHQ"}:
+        elif method in PROPOSAL_METHODS:
             _validate_hayate_identity(results[method], method=method, label=f"{label}/{method}")
         axis = results[method].get(kind) if isinstance(results[method], dict) else None
         ledgers[method] = _validate_long_axis_payload(
@@ -1954,7 +2014,7 @@ def _validate_axis_results(
             label=f"{label}/{method}",
         )
     tq = ledgers["TurboQuant-paper"]
-    for method in ("FibQuant-paper", "HQ", "AdaptiveHQ"):
+    for method in ("FibQuant-paper", *PROPOSAL_METHODS):
         candidate = ledgers[method]
         if len(candidate) != len(tq):
             raise SmokeGateError(f"{label}/{method} long-axis sample universe changed")

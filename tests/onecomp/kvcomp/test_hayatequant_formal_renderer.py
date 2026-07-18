@@ -171,12 +171,14 @@ def _ppl_axis() -> dict:
             rates[rate] = {
                 "TurboQuant-paper": _ppl_row(tq),
                 "FibQuant-paper": _add_ppl_payload_evidence(_ppl_row(tq * 1.01)),
-                "HQ": _add_ppl_payload_evidence(
-                    _proposal_ppl_row(tq * ratios["HQ"][rate][model_index], "HQ")
-                ),
-                "AdaptiveHQ": _add_ppl_payload_evidence(
-                    _proposal_ppl_row(tq * ratios["AdaptiveHQ"][rate][model_index], "AdaptiveHQ")
-                ),
+                **{
+                    proposal: _add_ppl_payload_evidence(
+                        _proposal_ppl_row(
+                            tq * ratios[proposal][rate][model_index], proposal
+                        )
+                    )
+                    for proposal in renderer.PROPOSAL_METHODS
+                },
             }
             if rate == "3":
                 rates[rate]["BlockQuant-paper"] = _block_ppl_row(tq * 1.01)
@@ -423,10 +425,13 @@ def _zeroshot_axis() -> dict:
         base_counts = {task: n // 2 for task, n in renderer.ZERO_TASK_SIZES.items()}
         rates = {"full": {"FullKV": _zero_method(base_counts, compressed=False)}}
         for rate in renderer.RATES:
-            tq, hq, paired_hq = _zero_pair("HQ", 1)
-            _, adaptive, paired_adaptive = _zero_pair("AdaptiveHQ", 1)
+            tq, _, _ = _zero_pair("HQ", 1)
+            proposals = {
+                proposal: _zero_pair(proposal, 1)[1:]
+                for proposal in renderer.PROPOSAL_METHODS
+            }
             fib = copy.deepcopy(tq)
-            for matched in (fib, hq, adaptive):
+            for matched in (fib, *(row for row, _ in proposals.values())):
                 matched["payload_match_vs_turboquant"] = {
                     "exact_integer_counters": True,
                     "compression_fp16_bits": tq["compression_fp16_bits"],
@@ -435,11 +440,9 @@ def _zeroshot_axis() -> dict:
             rates[rate] = {
                 "TurboQuant-paper": tq,
                 "FibQuant-paper": fib,
-                "HQ": hq,
-                "AdaptiveHQ": adaptive,
+                **{proposal: row for proposal, (row, _) in proposals.items()},
                 "paired_proposals_vs_turboquant": {
-                    "HQ": paired_hq,
-                    "AdaptiveHQ": paired_adaptive,
+                    proposal: paired for proposal, (_, paired) in proposals.items()
                 },
             }
             if rate == "3":
@@ -554,8 +557,10 @@ def _mechanism_axis() -> dict:
                     "TurboQuant-paper": _ppl_row(11.0),
                     "HayateQuant-scalar-matched": scalar,
                     "HayateQuant-blockvq-matched": block,
-                    "HQ": _proposal_ppl_row(9.0, "HQ"),
-                    "AdaptiveHQ": _proposal_ppl_row(8.5, "AdaptiveHQ"),
+                    **{
+                        proposal: _proposal_ppl_row(9.0, proposal)
+                        for proposal in renderer.PROPOSAL_METHODS
+                    },
                 },
                 "causal_block_vq_ratio_block_over_scalar": round(
                     math.exp(block["ppl_nll"] - scalar["ppl_nll"]), 10
@@ -567,9 +572,17 @@ def _mechanism_axis() -> dict:
                         "HayateQuant-blockvq-matched",
                     ],
                     "HQ": "contextual formal proposal row; not part of the single-lever contrast",
+                    "HQ-Frontier": (
+                        "contextual formal proposal row; its integer K/V frontier changes "
+                        "allocation and is not part of the single-lever contrast"
+                    ),
                     "AdaptiveHQ": (
                         "contextual formal proposal row; causal selector changes allocation "
                         "and is not part of the single-lever contrast"
+                    ),
+                    "RotationHQ": (
+                        "contextual formal proposal row; its forced dense rotation changes "
+                        "the transform and is not part of the single-lever contrast"
                     ),
                 },
             }
@@ -1178,6 +1191,21 @@ def _speed_scientific_recipe(rate: int, names: dict[str, str]) -> dict:
             "value_code_bits_per_block": 2 * rate - 1,
             "n_outlier": 0,
         },
+        "frontier": {
+            **hayate_defaults,
+            "required_codebook_bundle": renderer.HQ_FRONTIER_CODEBOOK_BUNDLE,
+            "max_codebook_bits": 10,
+            "bits": rate,
+            "value_bits": rate,
+            "dist": "gaussian",
+            "rotation_mode": "auto",
+            "block_size": 2,
+            "key_scale_mode": "ub",
+            "value_scale_mode": "ls_iter",
+            "key_code_bits_per_block": 2 * rate + 2,
+            "value_code_bits_per_block": 2 * rate - 2,
+            "n_outlier": 0,
+        },
         "adaptive": {
             **hayate_defaults,
             "required_codebook_bundle": renderer.ADAPTIVE_HQ_CODEBOOK_BUNDLE,
@@ -1192,11 +1220,27 @@ def _speed_scientific_recipe(rate: int, names: dict[str, str]) -> dict:
             "adaptive_bit_split": "online_stats",
             "n_outlier": 0,
         },
+        "rotation": {
+            **hayate_defaults,
+            "required_codebook_bundle": renderer.HQ_CODEBOOK_BUNDLE,
+            "bits": rate,
+            "value_bits": rate,
+            "dist": "gaussian",
+            "rotation_mode": "dense",
+            "block_size": 2,
+            "key_scale_mode": "nc",
+            "value_scale_mode": "ls_iter",
+            "key_code_bits_per_block": 2 * rate + 1,
+            "value_code_bits_per_block": 2 * rate - 1,
+            "n_outlier": 0,
+        },
     }
     effective = {
         "tq": {},
         "hq": {"key_scale_mode": "nc", "value_scale_mode": "ls_iter"},
+        "frontier": {"key_scale_mode": "ub", "value_scale_mode": "ls_iter"},
         "adaptive": {"key_scale_mode": "nc", "value_scale_mode": "ls_iter"},
+        "rotation": {"key_scale_mode": "nc", "value_scale_mode": "ls_iter"},
     }
     taxonomy = {
         "tq": {
@@ -1211,11 +1255,23 @@ def _speed_scientific_recipe(rate: int, names: dict[str, str]) -> dict:
             "proposal_method": True,
             "proposal_variant": "fixed_global",
         },
+        "frontier": {
+            "semantic_role": "integer K(r+1)/V(r-1) HQ frontier proposal",
+            "fake_quant_implementation": renderer.HQ_FAKE_QUANT_IMPLEMENTATION,
+            "proposal_method": True,
+            "proposal_variant": "integer_frontier",
+        },
         "adaptive": {
             "semantic_role": "causal online-rate-allocation HQ paper proposal",
             "fake_quant_implementation": renderer.ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION,
             "proposal_method": True,
             "proposal_variant": "causal_adaptive",
+        },
+        "rotation": {
+            "semantic_role": "fixed HQ payload with dense rotation proposal",
+            "fake_quant_implementation": renderer.HQ_FAKE_QUANT_IMPLEMENTATION,
+            "proposal_method": True,
+            "proposal_variant": "rotation_dense",
         },
     }
     configs = {
@@ -1229,7 +1285,7 @@ def _speed_scientific_recipe(rate: int, names: dict[str, str]) -> dict:
                 rate, method
             ),
         }
-        for method in ("tq", "hq", "adaptive")
+        for method in ("tq", "hq", "frontier", "adaptive", "rotation")
     }
     hashes = {
         name: hashlib.sha256(
@@ -1248,12 +1304,7 @@ def _speed_axis() -> dict:
     for model in renderer.LONG_MODELS:
         models[model] = {}
         for rate in renderer.RATES:
-            names = {
-                "full": "fullkv_uncompressed",
-                "tq": "TurboQuant-paper",
-                "hq": "HQ",
-                "adaptive": "AdaptiveHQ",
-            }
+            names = {"full": "fullkv_uncompressed", **renderer.SPEED_METHOD_KEYS}
             models[model][rate] = {}
             for mode in ("off", "decode-only"):
                 row_sources = [
@@ -1267,15 +1318,15 @@ def _speed_axis() -> dict:
                     metrics[f"e2e.summary.{name}.decode_steady_throughput"] = _speed_metric(
                         100.0 + index, "tokens_per_second"
                     )
-                for index, name in enumerate((names["tq"], names["hq"], names["adaptive"])):
+                for index, name in enumerate(names[key] for key in renderer.SPEED_METHOD_KEYS):
                     path = (
                         "micro.regimes.decode.payload_api."
                         f"roundtrip_explicit_encode_then_decode.summary.{name}"
                     )
                     metrics[path] = _speed_metric(1.0 + index, "ms_per_call")
                 expected_pairs = {
-                    "hq_vs_turboquant": (names["tq"], names["hq"]),
-                    "adaptive_hq_vs_turboquant": (names["tq"], names["adaptive"]),
+                    comparison: (names["tq"], proposal)
+                    for proposal, comparison in renderer.SPEED_PROPOSAL_COMPARISONS.items()
                 }
                 paired = {}
                 for metric_index, metric in enumerate(renderer.SPEED_PAIRED_METRICS):
@@ -1312,13 +1363,13 @@ def _speed_axis() -> dict:
                             "materialized_payload_tensor_bytes": 1024 * factor,
                             "logical_total_stored_bits": 384 * factor,
                         },
-                        names["hq"]: {
-                            "materialized_payload_tensor_bytes": 640 * factor,
-                            "logical_total_stored_bits": 384 * factor,
-                        },
-                        names["adaptive"]: {
-                            "materialized_payload_tensor_bytes": 608 * factor,
-                            "logical_total_stored_bits": 384 * factor,
+                        **{
+                            proposal: {
+                                "materialized_payload_tensor_bytes": (640 - 8 * index)
+                                * factor,
+                                "logical_total_stored_bits": 384 * factor,
+                            }
+                            for index, proposal in enumerate(renderer.PROPOSAL_METHODS)
                         },
                     }
                 models[model][rate][mode] = {
@@ -1402,7 +1453,9 @@ def _speed_axis() -> dict:
             "methods": {
                 "TurboQuant-paper": renderer.TURBOQUANT_FAKE_QUANT_IMPLEMENTATION,
                 "HQ": renderer.HQ_FAKE_QUANT_IMPLEMENTATION,
+                "HQ-Frontier": renderer.HQ_FAKE_QUANT_IMPLEMENTATION,
                 "AdaptiveHQ": renderer.ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION,
+                "RotationHQ": renderer.HQ_FAKE_QUANT_IMPLEMENTATION,
             },
         },
         "pareto_contract": pareto,
@@ -1652,7 +1705,7 @@ def test_renderer_is_deterministic_and_emits_every_formal_axis(tmp_path):
         r"\newcommand{\HayateGlobalSpeedClaim}"
         r"{complete speed/measured-memory superiority not established}" in macros
     )
-    assert r"\newcommand{\HayateCompleteDominanceEndpointCount}{132}" in macros
+    assert r"\newcommand{\HayateCompleteDominanceEndpointCount}{264}" in macros
     assert r"\newcommand{\HayatePackedDecodeClaimAllowed}{false}" in macros
     assert r"\newcommand{\HayateTurboQuantPaperTableOneReproduction}{false}" in macros
     assert "Algorithm 1 MSE protocol baseline only" in macros
@@ -1766,7 +1819,7 @@ def test_complete_negative_result_renders_but_suppresses_superiority_claim(tmp_p
     assert r"\newcommand{\HayatePointEstimateWinGatePassed}{false}" in macros
     assert r"\newcommand{\HayateDirectionalSuperiorityClaimAllowed}{false}" in macros
     assert "directional superiority claims are suppressed" in macros
-    assert "passed 5 of 6 matched-operating-point proposal/baseline scopes" in macros
+    assert "passed 11 of 12 matched-operating-point proposal/baseline scopes" in macros
     assert r"\newcommand{\HayateHQTurboQuantGatePassed}{false}" in macros
 
 

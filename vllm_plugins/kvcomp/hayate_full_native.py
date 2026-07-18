@@ -39,6 +39,7 @@ from vllm_plugins.kvcomp.hayate_full_triton import (
     triton_full_hayatequant_dequant_kv,
     triton_full_hayatequant_store,
 )
+from vllm_plugins.kvcomp.runtime_evidence import emit_runtime_evidence_once
 
 FULL_CONFIG_ENV = "KVCOMP_VLLM_HAYATE_FULL_NATIVE_CONFIG"
 
@@ -135,20 +136,6 @@ class FullHayateQuantNativeImpl(TurboQuantAttentionImpl):
 
         d = self.head_size
         recipe.validate_head_dim(d)
-        config = _full_native_config()
-        if config.get("adaptive_bit_split") not in (None, "", "off", "none", False):
-            raise ValueError(
-                "FullHayateQuantNativeImpl is the fixed HQ backend; Adaptive HQ "
-                "requires a cache-local selector and is not silently approximated"
-            )
-        if config.get("calibration"):
-            raise ValueError("full HQ native currently supports data-free rotations only")
-        if (
-            int(config.get("n_outlier") or 0)
-            or int(config.get("key_n_outlier") or 0)
-            or int(config.get("value_n_outlier") or 0)
-        ):
-            raise ValueError("full HQ native fixed recipe does not support dynamic outlier masks")
 
         from onecomp.kvcomp.codec.hayate.codec import (  # pylint: disable=import-outside-toplevel
             HayateQuantCodec,
@@ -289,6 +276,24 @@ class FullHayateQuantNativeImpl(TurboQuantAttentionImpl):
             value_scoring_codebook=layer._hq_full_value_scoring_codebook,
             value_scoring_csq=layer._hq_full_value_scoring_csq,
         )
+        emit_runtime_evidence_once(
+            self,
+            "full_hq_store",
+            {
+                "backend": (
+                    "vllm_plugins.kvcomp.hayate_full_native." "FullHayateQuantNativeBackend"
+                ),
+                "implementation": "native_faithful_packed_fixed_HQ",
+                "event": "packed_hq_store_launched",
+                "recipe": layer._hq_full_recipe.recipe,
+                "average_bits": layer._hq_full_recipe.avg_bits,
+                "key_code_bits_per_block": (layer._hq_full_recipe.key_code_bits_per_block),
+                "value_code_bits_per_block": (layer._hq_full_recipe.value_code_bits_per_block),
+                "cache_shape": list(kv_cache.shape),
+                "cache_dtype": str(kv_cache.dtype).removeprefix("torch."),
+                "cache_device": str(kv_cache.device),
+            },
+        )
 
     def _decode_attention(
         self,
@@ -330,7 +335,7 @@ class FullHayateQuantNativeImpl(TurboQuantAttentionImpl):
                 ((bsz, hq, d), torch.float32),
                 ((bsz, hq), torch.float32),
             )
-        return triton_full_hayatequant_decode_attention(
+        result = triton_full_hayatequant_decode_attention(
             query=query,
             kv_cache=kv_cache,
             block_table=attn_metadata.block_table,
@@ -347,6 +352,25 @@ class FullHayateQuantNativeImpl(TurboQuantAttentionImpl):
             buf_holder=layer,
             max_num_kv_splits=splits,
         )
+        emit_runtime_evidence_once(
+            self,
+            "full_hq_decode",
+            {
+                "backend": (
+                    "vllm_plugins.kvcomp.hayate_full_native." "FullHayateQuantNativeBackend"
+                ),
+                "implementation": "native_faithful_packed_fixed_HQ",
+                "event": "packed_hq_decode_attention_launched",
+                "recipe": layer._hq_full_recipe.recipe,
+                "average_bits": layer._hq_full_recipe.avg_bits,
+                "cache_shape": list(kv_cache.shape),
+                "cache_dtype": str(kv_cache.dtype).removeprefix("torch."),
+                "cache_device": str(kv_cache.device),
+                "query_shape": list(query.shape),
+                "kv_splits": int(splits),
+            },
+        )
+        return result
 
     def _prefill_attention(
         self,

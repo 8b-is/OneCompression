@@ -16,6 +16,7 @@ is therefore a native hybrid smoke, not canonical full HayateQuant
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import statistics
@@ -35,6 +36,44 @@ DEFAULT_PROMPTS = [
 
 _HAYATE_NATIVE_CONFIG_ENV = "KVCOMP_VLLM_HAYATE_NATIVE_CONFIG"
 _HAYATE_FULL_NATIVE_CONFIG_ENV = "KVCOMP_VLLM_HAYATE_FULL_NATIVE_CONFIG"
+
+
+def _runtime_evidence_path(output: Path) -> Path:
+    return output.with_suffix(f"{output.suffix}.runtime.jsonl")
+
+
+def _load_full_hq_runtime_evidence(path: Path) -> tuple[list[dict], str]:
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise RuntimeError(f"full HQ backend produced no runtime evidence: {path}") from exc
+    events = []
+    for line_number, line in enumerate(raw.splitlines(), start=1):
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"invalid runtime evidence JSON at {path}:{line_number}") from exc
+        if not isinstance(event, dict):
+            raise RuntimeError(f"runtime evidence line {line_number} is not an object")
+        events.append(event)
+    expected_schema = {"name": "onecomp.kvcomp_vllm_runtime_evidence", "version": 1}
+    matching = [
+        event
+        for event in events
+        if event.get("schema") == expected_schema
+        and event.get("backend")
+        == ("vllm_plugins.kvcomp.hayate_full_native." "FullHayateQuantNativeBackend")
+        and event.get("implementation") == "native_faithful_packed_fixed_HQ"
+    ]
+    required = {"packed_hq_store_launched", "packed_hq_decode_attention_launched"}
+    observed = {event.get("event") for event in matching}
+    missing = sorted(required - observed)
+    if missing:
+        raise RuntimeError(
+            "runtime evidence does not prove full HQ packed store/decode execution; "
+            f"missing {missing}"
+        )
+    return events, hashlib.sha256(raw).hexdigest()
 
 
 def _dtype_for(bits: int) -> str:
@@ -347,14 +386,32 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    args.output = args.output.expanduser().resolve()
+    if args.output.exists():
+        raise FileExistsError(f"output already exists: {args.output}")
+    evidence_path = _runtime_evidence_path(args.output)
+    if args.variant == "hayate_full":
+        if evidence_path.exists():
+            raise FileExistsError(f"runtime evidence already exists: {evidence_path}")
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        os.environ["KVCOMP_VLLM_RUNTIME_EVIDENCE"] = str(evidence_path)
     os.environ.setdefault("VLLM_PLUGINS", "kvcomp")
     os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
+    os.environ.setdefault("VLLM_DEEP_GEMM_WARMUP", "skip")
     # Keep the actual virtualenv ``bin`` directory on PATH for FlashInfer's
     # spawned JIT build (notably its bundled ``ninja``).  Resolving the Python
     # symlink jumps into the shared uv interpreter tree and loses that bin dir.
     venv_bin = Path(sys.executable).parent
     os.environ["PATH"] = f"{venv_bin}:{os.environ.get('PATH', '')}"
     result = run(args)
+    if args.variant == "hayate_full":
+        runtime_evidence, runtime_evidence_sha256 = _load_full_hq_runtime_evidence(evidence_path)
+        result["runtime_evidence"] = {
+            "path": str(evidence_path),
+            "sha256": runtime_evidence_sha256,
+            "events": runtime_evidence,
+            "custom_packed_store_and_decode_execution_proved": True,
+        }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
     print(json.dumps(result, indent=2, ensure_ascii=False))

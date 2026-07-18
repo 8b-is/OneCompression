@@ -13,20 +13,9 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from vllm_plugins.kvcomp._validation import strict_integer
+
 _SUPPORTED_POLICIES = {"taperkv", "block_taperkv"}
-
-
-def _integer(value: Any, name: str, *, minimum: int, maximum: int | None = None) -> int:
-    if isinstance(value, bool):
-        raise ValueError(f"{name} must be an integer")
-    try:
-        result = int(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"{name} must be an integer") from exc
-    if result < minimum or (maximum is not None and result > maximum):
-        suffix = f" and <= {maximum}" if maximum is not None else ""
-        raise ValueError(f"{name} must be >= {minimum}{suffix}, got {result}")
-    return result
 
 
 @dataclass(frozen=True)
@@ -53,33 +42,37 @@ class TaperVLLMRecipe:
         if self.policy_name not in _SUPPORTED_POLICIES:
             raise ValueError(f"unsupported TapeKV policy {self.policy_name!r}")
         for name in ("key_bits", "value_bits", "b_min", "b_min_value"):
-            value = _integer(getattr(self, name), name, minimum=1, maximum=16)
+            value = strict_integer(getattr(self, name), name, minimum=1, maximum=16)
             object.__setattr__(self, name, value)
         if self.value_bits > self.key_bits:
             raise ValueError("value_bits must not exceed key_bits")
         if self.b_min > self.key_bits or self.b_min_value > self.value_bits:
             raise ValueError("TapeKV floor bits must not exceed their high bits")
         for name in ("sink_tokens", "recent_tokens"):
-            object.__setattr__(self, name, _integer(getattr(self, name), name, minimum=0))
+            object.__setattr__(self, name, strict_integer(getattr(self, name), name, minimum=0))
         ladder = self.ladder
         if ladder is not None:
             ladder = tuple(
-                _integer(value, "ladder entry", minimum=1, maximum=self.key_bits)
+                strict_integer(value, "ladder entry", minimum=1, maximum=self.key_bits)
                 for value in ladder
             )
             if not ladder or any(left <= right for left, right in zip(ladder, ladder[1:])):
                 raise ValueError("ladder must be a non-empty strictly descending sequence")
             object.__setattr__(self, "ladder", ladder)
-        skip = tuple(_integer(value, "skip_layers entry", minimum=0) for value in self.skip_layers)
+        skip = tuple(
+            strict_integer(value, "skip_layers entry", minimum=0) for value in self.skip_layers
+        )
         object.__setattr__(self, "skip_layers", tuple(dict.fromkeys(skip)))
         object.__setattr__(
             self,
             "requant_stride",
-            _integer(self.requant_stride, "requant_stride", minimum=1),
+            strict_integer(self.requant_stride, "requant_stride", minimum=1),
         )
         if self.policy_name == "block_taperkv":
             object.__setattr__(
-                self, "block_size", _integer(self.block_size, "block_size", minimum=1)
+                self,
+                "block_size",
+                strict_integer(self.block_size, "block_size", minimum=1),
             )
             if not isinstance(self.residual_fp16, bool):
                 raise ValueError("residual_fp16 must be a bool")
@@ -112,7 +105,13 @@ class TaperVLLMRecipe:
                 "key_n_outlier",
                 "value_n_outlier",
             )
-            if any(int(self.hayate_config.get(name) or 0) > 0 for name in outlier_fields):
+            outlier_counts = []
+            for name in outlier_fields:
+                raw_value = self.hayate_config.get(name, 0)
+                outlier_counts.append(
+                    strict_integer(0 if raw_value is None else raw_value, name, minimum=0)
+                )
+            if any(value > 0 for value in outlier_counts):
                 raise ValueError(
                     "dynamic HayateQuant outlier selection cannot be composed with "
                     "batched vLLM TapeKV"
@@ -121,9 +120,7 @@ class TaperVLLMRecipe:
                 "exact",
                 "lut",
             }:
-                raise ValueError(
-                    "HayateQuant+TapeKV requires an explicit exact or lut encoder"
-                )
+                raise ValueError("HayateQuant+TapeKV requires an explicit exact or lut encoder")
             object.__setattr__(self, "hayate_config", dict(self.hayate_config))
             object.__setattr__(self, "implementation", "hayatequant_then_taper_fp16_reference")
         elif self.implementation != "fp16_reference_fake_quant":

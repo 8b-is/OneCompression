@@ -39,6 +39,7 @@ from vllm_plugins.kvcomp.hayate_triton import (
     triton_hayatequant_full_dequant_kv,
     triton_hayatequant_store,
 )
+from vllm_plugins.kvcomp._validation import strict_integer
 
 _CONFIG_ENV = "KVCOMP_VLLM_HAYATE_NATIVE_CONFIG"
 
@@ -49,9 +50,11 @@ def _native_config() -> dict[str, Any]:
         return {}
     try:
         cfg = json.loads(raw)
-    except json.JSONDecodeError:
-        return {}
-    return cfg if isinstance(cfg, dict) else {}
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid JSON in {_CONFIG_ENV}") from exc
+    if not isinstance(cfg, dict):
+        raise ValueError(f"{_CONFIG_ENV} must contain a JSON object")
+    return cfg
 
 
 class HayateQuantNativeBackend(TurboQuantAttentionBackend):
@@ -68,18 +71,15 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
     The implementation keeps the upstream TurboQuant value path and cache
     layout, then swaps the key scalar MSE indexer for a HayateQuant block-VQ
     indexer when the model config requests the supported 3/4-bit block_size=2
-    operating point. Values remain uniform scalar-quantized. Unsupported or
-    non-block settings delegate to upstream TurboQuant so the engine remains
-    serveable; benchmark output must label this hybrid distinctly.
+    operating point. Values remain uniform scalar-quantized. A missing config
+    delegates to upstream TurboQuant because registry overrides are global;
+    an explicit but unsupported HQ config fails closed so an HQ-labelled run
+    can never become upstream TurboQuant silently.
     """
 
     def _ensure_on_device(self, layer, device):
         if hasattr(layer, "_tq_cached"):
             return
-
-        if self.tq_config.key_fp8 or self.tq_config.key_quant_bits not in (3, 4):
-            layer._hq_native_enabled = False
-            return super()._ensure_on_device(layer, device)
 
         cfg = _native_config()
         # This backend class can remain registered after a previous Hayate
@@ -89,26 +89,47 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
         if not cfg:
             layer._hq_native_enabled = False
             return super()._ensure_on_device(layer, device)
-        key_bits = int(cfg.get("bits") or self.tq_config.key_quant_bits)
+        if self.tq_config.key_fp8 or self.tq_config.key_quant_bits not in (3, 4):
+            raise RuntimeError("explicit Hayate hybrid requires a 3/4-bit TurboQuant key layout")
+        key_bits = strict_integer(
+            cfg.get("bits", self.tq_config.key_quant_bits), "bits", minimum=1
+        )
         value_bits = cfg.get("value_bits")
-        value_bits = int(value_bits) if value_bits is not None else self.tq_config.value_quant_bits
+        value_bits = (
+            strict_integer(value_bits, "value_bits", minimum=1)
+            if value_bits is not None
+            else self.tq_config.value_quant_bits
+        )
         if key_bits != self.tq_config.key_quant_bits:
-            layer._hq_native_enabled = False
-            return super()._ensure_on_device(layer, device)
+            raise RuntimeError(
+                "explicit Hayate hybrid key bits do not match the selected "
+                "TurboQuant cache layout"
+            )
 
         dist = str(cfg.get("dist") or "gaussian")
+        if dist not in {"gaussian", "beta"}:
+            raise ValueError("Hayate hybrid dist must be 'gaussian' or 'beta'")
         codebook_init = str(cfg.get("codebook_init") or "auto")
+        if codebook_init not in {"auto", "forgy", "fibquant"}:
+            raise ValueError("unsupported Hayate hybrid codebook_init")
         requested_block = cfg.get("block_size")
-        requested_block = int(requested_block) if requested_block is not None else None
-        max_codebook_bits = int(cfg.get("max_codebook_bits") or 9)
+        requested_block = (
+            strict_integer(requested_block, "block_size", minimum=1)
+            if requested_block is not None
+            else None
+        )
+        max_codebook_bits = strict_integer(
+            cfg.get("max_codebook_bits", 9), "max_codebook_bits", minimum=1
+        )
         rotation_mode = str(cfg.get("rotation_mode") or "auto")
+        if rotation_mode not in {"auto", "hybrid", "hadamard", "hadamard_gemm", "dense"}:
+            raise ValueError("unsupported Hayate hybrid rotation_mode")
         key_scale_mode = str(cfg.get("key_scale_mode") or "nc").lower()
         if key_scale_mode == "ub":
             key_scale_mode = "ip"
         if key_scale_mode not in {"nc", "ip"}:
-            layer._hq_native_enabled = False
-            return super()._ensure_on_device(layer, device)
-        seed = int(cfg.get("seed") or 0)
+            raise ValueError("Hayate hybrid key_scale_mode must be 'nc', 'ub', or 'ip'")
+        seed = strict_integer(cfg.get("seed", 0), "seed")
         D = self.head_size
 
         from onecomp.kvcomp.codec.hayate.codec import (  # pylint: disable=import-outside-toplevel
@@ -126,8 +147,10 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
 
         block_size = resolve_block_size(key_bits, requested_block, max_codebook_bits, D)
         if block_size != 2 or value_bits not in (3, 4):
-            layer._hq_native_enabled = False
-            return super()._ensure_on_device(layer, device)
+            raise RuntimeError(
+                "explicit Hayate hybrid requires resolved key block_size=2 and "
+                "3/4-bit TurboQuant values"
+            )
 
         if rotation_mode == "auto":
             mode = "hybrid" if key_bits >= 3 and is_power_of_two(D) else "dense"

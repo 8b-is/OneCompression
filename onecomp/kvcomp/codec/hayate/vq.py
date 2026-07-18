@@ -64,7 +64,7 @@ import torch
 _CODEBOOK_DIR = os.path.join(os.path.dirname(__file__), "codebooks")
 _CODEBOOK_MANIFEST_NAME = "manifest.json"
 _SHIPPED_CODEBOOK_MANIFEST_SHA256 = (
-    "df02ba5fd41fd0cc3fd2d39474fcfe7a628c15eb9ea012e8c70b1ffb3dabecde"
+    "818df8a17a0cac464e4b7d844e63c48ab56dabf70c6693b80af6099f5d83e573"
 )
 
 # Candidate block sizes considered by :func:`resolve_block_size`, largest first.

@@ -92,7 +92,15 @@ def _blockquant_accounting() -> dict:
 
 
 def _hayate_identity(method: str) -> dict:
+    assert method in gate.PROPOSAL_METHODS
     adaptive = method == "AdaptiveHQ"
+    frontier = method == "HQ-Frontier"
+    rotation = method == "RotationHQ"
+    bundle = (
+        gate.ADAPTIVE_HQ_CODEBOOK_BUNDLE
+        if adaptive
+        else gate.HQ_FRONTIER_CODEBOOK_BUNDLE if frontier else gate.HQ_CODEBOOK_BUNDLE
+    )
     config = {
         "name": "hayatequant",
         "bits": 3,
@@ -100,26 +108,24 @@ def _hayate_identity(method: str) -> dict:
         "avg_bits": 3.0,
         "dist": "gaussian",
         "block_size": 2,
-        "max_codebook_bits": 9,
-        "rotation_mode": "auto",
+        "max_codebook_bits": 10 if frontier else 9,
+        "rotation_mode": "dense" if rotation else "auto",
         "encoder": "exact",
-        "key_scale_mode": "nc",
+        "key_scale_mode": "ub" if frontier else "nc",
         "value_scale_mode": "ls_iter",
         "n_outlier": 0,
         "key_error_weight": 4.0,
         "value_error_weight": 1.0,
-        "required_codebook_bundle": (
-            gate.ADAPTIVE_HQ_CODEBOOK_BUNDLE if adaptive else gate.HQ_CODEBOOK_BUNDLE
-        ),
+        "required_codebook_bundle": bundle,
         "adaptive_bit_split": "online_stats" if adaptive else None,
         "key_bit_fraction": 7 / 12 if adaptive else None,
-        "key_code_bits_per_block": None if adaptive else 7,
-        "value_code_bits_per_block": None if adaptive else 5,
+        "key_code_bits_per_block": None if adaptive else 8 if frontier else 7,
+        "value_code_bits_per_block": None if adaptive else 4 if frontier else 5,
     }
     resolved = {
         "adaptive_allocation": None,
         "codebook_artifacts": gate._expected_hayate_codebook_artifacts(  # pylint: disable=protected-access
-            gate.ADAPTIVE_HQ_CODEBOOK_BUNDLE if adaptive else gate.HQ_CODEBOOK_BUNDLE
+            bundle
         ),
     }
     if adaptive:
@@ -143,17 +149,28 @@ def _hayate_identity(method: str) -> dict:
     return {
         "codec_config": config,
         "resolved_codec_config": resolved,
-        "method_role": "paper_proposal_adaptive" if adaptive else "paper_proposal_fixed",
+        "method_role": {
+            "HQ": "paper_proposal_fixed",
+            "HQ-Frontier": "paper_proposal_frontier",
+            "AdaptiveHQ": "paper_proposal_adaptive",
+            "RotationHQ": "paper_proposal_rotation",
+        }[method],
         "proposal_method": True,
         "proposal_family": "HayateQuant",
-        "proposal_variant": "causal_adaptive" if adaptive else "fixed_global",
+        "proposal_variant": {
+            "HQ": "fixed_global",
+            "HQ-Frontier": "integer_frontier",
+            "AdaptiveHQ": "causal_adaptive",
+            "RotationHQ": "rotation_dense",
+        }[method],
         "paper_comparable": True,
         "speed_comparison": True,
-        "allocation_scope": (
-            "cache_local_layer_local_causal_online_stats"
-            if adaptive
-            else "globally_fixed_kv_code_bits"
-        ),
+        "allocation_scope": {
+            "HQ": "globally_fixed_kv_code_bits",
+            "HQ-Frontier": "integer_key_value_code_bits",
+            "AdaptiveHQ": "cache_local_layer_local_causal_online_stats",
+            "RotationHQ": "globally_fixed_kv_code_bits_dense_rotation",
+        }[method],
     }
 
 
@@ -251,9 +268,7 @@ def test_adaptive_runtime_summary_rejects_noncurrent_or_inconsistent_ledger(path
 def _populate_axis_accounting(axis: dict, *, kind: str, method: str, n: int) -> dict:
     axis = copy.deepcopy(axis)
     axis["example_cache_lifetime"] = gate.PER_EXAMPLE_CACHE_LIFETIME
-    axis["cross_iteration_tensor_retention"] = (
-        gate.PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
-    )
+    axis["cross_iteration_tensor_retention"] = gate.PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
     if kind == "ruler_v1":
         records = axis["per_example"]["niah_single_1"]
         for record in records:
@@ -410,6 +425,7 @@ def _standard_result(spec: dict, preflight: dict) -> dict:
             for key, value in config.items()
             if key not in {"bits", "methods", "output_dir"}
         }
+
         def ppl_fields(ppl: float) -> dict:
             mean_nll = math.log(ppl)
             return {
@@ -426,9 +442,7 @@ def _standard_result(spec: dict, preflight: dict) -> dict:
                 "ppl_n_skipped_nonfinite": 0,
                 "ppl_complete_text_eval": False,
                 "ppl_window_cache_lifetime": gate.PPL_WINDOW_CACHE_LIFETIME,
-                "ppl_cross_window_tensor_retention": (
-                    gate.PPL_CROSS_WINDOW_TENSOR_RETENTION
-                ),
+                "ppl_cross_window_tensor_retention": (gate.PPL_CROSS_WINDOW_TENSOR_RETENTION),
                 "ppl_max_windows": 2,
                 "ppl_source": "wikitext-2-raw-v1/test",
                 "ppl_dataset_revision": gate.WIKITEXT2_REVISION,
@@ -464,7 +478,7 @@ def _standard_result(spec: dict, preflight: dict) -> dict:
             if method == "BlockQuant-paper":
                 rate[method].update(_blockquant_identity())
                 rate[method].update(_blockquant_accounting())
-            elif method in {"HQ", "AdaptiveHQ"}:
+            elif method in gate.PROPOSAL_METHODS:
                 rate[method].update(_hayate_identity(method))
         document["results"] = {"3": rate}
     elif kind == "zeroshot":
@@ -493,9 +507,7 @@ def _standard_result(spec: dict, preflight: dict) -> dict:
                     else (gate.ADAPTIVE_HQ_TEMPORAL_DEPENDENCY if method == "AdaptiveHQ" else None)
                 ),
                 "lm_eval_task_metadata_version": gate.LM_EVAL_TASK_METADATA_VERSION,
-                "protocol_probe_cache_lifetime": (
-                    gate.ZEROSHOT_PROTOCOL_PROBE_CACHE_LIFETIME
-                ),
+                "protocol_probe_cache_lifetime": (gate.ZEROSHOT_PROTOCOL_PROBE_CACHE_LIFETIME),
                 "choice_cache_lifetime": gate.PER_EXAMPLE_CACHE_LIFETIME,
                 "cross_iteration_tensor_retention": (
                     gate.PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
@@ -504,7 +516,7 @@ def _standard_result(spec: dict, preflight: dict) -> dict:
             row = {"tasks": {"piqa": task}}
             if method == "BlockQuant-paper":
                 row.update(_blockquant_identity())
-            elif method in {"HQ", "AdaptiveHQ"}:
+            elif method in gate.PROPOSAL_METHODS:
                 row.update(_hayate_identity(method))
             return row
 
@@ -524,6 +536,12 @@ def _standard_result(spec: dict, preflight: dict) -> dict:
             key: value for key, value in arguments.items() if key not in {"output", "overwrite"}
         }
         document["schema"] = {"name": "onecomp.hayatequant_fair_speed", "version": 4}
+        proposal_variants = {
+            "HQ": "fixed_global",
+            "HQ-Frontier": "integer_frontier",
+            "AdaptiveHQ": "causal_adaptive",
+            "RotationHQ": "rotation_dense",
+        }
         document["protocol"] = {
             "arguments": arguments,
             "method_taxonomy": {
@@ -532,20 +550,22 @@ def _standard_result(spec: dict, preflight: dict) -> dict:
                     "proposal_variant": None,
                     "fake_quant_implementation": gate.TURBOQUANT_FAKE_QUANT_IMPLEMENTATION,
                 },
-                "HQ": {
-                    "proposal_method": True,
-                    "proposal_variant": "fixed_global",
-                    "fake_quant_implementation": gate.HQ_FAKE_QUANT_IMPLEMENTATION,
-                },
-                "AdaptiveHQ": {
-                    "proposal_method": True,
-                    "proposal_variant": "causal_adaptive",
-                    "fake_quant_implementation": gate.ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION,
+                **{
+                    method: {
+                        "proposal_method": True,
+                        "proposal_variant": proposal_variants[method],
+                        "fake_quant_implementation": (
+                            gate.ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION
+                            if method == "AdaptiveHQ"
+                            else gate.HQ_FAKE_QUANT_IMPLEMENTATION
+                        ),
+                    }
+                    for method in gate.PROPOSAL_METHODS
                 },
             },
         }
         method_configs = {"TurboQuant-paper": {"method": "TurboQuant-paper"}}
-        for method in ("HQ", "AdaptiveHQ"):
+        for method in gate.PROPOSAL_METHODS:
             identity = _hayate_identity(method)
             method_configs[method] = {
                 "method": method,
@@ -609,7 +629,7 @@ def _standard_result(spec: dict, preflight: dict) -> dict:
                                 "hayate_override_entered": True,
                                 "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
                             }
-                            if method == "HQ"
+                            if method != "AdaptiveHQ"
                             else {
                                 "effective_path": "inherited_encode_then_decode",
                                 "payload_materialized": True,
@@ -618,29 +638,45 @@ def _standard_result(spec: dict, preflight: dict) -> dict:
                             }
                         ),
                     }
-                    for method in ("HQ", "AdaptiveHQ")
+                    for method in gate.PROPOSAL_METHODS
                     for role in ("key", "value")
                 ],
             },
             "proposal_contract": {
-                "formal_proposals": ["HQ", "AdaptiveHQ"],
+                "formal_proposals": list(gate.PROPOSAL_METHODS),
                 "same_total_pair_code_bit_budget": True,
                 "rows": {
                     "HQ": {
                         "proposal_variant": "fixed_global",
                         "pair_code_bits_per_block": 12,
+                        "fixed_pair_code_bits_per_block": [7, 5],
+                        "exact_assignment": True,
+                        "selector": None,
+                    },
+                    "HQ-Frontier": {
+                        "proposal_variant": "integer_frontier",
+                        "pair_code_bits_per_block": 12,
+                        "fixed_pair_code_bits_per_block": [8, 4],
                         "exact_assignment": True,
                         "selector": None,
                     },
                     "AdaptiveHQ": {
                         "proposal_variant": "causal_adaptive",
                         "pair_code_bits_per_block": 12,
+                        "fixed_pair_code_bits_per_block": None,
                         "exact_assignment": True,
                         "selector": {
                             **_hayate_identity("AdaptiveHQ")["resolved_codec_config"][
                                 "adaptive_allocation"
                             ],
                         },
+                    },
+                    "RotationHQ": {
+                        "proposal_variant": "rotation_dense",
+                        "pair_code_bits_per_block": 12,
+                        "fixed_pair_code_bits_per_block": [7, 5],
+                        "exact_assignment": True,
+                        "selector": None,
                     },
                 },
             },
@@ -665,10 +701,22 @@ def _standard_result(spec: dict, preflight: dict) -> dict:
                                 "hayate_override_entered": True,
                                 "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
                             },
+                            "HQ-Frontier": {
+                                "effective_path": "hayate_fused_roundtrip",
+                                "payload_materialized": False,
+                                "hayate_override_entered": True,
+                                "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
+                            },
                             "AdaptiveHQ": {
                                 "effective_path": "inherited_encode_then_decode",
                                 "payload_materialized": True,
                                 "hayate_override_entered": False,
+                                "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
+                            },
+                            "RotationHQ": {
+                                "effective_path": "hayate_fused_roundtrip",
+                                "payload_materialized": False,
+                                "hayate_override_entered": True,
                                 "runtime_probe": "HayateQuantCodec._rt_supported(head_dim)",
                             },
                         },
@@ -757,7 +805,7 @@ def _standard_result(spec: dict, preflight: dict) -> dict:
             row = {kind: _populate_axis_accounting(axis, kind=kind, method=method, n=spec["n"])}
             if method == "BlockQuant-paper":
                 row.update(_blockquant_identity())
-            elif method in {"HQ", "AdaptiveHQ"}:
+            elif method in gate.PROPOSAL_METHODS:
                 row.update(_hayate_identity(method))
             document["results"][method] = row
     if kind == "zeroshot":
@@ -818,9 +866,10 @@ def _write_success_receipts(
         identity["attempt_id"],
         identity["expected_result"],
     )
-    identity["submission_tag"] = "hayatequant-" + hashlib.sha256(
-        b"".join(str(value).encode() + b"\0" for value in tag_fields)
-    ).hexdigest()
+    identity["submission_tag"] = (
+        "hayatequant-"
+        + hashlib.sha256(b"".join(str(value).encode() + b"\0" for value in tag_fields)).hexdigest()
+    )
     submission = {
         **identity,
         "kind": "hayatequant_paper_submission_receipt",
@@ -868,8 +917,7 @@ def _write_success_receipts(
 
 def _build_completed_smoke(tmp_path: Path) -> tuple[Path, Path, str, str]:
     run_root = (
-        tmp_path
-        / "results-worktree/papers/hayatequant_paper/experiments/results/synthetic-run"
+        tmp_path / "results-worktree/papers/hayatequant_paper/experiments/results/synthetic-run"
     )
     work_root = tmp_path / "work"
     data_root = tmp_path / "pinned-data"
@@ -902,9 +950,7 @@ def _build_completed_smoke(tmp_path: Path) -> tuple[Path, Path, str, str]:
                     "pyarrow": "21.0.0",
                 },
             },
-            "ruler_v1": {
-                "llama31-8b": {"manifest": gate._file_record(ruler_manifest)}
-            },
+            "ruler_v1": {"llama31-8b": {"manifest": gate._file_record(ruler_manifest)}},
             "longcodeqa": {
                 "brackets": {"32K": gate._file_record(longcode_dataset)},
                 "context_fit_manifests": {

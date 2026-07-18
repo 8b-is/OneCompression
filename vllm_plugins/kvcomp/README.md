@@ -31,8 +31,37 @@ the latter must serialize `lut_bins` and `lut_candidates`. Shape-dependent
 From the repository root, run:
 
 ```bash
-.venv-vllm/bin/python -m pytest -q tests/vllm_plugins/kvcomp
+.venv/bin/python -m pytest -q tests/vllm_plugins/kvcomp
 ```
 
 GPU-dependent tests are skipped when CUDA is absent. CPU tests cover config,
 registration, page mutation, and one-time HayateQuant composition contracts.
+
+Run all three generation paths in isolated fresh processes with:
+
+```bash
+.venv/bin/python benchmark/kvcomp-codec/run_vllm_inference_smoke_suite.py \
+  --model /path/to/local/model \
+  --output-dir /path/to/new/receipt-directory
+```
+
+The suite writes child logs, one receipt per path, source/package provenance,
+and a fail-closed `suite.json`. It also isolates FlashInfer's generated cache
+inside the output directory, so stale absolute paths from another environment
+cannot contaminate the smoke. The suite disables optional DeepGEMM warmup;
+these checks validate KV-cache integration and generation, not weight-GEMM
+performance. The receipt directory must be new or empty; the runner refuses to
+mix a new run with stale artifacts.
+
+Only a passing three-path suite can be rendered for the paper:
+
+```bash
+.venv/bin/python benchmark/kvcomp-codec/render_vllm_inference_smoke_latex.py \
+  --suite /path/to/receipt-directory/suite.json \
+  --output /path/to/generated/kvcomp_vllm_smoke.tex
+```
+
+The renderer rejects missing/failed phases, mismatched model identities,
+non-faithful HQ contracts, or TapeKV rows presented as packed evidence. The
+result is explicitly implementation-smoke evidence, never a quality, physical
+memory, or throughput claim.

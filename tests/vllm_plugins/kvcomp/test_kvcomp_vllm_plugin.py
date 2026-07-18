@@ -219,11 +219,81 @@ def test_taper_recipe_unions_hayate_skips_and_resolves_stride():
         TaperVLLMRecipe.from_policy({"name": "taperkv", "requant_stride": 0})
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("key_bits", 4.9),
+        ("sink_tokens", 4.9),
+        ("requant_stride", 2.9),
+        ("skip_layers", [1.5]),
+    ],
+)
+def test_taper_recipe_rejects_lossy_integer_coercion(field, value):
+    with pytest.raises(ValueError, match="must be an integer"):
+        TaperVLLMRecipe.from_policy({"name": "taperkv", field: value})
+
+
+@pytest.mark.parametrize("value", [0.9, "0", True])
+def test_vllm_mapping_rejects_non_integer_residual_window(value):
+    from vllm_plugins.kvcomp.mapping import plan_from_kv_config
+
+    plan = plan_from_kv_config({"residual_window": value, "codec": {"name": "fp8"}})
+    assert plan.needs_custom_backend
+    assert not plan.native_supported
+    assert any("expected a non-negative integer" in note for note in plan.notes)
+
+
+def test_vllm_mapping_accepts_exact_integral_json_float_without_truncation():
+    from vllm_plugins.kvcomp.mapping import plan_from_kv_config
+
+    plan = plan_from_kv_config({"residual_window": 0.0, "codec": {"name": "fp8"}})
+    assert plan.native_supported
+    assert not plan.needs_custom_backend
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {"codec": "fp8", "residual_window": 0},
+        {"policy": ["taperkv"], "residual_window": 0},
+        {
+            "codec": {"name": "hayatequant", "bits": 3.9, "block_size": 2},
+            "residual_window": 0,
+        },
+        {
+            "codec": {"name": "turboquant", "bits": "3", "value_bits": 3},
+            "residual_window": 0,
+        },
+        {
+            "codec": {"name": "fp8", "skip_layers": [0.5]},
+            "residual_window": 0,
+        },
+    ],
+)
+def test_vllm_mapping_malformed_serialized_config_fails_closed(config):
+    from vllm_plugins.kvcomp.mapping import plan_from_kv_config
+
+    plan = plan_from_kv_config(config)
+    assert plan.needs_custom_backend
+    assert not plan.native_supported
+    assert plan.kv_cache_dtype == "auto"
+    assert any("Invalid serialized" in note for note in plan.notes)
+
+
 def test_taper_recipe_rejects_unloadable_hayate_calibration():
     with pytest.raises(ValueError, match="calibrated HayateQuant"):
         TaperVLLMRecipe.from_policy(
             {"name": "taperkv"},
             hayate_config={"name": "hayatequant", "calibration": "digest-only"},
+        )
+
+
+@pytest.mark.parametrize("field", ["n_outlier", "key_n_outlier", "value_n_outlier"])
+def test_taper_recipe_rejects_fractional_hayate_outlier_counts(field):
+    with pytest.raises(ValueError, match=field):
+        TaperVLLMRecipe.from_policy(
+            {"name": "taperkv"},
+            hayate_config={"name": "hayatequant", "encoder": "exact", field: 0.5},
         )
 
 
@@ -522,6 +592,45 @@ def test_registered_hayate_backend_without_config_delegates_upstream(monkeypatch
 
     assert layer._hq_native_enabled is False
     assert delegated == [(layer, "cuda:0")]
+
+
+@pytest.mark.parametrize("payload", ["{", "[]", '"not-a-mapping"'])
+def test_hayate_hybrid_malformed_payload_fails_closed(monkeypatch, payload):
+    from vllm_plugins.kvcomp.hayate_native import _native_config
+
+    monkeypatch.setenv(_HAYATE_NATIVE_CONFIG_ENV, payload)
+    with pytest.raises(ValueError, match="JSON|JSON object"):
+        _native_config()
+
+
+def test_hayate_hybrid_explicit_layout_mismatch_fails_closed(monkeypatch):
+    from types import SimpleNamespace
+
+    from vllm_plugins.kvcomp.hayate_native import HayateQuantNativeImpl
+
+    monkeypatch.setenv(
+        _HAYATE_NATIVE_CONFIG_ENV,
+        json.dumps({"bits": 4, "value_bits": 4, "block_size": 2}),
+    )
+    impl = object.__new__(HayateQuantNativeImpl)
+    impl.tq_config = SimpleNamespace(key_fp8=False, key_quant_bits=3, value_quant_bits=3)
+    with pytest.raises(RuntimeError, match="do not match"):
+        impl._ensure_on_device(SimpleNamespace(), "cuda:0")
+
+
+def test_hayate_hybrid_fractional_bits_fail_closed(monkeypatch):
+    from types import SimpleNamespace
+
+    from vllm_plugins.kvcomp.hayate_native import HayateQuantNativeImpl
+
+    monkeypatch.setenv(
+        _HAYATE_NATIVE_CONFIG_ENV,
+        json.dumps({"bits": 3.9, "value_bits": 3, "block_size": 2}),
+    )
+    impl = object.__new__(HayateQuantNativeImpl)
+    impl.tq_config = SimpleNamespace(key_fp8=False, key_quant_bits=3, value_quant_bits=3)
+    with pytest.raises(ValueError, match="integer"):
+        impl._ensure_on_device(SimpleNamespace(), "cuda:0")
 
 
 def test_hayate_store_group_codes_auto_tracks_cache_layout(monkeypatch):

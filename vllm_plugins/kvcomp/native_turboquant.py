@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from vllm_plugins.kvcomp._validation import strict_integer
+
 
 @dataclass(frozen=True)
 class TurboQuantPreset:
@@ -34,8 +36,10 @@ def resolve_turboquant_preset(
     value_bits: int | None = None,
 ) -> TurboQuantPreset | None:
     """Resolve a key/value bit pair to vLLM's native TurboQuant dtype."""
-    key_bits = int(bits)
-    val_bits = key_bits if value_bits is None else int(value_bits)
+    key_bits = strict_integer(bits, "bits", minimum=1)
+    val_bits = (
+        key_bits if value_bits is None else strict_integer(value_bits, "value_bits", minimum=1)
+    )
     dtype = TURBOQUANT_PRESETS.get((key_bits, val_bits))
     if dtype is None:
         return None
@@ -45,7 +49,7 @@ def resolve_turboquant_preset(
 def resolve_turboquant_codec(codec: dict) -> TurboQuantPreset | None:
     """Resolve a serialized OneComp TurboQuant-family codec config."""
     return resolve_turboquant_preset(
-        int(codec.get("bits", 4)),
+        codec.get("bits", 4),
         codec.get("value_bits"),
     )
 

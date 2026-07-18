@@ -51,6 +51,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Optional
 
+from vllm_plugins.kvcomp._validation import strict_integer
 from vllm_plugins.kvcomp.native_turboquant import resolve_turboquant_codec
 
 # OneComp codec name -> vLLM native ``kv_cache_dtype`` value.
@@ -115,6 +116,29 @@ _HAYATEQUANT_STRICT_MODES = {
 }
 
 
+def _integer_field(
+    config: dict,
+    name: str,
+    default: int | None = None,
+    *,
+    minimum: int | None = None,
+    maximum: int | None = None,
+) -> int:
+    value = config.get(name)
+    if value is None:
+        if default is None:
+            raise ValueError(f"{name} is required")
+        value = default
+    return strict_integer(value, name, minimum=minimum, maximum=maximum)
+
+
+def _integer_list(config: dict, name: str) -> list[int]:
+    values = config.get(name) or []
+    if not isinstance(values, (list, tuple)):
+        raise ValueError(f"{name} must be a list of integers")
+    return [strict_integer(value, f"{name} entry", minimum=0) for value in values]
+
+
 def _check_rotation_for_native(codec: dict, name: str, plan: "KVCompVLLMPlan"):
     """Flag rotation-semantics mismatches for the native ``turboquant_*`` path.
 
@@ -139,7 +163,11 @@ def _check_rotation_for_native(codec: dict, name: str, plan: "KVCompVLLMPlan"):
         return
     mode = codec.get("rotation_mode")
     block_size = codec.get("block_size")
-    if mode == "hybrid" and block_size is not None and int(block_size) <= 1:
+    if (
+        mode == "hybrid"
+        and block_size is not None
+        and strict_integer(block_size, "block_size", minimum=1) <= 1
+    ):
         # Hybrid at block_size=1 degenerates to signed-Hadamard with extra
         # per-coordinate sign flips -- still the Hadamard transform family.
         plan.notes.append(
@@ -194,12 +222,14 @@ def _hayatequant_uses_block_vq(codec: dict) -> bool:
     relying on ``dict.get``'s default.
     """
     block_size = codec.get("block_size")
-    if block_size is not None and int(block_size) <= 1:
+    if block_size is not None and strict_integer(block_size, "block_size", minimum=1) <= 1:
         return False
-    bits = int(codec.get("bits", 4))
+    bits = _integer_field(codec, "bits", 4, minimum=1)
     value_bits = codec.get("value_bits")
-    value_bits = int(value_bits) if value_bits is not None else bits
-    max_codebook_bits = int(codec.get("max_codebook_bits") or 9)
+    value_bits = (
+        strict_integer(value_bits, "value_bits", minimum=1) if value_bits is not None else bits
+    )
+    max_codebook_bits = _integer_field(codec, "max_codebook_bits", 9, minimum=1)
     # Keys and values resolve block_size independently (at possibly different
     # bit-widths); block-VQ is "in play" if *either* role could use it.
     return min(bits, value_bits) * 2 <= max_codebook_bits
@@ -335,10 +365,12 @@ def _plan_rolekv(
     reproduces none of those features except the degenerate all-fp16 policy.
     """
     bits_map = dict(policy.get("bits_per_role") or {})
-    bits_map["<default>"] = int(policy.get("default_bits", 4))
-    bit_values = {int(value) for value in bits_map.values()}
-    sink_tokens = int(policy.get("sink_tokens", 4))
-    plan.skip_layers = [int(x) for x in (policy.get("skip_layers") or [])]
+    bits_map["<default>"] = _integer_field(policy, "default_bits", 4, minimum=1)
+    bit_values = {
+        strict_integer(value, "bits_per_role value", minimum=1) for value in bits_map.values()
+    }
+    sink_tokens = _integer_field(policy, "sink_tokens", 4, minimum=0)
+    plan.skip_layers = _integer_list(policy, "skip_layers")
 
     if bit_values == {16} and sink_tokens >= 0:
         plan.kv_cache_dtype = "auto"
@@ -367,7 +399,7 @@ def _plan_rolekv(
     return plan
 
 
-def plan_from_kv_config(
+def _plan_from_kv_config(
     kv_config: Optional[dict],
     requested_kv_cache_dtype: str = "auto",
 ) -> KVCompVLLMPlan:
@@ -390,9 +422,35 @@ def plan_from_kv_config(
         plan.notes.append("No kv_compression_config; KV cache left uncompressed.")
         return plan
 
+    if not isinstance(kv_config, dict):
+        raise TypeError("kv_compression_config must be a mapping")
+    for section in ("codec", "selector", "policy"):
+        value = kv_config.get(section)
+        if value is not None and not isinstance(value, dict):
+            raise TypeError(f"kv_compression_config.{section} must be a mapping")
+
     codec = kv_config.get("codec") or None
     selector = kv_config.get("selector") or None
     policy = kv_config.get("policy") or None
+    if codec is not None:
+        for name in (
+            "bits",
+            "value_bits",
+            "block_size",
+            "max_codebook_bits",
+            "seed",
+            "n_outlier",
+            "key_n_outlier",
+            "value_n_outlier",
+            "key_code_bits_per_block",
+            "value_code_bits_per_block",
+            "code_bits_per_pair_block",
+            "lut_bins",
+            "lut_candidates",
+        ):
+            if codec.get(name) is not None:
+                strict_integer(codec[name], f"codec.{name}")
+        _integer_list(codec, "skip_layers")
     policy_name = policy.get("name") if policy else None
     plan.codec_name = codec.get("name") if codec else None
     taper_hayate_combo = (
@@ -408,10 +466,12 @@ def plan_from_kv_config(
     # native deployment approximation must opt out with an explicit zero.
     raw_residual_window = kv_config.get("residual_window", 128)
     try:
-        residual_window = int(raw_residual_window)
-    except (TypeError, ValueError):
-        residual_window = -1
-    if residual_window < 0:
+        residual_window = strict_integer(
+            raw_residual_window, "kv_compression_config.residual_window", minimum=0
+        )
+    except ValueError:
+        residual_window = None
+    if residual_window is None:
         plan.needs_custom_backend = True
         plan.notes.append(
             "Invalid kv_compression_config.residual_window="
@@ -534,28 +594,35 @@ def plan_from_kv_config(
         plan.calculate_kv_scales = True
         _set_native(dtype, f"Codec '{name}' -> native vLLM kv_cache_dtype='{dtype}'.")
         # Propagate outlier/boundary layer protection for FP8 as well.
-        plan.skip_layers = [int(x) for x in (codec.get("skip_layers") or [])]
+        plan.skip_layers = _integer_list(codec, "skip_layers")
     elif name == "hayatequant" and _hayatequant_uses_block_vq(codec):
         mode = _hayatequant_vllm_mode(codec)
         tq_preset = resolve_turboquant_codec(codec)
         preset = tq_preset.kv_cache_dtype if tq_preset is not None else None
-        kb = tq_preset.key_bits if tq_preset is not None else int(codec.get("bits", 4))
+        kb = (
+            tq_preset.key_bits
+            if tq_preset is not None
+            else _integer_field(codec, "bits", 4, minimum=1)
+        )
         raw_vb = codec.get("value_bits")
         vb = (
             tq_preset.value_bits
             if tq_preset is not None
-            else int(raw_vb) if raw_vb is not None else kb
+            else strict_integer(raw_vb, "value_bits", minimum=1) if raw_vb is not None else kb
         )
         unsupported_native = []
         if codec.get("calibration"):
             unsupported_native.append("calibration")
-        if int(codec.get("n_outlier") or 0) > 0:
+        if _integer_field(codec, "n_outlier", 0, minimum=0) > 0:
             unsupported_native.append("n_outlier")
-        if int(codec.get("key_n_outlier") or 0) > 0 or int(codec.get("value_n_outlier") or 0) > 0:
+        if (
+            _integer_field(codec, "key_n_outlier", 0, minimum=0) > 0
+            or _integer_field(codec, "value_n_outlier", 0, minimum=0) > 0
+        ):
             unsupported_native.append("role-specific n_outlier")
         if codec.get("use_qjl"):
             unsupported_native.append("use_qjl")
-        if int(codec.get("max_codebook_bits") or 9) > 9:
+        if _integer_field(codec, "max_codebook_bits", 9, minimum=1) > 9:
             unsupported_native.append("max_codebook_bits>9")
         if codec.get("key_code_bits_per_block") is not None:
             unsupported_native.append("key_code_bits_per_block")
@@ -598,8 +665,8 @@ def plan_from_kv_config(
                 "assignment_mode": encoder,
                 "lut_bins": codec.get("lut_bins"),
                 "lut_candidates": codec.get("lut_candidates"),
-                "seed": int(codec.get("seed") or 0),
-                "max_codebook_bits": int(codec.get("max_codebook_bits") or 9),
+                "seed": _integer_field(codec, "seed", 0),
+                "max_codebook_bits": _integer_field(codec, "max_codebook_bits", 9, minimum=1),
             }
             role_fields = (
                 codec.get("key_code_bits_per_block"),
@@ -614,14 +681,27 @@ def plan_from_kv_config(
                 else:
                     full_config.update(
                         {
-                            "key_code_bits_per_block": int(role_fields[0]),
-                            "key_block_size": int(role_fields[2]),
-                            "value_code_bits_per_block": int(role_fields[1]),
-                            "value_block_size": int(role_fields[2]),
+                            "key_code_bits_per_block": strict_integer(
+                                role_fields[0], "key_code_bits_per_block", minimum=1
+                            ),
+                            "key_block_size": strict_integer(
+                                role_fields[2], "block_size", minimum=1
+                            ),
+                            "value_code_bits_per_block": strict_integer(
+                                role_fields[1], "value_code_bits_per_block", minimum=1
+                            ),
+                            "value_block_size": strict_integer(
+                                role_fields[2], "block_size", minimum=1
+                            ),
                         }
                     )
             elif codec.get("avg_bits") is not None:
-                full_config.update({"avg_bits": int(codec["avg_bits"]), "recipe": "hq"})
+                full_config.update(
+                    {
+                        "avg_bits": strict_integer(codec["avg_bits"], "avg_bits", minimum=1),
+                        "recipe": "hq",
+                    }
+                )
             else:
                 full_unsupported.append("avg_bits or explicit role code bits")
             try:
@@ -630,7 +710,7 @@ def plan_from_kv_config(
                 )
 
                 full_recipe = full_hq_native_recipe_from_mapping(full_config)
-                full_rate = int(full_recipe.average_rate)
+                full_rate = strict_integer(full_recipe.average_rate, "full HQ average rate")
                 if full_recipe.average_rate != full_rate or full_rate not in (3, 4):
                     full_unsupported.append(
                         "packed vLLM generation currently requires average rate 3 or 4"
@@ -657,7 +737,7 @@ def plan_from_kv_config(
                 plan.hayate_full_config = {
                     key: value for key, value in full_config.items() if value is not None
                 }
-                plan.skip_layers = [int(x) for x in (codec.get("skip_layers") or [])]
+                plan.skip_layers = _integer_list(codec, "skip_layers")
         elif (
             mode in _HAYATEQUANT_NATIVE_MODES
             and preset is not None
@@ -677,13 +757,13 @@ def plan_from_kv_config(
                 "value_bits": vb,
                 "dist": codec.get("dist") or "gaussian",
                 "block_size": codec.get("block_size"),
-                "max_codebook_bits": int(codec.get("max_codebook_bits") or 9),
+                "max_codebook_bits": _integer_field(codec, "max_codebook_bits", 9, minimum=1),
                 "codebook_init": codec.get("codebook_init") or "auto",
                 "rotation_mode": codec.get("rotation_mode") or "auto",
                 "key_scale_mode": key_scale_mode,
-                "seed": int(codec.get("seed") or 0),
+                "seed": _integer_field(codec, "seed", 0),
             }
-            plan.skip_layers = [int(x) for x in (codec.get("skip_layers") or [])]
+            plan.skip_layers = _integer_list(codec, "skip_layers")
             plan.notes.append(
                 "EXPERIMENTAL APPROXIMATION: keys use HayateQuant block-VQ, "
                 "but values keep vLLM's uniform TurboQuant quantizer. This is "
@@ -703,7 +783,7 @@ def plan_from_kv_config(
                 "vLLM TurboQuant deployment approximation.",
             )
             _check_rotation_for_native(codec, name, plan)
-            plan.skip_layers = [int(x) for x in (codec.get("skip_layers") or [])]
+            plan.skip_layers = _integer_list(codec, "skip_layers")
             plan.warnings.append(
                 "HayateQuant block-VQ is served through vLLM's scalar "
                 f"TurboQuant preset '{preset}'; the block-VQ accuracy gain is "
@@ -776,12 +856,16 @@ def plan_from_kv_config(
         )
     elif name in ("turboquant", "halo", "hayatequant"):
         tq_preset = resolve_turboquant_codec(codec)
-        kb = tq_preset.key_bits if tq_preset is not None else int(codec.get("bits", 4))
+        kb = (
+            tq_preset.key_bits
+            if tq_preset is not None
+            else _integer_field(codec, "bits", 4, minimum=1)
+        )
         raw_vb = codec.get("value_bits")
         vb = (
             tq_preset.value_bits
             if tq_preset is not None
-            else int(raw_vb) if raw_vb is not None else kb
+            else strict_integer(raw_vb, "value_bits", minimum=1) if raw_vb is not None else kb
         )
         if tq_preset is not None:
             preset = tq_preset.kv_cache_dtype
@@ -796,7 +880,7 @@ def plan_from_kv_config(
             _check_rotation_for_native(codec, name, plan)
             # Propagate boundary/outlier layer protection (1-line fix the OneComp
             # outlier-layer detector already produces but the plugin used to drop).
-            plan.skip_layers = [int(x) for x in (codec.get("skip_layers") or [])]
+            plan.skip_layers = _integer_list(codec, "skip_layers")
             # The named presets do NOT reproduce every OneComp knob.  vLLM's
             # TurboQuant runs Lloyd-Max on *keys* and *uniform* quant on values
             # (and the "8" in k8v4 is FP8 keys, not 8-bit Lloyd-Max), so the
@@ -810,15 +894,15 @@ def plan_from_kv_config(
                 "on both K and V (HF cache path)."
             )
             # Knobs with no preset equivalent are dropped -- say so explicitly.
-            if int(codec.get("n_outlier") or 0) > 0:
+            if _integer_field(codec, "n_outlier", 0, minimum=0) > 0:
                 plan.warnings.append(
                     f"Codec '{name}' n_outlier={codec.get('n_outlier')} (2.5/3.5-bit "
                     "outlier split) has no preset equivalent and is dropped by the "
                     "native mapping; use the HF cache path to keep it."
                 )
             if (
-                int(codec.get("key_n_outlier") or 0) > 0
-                or int(codec.get("value_n_outlier") or 0) > 0
+                _integer_field(codec, "key_n_outlier", 0, minimum=0) > 0
+                or _integer_field(codec, "value_n_outlier", 0, minimum=0) > 0
             ):
                 plan.warnings.append(
                     f"Codec '{name}' role-specific outlier split "
@@ -852,7 +936,7 @@ def plan_from_kv_config(
         dtype = _NATIVE_OTHER[name]
         _set_native(dtype, f"Codec '{name}' -> native vLLM kv_cache_dtype='{dtype}'.")
         # Propagate outlier/boundary layer protection for INT8/NVFP4 as well.
-        plan.skip_layers = [int(x) for x in (codec.get("skip_layers") or [])]
+        plan.skip_layers = _integer_list(codec, "skip_layers")
     elif name in _NEEDS_CUSTOM_BACKEND:
         plan.needs_custom_backend = True
         plan.native_supported = False
@@ -872,6 +956,25 @@ def plan_from_kv_config(
         )
 
     return plan
+
+
+def plan_from_kv_config(
+    kv_config: Optional[dict],
+    requested_kv_cache_dtype: str = "auto",
+) -> KVCompVLLMPlan:
+    """Resolve a plan and fail closed on malformed serialized configuration."""
+
+    try:
+        return _plan_from_kv_config(kv_config, requested_kv_cache_dtype)
+    except (TypeError, ValueError) as exc:
+        plan = KVCompVLLMPlan(needs_custom_backend=True)
+        if isinstance(kv_config, dict) and isinstance(kv_config.get("codec"), dict):
+            plan.codec_name = kv_config["codec"].get("name")
+        plan.notes.append(
+            "Invalid serialized kv_compression_config; native vLLM mapping is "
+            f"disabled rather than coercing or guessing: {exc}"
+        )
+        return plan
 
 
 def engine_kwargs_from_kv_config(

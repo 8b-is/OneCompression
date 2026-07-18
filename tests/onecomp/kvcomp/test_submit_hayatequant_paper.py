@@ -189,11 +189,12 @@ def test_formal_plan_has_complete_unique_matrix_and_every_job_uses_wrapper(forma
     jobs = re.findall(r"^JOB phase=(\S+) key=(\S+) result=(\S+) model=(\S+)$", formal_plan, re.M)
     workers = re.findall(r"^WORKER (.+)$", formal_plan, re.M)
     # Four public HQ rows add the frontier and rotation cells to the previous
-    # two-row matrix: 7 PPL + 2 mechanism + 420 zero-shot + 60 RULER +
+    # two-row matrix. PPL is 21 one-rate GPU shards plus 7 CPU merge jobs;
+    # the remaining axes are 2 mechanism + 420 zero-shot + 60 RULER +
     # 208 task-level LongBench + 160 MATH + 448 LongCodeQA + 12 fair-speed.
     # FibQuant and BlockQuant share each PPL/zero-shot model load but have
     # separate long-axis quality jobs; both are absent from fair-speed.
-    assert len(jobs) == 1137
+    assert len(jobs) == 1158
     assert len(workers) == len(jobs)
     assert all(phase == "formal" for phase, *_ in jobs)
     keys = [key for _, key, _, _ in jobs]
@@ -207,16 +208,18 @@ def test_formal_plan_has_complete_unique_matrix_and_every_job_uses_wrapper(forma
     assert all("--expected-result" in line for line in workers)
     assert formal_plan.count("--output") >= len(jobs)
     assert "%x_%j.out" in formal_plan and "%x_%j.err" in formal_plan
-    assert formal_plan.count("--gres gpu:nvidia_b200:1") == 1125
+    assert formal_plan.count("--gres gpu:nvidia_b200:1") == 1139
     assert formal_plan.count("--gres gpu:nvidia_b200:8") == 12
+    # Printed once inside the shell-escaped SBATCH --wrap and once as WORKER.
+    assert formal_plan.count("--no-cuda") == 14
 
 
-def test_fixed_five_replicate_formal_plan_has_exactly_1185_unique_jobs(tmp_path):
+def test_fixed_five_replicate_formal_plan_has_exactly_1206_unique_jobs(tmp_path):
     plan = _plan("formal-plan", tmp_path, SPEED_REPLICATES="5")
     jobs = re.findall(r"^JOB phase=formal key=(\S+) result=(\S+)", plan, re.M)
-    assert len(jobs) == 1185
-    assert len({key for key, _ in jobs}) == 1185
-    assert len({result for _, result in jobs}) == 1185
+    assert len(jobs) == 1206
+    assert len({key for key, _ in jobs}) == 1206
+    assert len({result for _, result in jobs}) == 1206
     speed = [key for key, _ in jobs if key.startswith("speed-")]
     assert len(speed) == 60
     assert plan.count("--nodelist DRYRUN-SAME-B200-NODE") == 60
@@ -225,9 +228,9 @@ def test_fixed_five_replicate_formal_plan_has_exactly_1185_unique_jobs(tmp_path)
     assert plan.count("--gres gpu:nvidia_b200:8") == 60
     assert plan.count("--cpus-per-task 160") == 60
     assert plan.count("--mem 2400G") == 60
-    assert plan.count("--dependency afterok:") == 59
-    assert plan.count("--kill-on-invalid-dep=yes") == 60
-    assert plan.count("--exclude DRYRUN-SAME-B200-NODE") == 1125
+    assert plan.count("--dependency afterok:") == 66
+    assert plan.count("--kill-on-invalid-dep=yes") == 67
+    assert plan.count("--exclude DRYRUN-SAME-B200-NODE") == 1146
 
 
 def test_formal_plan_uses_only_canonical_comparisons_and_full_protocols(formal_plan):
@@ -265,7 +268,7 @@ def test_formal_plan_quantizes_every_layer_and_token_under_one_recipe(formal_pla
         formal_plan,
         re.M,
     )
-    assert len(blocks) == 1137
+    assert len(blocks) == 1158
     for key, worker in blocks:
         if key.startswith("zs-"):
             assert "--no-skip-outliers" in worker
@@ -274,9 +277,45 @@ def test_formal_plan_quantizes_every_layer_and_token_under_one_recipe(formal_pla
             assert "--sink-tokens 0" in worker and "--recent-tokens 0" in worker
             assert "FibQuant" not in worker
             assert "BlockQuant" not in worker
+        elif key.startswith("ppl-merge-"):
+            assert "merge_hayatequant_ppl_shards.py" in worker
+            assert "--no-cuda" in worker
         else:
             assert "skip_outliers=false" in worker
             assert "sink_tokens=0" in worker and "recent_tokens=0" in worker
+
+
+def test_ppl_is_timeout_safe_rate_sharded_then_fail_closed_merged(formal_plan):
+    keys = re.findall(r"^JOB phase=formal key=(ppl-\S+)", formal_plan, re.M)
+    assert len(keys) == 28
+    for model in (
+        "llama2-7b",
+        "llama31-8b",
+        "qwen3-4b",
+        "qwen3-8b",
+        "r1-llama-8b",
+        "r1-qwen-7b",
+        "r1-qwen-1.5b",
+    ):
+        assert [key for key in keys if key.startswith(f"ppl-{model}-b")] == [
+            f"ppl-{model}-b2",
+            f"ppl-{model}-b3",
+            f"ppl-{model}-b4",
+        ]
+        assert f"ppl-merge-{model}" in keys
+    merge_blocks = re.findall(
+        r"^JOB phase=formal key=(ppl-merge-\S+).*$\n^SBATCH (.*)$\n^WORKER (.+)$",
+        formal_plan,
+        re.M,
+    )
+    assert len(merge_blocks) == 7
+    for _, sbatch, worker in merge_blocks:
+        assert "--dependency afterok:" in sbatch
+        assert "--kill-on-invalid-dep=yes" in sbatch
+        assert "--gres" not in sbatch
+        assert "--no-cuda" in worker
+        assert worker.count("--shard") == 3
+        assert "merge_hayatequant_ppl_shards.py" in worker
 
 
 def test_zeroshot_intervals_cover_hellaswag_without_overlap(formal_plan):
@@ -339,9 +378,9 @@ def test_default_formal_plan_pins_only_speed_to_one_b200_stratum_and_exports_no_
     assert all(not key.startswith("speed-") for key in ordered_keys[12:])
     assert formal_plan.count("--nodelist DRYRUN-SAME-B200-NODE") == 12
     assert formal_plan.count("--exclusive=user") == 12
-    assert formal_plan.count("--dependency afterok:") == 11
-    assert formal_plan.count("--kill-on-invalid-dep=yes") == 12
-    assert formal_plan.count("--exclude DRYRUN-SAME-B200-NODE") == 1125
+    assert formal_plan.count("--dependency afterok:") == 18
+    assert formal_plan.count("--kill-on-invalid-dep=yes") == 19
+    assert formal_plan.count("--exclude DRYRUN-SAME-B200-NODE") == 1146
     assert (
         formal_plan.count("policy=full_8gpu_allocation_afterok_serial quality_jobs=excluded") == 1
     )

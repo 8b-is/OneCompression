@@ -58,19 +58,50 @@ METHODS = (
     "FibQuant-paper",
     "BlockQuant-paper",
     "HQ",
+    "HQ-Frontier",
     "AdaptiveHQ",
+    "RotationHQ",
 )
-PROPOSAL_METHODS = ("HQ", "AdaptiveHQ")
+PROPOSAL_METHODS = ("HQ", "HQ-Frontier", "AdaptiveHQ", "RotationHQ")
+SPEED_PROPOSAL_COMPARISONS = {
+    "HQ": "hq_vs_turboquant",
+    "HQ-Frontier": "hq_frontier_vs_turboquant",
+    "AdaptiveHQ": "adaptive_hq_vs_turboquant",
+    "RotationHQ": "rotation_hq_vs_turboquant",
+}
+SPEED_METHOD_KEYS = {
+    "tq": "TurboQuant-paper",
+    "hq": "HQ",
+    "frontier": "HQ-Frontier",
+    "adaptive": "AdaptiveHQ",
+    "rotation": "RotationHQ",
+}
 QUALITY_RATE_METHODS = {
-    "2": ("TurboQuant-paper", "FibQuant-paper", "HQ", "AdaptiveHQ"),
+    "2": (
+        "TurboQuant-paper",
+        "FibQuant-paper",
+        "HQ",
+        "HQ-Frontier",
+        "AdaptiveHQ",
+        "RotationHQ",
+    ),
     "3": (
         "TurboQuant-paper",
         "FibQuant-paper",
         "BlockQuant-paper",
         "HQ",
+        "HQ-Frontier",
         "AdaptiveHQ",
+        "RotationHQ",
     ),
-    "4": ("TurboQuant-paper", "FibQuant-paper", "HQ", "AdaptiveHQ"),
+    "4": (
+        "TurboQuant-paper",
+        "FibQuant-paper",
+        "HQ",
+        "HQ-Frontier",
+        "AdaptiveHQ",
+        "RotationHQ",
+    ),
 }
 POINT_ESTIMATE_WIN_THRESHOLD = 0.90
 ADAPTIVE_HQ_POLICY_VERSION = "adaptive_hq_cache_causal_fixed_incumbent_hysteresis_v6"
@@ -92,8 +123,9 @@ ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION = (
     "inherited encode_then_decode fallback; AdaptiveHQ fused path unsupported"
 )
 HQ_CODEBOOK_BUNDLE = "fixed_hq_b2_v1"
+HQ_FRONTIER_CODEBOOK_BUNDLE = "frontier_hq_b2_v1"
 ADAPTIVE_HQ_CODEBOOK_BUNDLE = "adaptive_hq_b2_safe_v1"
-HQ_CODEBOOK_MANIFEST_SHA256 = "df02ba5fd41fd0cc3fd2d39474fcfe7a628c15eb9ea012e8c70b1ffb3dabecde"
+HQ_CODEBOOK_MANIFEST_SHA256 = "818df8a17a0cac464e4b7d844e63c48ab56dabf70c6693b80af6099f5d83e573"
 ADAPTIVE_HQ_CANDIDATE_PAIRS = {
     rate: ((2 * rate, 2 * rate), (2 * rate + 1, 2 * rate - 1)) for rate in (2, 3, 4)
 }
@@ -110,6 +142,17 @@ HAYATE_FORMAL_PROVENANCE = {
         "formal_rate_slots": [2, 3, 4],
         "allocation_scope": "globally_fixed_kv_code_bits",
     },
+    "HQ-Frontier": {
+        "method_role": "paper_proposal_frontier",
+        "external_quality_baseline": False,
+        "proposal_method": True,
+        "proposal_family": "HayateQuant",
+        "proposal_variant": "integer_frontier",
+        "paper_comparable": True,
+        "speed_comparison": True,
+        "formal_rate_slots": [2, 3, 4],
+        "allocation_scope": "integer_key_value_code_bits",
+    },
     "AdaptiveHQ": {
         "method_role": "paper_proposal_adaptive",
         "external_quality_baseline": False,
@@ -120,6 +163,17 @@ HAYATE_FORMAL_PROVENANCE = {
         "speed_comparison": True,
         "formal_rate_slots": [2, 3, 4],
         "allocation_scope": "cache_local_layer_local_causal_online_stats",
+    },
+    "RotationHQ": {
+        "method_role": "paper_proposal_rotation",
+        "external_quality_baseline": False,
+        "proposal_method": True,
+        "proposal_family": "HayateQuant",
+        "proposal_variant": "rotation_dense",
+        "paper_comparable": True,
+        "speed_comparison": True,
+        "formal_rate_slots": [2, 3, 4],
+        "allocation_scope": "globally_fixed_kv_code_bits_dense_rotation",
     },
 }
 PPL_TEACHER_FORCED_PROTOCOL = "single_forward_causal_mask_token_local_cache"
@@ -140,7 +194,9 @@ PPL_EVALUATION_CONFIG = {
         "FibQuant-paper",
         "BlockQuant-paper",
         "HQ",
+        "HQ-Frontier",
         "AdaptiveHQ",
+        "RotationHQ",
     ],
 }
 PPL_COMPRESSION_ACCOUNTING = {
@@ -477,7 +533,9 @@ FORBIDDEN_FORMAL_LABELS = (
 )
 SPEED_COMPARISONS = (
     "hq_vs_turboquant",
+    "hq_frontier_vs_turboquant",
     "adaptive_hq_vs_turboquant",
+    "rotation_hq_vs_turboquant",
 )
 SPEED_PAIRED_METRICS = (
     "micro.prefill.payload_api.encode",
@@ -592,7 +650,11 @@ def _sha256_string(value: Any) -> bool:
 def _expected_hayate_codebook_artifacts(bundle: str) -> dict[str, Any]:
     """Rebuild the exact manifest-pinned codebook provenance record."""
 
-    if bundle not in {HQ_CODEBOOK_BUNDLE, ADAPTIVE_HQ_CODEBOOK_BUNDLE}:
+    if bundle not in {
+        HQ_CODEBOOK_BUNDLE,
+        HQ_FRONTIER_CODEBOOK_BUNDLE,
+        ADAPTIVE_HQ_CODEBOOK_BUNDLE,
+    }:
         raise RenderError(f"Unexpected formal HayateQuant codebook bundle {bundle!r}")
     codebook_dir = REPO_ROOT / "onecomp/kvcomp/codec/hayate/codebooks"
     manifest_path = (codebook_dir / "manifest.json").resolve()
@@ -1877,8 +1939,7 @@ def _validate_mechanism(axis: Mapping[str, Any], commit: str) -> dict:
         "TurboQuant-paper",
         "HayateQuant-scalar-matched",
         "HayateQuant-blockvq-matched",
-        "HQ",
-        "AdaptiveHQ",
+        *PROPOSAL_METHODS,
     }
     for model in LONG_MODELS:
         model_doc = _mapping(models[model], f"mechanism.{model}")
@@ -1908,9 +1969,17 @@ def _validate_mechanism(axis: Mapping[str, Any], commit: str) -> dict:
                     "HayateQuant-blockvq-matched",
                 ],
                 "HQ": "contextual formal proposal row; not part of the single-lever contrast",
+                "HQ-Frontier": (
+                    "contextual formal proposal row; its integer K/V frontier changes "
+                    "allocation and is not part of the single-lever contrast"
+                ),
                 "AdaptiveHQ": (
                     "contextual formal proposal row; causal selector changes allocation "
                     "and is not part of the single-lever contrast"
+                ),
+                "RotationHQ": (
+                    "contextual formal proposal row; its forced dense rotation changes "
+                    "the transform and is not part of the single-lever contrast"
                 ),
             }:
                 raise RenderError(f"Mechanism applicability changed for {model}/{rate}")
@@ -2725,7 +2794,7 @@ def _expected_speed_resolved_recipe(rate: int, method: str) -> dict[str, Any]:
             "calibration": None,
             "roles": {"key": dict(role), "value": dict(role)},
         }
-    if method not in {"hq", "adaptive"}:
+    if method not in {"hq", "frontier", "adaptive", "rotation"}:
         raise AssertionError(f"unknown speed method role: {method}")
 
     def rotation(code_bits: int) -> str:
@@ -2745,7 +2814,7 @@ def _expected_speed_resolved_recipe(rate: int, method: str) -> dict[str, Any]:
         "calibration": None,
         "assignment": assignment,
     }
-    if method == "hq":
+    if method in {"hq", "frontier", "rotation"}:
 
         def fixed_role(code_bits: int, scale: str) -> dict[str, Any]:
             row = _role(rate, 2, rotation(code_bits), scale, scale, "gaussian")
@@ -2753,12 +2822,25 @@ def _expected_speed_resolved_recipe(rate: int, method: str) -> dict[str, Any]:
             row["payload_bits_per_coordinate"] = code_bits / 2.0
             return row
 
+        frontier = method == "frontier"
+        forced_dense = method == "rotation"
+        key_code_bits = 2 * rate + (2 if frontier else 1)
+        value_code_bits = 2 * rate - (2 if frontier else 1)
+
+        def proposal_role(code_bits: int, scale: str) -> dict[str, Any]:
+            row = fixed_role(code_bits, scale)
+            if forced_dense:
+                row["rotation_mode"] = "dense"
+            return row
+
         return {
             **common,
-            "codebook_artifacts": _expected_hayate_codebook_artifacts(HQ_CODEBOOK_BUNDLE),
+            "codebook_artifacts": _expected_hayate_codebook_artifacts(
+                HQ_FRONTIER_CODEBOOK_BUNDLE if frontier else HQ_CODEBOOK_BUNDLE
+            ),
             "roles": {
-                "key": fixed_role(2 * rate + 1, "nc"),
-                "value": fixed_role(2 * rate - 1, "ls_iter"),
+                "key": proposal_role(key_code_bits, "ub" if frontier else "nc"),
+                "value": proposal_role(value_code_bits, "ls_iter"),
             },
         }
 
@@ -2829,7 +2911,8 @@ def _validate_speed_scientific_recipe(
     _exact_keys(recipe, {"recipe_sha256", "method_configs"}, f"{label}.recipe")
     hashes = _mapping(recipe["recipe_sha256"], f"{label}.recipe_sha256")
     configs = _mapping(recipe["method_configs"], f"{label}.method_configs")
-    method_names = {names["tq"], names["hq"], names["adaptive"]}
+    method_keys = ("tq", "hq", "frontier", "adaptive", "rotation")
+    method_names = {names[key] for key in method_keys}
     _exact_keys(hashes, method_names, f"{label}.recipe_sha256")
     _exact_keys(configs, method_names, f"{label}.method_configs")
 
@@ -2895,6 +2978,21 @@ def _validate_speed_scientific_recipe(
             "value_code_bits_per_block": 2 * rate - 1,
             "n_outlier": 0,
         },
+        "frontier": {
+            **hayate_defaults,
+            "required_codebook_bundle": HQ_FRONTIER_CODEBOOK_BUNDLE,
+            "max_codebook_bits": 10,
+            "bits": rate,
+            "value_bits": rate,
+            "dist": "gaussian",
+            "rotation_mode": "auto",
+            "block_size": 2,
+            "key_scale_mode": "ub",
+            "value_scale_mode": "ls_iter",
+            "key_code_bits_per_block": 2 * rate + 2,
+            "value_code_bits_per_block": 2 * rate - 2,
+            "n_outlier": 0,
+        },
         "adaptive": {
             **hayate_defaults,
             "required_codebook_bundle": ADAPTIVE_HQ_CODEBOOK_BUNDLE,
@@ -2909,11 +3007,27 @@ def _validate_speed_scientific_recipe(
             "adaptive_bit_split": "online_stats",
             "n_outlier": 0,
         },
+        "rotation": {
+            **hayate_defaults,
+            "required_codebook_bundle": HQ_CODEBOOK_BUNDLE,
+            "bits": rate,
+            "value_bits": rate,
+            "dist": "gaussian",
+            "rotation_mode": "dense",
+            "block_size": 2,
+            "key_scale_mode": "nc",
+            "value_scale_mode": "ls_iter",
+            "key_code_bits_per_block": 2 * rate + 1,
+            "value_code_bits_per_block": 2 * rate - 1,
+            "n_outlier": 0,
+        },
     }
     expected_effective = {
         "tq": {},
         "hq": {"key_scale_mode": "nc", "value_scale_mode": "ls_iter"},
+        "frontier": {"key_scale_mode": "ub", "value_scale_mode": "ls_iter"},
         "adaptive": {"key_scale_mode": "nc", "value_scale_mode": "ls_iter"},
+        "rotation": {"key_scale_mode": "nc", "value_scale_mode": "ls_iter"},
     }
     expected_taxonomy = {
         "tq": {
@@ -2928,14 +3042,26 @@ def _validate_speed_scientific_recipe(
             "proposal_method": True,
             "proposal_variant": "fixed_global",
         },
+        "frontier": {
+            "semantic_role": "integer K(r+1)/V(r-1) HQ frontier proposal",
+            "fake_quant_implementation": HQ_FAKE_QUANT_IMPLEMENTATION,
+            "proposal_method": True,
+            "proposal_variant": "integer_frontier",
+        },
         "adaptive": {
             "semantic_role": "causal online-rate-allocation HQ paper proposal",
             "fake_quant_implementation": ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION,
             "proposal_method": True,
             "proposal_variant": "causal_adaptive",
         },
+        "rotation": {
+            "semantic_role": "fixed HQ payload with dense rotation proposal",
+            "fake_quant_implementation": HQ_FAKE_QUANT_IMPLEMENTATION,
+            "proposal_method": True,
+            "proposal_variant": "rotation_dense",
+        },
     }
-    for method in ("tq", "hq", "adaptive"):
+    for method in method_keys:
         method_name = names[method]
         record = _mapping(configs[method_name], f"{label}.{method_name}")
         codec_record = _mapping(record.get("codec"), f"{label}.{method_name}.codec")
@@ -3318,7 +3444,7 @@ def _validate_speed_pareto_contract(value: Any, models: Mapping[str, Any]) -> di
     }
     _exact_keys(contract, expected_keys, "speed.pareto_contract")
     scope = (
-        "HQ and AdaptiveHQ versus TurboQuant Algorithm-1 reference; speed and "
+        "All four HayateQuant proposals versus TurboQuant Algorithm-1 reference; speed and "
         "the measured memory representations only, not downstream quality"
     )
     exclusions = (
@@ -3326,10 +3452,7 @@ def _validate_speed_pareto_contract(value: Any, models: Mapping[str, Any]) -> di
         "allocated memory is for a dequantized research cache; neither is packed KV "
         "serving memory"
     )
-    comparisons_by_proposal = {
-        "HQ": "hq_vs_turboquant",
-        "AdaptiveHQ": "adaptive_hq_vs_turboquant",
-    }
+    comparisons_by_proposal = dict(SPEED_PROPOSAL_COMPARISONS)
     n_cells = len(LONG_MODELS) * len(RATES)
     n_timing = n_cells * len(SPEED_PAIRED_METRICS) * len(PROPOSAL_METHODS)
     n_memory = n_cells * len(PROPOSAL_METHODS)
@@ -3574,7 +3697,9 @@ def _validate_speed(axis: Mapping[str, Any], commit: str) -> dict:
             "methods": {
                 "TurboQuant-paper": TURBOQUANT_FAKE_QUANT_IMPLEMENTATION,
                 "HQ": HQ_FAKE_QUANT_IMPLEMENTATION,
+                "HQ-Frontier": HQ_FAKE_QUANT_IMPLEMENTATION,
                 "AdaptiveHQ": ADAPTIVE_HQ_FAKE_QUANT_IMPLEMENTATION,
+                "RotationHQ": HQ_FAKE_QUANT_IMPLEMENTATION,
             },
         }
     ):
@@ -3646,12 +3771,7 @@ def _validate_speed(axis: Mapping[str, Any], commit: str) -> dict:
         for rate in RATES:
             modes = _mapping(rates[rate], f"speed.{model}.{rate}")
             _exact_keys(modes, {"off", "decode-only"}, f"speed.{model}.{rate}")
-            names = {
-                "full": "fullkv_uncompressed",
-                "tq": "TurboQuant-paper",
-                "hq": "HQ",
-                "adaptive": "AdaptiveHQ",
-            }
+            names = {"full": "fullkv_uncompressed", **SPEED_METHOD_KEYS}
             for mode in ("off", "decode-only"):
                 row = _mapping(modes[mode], f"speed.{model}.{rate}.{mode}")
                 if row.get("n_replicates") != 5 or row.get("seeds") != [
@@ -3686,7 +3806,7 @@ def _validate_speed(axis: Mapping[str, Any], commit: str) -> dict:
                         f"e2e.summary.{method}.decode_steady_throughput",
                         "tokens_per_second",
                     )
-                for method in (names["tq"], names["hq"], names["adaptive"]):
+                for method in (names[key] for key in SPEED_METHOD_KEYS):
                     _speed_metric(
                         row,
                         "micro.regimes.decode.payload_api."
@@ -3709,7 +3829,7 @@ def _validate_speed(axis: Mapping[str, Any], commit: str) -> dict:
                     )
                     _exact_keys(
                         methods,
-                        {names["tq"], names["hq"], names["adaptive"]},
+                        {names[key] for key in SPEED_METHOD_KEYS},
                         f"speed public payload methods {model}/{rate}/{mode}/{regime}",
                     )
                     logical_bits = set()
@@ -3759,8 +3879,8 @@ def _validate_speed(axis: Mapping[str, Any], commit: str) -> dict:
                     f"speed paired metrics {model}/{rate}/{mode}",
                 )
                 expected_pairs = {
-                    "hq_vs_turboquant": (names["tq"], names["hq"]),
-                    "adaptive_hq_vs_turboquant": (names["tq"], names["adaptive"]),
+                    comparison: (names["tq"], proposal)
+                    for proposal, comparison in SPEED_PROPOSAL_COMPARISONS.items()
                 }
                 for metric_name in SPEED_PAIRED_METRICS:
                     comparisons = _mapping(
@@ -4309,7 +4429,8 @@ def _validate_point_estimate_win_gate(value: Any) -> dict:
     ):
         raise RenderError("predeclared point-estimate 90% gate schema changed")
     cells = gate.get("cells")
-    if not isinstance(cells, list) or len(cells) != 776:
+    expected_total_cells = len(PROPOSAL_METHODS) * (2 * 164 + 60)
+    if not isinstance(cells, list) or len(cells) != expected_total_cells:
         raise RenderError("point-estimate gate cell ledger is missing")
     expected_quality_counts = {
         "TurboQuant-paper": 164,
@@ -4320,7 +4441,7 @@ def _validate_point_estimate_win_gate(value: Any) -> dict:
         gate.get("proposal_baseline_summaries"),
         "point_estimate_win_gate.proposal_baseline_summaries",
     )
-    if set(summaries) != {"HQ", "AdaptiveHQ"}:
+    if set(summaries) != set(PROPOSAL_METHODS):
         raise RenderError("point-estimate gate proposal set changed")
     summary_passes: list[bool] = []
     for cell in cells:
@@ -4333,7 +4454,7 @@ def _validate_point_estimate_win_gate(value: Any) -> dict:
             {"TurboQuant-paper"} if axis == "speed" else {"TurboQuant-paper", "FibQuant-paper"}
         )
         if (
-            cell.get("proposal") not in {"HQ", "AdaptiveHQ"}
+            cell.get("proposal") not in set(PROPOSAL_METHODS)
             or cell.get("baseline") not in expected_baselines
             or isinstance(proposal, bool)
             or not isinstance(proposal, (int, float))
@@ -4362,7 +4483,7 @@ def _validate_point_estimate_win_gate(value: Any) -> dict:
         )
         if cell.get("status") != expected_status:
             raise RenderError("point-estimate gate cell status was tampered")
-    for proposal in ("HQ", "AdaptiveHQ"):
+    for proposal in PROPOSAL_METHODS:
         proposal_summaries = _mapping(
             summaries[proposal], f"point_estimate_win_gate summaries {proposal}"
         )
@@ -4453,10 +4574,10 @@ def _validate_point_estimate_win_gate(value: Any) -> dict:
     descriptive_summaries = _mapping(
         descriptive.get("proposal_summaries"), "BlockQuant descriptive summaries"
     )
-    if not isinstance(descriptive_cells, list) or set(descriptive_summaries) != {
-        "HQ",
-        "AdaptiveHQ",
-    }:
+    if (
+        not isinstance(descriptive_cells, list)
+        or set(descriptive_summaries) != set(PROPOSAL_METHODS)
+    ):
         raise RenderError("BlockQuant unmatched descriptive ledger is malformed")
     for cell in descriptive_cells:
         if not isinstance(cell, Mapping):
@@ -4496,7 +4617,7 @@ def _validate_point_estimate_win_gate(value: Any) -> dict:
             or cell.get("status") != f"unmatched_descriptive_{suffix}"
         ):
             raise RenderError("BlockQuant descriptive direction/status was tampered")
-    for proposal in ("HQ", "AdaptiveHQ"):
+    for proposal in PROPOSAL_METHODS:
         rows = [cell for cell in descriptive_cells if cell.get("proposal") == proposal]
         summary = _mapping(
             descriptive_summaries[proposal], f"BlockQuant descriptive summary {proposal}"
@@ -4696,9 +4817,24 @@ def _summary_panel(
     flattened = [float(value) for proposal in PROPOSAL_METHODS for value in values[proposal]]
     lower, upper = _plot_bounds(flattened, reference)
     x_positions = (0.8, 2.6, 4.4)
-    colors = {"HQ": "blue!70!black", "AdaptiveHQ": "orange!90!black"}
-    marks = {"HQ": "*", "AdaptiveHQ": "square*"}
-    label_anchors = {"HQ": "south", "AdaptiveHQ": "north"}
+    colors = {
+        "HQ": "blue!70!black",
+        "HQ-Frontier": "green!50!black",
+        "AdaptiveHQ": "orange!90!black",
+        "RotationHQ": "red!65!blue",
+    }
+    marks = {
+        "HQ": "*",
+        "HQ-Frontier": "triangle*",
+        "AdaptiveHQ": "square*",
+        "RotationHQ": "diamond*",
+    }
+    label_anchors = {
+        "HQ": "south east",
+        "HQ-Frontier": "south west",
+        "AdaptiveHQ": "north east",
+        "RotationHQ": "north west",
+    }
     lines = [
         rf"\begin{{scope}}[shift={{({origin_x:.3f},0)}}]",
         r"\draw[->] (0.45,0) -- (4.85,0) node[below right] {average bits};",
@@ -4731,13 +4867,20 @@ def _summary_panel(
                 rf"\node[anchor={label_anchors[proposal]},text={colors[proposal]},"
                 rf"font=\tiny] at ({x:.4f},{y:.4f}) {{{_fmt(float(value), digits)}}};"
             )
-    lines.extend(
-        [
-            r"\draw[blue!70!black,thick] (0.70,3.58) -- (1.10,3.58) node[right,text=black] {HQ};",
-            r"\draw[orange!90!black,thick] (2.45,3.58) -- (2.85,3.58) node[right,text=black] {Adaptive HQ};",
-            r"\end{scope}",
-        ]
-    )
+    legend_labels = {
+        "HQ": "HQ",
+        "HQ-Frontier": "HQ-F",
+        "AdaptiveHQ": "Adaptive HQ",
+        "RotationHQ": "Rotation HQ",
+    }
+    for index, proposal in enumerate(PROPOSAL_METHODS):
+        x = 0.58 + (index % 2) * 2.25
+        y = 3.70 - (index // 2) * 0.28
+        lines.append(
+            rf"\draw[{colors[proposal]},thick] ({x:.3f},{y:.3f}) -- "
+            rf"({x + 0.34:.3f},{y:.3f}) node[right,text=black] {{{legend_labels[proposal]}}};"
+        )
+    lines.append(r"\end{scope}")
     return lines
 
 
@@ -4771,18 +4914,14 @@ def _formal_summary_figure(data: Mapping[str, Any]) -> str:
     # descriptive: the complete Pareto contract, rather than this panel, is the
     # only gate that can admit a global speed claim.
     speed_values = {}
-    speed_comparisons = {
-        "HQ": "hq_vs_turboquant",
-        "AdaptiveHQ": "adaptive_hq_vs_turboquant",
-    }
-    for proposal, comparison_name in speed_comparisons.items():
+    for proposal, comparison_name in SPEED_PROPOSAL_COMPARISONS.items():
         by_rate = []
         for rate in RATES:
             per_model = []
             for model in LONG_MODELS:
-                comparison = data["speed"]["models"][model][rate]["off"][
-                    "paired_speedups"
-                ]["e2e.decode_steady_latency"][comparison_name]
+                comparison = data["speed"]["models"][model][rate]["off"]["paired_speedups"][
+                    "e2e.decode_steady_latency"
+                ][comparison_name]
                 per_model.append(
                     _number(
                         comparison.get("geometric_mean_process_speedup_x"),
@@ -4791,7 +4930,9 @@ def _formal_summary_figure(data: Mapping[str, Any]) -> str:
                     )
                 )
             if any(value <= 0.0 for value in per_model):
-                raise RenderError(f"summary E2E decode speedup must be positive: {proposal}/{rate}")
+                raise RenderError(
+                    f"summary E2E decode speedup must be positive: {proposal}/{rate}"
+                )
             by_rate.append(math.exp(statistics.fmean(math.log(value) for value in per_model)))
         speed_values[proposal] = by_rate
     lines = [
@@ -4856,6 +4997,8 @@ def build_main_results(data: Mapping[str, Any], aggregate_sha256: str) -> str:
                 f"{zero['wins']}/{zero['ties']}/{zero['losses']}"
             )
 
+    quality_grid_methods = ("TurboQuant-paper", *PROPOSAL_METHODS)
+    quality_grid_labels = ("TQ", "HQ", "HQ-F", "Adaptive HQ", "Rotation HQ")
     per_model_rows = []
     for model in PAPER_MODELS:
         ppl_rates = data["ppl"]["models"][model]["rates"]
@@ -4863,22 +5006,34 @@ def build_main_results(data: Mapping[str, Any], aggregate_sha256: str) -> str:
         for rate in RATES:
             ppl_methods = ppl_rates[rate]
             zero_methods = zero_rates[rate]
+            ppl_cells = [
+                _fmt(_number(ppl_methods[method]["ppl"], f"main {method} PPL"), 2)
+                for method in quality_grid_methods
+            ]
+            zero_cells = [
+                _fmt(
+                    100.0
+                    * _number(
+                        zero_methods[method]["avg_primary_score"], f"main {method} ZS"
+                    ),
+                    2,
+                )
+                for method in quality_grid_methods
+            ]
             per_model_rows.append(
                 f"{_tex(DISPLAY_MODELS[model])} & {rate} & "
-                f"{_fmt(_number(ppl_methods['TurboQuant-paper']['ppl'], 'main TQ PPL'), 2)} & "
-                f"{_fmt(_number(ppl_methods['HQ']['ppl'], 'main HQ PPL'), 2)} & "
-                f"{_fmt(_number(ppl_methods['AdaptiveHQ']['ppl'], 'main AdaptiveHQ PPL'), 2)} & "
-                f"{_fmt(100.0 * _number(zero_methods['TurboQuant-paper']['avg_primary_score'], 'main TQ ZS'), 2)} & "
-                f"{_fmt(100.0 * _number(zero_methods['HQ']['avg_primary_score'], 'main HQ ZS'), 2)} & "
-                f"{_fmt(100.0 * _number(zero_methods['AdaptiveHQ']['avg_primary_score'], 'main AdaptiveHQ ZS'), 2)}"
+                + " & ".join((*ppl_cells, *zero_cells))
             )
     for rate in RATES:
         ppl_values = {
             method: [
-                _number(data["ppl"]["models"][model]["rates"][rate][method]["ppl"], "main aggregate PPL")
+                _number(
+                    data["ppl"]["models"][model]["rates"][rate][method]["ppl"],
+                    "main aggregate PPL",
+                )
                 for model in PAPER_MODELS
             ]
-            for method in ("TurboQuant-paper", "HQ", "AdaptiveHQ")
+            for method in quality_grid_methods
         }
         zero_values = {
             method: [
@@ -4888,18 +5043,24 @@ def build_main_results(data: Mapping[str, Any], aggregate_sha256: str) -> str:
                 )
                 for model in PAPER_MODELS
             ]
-            for method in ("TurboQuant-paper", "HQ", "AdaptiveHQ")
+            for method in quality_grid_methods
         }
         per_model_rows.append(
             f"Aggregate & {rate} & "
             + " & ".join(
-                _fmt(math.exp(math.fsum(math.log(value) for value in ppl_values[method]) / len(PAPER_MODELS)), 2)
-                for method in ("TurboQuant-paper", "HQ", "AdaptiveHQ")
+                _fmt(
+                    math.exp(
+                        math.fsum(math.log(value) for value in ppl_values[method])
+                        / len(PAPER_MODELS)
+                    ),
+                    2,
+                )
+                for method in quality_grid_methods
             )
             + " & "
             + " & ".join(
                 _fmt(100.0 * math.fsum(zero_values[method]) / len(PAPER_MODELS), 2)
-                for method in ("TurboQuant-paper", "HQ", "AdaptiveHQ")
+                for method in quality_grid_methods
             )
         )
 
@@ -4931,13 +5092,17 @@ def build_main_results(data: Mapping[str, Any], aggregate_sha256: str) -> str:
             r"Seven-model quality grid in the main-paper layout. PPL is WikiText-2 "
             r"perplexity and ZS is the unweighted mean of the five declared task "
             r"metrics, both shown as point estimates. The Aggregate PPL row is a "
-            r"geometric mean and the Aggregate ZS row is an arithmetic mean. HQ is "
-            r"the fixed recipe and Adaptive HQ is the causal allocation option. "
+            r"geometric mean and the Aggregate ZS row is an arithmetic mean. The four "
+            r"proposal columns are fixed HQ, integer-frontier HQ, causal Adaptive HQ, "
+            r"and fixed-payload dense-rotation HQ. "
             r"FibQuant and BlockQuant, including their protocol qualifications, are "
             r"retained in the audit ledger rather than crowded into the main grid.",
             "tab:formal-main-seven-model-quality",
-            "lcrrrrrr",
-            r"model & bits & TQ PPL & HQ PPL & Adaptive HQ PPL & TQ ZS & HQ ZS & Adaptive HQ ZS",
+            "lc" + "r" * (2 * len(quality_grid_methods)),
+            "model & bits & "
+            + " & ".join(f"{label} PPL" for label in quality_grid_labels)
+            + " & "
+            + " & ".join(f"{label} ZS" for label in quality_grid_labels),
             per_model_rows,
         ),
         "",
@@ -4960,7 +5125,7 @@ def build_main_results(data: Mapping[str, Any], aggregate_sha256: str) -> str:
             r"protocol mismatches are non-wins. Pass requires at least 90\%. "
             r"BlockQuant is retained in the audit ledger but excluded here because "
             r"its identity-bit-counted source operating point is not payload-matched. "
-            r"The speed column compares only like-labelled HQ or Adaptive-HQ and TQ "
+            r"The speed column compares each like-labelled proposal and TQ "
             r"implementation categories; it is not a packed-serving claim.",
             "tab:formal-main-gates",
             "lcccc",
@@ -5087,7 +5252,12 @@ def build_macros(data: Mapping[str, Any], aggregate_sha256: str) -> str:
             ),
         ),
     ]
-    proposal_infix = {"HQ": "HQ", "AdaptiveHQ": "AdaptiveHQ"}
+    proposal_infix = {
+        "HQ": "HQ",
+        "HQ-Frontier": "HQFrontier",
+        "AdaptiveHQ": "AdaptiveHQ",
+        "RotationHQ": "RotationHQ",
+    }
     baseline_infix = {
         "TurboQuant-paper": "TurboQuant",
         "FibQuant-paper": "FibQuant",
@@ -5128,9 +5298,15 @@ def build_macros(data: Mapping[str, Any], aggregate_sha256: str) -> str:
                     _macro(stem + "IncludedInGate", included),
                 ]
             )
+    quality_macro_infix = {
+        "HQ": "",
+        "HQ-Frontier": "Frontier",
+        "AdaptiveHQ": "Adaptive",
+        "RotationHQ": "Rotation",
+    }
     for rate in RATES:
         word = RATE_WORD[rate]
-        for proposal, macro_infix in (("HQ", ""), ("AdaptiveHQ", "Adaptive")):
+        for proposal, macro_infix in quality_macro_infix.items():
             ppl = data["ppl"]["primary"][proposal][rate]
             lines.extend(
                 [
@@ -5199,10 +5375,8 @@ def build_macros(data: Mapping[str, Any], aggregate_sha256: str) -> str:
         for rate in RATES:
             rate_word = RATE_WORD[rate]
             row = data["speed"]["models"][model][rate]["off"]
-            for proposal, comparison_name, macro_infix in (
-                ("HQ", "hq_vs_turboquant", ""),
-                ("AdaptiveHQ", "adaptive_hq_vs_turboquant", "Adaptive"),
-            ):
+            for proposal, comparison_name in SPEED_PROPOSAL_COMPARISONS.items():
+                macro_infix = quality_macro_infix[proposal]
                 for scope_word, metric in speed_claim_metrics:
                     comparison = row["paired_speedups"][metric][comparison_name]
                     ratio = _number(
@@ -5270,6 +5444,16 @@ def build_tables(data: Mapping[str, Any], aggregate_sha256: str) -> str:
         r"\HayateValidateFormalTableIdentity",
         "",
     ]
+    method_headers = (
+        "FullKV",
+        TURBOQUANT_TABLE_LABEL,
+        FIBQUANT_TABLE_LABEL,
+        BLOCKQUANT_TABLE_LABEL,
+        *PROPOSAL_METHODS,
+    )
+    speed_comparison_headers = tuple(
+        f"{proposal}/TQ" for proposal in PROPOSAL_METHODS
+    )
 
     ppl_primary_rows = []
     for proposal in PROPOSAL_METHODS:
@@ -5317,12 +5501,18 @@ def build_tables(data: Mapping[str, Any], aggregate_sha256: str) -> str:
                 if rate == "3"
                 else r"--"
             )
-            hq = _number(methods["HQ"].get("ppl"), "render HQ PPL")
-            adaptive = _number(methods["AdaptiveHQ"].get("ppl"), "render AdaptiveHQ PPL")
+            proposal_values = {
+                proposal: _number(
+                    methods[proposal].get("ppl"), f"render {proposal} PPL"
+                )
+                for proposal in PROPOSAL_METHODS
+            }
             ppl_model_rows.append(
                 f"{_tex(DISPLAY_MODELS[model])} & {_fmt(full)} & {rate} & "
-                f"{_fmt(tq)} & {_fmt(fib)} & {block} & {_fmt(hq)} & "
-                f"{_fmt(adaptive)} & {_fmt(hq / tq, 4)} & {_fmt(adaptive / tq, 4)}"
+                f"{_fmt(tq)} & {_fmt(fib)} & {block} & "
+                + " & ".join(_fmt(proposal_values[p]) for p in PROPOSAL_METHODS)
+                + " & "
+                + " & ".join(_fmt(proposal_values[p] / tq, 4) for p in PROPOSAL_METHODS)
             )
     tables.append(
         _table(
@@ -5334,8 +5524,11 @@ def build_tables(data: Mapping[str, Any], aggregate_sha256: str) -> str:
             r"payload-matched to HQ, it is displayed descriptively and excluded from "
             r"the strict dominance gate; paper-reproduction=false.",
             "tab:formal-ppl-models",
-            "lrrrrrrrrr",
-            rf"model & FullKV & bits & {TURBOQUANT_TABLE_LABEL} & {FIBQUANT_TABLE_LABEL} & {BLOCKQUANT_TABLE_LABEL} & HQ & AdaptiveHQ & HQ/TQ & AdaptiveHQ/TQ",
+            "l" + "r" * (5 + 2 * len(PROPOSAL_METHODS)),
+            rf"model & FullKV & bits & {TURBOQUANT_TABLE_LABEL} & {FIBQUANT_TABLE_LABEL} & {BLOCKQUANT_TABLE_LABEL} & "
+            + " & ".join(PROPOSAL_METHODS)
+            + " & "
+            + " & ".join(f"{proposal}/TQ" for proposal in PROPOSAL_METHODS),
             ppl_model_rows,
         )
     )
@@ -5483,8 +5676,8 @@ def build_tables(data: Mapping[str, Any], aggregate_sha256: str) -> str:
             r"task-macro scores on a 0--100 scale; no directional "
             r"claim is inferred without a comparison interval.",
             "tab:formal-ruler",
-            "llrrrrrr",
-            rf"model & context & FullKV & {TURBOQUANT_TABLE_LABEL} & {FIBQUANT_TABLE_LABEL} & {BLOCKQUANT_TABLE_LABEL} & HQ & AdaptiveHQ",
+            "ll" + "r" * len(METHODS),
+            "model & context & " + " & ".join(method_headers),
             ruler_rows,
         )
     )
@@ -5502,7 +5695,7 @@ def build_tables(data: Mapping[str, Any], aggregate_sha256: str) -> str:
         )
     tables.append(
         _table(
-            r"Complete 13-task LongBench-E. TQ, FibQuant, HQ, and AdaptiveHQ use the matched "
+            r"Complete 13-task LongBench-E. TQ, FibQuant, and all four proposals use the matched "
             r"3-bit average code budget; BlockQuant is the supplementary paper-declared "
             r"KV point with its versioned identity-bit-counted completion. "
             r"The released prompts, middle truncation, task generation budgets, and "
@@ -5510,8 +5703,8 @@ def build_tables(data: Mapping[str, Any], aggregate_sha256: str) -> str:
             r"model-native chat-template adaptation. The displayed scalar is a derived "
             rf"unweighted task macro over {LONGBENCH_TOTAL:,} examples per method.",
             "tab:formal-longbench",
-            "lrrrrrrr",
-            rf"model & FullKV & {TURBOQUANT_TABLE_LABEL} & {FIBQUANT_TABLE_LABEL} & {BLOCKQUANT_TABLE_LABEL} & HQ & AdaptiveHQ & $n$",
+            "l" + "r" * (len(METHODS) + 1),
+            "model & " + " & ".join(method_headers) + r" & $n$",
             longbench_rows,
         )
     )
@@ -5566,8 +5759,8 @@ def build_tables(data: Mapping[str, Any], aggregate_sha256: str) -> str:
             r"[95\% Wilson CI]. This is only the LongCodeQA subtask, not a whole-"
             r"LongCodeBench score, and excludes LongSWE-Bench.",
             "tab:formal-longcodeqa",
-            "llrrrrrrr",
-            rf"model & bracket & FullKV & {TURBOQUANT_TABLE_LABEL} & {FIBQUANT_TABLE_LABEL} & {BLOCKQUANT_TABLE_LABEL} & HQ & AdaptiveHQ & $n$",
+            "ll" + "r" * (len(METHODS) + 1),
+            "model & bracket & " + " & ".join(method_headers) + r" & $n$",
             longcode_rows,
         )
     )
@@ -5576,16 +5769,11 @@ def build_tables(data: Mapping[str, Any], aggregate_sha256: str) -> str:
     speed_micro_rows = []
     for model in LONG_MODELS:
         for rate in RATES:
-            names = {
-                "full": "fullkv_uncompressed",
-                "tq": "TurboQuant-paper",
-                "hq": "HQ",
-                "adaptive": "AdaptiveHQ",
-            }
+            names = {"full": "fullkv_uncompressed", **SPEED_METHOD_KEYS}
             for mode in ("off", "decode-only"):
                 row = data["speed"]["models"][model][rate][mode]
                 e2e_values = []
-                for method in ("full", "tq", "hq", "adaptive"):
+                for method in ("full", *SPEED_METHOD_KEYS):
                     metric = _speed_metric(
                         row,
                         f"e2e.summary.{names[method]}.decode_steady_throughput",
@@ -5599,7 +5787,7 @@ def build_tables(data: Mapping[str, Any], aggregate_sha256: str) -> str:
                     + " & ".join(e2e_values)
                 )
                 micro_values = []
-                for method in ("tq", "hq", "adaptive"):
+                for method in SPEED_METHOD_KEYS:
                     metric = _speed_metric(
                         row,
                         "micro.regimes.decode.payload_api."
@@ -5621,8 +5809,9 @@ def build_tables(data: Mapping[str, Any], aggregate_sha256: str) -> str:
             r"dequantizes to floating tensors; these descriptive values are not "
             r"packed-cache serving results. No directional speed claim is emitted.",
             "tab:formal-speed-e2e",
-            "lrrrrrr",
-            rf"model & bits & compile & FullKV & {TURBOQUANT_TABLE_LABEL} ref. & HQ & AdaptiveHQ",
+            "lrr" + "r" * (2 + len(PROPOSAL_METHODS)),
+            rf"model & bits & compile & FullKV & {TURBOQUANT_TABLE_LABEL} ref. & "
+            + " & ".join(PROPOSAL_METHODS),
             speed_e2e_rows,
         )
     )
@@ -5635,8 +5824,9 @@ def build_tables(data: Mapping[str, Any], aggregate_sha256: str) -> str:
             r"and persistent codec state, and is not their physical tensor footprint. Implementation "
             r"labels remain explicit; no directional speed claim is emitted.",
             "tab:formal-speed-micro",
-            "lrrrrr",
-            rf"model & bits & compile & {TURBOQUANT_TABLE_LABEL} ref. & HQ & AdaptiveHQ",
+            "lrr" + "r" * (1 + len(PROPOSAL_METHODS)),
+            rf"model & bits & compile & {TURBOQUANT_TABLE_LABEL} ref. & "
+            + " & ".join(PROPOSAL_METHODS),
             speed_micro_rows,
         )
     )
@@ -5694,8 +5884,8 @@ def build_tables(data: Mapping[str, Any], aggregate_sha256: str) -> str:
             _table(
                 caption,
                 label,
-                "lrrcc",
-                r"model & bits & compile & HQ/TQ & AdaptiveHQ/TQ",
+                "lrr" + "c" * len(PROPOSAL_METHODS),
+                "model & bits & compile & " + " & ".join(speed_comparison_headers),
                 paired_rows,
             )
         )
@@ -5749,8 +5939,9 @@ def build_tables(data: Mapping[str, Any], aggregate_sha256: str) -> str:
             r"fresh processes. The payload indices are unpacked int64 tensors; this is "
             r"not packed serving. Per-endpoint intervals remain descriptive.",
             "tab:formal-speed-public-operations",
-            "lrrllcc",
-            r"model & bits & compile & shape & operation & HQ/TQ & AdaptiveHQ/TQ",
+            "lrrll" + "c" * len(PROPOSAL_METHODS),
+            "model & bits & compile & shape & operation & "
+            + " & ".join(speed_comparison_headers),
             public_operation_rows,
         )
     )
@@ -5794,14 +5985,16 @@ def build_tables(data: Mapping[str, Any], aggregate_sha256: str) -> str:
     tables.append(
         _table(
             r"Research fake-quant endpoints, kept separate from the public payload API. "
-            r"The micro rows time ``fake\_quant\_roundtrip'': fixed HQ is fused, while "
-            r"TurboQuant and AdaptiveHQ use inherited encode--decode. E2E rows use the "
+            r"The micro rows time ``fake\_quant\_roundtrip'': fixed, frontier, and "
+            r"rotation HQ are fused, while TurboQuant and AdaptiveHQ use inherited "
+            r"encode--decode. E2E rows use the "
             r"dequantized Transformers cache. Cells are paired "
             r"baseline/candidate latency ratios with pointwise 95\% intervals and are not "
             r"native packed-serving measurements.",
             "tab:formal-speed-research-fake-quant",
-            "lrrlcc",
-            r"model & bits & compile & research endpoint & HQ/TQ & AdaptiveHQ/TQ",
+            "lrrl" + "c" * len(PROPOSAL_METHODS),
+            "model & bits & compile & research endpoint & "
+            + " & ".join(speed_comparison_headers),
             research_rows,
         )
     )
@@ -5810,10 +6003,7 @@ def build_tables(data: Mapping[str, Any], aggregate_sha256: str) -> str:
     for model in LONG_MODELS:
         for rate in RATES:
             row = data["speed"]["models"][model][rate]["off"]
-            for proposal, comparison_name in (
-                ("HQ", "hq_vs_turboquant"),
-                ("AdaptiveHQ", "adaptive_hq_vs_turboquant"),
-            ):
+            for proposal, comparison_name in SPEED_PROPOSAL_COMPARISONS.items():
                 memory = row["paired_peak_allocated_memory"][comparison_name]
                 ratio = memory["ratio"]
                 difference = memory["difference"]

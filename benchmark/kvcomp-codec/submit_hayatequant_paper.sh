@@ -78,6 +78,10 @@ SPEED_NODE_RESOLVED=0
 SPEED_NODE_IDLE_VALIDATED=0
 SPEED_PREVIOUS_JOB_ID=
 SPEED_PLAN_SEQUENCE=0
+LAST_SUBMITTED_JOB_ID=
+GENERAL_PLAN_SEQUENCE=0
+JOB_DEPENDENCY=
+SUBMIT_JOB_CPU_ONLY=0
 GPU11_SSH_HOST=${GPU11_SSH_HOST:-kagura-gpu11}
 GPU11_DEVICE=${GPU11_DEVICE:-0}
 DRYRUN=${DRYRUN:-0}
@@ -616,6 +620,17 @@ submit_job() {
   shift
   [ "$#" -gt 0 ] || die "internal error: empty worker command for $key"
 
+  local dependency=${JOB_DEPENDENCY:-}
+  local cpu_only=${SUBMIT_JOB_CPU_ONLY:-0}
+  JOB_DEPENDENCY=
+  SUBMIT_JOB_CPU_ONLY=0
+  LAST_SUBMITTED_JOB_ID=
+  case "$cpu_only" in 0|1) ;; *) die "internal error: invalid CPU-only flag for $key" ;; esac
+  if [ -n "$dependency" ]; then
+    case "$dependency" in *[!0-9:]*) die "internal error: unsafe dependency for $key" ;; esac
+    [ -n "${dependency//:/}" ] || die "internal error: empty dependency for $key"
+  fi
+
   case "$phase" in smoke|formal) ;; *) die "unsafe phase: $phase" ;; esac
   case "$key" in *[!A-Za-z0-9._-]*) die "unsafe job key: $key" ;; esac
   [ -n "$model" ] || die "every smoke/formal job must declare a pinned model"
@@ -681,6 +696,7 @@ submit_job() {
     )
   fi
   [ -z "$model" ] || worker+=(--model "$model")
+  [ "$cpu_only" != 1 ] || worker+=(--no-cuda)
   local dataset
   for dataset in "${datasets[@]}"; do
     worker+=(--dataset-file "$dataset")
@@ -726,7 +742,6 @@ submit_job() {
     --partition "$allocation_partition"
     --nodes 1
     --ntasks 1
-    --gres "$allocation_gres"
     --cpus-per-task "$cpus"
     --mem "$mem"
     --time "$wall"
@@ -735,6 +750,7 @@ submit_job() {
     --error "$stderr_template"
     --export "$export_spec"
   )
+  [ "$cpu_only" = 1 ] || sbatch_cmd+=(--gres "$allocation_gres")
   if [ "$phase" = formal ] && [[ "$key" = speed-* ]]; then
     [ "$SPEED_NODE_RESOLVED" = 1 ] || die \
       "internal error: formal speed job was planned before SPEED_NODE validation"
@@ -758,6 +774,9 @@ submit_job() {
       "internal error: formal quality job cannot use the reserved SPEED_NODE"
     sbatch_cmd+=(--exclude "$SPEED_NODE")
   fi
+  if [ -n "$dependency" ]; then
+    sbatch_cmd+=(--kill-on-invalid-dep=yes --dependency "afterok:$dependency")
+  fi
   [ -z "$node" ] || sbatch_cmd+=(--nodelist "$node")
   sbatch_cmd+=(--wrap "$wrapped")
 
@@ -773,6 +792,8 @@ submit_job() {
       SPEED_PLAN_SEQUENCE=$((SPEED_PLAN_SEQUENCE + 1))
       SPEED_PREVIOUS_JOB_ID=$((900000000 + SPEED_PLAN_SEQUENCE))
     fi
+    GENERAL_PLAN_SEQUENCE=$((GENERAL_PLAN_SEQUENCE + 1))
+    LAST_SUBMITTED_JOB_ID=$((800000000 + GENERAL_PLAN_SEQUENCE))
     return
   fi
 
@@ -839,6 +860,7 @@ submit_job() {
     esac
     SPEED_PREVIOUS_JOB_ID=$job_id
   fi
+  LAST_SUBMITTED_JOB_ID=$job_id
   printf 'SUBMITTED phase=%s key=%s job_id=%s result=%s\n' \
     "$phase" "$key" "$job_id" "$result"
 }
@@ -856,35 +878,55 @@ long_base_command() {
 }
 
 submit_ppl_formal() {
-  local spec key model_name model out result
+  local spec key model_name model out result bit shard_out shard_result
+  local dependency
   local -a datasets=("$INPUT_MANIFEST" "$PINNED_HF_MANIFEST")
+  local -a shard_results=() shard_jobs=() cmd=() merge_cmd=()
   for spec in "${MODEL_SPECS[@]}"; do
     key=${spec%%|*}
     model_name=${spec#*|}
     model="$MODELS/$model_name"
     out="$RUN_ROOT/results/formal/ppl/$key"
     result="$out/results_${model_name}.json"
-    local -a cmd=(
-      "$PY" -u "$HERE/codec_benchmark.py"
-      --config-name paper_hayatequant
-      "model_path=$model"
-      "output_dir=$out"
-      # BlockQuant-paper is intentionally requested in the shared config but
-      # codec_benchmark emits it only at its sole declared rate-3 operating
-      # point; the rate-2/rate-4 formal cells therefore do not exist.
-      'methods=[TurboQuant-paper,FibQuant-paper,BlockQuant-paper,HQ,HQ-Frontier,AdaptiveHQ,RotationHQ]'
-      'bits=[2,3,4]'
-      run_ppl=true
-      ppl_windows=null
-      ppl_max_length=2048
-      ppl_stride=1024
-      sample_seed=2027
-      skip_outliers=false
-      sink_tokens=0
-      recent_tokens=0
-    )
-    submit_job formal "ppl-$key" 1-00:00:00 220G 12 "" "$model" "$result" \
-      "${#datasets[@]}" "${datasets[@]}" -- "${cmd[@]}"
+    shard_results=()
+    shard_jobs=()
+    for bit in 2 3 4; do
+      shard_out="$RUN_ROOT/results/formal/ppl_shards/$key/b$bit"
+      shard_result="$shard_out/results_${model_name}.json"
+      cmd=(
+        "$PY" -u "$HERE/codec_benchmark.py"
+        --config-name paper_hayatequant
+        "model_path=$model"
+        "output_dir=$shard_out"
+        # BlockQuant-paper is requested in every shard so the canonical config
+        # remains identical; codec_benchmark emits it only at its declared
+        # rate-3 operating point.
+        'methods=[TurboQuant-paper,FibQuant-paper,BlockQuant-paper,HQ,HQ-Frontier,AdaptiveHQ,RotationHQ]'
+        "bits=[$bit]"
+        run_ppl=true
+        ppl_windows=null
+        ppl_max_length=2048
+        ppl_stride=1024
+        sample_seed=2027
+        skip_outliers=false
+        sink_tokens=0
+        recent_tokens=0
+      )
+      submit_job formal "ppl-$key-b$bit" 12:00:00 220G 12 "" \
+        "$model" "$shard_result" "${#datasets[@]}" "${datasets[@]}" -- "${cmd[@]}"
+      shard_results+=("$shard_result")
+      [ -z "$LAST_SUBMITTED_JOB_ID" ] || shard_jobs+=("$LAST_SUBMITTED_JOB_ID")
+    done
+    dependency=$(IFS=:; echo "${shard_jobs[*]}")
+    merge_cmd=("$PY" -u "$HERE/merge_hayatequant_ppl_shards.py")
+    for shard_result in "${shard_results[@]}"; do
+      merge_cmd+=(--shard "$shard_result")
+    done
+    merge_cmd+=(--output "$result")
+    JOB_DEPENDENCY=$dependency
+    SUBMIT_JOB_CPU_ONLY=1
+    submit_job formal "ppl-merge-$key" 00:30:00 16G 2 "" \
+      "$model" "$result" "${#datasets[@]}" "${datasets[@]}" -- "${merge_cmd[@]}"
   done
 }
 
@@ -1593,7 +1635,7 @@ usage() {
     '  ppl          Formal seven-model complete WikiText-2' \
     '  mechanism    Formal two-model exact block-VQ mechanism controls' \
     '  zeroshot     Formal seven-model five-task corrected full splits' \
-    '  ruler        Formal RULER v1: 2 models x 4K/8K/16K x 6 quality methods' \
+    '  ruler        Formal RULER v1: 2 models x 4K/8K/16K x 8 quality methods' \
     '  longbench    Formal complete 13-task LongBench-E on Llama/Qwen' \
     '  math         Formal complete MATH-500 + Math-Verify on Llama/Qwen' \
     '  longcodeqa   Formal Llama 32/64/128K and Qwen 32K' \

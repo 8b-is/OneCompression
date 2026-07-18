@@ -133,3 +133,56 @@ def test_block_size_must_divide_head_dim_and_provenance_is_explicit():
     assert provenance["scale_contract"] == "one_signed_fp16_scale_per_role_vector"
     assert provenance["zero_points"] == 0
     assert provenance["assignment"] == "exact_nearest_codeword_then_value_ls_refit"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("key_code_bits_per_block", 7.9),
+        ("key_block_size", 2.9),
+        ("value_code_bits_per_block", "5"),
+        ("value_block_size", True),
+        ("max_codebook_bits", 9.5),
+        ("seed", 1.5),
+    ],
+)
+def test_full_hq_recipe_rejects_lossy_integer_coercion(field, value):
+    values = {
+        "key_code_bits_per_block": 7,
+        "key_block_size": 2,
+        "value_code_bits_per_block": 5,
+        "value_block_size": 2,
+        field: value,
+    }
+    with pytest.raises(ValueError, match="integer"):
+        FullHQNativeRecipe(**values)
+
+
+def test_full_hq_mapping_accepts_exact_integral_json_float():
+    recipe = full_hq_native_recipe_from_mapping({"avg_bits": 3.0})
+    assert recipe == fixed_hq_native_recipe(3)
+
+
+@pytest.mark.parametrize("value", [3.5, "3", True])
+def test_full_hq_mapping_rejects_non_integer_average_rate(value):
+    with pytest.raises(ValueError, match="integer"):
+        full_hq_native_recipe_from_mapping({"avg_bits": value})
+
+
+@pytest.mark.parametrize("field", ["n_outlier", "key_n_outlier", "value_n_outlier"])
+def test_full_native_mapping_rejects_fractional_outlier_counts(field):
+    with pytest.raises(ValueError, match=field):
+        full_hq_native_recipe_from_mapping({"avg_bits": 3, field: 0.5})
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"calibration": "digest"},
+        {"adaptive_bit_split": "online_stats"},
+        {"n_outlier": 1},
+    ],
+)
+def test_full_native_mapping_rejects_unsupported_recipe_features(extra):
+    with pytest.raises(ValueError):
+        full_hq_native_recipe_from_mapping({"avg_bits": 3, **extra})

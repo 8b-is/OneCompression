@@ -22,6 +22,8 @@ from dataclasses import asdict, dataclass
 import math
 from typing import Any, Mapping
 
+from vllm_plugins.kvcomp._validation import strict_integer
+
 # Original paper operating points.  Entries are
 # (key_code_bits, key_block_size, value_code_bits, value_block_size).
 PAPER_HQ_NATIVE_RECIPES: dict[int, tuple[int, int, int, int]] = {
@@ -78,10 +80,19 @@ class FullHQNativeRecipe:
     allow_canonical_k10v6_b4: bool = False
 
     def __post_init__(self) -> None:
+        if not isinstance(self.allow_canonical_k10v6_b4, bool):
+            raise ValueError("allow_canonical_k10v6_b4 must be a bool")
+        max_codebook_bits = strict_integer(
+            self.max_codebook_bits, "max_codebook_bits", minimum=1, maximum=12
+        )
+        object.__setattr__(self, "max_codebook_bits", max_codebook_bits)
         for name in ("key_block_size", "value_block_size"):
-            value = getattr(self, name)
-            if isinstance(value, bool) or int(value) not in (1, 2, 4, 8):
+            value = strict_integer(getattr(self, name), name, minimum=1)
+            if value not in (1, 2, 4, 8):
                 raise ValueError(f"{name} must be one of 1,2,4,8, got {value!r}")
+            object.__setattr__(self, name, value)
+        for name in ("key_code_bits_per_block", "value_code_bits_per_block"):
+            object.__setattr__(self, name, strict_integer(getattr(self, name), name, minimum=1))
         canonical_k10 = (
             self.allow_canonical_k10v6_b4
             and self.key_code_bits_per_block == 10
@@ -95,11 +106,7 @@ class FullHQNativeRecipe:
         ):
             value = getattr(self, name)
             allowed_above_cap = canonical_k10 and name == "key_code_bits_per_block"
-            if (
-                isinstance(value, bool)
-                or int(value) < 1
-                or (int(value) > int(self.max_codebook_bits) and not allowed_above_cap)
-            ):
+            if value > self.max_codebook_bits and not allowed_above_cap:
                 raise ValueError(
                     f"{name} must be in 1..max_codebook_bits "
                     f"({self.max_codebook_bits}), except explicit canonical "
@@ -110,10 +117,10 @@ class FullHQNativeRecipe:
                 "allow_canonical_k10v6_b4 is valid only for the exact fixed "
                 "key=(10 bits,b4), value=(6 bits,b4) recipe"
             )
-        if self.max_codebook_bits < 1 or self.max_codebook_bits > 12:
-            raise ValueError("max_codebook_bits must be in 1..12")
         if self.dist not in {"gaussian", "beta"}:
             raise ValueError("dist must be 'gaussian' or 'beta'")
+        if self.codebook_init not in {"auto", "forgy", "fibquant"}:
+            raise ValueError("codebook_init must be 'auto', 'forgy', or 'fibquant'")
         if self.rotation_mode not in {"auto", "hybrid", "hadamard_gemm", "dense"}:
             raise ValueError("unsupported rotation_mode")
         if self.key_scale_mode != "nc":
@@ -122,6 +129,18 @@ class FullHQNativeRecipe:
             raise ValueError("faithful fixed HQ native values require value_scale_mode='ls_iter'")
         if self.assignment_mode not in {"exact", "lut"}:
             raise ValueError("assignment_mode must be 'exact' or 'lut'")
+        for name in ("lut_bins", "lut_candidates"):
+            object.__setattr__(self, name, strict_integer(getattr(self, name), name, minimum=1))
+        object.__setattr__(self, "seed", strict_integer(self.seed, "seed"))
+        if isinstance(self.lut_limit, bool):
+            raise ValueError("lut_limit must be a positive finite number")
+        try:
+            lut_limit = float(self.lut_limit)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("lut_limit must be a positive finite number") from exc
+        if not math.isfinite(lut_limit) or lut_limit <= 0.0:
+            raise ValueError("lut_limit must be a positive finite number")
+        object.__setattr__(self, "lut_limit", lut_limit)
         if self.assignment_mode == "lut":
             if self.key_block_size != 2 or self.value_block_size != 2:
                 raise ValueError(
@@ -150,18 +169,17 @@ class FullHQNativeRecipe:
         return (self.key_rate + self.value_rate) / 2.0
 
     def validate_head_dim(self, head_dim: int) -> None:
-        if isinstance(head_dim, bool) or int(head_dim) < 1:
-            raise ValueError(f"head_dim must be positive, got {head_dim!r}")
+        head_dim = strict_integer(head_dim, "head_dim", minimum=1)
         for role, block in (
             ("key", self.key_block_size),
             ("value", self.value_block_size),
         ):
-            if int(head_dim) % int(block):
+            if head_dim % block:
                 raise ValueError(f"{role}_block_size={block} must divide head_dim={head_dim}")
 
     @staticmethod
     def _role_code_bytes(head_dim: int, code_bits: int, block_size: int) -> int:
-        total_bits = (int(head_dim) // int(block_size)) * int(code_bits)
+        total_bits = (head_dim // block_size) * code_bits
         return math.ceil(total_bits / 8)
 
     def layout(self, head_dim: int) -> dict[str, int]:
@@ -236,7 +254,7 @@ class FullHQNativeRecipe:
 def paper_hq_native_recipe(avg_bits: int, **overrides: Any) -> FullHQNativeRecipe:
     """Build one of the original paper's fixed role-aware operating points."""
 
-    rate = int(avg_bits)
+    rate = strict_integer(avg_bits, "paper HQ native avg_bits")
     if rate not in PAPER_HQ_NATIVE_RECIPES:
         raise ValueError(
             f"paper HQ native avg_bits must be one of {sorted(PAPER_HQ_NATIVE_RECIPES)}"
@@ -255,7 +273,7 @@ def paper_hq_native_recipe(avg_bits: int, **overrides: Any) -> FullHQNativeRecip
 def fixed_hq_native_recipe(avg_bits: int, **overrides: Any) -> FullHQNativeRecipe:
     """Build the frozen strengthened fixed HQ operating point."""
 
-    rate = int(avg_bits)
+    rate = strict_integer(avg_bits, "fixed HQ native avg_bits")
     if rate not in FIXED_HQ_NATIVE_RECIPES:
         raise ValueError(
             f"fixed HQ native avg_bits must be one of {sorted(FIXED_HQ_NATIVE_RECIPES)}"
@@ -278,6 +296,18 @@ def full_hq_native_recipe_from_mapping(config: Mapping[str, Any]) -> FullHQNativ
     fixed fractional candidates.  Otherwise ``avg_bits`` selects the original
     paper recipe.  Partial role declarations fail closed.
     """
+
+    if config.get("calibration"):
+        raise ValueError("full HQ native currently supports data-free rotations only")
+    if config.get("adaptive_bit_split") not in (None, "", "off", "none", False):
+        raise ValueError(
+            "full HQ native is fixed-rate; Adaptive HQ requires a cache-local selector"
+        )
+    for name in ("n_outlier", "key_n_outlier", "value_n_outlier"):
+        raw_value = config.get(name, 0)
+        value = strict_integer(0 if raw_value is None else raw_value, name, minimum=0)
+        if value:
+            raise ValueError("full HQ native fixed recipe does not support dynamic outlier masks")
 
     fields = (
         "key_code_bits_per_block",
@@ -308,16 +338,16 @@ def full_hq_native_recipe_from_mapping(config: Mapping[str, Any]) -> FullHQNativ
         if len(present) != len(fields):
             missing = sorted(set(fields) - set(present))
             raise ValueError(f"partial full-HQ native role recipe; missing {missing}")
-        values = {name: int(config[name]) for name in fields}
+        values = {name: strict_integer(config[name], name) for name in fields}
         values.update(common)
         return FullHQNativeRecipe(**values)
     if config.get("avg_bits") is None:
         raise ValueError("full-HQ native config requires avg_bits or all four role block fields")
     recipe_name = str(config.get("recipe") or "hq").strip().lower().replace("-", "_")
     if recipe_name in {"hq", "fixed_hq"}:
-        return fixed_hq_native_recipe(int(config["avg_bits"]), **common)
+        return fixed_hq_native_recipe(config["avg_bits"], **common)
     if recipe_name in {"paper_original", "original_paper"}:
-        return paper_hq_native_recipe(int(config["avg_bits"]), **common)
+        return paper_hq_native_recipe(config["avg_bits"], **common)
     raise ValueError("full-HQ native recipe must be 'hq' or 'paper_original'")
 
 
