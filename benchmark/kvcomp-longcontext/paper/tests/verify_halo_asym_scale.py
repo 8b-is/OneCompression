@@ -112,17 +112,40 @@ def section_1_closed_form_identities():
 
         # (c) norm + inner-product behaviour
         xh_ls, xh_nc, xh_ip = s_ls * chat, s_nc * chat, s_ip * chat
-        nrm = lambda t: t.norm(dim=-1, keepdim=True)
-        ipf = lambda t: (t * xr).sum(-1, keepdim=True)
-        check(f"bits={bits}: ||x_hat_NC|| == ||x|| (exact)", rel(nrm(xh_nc), n_x) < 1e-5)
-        check(f"bits={bits}: ||x_hat_LS|| == ||x|| cos t", rel(nrm(xh_ls), n_x * cos) < 1e-5)
-        check(f"bits={bits}: <x_hat_LS,x> == ||x||^2 cos^2", rel(ipf(xh_ls), n_x.pow(2) * cos.pow(2)) < 1e-5)
-        check(f"bits={bits}: <x_hat_NC,x> == ||x||^2 cos",   rel(ipf(xh_nc), n_x.pow(2) * cos) < 1e-5)
-        check(f"bits={bits}: <x_hat_IP,x> == ||x||^2 (unbiased)", rel(ipf(xh_ip), n_x.pow(2)) < 1e-4)
+        def vector_norm(t):
+            return t.norm(dim=-1, keepdim=True)
+
+        def inner_product(t):
+            return (t * xr).sum(-1, keepdim=True)
+
+        check(
+            f"bits={bits}: ||x_hat_NC|| == ||x|| (exact)",
+            rel(vector_norm(xh_nc), n_x) < 1e-5,
+        )
+        check(
+            f"bits={bits}: ||x_hat_LS|| == ||x|| cos t",
+            rel(vector_norm(xh_ls), n_x * cos) < 1e-5,
+        )
+        check(
+            f"bits={bits}: <x_hat_LS,x> == ||x||^2 cos^2",
+            rel(inner_product(xh_ls), n_x.pow(2) * cos.pow(2)) < 1e-5,
+        )
+        check(
+            f"bits={bits}: <x_hat_NC,x> == ||x||^2 cos",
+            rel(inner_product(xh_nc), n_x.pow(2) * cos) < 1e-5,
+        )
+        check(
+            f"bits={bits}: <x_hat_IP,x> == ||x||^2 (unbiased)",
+            rel(inner_product(xh_ip), n_x.pow(2)) < 1e-4,
+        )
 
         # (d) MSE ordering and the (1-cos)^2 gap
-        mse = lambda xh: (xr - xh).pow(2).sum(-1, keepdim=True)
-        m_ls, m_nc, m_ip = mse(xh_ls), mse(xh_nc), mse(xh_ip)
+        def squared_error(xh):
+            return (xr - xh).pow(2).sum(-1, keepdim=True)
+
+        m_ls = squared_error(xh_ls)
+        m_nc = squared_error(xh_nc)
+        m_ip = squared_error(xh_ip)
         check(f"bits={bits}: LS minimises MSE (<= NC, IP elementwise)",
               bool((m_ls <= m_nc + 1e-6).all() and (m_ls <= m_ip + 1e-6).all()))
         gap_pred = n_x.pow(2) * (1 - cos).pow(2)
@@ -188,7 +211,8 @@ def section_4_legacy_backcompat():
                   key_scale_mode="ls", value_scale_mode="ls")
     b = HALOCodec(bits=3, rotation_mode="hadamard_gemm",
                   key_scale_mode="ls", value_scale_mode="ls")
-    ka, _ = a.decode(a.encode(x, x)); kb, _ = b.decode(b.encode(x, x))
+    ka, _ = a.decode(a.encode(x, x))
+    kb, _ = b.decode(b.encode(x, x))
     check("explicit K=ls/V=ls is deterministic (bit-identical)", rel(ka, kb) < 1e-12)
 
 
@@ -200,7 +224,8 @@ def section_5_stateless_precond():
 
     d = 128
     blockA = torch.randn(1, 4, 300, d)
-    means = torch.zeros(d); means[:6] = torch.tensor([50., -40., 30., -20., 60., -10.])
+    means = torch.zeros(d)
+    means[:6] = torch.tensor([50.0, -40.0, 30.0, -20.0, 60.0, -10.0])
     blockB = torch.randn(1, 4, 300, d) * 3.0 + means
 
     encB_after_A = cdc.encode(blockA, blockA) and cdc.encode(blockB, blockB)

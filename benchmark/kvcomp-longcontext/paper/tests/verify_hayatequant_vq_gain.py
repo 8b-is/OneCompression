@@ -56,7 +56,6 @@ from onecomp.kvcomp.codec.turboquant import TurboQuantCodec  # noqa: E402
 from onecomp.kvcomp.codec.rotation import (  # noqa: E402
     random_sign,
     rotate,
-    signed_hadamard_matrix,
     block_dense_matrices,
     hybrid_rotate,
 )

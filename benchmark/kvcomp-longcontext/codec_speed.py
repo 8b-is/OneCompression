@@ -65,7 +65,7 @@ import torch
 
 from onecomp.kvcomp.codec.turboquant import TurboQuantCodec
 from onecomp.kvcomp.codec.halo import HALOCodec
-from onecomp.kvcomp.codec.hayatequant import HayateQuantCodec
+from onecomp.kvcomp.codec import HayateQuantCodec
 from onecomp.kvcomp.codec.hayate.recipes import build_hayate_frontier, hayate_frontier_bits
 
 
@@ -197,8 +197,10 @@ def _mse(a, b):
 def _attn_err(k, v, kq, vq, q):
     d = k.shape[-1]
     sc = 1.0 / math.sqrt(d)
-    ao = lambda kk, vv: torch.softmax((q @ kk.transpose(-1, -2)) * sc, -1) @ vv
-    o, oq = ao(k, v), ao(kq, vq)
+    def attention_output(kk, vv):
+        return torch.softmax((q @ kk.transpose(-1, -2)) * sc, -1) @ vv
+
+    o, oq = attention_output(k, v), attention_output(kq, vq)
     return float((o - oq).norm() / o.norm().clamp_min(1e-8))
 
 

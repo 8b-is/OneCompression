@@ -31,14 +31,14 @@ top of TurboQuant's own skeleton:
 1. **Block vector quantization (the core contribution).** Instead of an
    independent scalar Lloyd-Max codebook, HayateQuant fits a
    ``block_size``-dimensional **vector** codebook (``2**(bits*block_size)``
-   codewords) via Lloyd's algorithm (batched K-means, :mod:`._vq`) to
+   codewords) via Lloyd's algorithm (batched K-means, :mod:`.vq`) to
    *synthetic samples drawn exactly from TurboQuant's own source law* --
    i.i.d. ``N(0,1)^{block_size}`` (the ``d -> inf`` limit) or the exact
    finite-``d`` ``block_size``-dim marginal of a random point on ``S^{d-1}``.
    This is data-free in exactly the sense TurboQuant's own scalar codebook is
    data-free (fit offline to the theoretical law, not to real KV) -- just
    generalized from dimension 1 to ``block_size``. Nearest-codeword search is
-   a single GEMM (``z @ cb.T``) + ``argmax`` (:func:`._vq.quantize_to_vq_codebook`),
+   a single GEMM (``z @ cb.T``) + ``argmax`` (:func:`.vq.quantize_to_vq_codebook`),
    so encode/decode remain O(1) matmuls per block; no explicit lattice
    geometry (e.g. ``E8``) or per-lattice decoding algorithm is required, and
    the codebook is *fit* on the target source law. Lloyd fitting is a local,
@@ -530,7 +530,7 @@ def _block_lut_on(
 
     The build pays the exact O(cells * K) scoring a single time per
     (codebook, resolution, device); every subsequent encode is an O(T) exact
-    argmin over the cell's candidate list (see :func:`._vq.build_vq_lut`).
+    argmin over the cell's candidate list (see :func:`.vq.build_vq_lut`).
     """
     cb = _block_codebook_on(bits, block_size, dist, m, codebook_init, device_str)
     return build_vq_lut(cb, bins, top_t)
@@ -811,7 +811,7 @@ class HayateQuantCodec(KVCodec):
             ``"auto"`` (default) picks *per call* between the exact O(K)
             chunked-GEMM search (a tensor-core matmul -- fastest while the
             ``n_blocks x K`` score matrix stays small) and the O(T)-per-block
-            candidate-list LUT encoder (:func:`._vq.quantize_via_lut`: grid
+            candidate-list LUT encoder (:func:`.vq.quantize_via_lut`: grid
             cell -> top-``T`` candidate codewords -> exact argmin over the
             ``T``; ~10x faster once ``n_blocks * K`` crosses the measured
             crossover, e.g. long-prefill encodes against a large codebook).
@@ -850,7 +850,7 @@ class HayateQuantCodec(KVCodec):
             quantization residual, not the coordinate-wise sign of ``r``.
         seed: Seed for the deterministic rotations.
         calibration: Optional SpinQuant-style per-model artifact
-            (:class:`.hayatequant_calib.HayateQuantCalibration` instance, or a
+            (:class:`.calibration.HayateQuantCalibration` instance, or a
             path to one saved with ``.save()``). When set, the per-role
             *learned* orthogonal rotation replaces the data-free one (same
             single GEMM, zero runtime cost) and, if present in the artifact,
@@ -2594,13 +2594,13 @@ class HayateQuantCodec(KVCodec):
         Args:
             kv_stats: ``{"key": (N, head_dim), "value": (N, head_dim)}`` real
                 KV vectors (e.g. from
-                :func:`.hayatequant_calib.capture_kv_samples`).
+                :func:`.calibration.capture_kv_samples`).
             ctx: Optional kwargs forwarded to
-                :func:`.hayatequant_calib.calibrate_hayatequant`
+                :func:`.calibration.calibrate_hayatequant`
                 (``steps``, ``lr``, ``learn_rotation``, ``learn_codebook``...).
 
         Returns:
-            The fitted :class:`.hayatequant_calib.HayateQuantCalibration`
+            The fitted :class:`.calibration.HayateQuantCalibration`
             (also installed on this codec; save it with ``.save(path)`` and
             reload via ``HayateQuantCodec(calibration=path)``).
         """

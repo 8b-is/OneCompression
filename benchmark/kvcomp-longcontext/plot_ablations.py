@@ -197,7 +197,8 @@ def fig_budget_sweep() -> None:
         h, = ax.plot(budgets, fkv_vals, color='black', linestyle=':',
                      linewidth=1.4, label="FullKV", zorder=1)
         if ax is axes[0]:
-            handles_all.append(h); labels_all.append("FullKV")
+            handles_all.append(h)
+            labels_all.append("FullKV")
 
         for idx, (key, label) in enumerate(method_order):
             if key not in data:
@@ -209,7 +210,8 @@ def fig_budget_sweep() -> None:
                          marker=MARKERS[idx % len(MARKERS)],
                          linewidth=1.8, markersize=6, zorder=3, label=label)
             if ax is axes[0]:
-                handles_all.append(h); labels_all.append(label)
+                handles_all.append(h)
+                labels_all.append(label)
 
         _style_ax(ax,
                   xlabel="Target Memory Budget (%)",

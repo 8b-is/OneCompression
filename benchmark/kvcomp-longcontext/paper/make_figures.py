@@ -47,10 +47,10 @@ def _parse_args():
 
 ARGS = _parse_args()
 
-import matplotlib
+import matplotlib  # noqa: E402
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt  # noqa: E402
 
 plt.rcParams["font.family"] = "sans-serif"
 plt.rcParams["xtick.direction"] = "in"

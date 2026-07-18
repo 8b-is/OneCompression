@@ -20,12 +20,16 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from onecomp.kvcomp.codec.hayate.recipes import (
+from onecomp.kvcomp.codec.hayate.recipes import (  # noqa: E402
     hayate_adaptive_rate_variant,
     hayate_frontier_variant,
     hayate_hq_frontier_variant,
 )
-from benchmark.kvcomp_common.paths import resolve_model_ref, resolve_output_root, resolve_python
+from benchmark.kvcomp_common.paths import (  # noqa: E402
+    resolve_model_ref,
+    resolve_output_root,
+    resolve_python,
+)
 
 
 KV_BENCH = REPO_ROOT / "benchmark" / "kvcomp-longcontext" / "kv_benchmark.py"

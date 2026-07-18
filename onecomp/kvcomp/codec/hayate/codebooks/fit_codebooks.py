@@ -1,6 +1,6 @@
 """Fit and save the high-budget data-free block-VQ codebook artifacts.
 
-The online fit in :func:`.._vq.lloyd_vq_gaussian_block` uses a budget sized
+The online fit in :func:`..vq.lloyd_vq_gaussian_block` uses a budget sized
 for acceptable first-encode latency (100k samples, 25 iters, 4 restarts).
 Fitting once, offline, with ~8-16x that budget measurably improves the
 codebook on the exact source law it is fit to (block distortion -1.4% at the
