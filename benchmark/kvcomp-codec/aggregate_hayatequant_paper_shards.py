@@ -1569,6 +1569,13 @@ def _validated_zeroshot_compression(
             abs_tol=1e-12,
         ):
             raise AggregateError(f"Zero-shot displayed compression ratio is stale for {label}")
+    elif (
+        aggregation != "fullkv_no_cache"
+        or fp16_bits is not None
+        or stored_bits is not None
+        or ratio != 1.0
+    ):
+        raise AggregateError(f"FullKV zero-shot compression provenance changed for {label}")
     return fp16_bits, stored_bits
 
 
@@ -2022,14 +2029,6 @@ def _long_compression_ledger_row(
         "compression_aggregation": record.get("compression_aggregation"),
         "adaptive_hq_runtime": record.get("adaptive_hq_runtime"),
     }
-    if (
-        aggregation != "fullkv_no_cache"
-        or fp16_bits is not None
-        or stored_bits is not None
-        or ratio != 1.0
-    ):
-        raise AggregateError(f"FullKV zero-shot compression provenance changed for {label}")
-    return None, None
 
 
 def _validated_stored_rate(row: Mapping[str, Any], *, label: str) -> tuple[int, int, float]:
@@ -9288,7 +9287,7 @@ def verify_speed(
             )
         path_sets = {tuple(sorted(row["summaries"])) for row in replicates}
         if len(path_sets) != 1:
-            raise AggregateError(f"Fair-speed summary schema changed across replicates")
+            raise AggregateError("Fair-speed summary schema changed across replicates")
         metrics = {}
         for metric in next(iter(path_sets)):
             units = {row["summaries"][metric]["unit"] for row in replicates}

@@ -297,10 +297,12 @@ def _summarize(args: argparse.Namespace) -> None:
     rows.append(
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
     )
-    payloads = [json.loads(path.read_text()) for path in _iter_result_files(args.output_root)]
+    payloads = [
+        (path, json.loads(path.read_text())) for path in _iter_result_files(args.output_root)
+    ]
     if args.require_complete:
-        _require_complete_matrix(payloads, _resolve_specs(args.models))
-    for data in payloads:
+        _require_complete_matrix([data for _path, data in payloads], _resolve_specs(args.models))
+    for path, data in payloads:
         model = data.get("model") or path.stem.replace("results_", "")
         if not args.include_extra_results and model not in _paper_model_names():
             continue

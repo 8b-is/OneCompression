@@ -233,7 +233,11 @@ class ThinKVCache(DynamicCache):
         layers = (
             self.calib_layers or sorted(self._pending_sparsity)[: self.policy.max_calib_layers]
         )
-        vals = [self._pending_sparsity[l] for l in layers if l in self._pending_sparsity]
+        vals = [
+            self._pending_sparsity[layer_idx]
+            for layer_idx in layers
+            if layer_idx in self._pending_sparsity
+        ]
         if not vals:
             return self._step_thought
         return self.classifier.classify(sum(vals) / len(vals))

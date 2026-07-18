@@ -250,8 +250,6 @@ def _add_formal_recipe_fixture(document: dict) -> None:
         "HayateQuant-scalar-matched",
         "HayateQuant-blockvq-matched",
     }
-    model = str(document.get("model", "model"))
-
     def add(method: str, row: dict, rate: int | None) -> None:
         row.setdefault(
             "cache_policy",
@@ -1191,6 +1189,35 @@ def test_zero_shards_reject_overlap_and_gap(tmp_path, second):
     _write(tmp_path / "zeroshot_a.json", _zero_doc(0, 2, correct=1))
     _write(tmp_path / "zeroshot_b.json", _zero_doc(*second, correct=1))
     with pytest.raises(shards.AggregateError, match="overlap|gap"):
+        shards.aggregate_zeroshot(
+            tmp_path,
+            expected_models=("model",),
+            task_specs={
+                "task": {
+                    "size": 4,
+                    "split": "test",
+                    "revision": "rev",
+                    "primary": "acc_norm",
+                }
+            },
+            rate_methods={"full": ("FullKV",)},
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("compression_ratio", 2.0),
+        ("compression_aggregation", "exact_cache_bit_counters"),
+        ("compression_fp16_bits", 16),
+        ("compression_stored_bits", 8),
+    ],
+)
+def test_zero_shards_reject_false_fullkv_compression_provenance(tmp_path, field, value):
+    document = _zero_doc(0, 4, correct=2)
+    document["results"]["3"]["FullKV"]["tasks"]["task"][field] = value
+    _write(tmp_path / "zeroshot_test.json", document)
+    with pytest.raises(shards.AggregateError, match="FullKV zero-shot compression"):
         shards.aggregate_zeroshot(
             tmp_path,
             expected_models=("model",),

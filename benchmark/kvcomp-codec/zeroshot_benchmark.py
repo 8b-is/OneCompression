@@ -49,8 +49,6 @@ from onecomp.kvcomp.codec.quality_baselines import (  # noqa: E402
     fibquant_quality_provenance,
 )
 from onecomp.kvcomp.codec.hayate.recipes import (  # noqa: E402
-    HQ_BLOCK_SCALE_PROXY_NAME,
-    HQ_FIB_INIT_PROXY_NAME,
     canonical_hayate_method_name,
 )
 from onecomp.kvcomp.codec.hayate.formal import (  # noqa: E402
@@ -249,7 +247,9 @@ def _run(args: argparse.Namespace) -> Path:
             print(f"outlier layers (kept FP16): {sorted(skip_layers)}", flush=True)
 
         results: dict[str, dict] = {}
-        fullkv_factory = lambda: DynamicCache(config=model.config)
+        def fullkv_factory():
+            return DynamicCache(config=model.config)
+
         if args.include_fullkv:
             results["full"] = {
                 "FullKV": _eval_method(model, tok, args, cache_factory=fullkv_factory)

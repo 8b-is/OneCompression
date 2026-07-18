@@ -12,7 +12,6 @@ import math
 from pathlib import Path
 import platform
 import subprocess
-import sys
 from typing import Any, Iterable
 
 REPO = Path(__file__).resolve().parents[2]

@@ -32,6 +32,7 @@ from vllm.v1.worker.workspace import (
 
 from vllm_plugins.kvcomp.hayate_full_config import (
     FullHQNativeRecipe,
+    full_hq_native_runtime_fields,
     full_hq_native_recipe_from_mapping,
 )
 from vllm_plugins.kvcomp.hayate_full_triton import (
@@ -285,10 +286,7 @@ class FullHayateQuantNativeImpl(TurboQuantAttentionImpl):
                 ),
                 "implementation": "native_faithful_packed_fixed_HQ",
                 "event": "packed_hq_store_launched",
-                "recipe": layer._hq_full_recipe.recipe,
-                "average_bits": layer._hq_full_recipe.avg_bits,
-                "key_code_bits_per_block": (layer._hq_full_recipe.key_code_bits_per_block),
-                "value_code_bits_per_block": (layer._hq_full_recipe.value_code_bits_per_block),
+                **full_hq_native_runtime_fields(layer._hq_full_recipe, int(key.shape[-1])),
                 "cache_shape": list(kv_cache.shape),
                 "cache_dtype": str(kv_cache.dtype).removeprefix("torch."),
                 "cache_device": str(kv_cache.device),
@@ -361,8 +359,7 @@ class FullHayateQuantNativeImpl(TurboQuantAttentionImpl):
                 ),
                 "implementation": "native_faithful_packed_fixed_HQ",
                 "event": "packed_hq_decode_attention_launched",
-                "recipe": layer._hq_full_recipe.recipe,
-                "average_bits": layer._hq_full_recipe.avg_bits,
+                **full_hq_native_runtime_fields(layer._hq_full_recipe, int(query.shape[-1])),
                 "cache_shape": list(kv_cache.shape),
                 "cache_dtype": str(kv_cache.dtype).removeprefix("torch."),
                 "cache_device": str(kv_cache.device),

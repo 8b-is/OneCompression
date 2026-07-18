@@ -30,8 +30,6 @@ Copyright 2025-2026 Fujitsu Ltd.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
-
 from .._registry import register_kv_policy
 from .taperkv import TaperKVPolicy
 

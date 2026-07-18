@@ -63,7 +63,7 @@ Copyright 2025-2026 Fujitsu Ltd.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import lru_cache
 
 import torch

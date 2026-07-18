@@ -15,7 +15,7 @@ SCRIPT_DIR = REPO_ROOT / "benchmark/kvcomp-codec"
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-import model_weight_manifest as weights
+import model_weight_manifest as weights  # noqa: E402
 
 PREFLIGHT_SPEC = importlib.util.spec_from_file_location(
     "paper_preflight_for_weight_test", SCRIPT_DIR / "paper_preflight.py"

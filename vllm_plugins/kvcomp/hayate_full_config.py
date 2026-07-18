@@ -251,6 +251,19 @@ class FullHQNativeRecipe:
         return result
 
 
+def full_hq_native_runtime_fields(
+    recipe: FullHQNativeRecipe, head_dim: int
+) -> dict[str, Any]:
+    """Return bounded JSON-native fields shared by native runtime events."""
+
+    return {
+        "recipe": recipe.provenance(head_dim),
+        "average_bits": recipe.average_rate,
+        "key_code_bits_per_block": recipe.key_code_bits_per_block,
+        "value_code_bits_per_block": recipe.value_code_bits_per_block,
+    }
+
+
 def paper_hq_native_recipe(avg_bits: int, **overrides: Any) -> FullHQNativeRecipe:
     """Build one of the original paper's fixed role-aware operating points."""
 
@@ -358,6 +371,7 @@ __all__ = [
     "HQ_LUT_CANDIDATE_OPTIONS",
     "HQ_LUT_LIMIT",
     "FullHQNativeRecipe",
+    "full_hq_native_runtime_fields",
     "paper_hq_native_recipe",
     "fixed_hq_native_recipe",
     "full_hq_native_recipe_from_mapping",

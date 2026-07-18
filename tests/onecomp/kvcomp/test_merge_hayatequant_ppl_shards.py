@@ -3,13 +3,12 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import sys
 
 import pytest
 
 
 SCRIPT_DIR = Path(__file__).resolve().parents[3] / "benchmark/kvcomp-codec"
-import sys
-
 sys.path.insert(0, str(SCRIPT_DIR))
 import merge_hayatequant_ppl_shards as merger  # noqa: E402
 

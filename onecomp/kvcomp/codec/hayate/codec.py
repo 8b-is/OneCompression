@@ -1009,7 +1009,6 @@ class HayateQuantCodec(KVCodec):
             frac = 0.5 if self.key_bit_fraction is None else float(self.key_bit_fraction)
             if not 0.0 < frac < 1.0:
                 raise ValueError(f"key_bit_fraction must be in (0, 1), got {frac!r}")
-            center = min(total - 1, max(1, int(round(total * frac))))
             return
         key_explicit = self.key_code_bits_per_block
         value_explicit = self.value_code_bits_per_block

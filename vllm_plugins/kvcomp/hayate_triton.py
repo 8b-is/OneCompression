@@ -302,8 +302,6 @@ def _hq_decode_stage1(
     kv_range = tl.arange(0, BLOCK_KV)
 
     q_base = bid * stride_qb + hid * stride_qh
-    q_rot = tl.load(Q_rot_ptr + q_base + d_offs, mask=d_mask, other=0.0).to(tl.float32)
-
     key_block_offs = tl.arange(0, BLOCK_D // HAYATE_BLOCK_SIZE)
     key_block_mask = key_block_offs < (HEAD_DIM // HAYATE_BLOCK_SIZE)
     q0 = tl.load(

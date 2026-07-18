@@ -14,7 +14,7 @@ import math
 import pytest
 import torch
 
-from onecomp.kvcomp import list_codecs, list_selectors, list_policies, build_codec
+from onecomp.kvcomp import list_codecs, list_selectors, list_policies
 from onecomp.kvcomp.codec._quant_primitives import (
     fake_quantize_affine,
     effective_bits,
@@ -66,7 +66,6 @@ from onecomp.kvcomp.codec.hayate.recipes import (
     build_hayate_fractional_rate,
     build_hayate_fractional2,
     hayate_adaptive2_kwargs,
-    hayate_fractional_rate_kwargs,
     hayate_fractional2_kwargs,
     hayate_fractional2_variant,
     hayate_hq_code_bits,
@@ -1104,6 +1103,35 @@ def test_cross_model_summary_rejects_partial_paper_matrix():
     spec = cross.ModelSpec("tiny", "Tiny", None, "Tiny")
     with pytest.raises(SystemExit, match="Incomplete codec paper matrix"):
         cross._require_complete_matrix([{"model": "Tiny", "results": {}}], [spec])
+
+
+def test_cross_model_summary_uses_result_filename_when_model_label_is_absent(
+    tmp_path, capsys
+):
+    import argparse
+    import importlib
+    import os
+    import sys
+
+    bench_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "benchmark", "kvcomp-codec")
+    )
+    if bench_dir not in sys.path:
+        sys.path.insert(0, bench_dir)
+    cross = importlib.import_module("hayatequant_cross_model")
+    (tmp_path / "results_Fallback.json").write_text('{"results": {}}\n', encoding="utf-8")
+    cross._summarize(
+        argparse.Namespace(
+            output_root=tmp_path,
+            require_complete=False,
+            models=None,
+            include_extra_results=True,
+            hq_method="HQ",
+            adaptive_method="AdaptiveHQ",
+            summary_out=None,
+        )
+    )
+    assert "| Fallback |" in capsys.readouterr().out
 
 
 def test_hayatequant_fractional2_recipe_is_opt_in():
@@ -2631,7 +2659,7 @@ def test_hayatequant_triton_step_matches_eager_roundtrip(kw, monkeypatch):
     #     trip, whose exact search scores in fp16 on CUDA and therefore
     #     resolves near-ties differently (a flipped block changes that row's
     #     fitted scale, so elementwise comparisons are meaningless).
-    from onecomp.kvcomp.codec.hayate.triton_step import HAS_TRITON, roundtrip_step_triton
+    from onecomp.kvcomp.codec.hayate.triton_step import HAS_TRITON
     from onecomp.kvcomp.codec.hayate.codec import _codebook_aux_on, resolve_block_size
 
     if not HAS_TRITON:

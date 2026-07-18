@@ -8,6 +8,7 @@ from vllm_plugins.kvcomp.hayate_full_config import (
     HQ_LUT_BINS,
     FullHQNativeRecipe,
     fixed_hq_native_recipe,
+    full_hq_native_runtime_fields,
     full_hq_native_recipe_from_mapping,
     paper_hq_native_recipe,
 )
@@ -58,6 +59,15 @@ def test_frozen_fixed_hq_native_recipe(rate, role_fields):
     contract = recipe.provenance(128)["assignment_contract"]
     assert contract["search"] == "all_codewords"
     assert contract["tie_break"] == "smallest_index"
+
+
+def test_native_runtime_fields_use_canonical_recipe_serialization():
+    recipe = fixed_hq_native_recipe(3)
+    fields = full_hq_native_runtime_fields(recipe, 128)
+    assert fields["recipe"] == recipe.provenance(128)
+    assert fields["average_bits"] == recipe.average_rate == 3
+    assert fields["key_code_bits_per_block"] == 7
+    assert fields["value_code_bits_per_block"] == 5
 
 
 @pytest.mark.parametrize(

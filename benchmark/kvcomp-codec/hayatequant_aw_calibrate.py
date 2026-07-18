@@ -15,12 +15,15 @@ import sys
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch  # noqa: E402
+from transformers import AutoModelForCausalLM, AutoTokenizer  # noqa: E402
 
-from onecomp.kvcomp.codec import HayateQuantCodec
-from onecomp.kvcomp.codec.hayate.recipes import hayate_hq_kwargs, hayate_hq_role_rates
-from onecomp.kvcomp.codec.hayate.calibration import (
+from onecomp.kvcomp.codec import HayateQuantCodec  # noqa: E402
+from onecomp.kvcomp.codec.hayate.recipes import (  # noqa: E402
+    hayate_hq_kwargs,
+    hayate_hq_role_rates,
+)
+from onecomp.kvcomp.codec.hayate.calibration import (  # noqa: E402
     calibrate_hayatequant_attention_weighted,
     capture_qkv_samples,
 )

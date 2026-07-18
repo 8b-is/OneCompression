@@ -174,7 +174,7 @@ def test_development_override_provenance_and_formal_rejection(tmp_path, monkeypa
 
 
 def test_shipped_manifest_is_itself_hash_pinned(tmp_path, monkeypatch):
-    manifest = _write_manifest(tmp_path, {})
+    _write_manifest(tmp_path, {})
     monkeypatch.setattr(vq, "_CODEBOOK_DIR", str(tmp_path))
     monkeypatch.setattr(vq, "_SHIPPED_CODEBOOK_MANIFEST_SHA256", "0" * 64)
 

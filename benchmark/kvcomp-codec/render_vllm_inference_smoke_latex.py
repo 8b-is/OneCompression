@@ -264,7 +264,7 @@ def render(suite_path: Path) -> str:
             r"vLLM's boundary-layer protection; the two TapeKV rows deliberately retained the "
             r"model-dtype physical cache and are ineligible for packed-memory or throughput claims.",
             "",
-            rf"\noindent\textit{{Receipt identity:}} \KVCompVLLMSmokeSuiteSHA.",
+            r"\noindent\textit{Receipt identity:} \KVCompVLLMSmokeSuiteSHA.",
             "",
         ]
     )

@@ -8,8 +8,6 @@ would silently stop being bit-faithful.
 Copyright 2025-2026 Fujitsu Ltd.
 """
 
-import math
-
 import pytest
 import torch
 
