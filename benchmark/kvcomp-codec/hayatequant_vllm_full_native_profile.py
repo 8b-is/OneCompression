@@ -125,6 +125,12 @@ def run(args: argparse.Namespace) -> dict:
     block_table = torch.arange(pages, device=device, dtype=torch.int32).view(1, -1)
     seq_lens = torch.tensor([n], device=device, dtype=torch.int32)
     _, kr, vr, kcb, vcb = _tables(recipe, d, device)
+    shared_rotation_alias = bool(
+        kr.device == vr.device
+        and kr.dtype == vr.dtype
+        and kr.shape == vr.shape
+        and kr.data_ptr() == vr.data_ptr()
+    )
     kscore, kcsq, vscore, vcsq = _scoring_tables(recipe, kcb, vcb)
     store_aux = {
         "key_scoring_codebook": kscore,
@@ -226,6 +232,9 @@ def run(args: argparse.Namespace) -> dict:
         "store_total": store_all,
         "store_key_rotation": lambda: key.float() @ kr,
         "store_value_rotation": lambda: value.float() @ vr,
+        "store_shared_key_value_rotation": lambda: (
+            torch.cat((key, value), dim=0).float() @ kr
+        ),
         "store_key_public_exact_assignment_reference": lambda: quantize_exact_pre(
             kblocks, kscore, kcsq
         ),
@@ -268,6 +277,7 @@ def run(args: argparse.Namespace) -> dict:
         ),
         "key_codebook_size": int(kcb.shape[0]),
         "value_codebook_size": int(vcb.shape[0]),
+        "key_value_rotation_alias": shared_rotation_alias,
     }
     sources = [
         Path("benchmark/kvcomp-codec/hayatequant_vllm_full_native_profile.py"),

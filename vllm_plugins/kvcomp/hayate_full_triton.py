@@ -145,9 +145,8 @@ def _quantize_exact_b2_tensorcore(
     return codes.reshape(z.shape[:-1])
 
 
-def _encode_role(
-    x: torch.Tensor,
-    rotation: torch.Tensor,
+def _encode_rotated_role(
+    xr: torch.Tensor,
     codebook: torch.Tensor,
     block_size: int,
     scale_mode: str,
@@ -158,13 +157,18 @@ def _encode_role(
     scoring_codebook: torch.Tensor | None,
     scoring_csq: torch.Tensor | None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Return public-codec-parity integer codes and signed fp16 scales."""
+    """Encode a pre-rotated HQ role with public-codec parity.
 
-    if x.shape[-1] % block_size:
-        raise ValueError(f"block_size={block_size} must divide D={x.shape[-1]}")
-    xr = x.float() @ rotation
+    Keeping this body separate from the rotation lets the store path share
+    one *identical* fixed rotation between K and V.  It deliberately does not
+    share any assignment or scale work: K NC and V LS-refit remain the exact
+    role-specific HQ recipe.
+    """
+
+    if xr.shape[-1] % block_size:
+        raise ValueError(f"block_size={block_size} must divide D={xr.shape[-1]}")
     rms = xr.pow(2).mean(dim=-1, keepdim=True).sqrt().clamp_min(1e-8)
-    n_blocks = x.shape[-1] // block_size
+    n_blocks = xr.shape[-1] // block_size
 
     def lookup(vector: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         blocks = vector.reshape(*vector.shape[:-1], n_blocks, block_size)
@@ -199,7 +203,7 @@ def _encode_role(
                 scoring_csq=scoring_csq,
             )
             chat_blocks = lookup_codewords(codebook, codes)
-        return codes, chat_blocks.reshape(*vector.shape[:-1], x.shape[-1])
+        return codes, chat_blocks.reshape(*vector.shape[:-1], vector.shape[-1])
 
     codes, chat = lookup(xr / rms)
 
@@ -220,6 +224,87 @@ def _encode_role(
         codes.reshape(-1, n_blocks).to(torch.int32).contiguous(),
         scale.reshape(-1).to(torch.float16).contiguous(),
     )
+
+
+def _encode_role(
+    x: torch.Tensor,
+    rotation: torch.Tensor,
+    codebook: torch.Tensor,
+    block_size: int,
+    scale_mode: str,
+    *,
+    lut: torch.Tensor | None,
+    lut_bins: int,
+    lut_limit: float,
+    scoring_codebook: torch.Tensor | None,
+    scoring_csq: torch.Tensor | None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Rotate then encode one role; retained for unequal K/V rotations."""
+
+    return _encode_rotated_role(
+        x.float() @ rotation,
+        codebook,
+        block_size,
+        scale_mode,
+        lut=lut,
+        lut_bins=lut_bins,
+        lut_limit=lut_limit,
+        scoring_codebook=scoring_codebook,
+        scoring_csq=scoring_csq,
+    )
+
+
+def _encode_roles_with_shared_rotation(
+    key: torch.Tensor,
+    value: torch.Tensor,
+    rotation: torch.Tensor,
+    key_codebook: torch.Tensor,
+    value_codebook: torch.Tensor,
+    recipe: FullHQNativeRecipe,
+    *,
+    key_lut: torch.Tensor | None,
+    value_lut: torch.Tensor | None,
+    key_scoring_codebook: torch.Tensor | None,
+    key_scoring_csq: torch.Tensor | None,
+    value_scoring_codebook: torch.Tensor | None,
+    value_scoring_csq: torch.Tensor | None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Encode K/V after one exact shared-rotation GEMM.
+
+    The frozen b=3/b=4 HQ recipes resolve both roles to the same cached
+    data-free rotation.  The old path launched two under-filled FP32 GEMMs;
+    concatenating their independent rows makes one larger GEMM without
+    changing any row's mathematical operation.  Pointer identity is checked
+    by the caller, so this routine can never collapse distinct role rotations.
+    """
+
+    if key.shape != value.shape:
+        raise ValueError("shared HQ rotation requires matching K/V shapes")
+    rotated = torch.cat((key, value), dim=0).float() @ rotation
+    key_xr, value_xr = rotated.split(key.shape[0], dim=0)
+    key_codes, key_scales = _encode_rotated_role(
+        key_xr,
+        key_codebook,
+        recipe.key_block_size,
+        "nc",
+        lut=key_lut,
+        lut_bins=recipe.lut_bins,
+        lut_limit=recipe.lut_limit,
+        scoring_codebook=key_scoring_codebook,
+        scoring_csq=key_scoring_csq,
+    )
+    value_codes, value_scales = _encode_rotated_role(
+        value_xr,
+        value_codebook,
+        recipe.value_block_size,
+        "ls_iter",
+        lut=value_lut,
+        lut_bins=recipe.lut_bins,
+        lut_limit=recipe.lut_limit,
+        scoring_codebook=value_scoring_codebook,
+        scoring_csq=value_scoring_csq,
+    )
+    return key_codes, key_scales, value_codes, value_scales
 
 
 @triton.jit
@@ -403,11 +488,15 @@ def triton_full_hayatequant_store(
     key_scoring_csq: torch.Tensor | None = None,
     value_scoring_codebook: torch.Tensor | None = None,
     value_scoring_csq: torch.Tensor | None = None,
-) -> dict[str, torch.Tensor]:
+    shared_rotation: bool | None = None,
+    return_payload: bool = True,
+) -> dict[str, torch.Tensor] | None:
     """Encode and pack faithful fixed-recipe HQ K/V into a paged byte cache.
 
-    The returned code/scale tensors are test/provenance aids.  vLLM callers may
-    ignore them; the cache owns the only persistent per-token representation.
+    ``return_payload`` exists for parity tests and diagnostic tooling.  vLLM
+    serving sets it false because the cache owns the only persistent
+    representation and constructing a per-layer Python dictionary is needless
+    request-thread work.
     """
 
     if key.shape != value.shape or key.ndim != 3:
@@ -436,30 +525,59 @@ def triton_full_hayatequant_store(
             key_scoring_csq = key_scoring_codebook.pow(2).sum(dim=1)
         if value_scoring_csq is None:
             value_scoring_csq = value_scoring_codebook.pow(2).sum(dim=1)
-    key_codes, key_scales = _encode_role(
-        key,
-        key_rotation,
-        key_codebook,
-        recipe.key_block_size,
-        "nc",
-        lut=key_lut,
-        lut_bins=recipe.lut_bins,
-        lut_limit=recipe.lut_limit,
-        scoring_codebook=key_scoring_codebook,
-        scoring_csq=key_scoring_csq,
-    )
-    value_codes, value_scales = _encode_role(
-        value,
-        value_rotation,
-        value_codebook,
-        recipe.value_block_size,
-        "ls_iter",
-        lut=value_lut,
-        lut_bins=recipe.lut_bins,
-        lut_limit=recipe.lut_limit,
-        scoring_codebook=value_scoring_codebook,
-        scoring_csq=value_scoring_csq,
-    )
+    # Both roles may use the same immutable rotation matrix (the frozen b=3
+    # and b=4 recipes do).  Only aliasing is accepted: comparing contents at
+    # request time would synchronise the host, while assuming same-looking
+    # matrices could silently violate the role-specific recipe.
+    if shared_rotation is None:
+        shared_rotation = (
+            key_rotation.device == value_rotation.device
+            and key_rotation.dtype == value_rotation.dtype
+            and key_rotation.shape == value_rotation.shape
+            and key_rotation.data_ptr() == value_rotation.data_ptr()
+        )
+    elif not isinstance(shared_rotation, bool):
+        raise TypeError("shared_rotation must be bool or None")
+    if shared_rotation:
+        key_codes, key_scales, value_codes, value_scales = _encode_roles_with_shared_rotation(
+            key,
+            value,
+            key_rotation,
+            key_codebook,
+            value_codebook,
+            recipe,
+            key_lut=key_lut,
+            value_lut=value_lut,
+            key_scoring_codebook=key_scoring_codebook,
+            key_scoring_csq=key_scoring_csq,
+            value_scoring_codebook=value_scoring_codebook,
+            value_scoring_csq=value_scoring_csq,
+        )
+    else:
+        key_codes, key_scales = _encode_role(
+            key,
+            key_rotation,
+            key_codebook,
+            recipe.key_block_size,
+            "nc",
+            lut=key_lut,
+            lut_bins=recipe.lut_bins,
+            lut_limit=recipe.lut_limit,
+            scoring_codebook=key_scoring_codebook,
+            scoring_csq=key_scoring_csq,
+        )
+        value_codes, value_scales = _encode_role(
+            value,
+            value_rotation,
+            value_codebook,
+            recipe.value_block_size,
+            "ls_iter",
+            lut=value_lut,
+            lut_bins=recipe.lut_bins,
+            lut_limit=recipe.lut_limit,
+            scoring_codebook=value_scoring_codebook,
+            scoring_csq=value_scoring_csq,
+        )
     _pack_encoded_hq(
         key_codes,
         key_scales,
@@ -470,12 +588,14 @@ def triton_full_hayatequant_store(
         recipe,
         d,
     )
-    return {
-        "key_codes": key_codes,
-        "key_scales": key_scales,
-        "value_codes": value_codes,
-        "value_scales": value_scales,
-    }
+    if return_payload:
+        return {
+            "key_codes": key_codes,
+            "key_scales": key_scales,
+            "value_codes": value_codes,
+            "value_scales": value_scales,
+        }
+    return None
 
 
 @triton.jit

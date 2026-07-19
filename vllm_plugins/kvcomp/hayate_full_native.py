@@ -229,6 +229,15 @@ class FullHayateQuantNativeImpl(TurboQuantAttentionImpl):
         layer._hq_full_key_scoring_csq = key_scoring_csq
         layer._hq_full_value_scoring_codebook = value_scoring_codebook
         layer._hq_full_value_scoring_csq = value_scoring_csq
+        # The store hot path must only share a rotation when the two immutable
+        # role tables literally alias.  Resolve the inexpensive identity check
+        # once while materialising a layer, never by comparing GPU contents.
+        layer._hq_full_shared_rotation = bool(
+            key_rotation.device == value_rotation.device
+            and key_rotation.dtype == value_rotation.dtype
+            and key_rotation.shape == value_rotation.shape
+            and key_rotation.data_ptr() == value_rotation.data_ptr()
+        )
         layer._hq_full_native_enabled = True
         # Base forward fetches these three fields before dispatching into our
         # override.  Aliasing them avoids changing upstream control flow.
@@ -276,6 +285,8 @@ class FullHayateQuantNativeImpl(TurboQuantAttentionImpl):
             key_scoring_csq=layer._hq_full_key_scoring_csq,
             value_scoring_codebook=layer._hq_full_value_scoring_codebook,
             value_scoring_csq=layer._hq_full_value_scoring_csq,
+            shared_rotation=layer._hq_full_shared_rotation,
+            return_payload=False,
         )
         emit_runtime_evidence_once(
             self,
@@ -290,6 +301,7 @@ class FullHayateQuantNativeImpl(TurboQuantAttentionImpl):
                 "cache_shape": list(kv_cache.shape),
                 "cache_dtype": str(kv_cache.dtype).removeprefix("torch."),
                 "cache_device": str(kv_cache.device),
+                "shared_rotation_fast_path": bool(layer._hq_full_shared_rotation),
             },
         )
 
