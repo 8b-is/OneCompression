@@ -101,7 +101,11 @@ MODEL_METADATA_FILES = (
 SMOKE_APPROVAL_KIND = "hayatequant_formal_smoke_approval"
 SMOKE_APPROVAL_STATEMENT = "I_APPROVE_THE_VALIDATED_HAYATEQUANT_SMOKE_PLAN"
 SMOKE_APPROVAL_SCHEMA_VERSION = 1
-SMOKE_PLAN_VERSION = 3
+# Keep this in lockstep with validate_hayatequant_smoke_gate.py.  Formal
+# submission and every formal worker independently re-validate the approved
+# plan, so accepting an older plan version here makes a freshly approved plan
+# impossible to submit.
+SMOKE_PLAN_VERSION = 4
 SMOKE_JOB_KEYS = (
     "ppl",
     "zeroshot",

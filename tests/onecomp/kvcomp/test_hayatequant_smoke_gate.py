@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import copy
 import hashlib
 import importlib.util
@@ -17,6 +18,24 @@ SPEC = importlib.util.spec_from_file_location("hayatequant_smoke_gate", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 gate = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(gate)
+
+PREFLIGHT_SCRIPT = REPO_ROOT / "benchmark/kvcomp-codec/paper_preflight.py"
+
+
+def test_smoke_plan_contract_matches_independent_formal_preflight() -> None:
+    """A plan accepted by the smoke gate must be bindable by formal workers."""
+
+    syntax = ast.parse(PREFLIGHT_SCRIPT.read_text(encoding="utf-8"))
+    constants = {
+        node.targets[0].id: ast.literal_eval(node.value)
+        for node in syntax.body
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id in {"SMOKE_PLAN_VERSION", "SMOKE_JOB_KEYS"}
+    }
+    assert constants["SMOKE_PLAN_VERSION"] == gate.SMOKE_PLAN_VERSION
+    assert constants["SMOKE_JOB_KEYS"] == tuple(spec["key"] for spec in gate.SMOKE_PLAN)
 
 
 def _write(path: Path, value: dict) -> None:
