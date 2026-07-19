@@ -78,7 +78,9 @@ def _generation_provenance() -> dict:
     }
 
 
-def _load_full_hq_runtime_evidence(path: Path) -> tuple[list[dict], str]:
+def _load_full_hq_runtime_evidence(
+    path: Path, *, expected_assignment_mode: str
+) -> tuple[list[dict], str]:
     try:
         raw = path.read_bytes()
     except OSError as exc:
@@ -108,6 +110,17 @@ def _load_full_hq_runtime_evidence(path: Path) -> tuple[list[dict], str]:
         raise RuntimeError(
             "runtime evidence does not prove full HQ packed store/decode execution; "
             f"missing {missing}"
+        )
+    observed_assignment_modes = {
+        event.get("recipe", {}).get("assignment_mode")
+        for event in matching
+        if isinstance(event.get("recipe"), dict)
+    }
+    if observed_assignment_modes != {expected_assignment_mode}:
+        raise RuntimeError(
+            "runtime evidence assignment mode does not match the requested full-HQ "
+            f"configuration: expected {expected_assignment_mode!r}, "
+            f"observed {sorted(observed_assignment_modes)!r}"
         )
     return events, hashlib.sha256(raw).hexdigest()
 
@@ -144,28 +157,46 @@ def _configure_hayate(bits: int, key_scale_mode: str, codebook_init: str) -> Non
     )
 
 
-def _configure_full_hayate(avg_bits: int, codebook_init: str) -> None:
+def _configure_full_hayate(
+    avg_bits: int,
+    codebook_init: str,
+    *,
+    assignment_mode: str,
+    lut_candidates: int,
+) -> None:
     """Register the faithful packed frozen HQ backend in a fresh process."""
 
     from vllm_plugins.kvcomp.hayate_full_native import (  # pylint: disable=import-outside-toplevel
         configure_full_hq_native_backend,
     )
 
-    configure_full_hq_native_backend(
-        {
-            "avg_bits": int(avg_bits),
-            "recipe": "hq",
-            "dist": "gaussian",
-            "codebook_init": codebook_init,
-            "rotation_mode": "auto",
-            "key_scale_mode": "nc",
-            "value_scale_mode": "ls_iter",
-            "seed": 0,
-        }
-    )
+    config = {
+        "avg_bits": int(avg_bits),
+        "recipe": "hq",
+        "dist": "gaussian",
+        "codebook_init": codebook_init,
+        "rotation_mode": "auto",
+        "key_scale_mode": "nc",
+        "value_scale_mode": "ls_iter",
+        "assignment_mode": assignment_mode,
+        "seed": 0,
+    }
+    if assignment_mode == "lut":
+        # These are a development encoder candidate, never a silent
+        # replacement for the pinned all-codeword paper recipe.
+        config["lut_candidates"] = int(lut_candidates)
+    configure_full_hq_native_backend(config)
 
 
-def _implementation_contract(variant: str) -> dict:
+def _implementation_contract(args: argparse.Namespace | str) -> dict:
+    """Describe the variant without allowing a candidate to look canonical.
+
+    The string form is retained for lightweight callers that predate the
+    assignment-mode CLI; it always means the canonical exact full-HQ recipe.
+    """
+
+    variant = args if isinstance(args, str) else args.variant
+    hq_assignment_mode = "exact" if isinstance(args, str) else args.hq_assignment_mode
     if variant == "auto":
         return {
             "implementation_label": "vllm_auto_full_precision_kv",
@@ -186,15 +217,23 @@ def _implementation_contract(variant: str) -> dict:
             "canonical_hayatequant_frontier_recipe": False,
         }
     if variant == "hayate_full":
+        canonical_exact = hq_assignment_mode == "exact"
         return {
-            "implementation_label": "native_faithful_packed_fixed_HQ",
+            "implementation_label": (
+                "native_faithful_packed_fixed_HQ"
+                if canonical_exact
+                else "native_packed_fixed_HQ_grid_lut_candidate"
+            ),
             "proposal_name": "HQ",
             "key_path": "HayateQuant rotated block-VQ + NC",
             "value_path": "HayateQuant rotated block-VQ + LS-reassign-LS",
             "one_signed_fp16_scale_per_role_vector": True,
             "native_hybrid_is_full_hayatequant": True,
-            "canonical_hayatequant_frontier_recipe": True,
-            "eligible_for_full_hayatequant_serving_claim": True,
+            "assignment_mode": hq_assignment_mode,
+            "canonical_hayatequant_frontier_recipe": canonical_exact,
+            "eligible_for_full_hayatequant_serving_claim": canonical_exact,
+            "development_encoder_candidate": not canonical_exact,
+            "formal_quality_gate_required_before_canonical_use": not canonical_exact,
         }
     return {
         "implementation_label": ("native_hybrid_hayate_block_vq_keys_turboquant_scalar_values"),
@@ -277,7 +316,12 @@ def _build_llm(args: argparse.Namespace):
         if args.bits not in (3, 4):
             raise ValueError("upstream-TQ-trigger dtype exists only for HQ rates 3/4")
         kv_cache_dtype = _dtype_for(args.bits)
-        _configure_full_hayate(args.bits, args.codebook_init)
+        _configure_full_hayate(
+            args.bits,
+            args.codebook_init,
+            assignment_mode=args.hq_assignment_mode,
+            lut_candidates=args.hq_lut_candidates,
+        )
     elif args.variant not in {"auto", "saved"}:
         raise ValueError(f"unknown variant: {args.variant}")
 
@@ -358,7 +402,7 @@ def run(args: argparse.Namespace) -> dict:
     return {
         "schema": {"name": "onecomp.hayatequant_vllm_native_generation_smoke", "version": 1},
         "variant": args.variant,
-        "implementation_contract": _implementation_contract(args.variant),
+        "implementation_contract": _implementation_contract(args),
         "formal_quality_benchmark": False,
         "formal_counterbalanced_speed_benchmark": False,
         "timing_scope": "one synchronized variant process; use fair-speed for claims",
@@ -402,6 +446,22 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--bits", type=int, choices=(3, 4), default=3)
     ap.add_argument("--key-scale-mode", choices=["nc", "ub", "ip"], default="nc")
     ap.add_argument("--codebook-init", choices=["auto", "fibquant"], default="auto")
+    ap.add_argument(
+        "--hq-assignment-mode",
+        choices=("exact", "lut"),
+        default="exact",
+        help=(
+            "full-HQ assignment only: exact is the canonical frozen recipe; "
+            "lut is a non-formal development candidate"
+        ),
+    )
+    ap.add_argument(
+        "--hq-lut-candidates",
+        type=int,
+        choices=(2, 4, 8, 16),
+        default=2,
+        help="candidate codewords per grid cell for --hq-assignment-mode=lut",
+    )
     ap.add_argument("--dtype", default="bfloat16")
     ap.add_argument("--max-model-len", type=int, default=2048)
     ap.add_argument("--gpu-memory-utilization", type=float, default=0.82)
@@ -418,6 +478,12 @@ def parse_args() -> argparse.Namespace:
         ap.error("gpu-memory-utilization must be in (0, 1)")
     if args.temperature < 0.0 or not 0.0 < args.top_p <= 1.0:
         ap.error("temperature must be non-negative and top-p must be in (0, 1]")
+    if args.variant != "hayate_full" and (
+        args.hq_assignment_mode != "exact" or args.hq_lut_candidates != 2
+    ):
+        ap.error("--hq-assignment-* options are valid only for --variant hayate_full")
+    if args.hq_assignment_mode == "exact" and args.hq_lut_candidates != 2:
+        ap.error("--hq-lut-candidates requires --hq-assignment-mode=lut")
     return args
 
 
@@ -442,7 +508,10 @@ def main() -> None:
     os.environ["PATH"] = f"{venv_bin}:{os.environ.get('PATH', '')}"
     result = run(args)
     if args.variant == "hayate_full":
-        runtime_evidence, runtime_evidence_sha256 = _load_full_hq_runtime_evidence(evidence_path)
+        runtime_evidence, runtime_evidence_sha256 = _load_full_hq_runtime_evidence(
+            evidence_path,
+            expected_assignment_mode=args.hq_assignment_mode,
+        )
         result["runtime_evidence"] = {
             "path": str(evidence_path),
             "sha256": runtime_evidence_sha256,
