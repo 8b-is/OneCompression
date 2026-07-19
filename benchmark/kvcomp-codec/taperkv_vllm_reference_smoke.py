@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Run a small, provenance-bearing TapeKV vLLM semantic smoke test.
+"""Run a small, provenance-bearing TaperKV vLLM semantic smoke test.
 
-This launcher intentionally exercises ``TaperKVNativeBackend`` rather than
+This launcher intentionally exercises ``TaperKVReferenceBackend`` rather than
 passing ``kv_cache_dtype``.  The backend uses an FP16/BF16 paged cache and
 fake-quantizes logical KV values before FlashAttention, so its JSON output is
 labelled ``fp16_reference_fake_quant`` and cannot be consumed by packed-memory
@@ -43,7 +43,7 @@ def _load_runtime_evidence(path: Path, *, combined: bool) -> tuple[list[dict], s
     try:
         raw = path.read_bytes()
     except OSError as exc:
-        raise RuntimeError(f"TapeKV backend produced no runtime evidence: {path}") from exc
+        raise RuntimeError(f"TaperKV backend produced no runtime evidence: {path}") from exc
     events = []
     for line_number, line in enumerate(raw.splitlines(), start=1):
         try:
@@ -58,13 +58,13 @@ def _load_runtime_evidence(path: Path, *, combined: bool) -> tuple[list[dict], s
         event
         for event in events
         if event.get("schema") == expected_schema
-        and event.get("backend") == "vllm_plugins.kvcomp.taper_native.TaperKVNativeBackend"
+        and event.get("backend") == "vllm_plugins.kvcomp.taper_reference.TaperKVReferenceBackend"
         and event.get("event") == "logical_paged_cache_regraded"
         and event.get("hayate_then_taper") is combined
     ]
     if not matching:
         raise RuntimeError(
-            "runtime evidence does not prove the selected TapeKV regrade path executed"
+            "runtime evidence does not prove the selected TaperKV regrade path executed"
         )
     if not any(
         isinstance(event.get("maximum_pages_per_request"), int)
@@ -101,7 +101,7 @@ def _parser() -> argparse.ArgumentParser:
         type=int,
         choices=(2, 3, 4),
         default=None,
-        help="Apply HayateQuant once to arriving KV before TapeKV (disabled by default)",
+        help="Apply HayateQuant once to arriving KV before TaperKV (disabled by default)",
     )
     parser.add_argument("--hayate-value-bits", type=int, choices=(2, 3, 4), default=None)
     parser.add_argument("--hayate-block-size", type=int, default=2)
@@ -132,7 +132,7 @@ def main() -> int:
     # Do not import vLLM before the explicit registry installation: EngineCore
     # children receive this environment payload and the general plugin repeats
     # registration in their fresh interpreter.
-    from vllm_plugins.kvcomp.taper_config import TaperVLLMRecipe
+    from vllm_plugins.kvcomp.taper_config import TaperKVVLLMRecipe
     from vllm_plugins.kvcomp import vllm_plugin
 
     policy = {
@@ -157,13 +157,13 @@ def main() -> int:
             block_size=args.hayate_block_size,
             encoder=args.hayate_encoder,
         ).get_kv_config()
-    recipe = TaperVLLMRecipe.from_policy(policy, hayate_config=hayate_config)
+    recipe = TaperKVVLLMRecipe.from_policy(policy, hayate_config=hayate_config)
     plan = vllm_plugin.KVCompVLLMPlan(
         native_supported=True,
-        taper_native=True,
+        taper_reference=True,
         taper_config=recipe.to_mapping(),
     )
-    vllm_plugin._install_taper_native_backend(plan, vllm_plugin._get_logger())
+    vllm_plugin._install_taper_reference_backend(plan, vllm_plugin._get_logger())
     # The model itself is intentionally unmodified.  Preserve the explicit
     # recipe in spawned EngineCore workers, where the automatic model-config
     # hook would otherwise (correctly for ordinary models) clear stale state.
@@ -199,7 +199,7 @@ def main() -> int:
     cache_block_size = int(llm.llm_engine.vllm_config.cache_config.block_size)
     if max(prompt_token_lengths) <= cache_block_size:
         raise RuntimeError(
-            "TapeKV smoke must include a prompt spanning more than one physical KV page; "
+            "TaperKV smoke must include a prompt spanning more than one physical KV page; "
             f"longest prompt={max(prompt_token_lengths)}, block_size={cache_block_size}"
         )
     results = llm.generate(
@@ -235,7 +235,7 @@ def main() -> int:
         "schema_version": 1,
         "timestamp_utc": datetime.now(UTC).isoformat(),
         "model": args.model,
-        "backend": "vllm_plugins.kvcomp.taper_native.TaperKVNativeBackend",
+        "backend": "vllm_plugins.kvcomp.taper_reference.TaperKVReferenceBackend",
         "implementation": recipe.implementation,
         "physical_kv_cache": "vllm model-dtype paged cache (not packed)",
         "eligible_for_packed_memory_or_speed_table": False,

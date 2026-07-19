@@ -43,7 +43,7 @@ from vllm_plugins.kvcomp.native_turboquant import (
     resolve_turboquant_preset,
     turboquant_engine_kwargs,
 )
-from vllm_plugins.kvcomp.taper_config import TaperVLLMRecipe
+from vllm_plugins.kvcomp.taper_config import TaperKVVLLMRecipe
 
 
 class _FakeEngineArgs:
@@ -138,7 +138,7 @@ def test_apply_to_engine_args_hayatequant_block_size_1_fails_closed(tmp_path):
 def test_apply_to_engine_args_taperkv_policy_installs_explicit_reference_backend(
     tmp_path, monkeypatch
 ):
-    """TapeKV uses an explicit backend; it never degrades to plain FullKV."""
+    """TaperKV uses an explicit backend; it never degrades to plain FullKV."""
     from vllm_plugins.kvcomp import vllm_plugin
 
     model_path = _write_model_config(
@@ -157,7 +157,7 @@ def test_apply_to_engine_args_taperkv_policy_installs_explicit_reference_backend
     installed = {}
     monkeypatch.setattr(
         vllm_plugin,
-        "_install_taper_native_backend",
+        "_install_taper_reference_backend",
         lambda plan, _logger: installed.update(plan.taper_config) or True,
     )
     apply_to_engine_args(engine_args)
@@ -183,15 +183,15 @@ def test_block_taper_vllm_recipe_is_validated_and_bare_kwargs_are_rejected():
         "residual_fp16": True,
     }
     plan = plan_from_kv_config({"policy": policy})
-    assert plan.native_supported and not plan.needs_custom_backend and plan.taper_native
-    assert plan.taper_config == TaperVLLMRecipe.from_policy(policy).to_mapping()
+    assert plan.native_supported and not plan.needs_custom_backend and plan.taper_reference
+    assert plan.taper_config == TaperKVVLLMRecipe.from_policy(policy).to_mapping()
     with pytest.raises(RuntimeError, match="general plugin"):
         engine_kwargs_from_kv_config({"policy": policy})
 
 
 def test_taper_vllm_recipe_rejects_non_boolean_block_residual():
     with pytest.raises(ValueError, match="residual_fp16"):
-        TaperVLLMRecipe.from_policy(
+        TaperKVVLLMRecipe.from_policy(
             {
                 "name": "block_taperkv",
                 "key_bits": 8,
@@ -205,7 +205,7 @@ def test_taper_vllm_recipe_rejects_non_boolean_block_residual():
 
 
 def test_taper_recipe_unions_hayate_skips_and_resolves_stride():
-    recipe = TaperVLLMRecipe.from_policy(
+    recipe = TaperKVVLLMRecipe.from_policy(
         {
             "name": "block_taperkv",
             "block_size": 8,
@@ -216,7 +216,7 @@ def test_taper_recipe_unions_hayate_skips_and_resolves_stride():
     assert recipe.skip_layers == (1, 3, 5)
     assert recipe.requant_stride == 8
     with pytest.raises(ValueError, match="requant_stride"):
-        TaperVLLMRecipe.from_policy({"name": "taperkv", "requant_stride": 0})
+        TaperKVVLLMRecipe.from_policy({"name": "taperkv", "requant_stride": 0})
 
 
 @pytest.mark.parametrize(
@@ -230,7 +230,7 @@ def test_taper_recipe_unions_hayate_skips_and_resolves_stride():
 )
 def test_taper_recipe_rejects_lossy_integer_coercion(field, value):
     with pytest.raises(ValueError, match="must be an integer"):
-        TaperVLLMRecipe.from_policy({"name": "taperkv", field: value})
+        TaperKVVLLMRecipe.from_policy({"name": "taperkv", field: value})
 
 
 @pytest.mark.parametrize("value", [0.9, "0", True])
@@ -282,7 +282,7 @@ def test_vllm_mapping_malformed_serialized_config_fails_closed(config):
 
 def test_taper_recipe_rejects_unloadable_hayate_calibration():
     with pytest.raises(ValueError, match="calibrated HayateQuant"):
-        TaperVLLMRecipe.from_policy(
+        TaperKVVLLMRecipe.from_policy(
             {"name": "taperkv"},
             hayate_config={"name": "hayatequant", "calibration": "digest-only"},
         )
@@ -291,7 +291,7 @@ def test_taper_recipe_rejects_unloadable_hayate_calibration():
 @pytest.mark.parametrize("field", ["n_outlier", "key_n_outlier", "value_n_outlier"])
 def test_taper_recipe_rejects_fractional_hayate_outlier_counts(field):
     with pytest.raises(ValueError, match=field):
-        TaperVLLMRecipe.from_policy(
+        TaperKVVLLMRecipe.from_policy(
             {"name": "taperkv"},
             hayate_config={"name": "hayatequant", "encoder": "exact", field: 0.5},
         )
@@ -308,7 +308,7 @@ def test_taper_recipe_rejects_fractional_hayate_outlier_counts(field):
 def test_taper_recipe_rejects_request_shape_dependent_hayate(field, value, message):
     config = {"name": "hayatequant", "encoder": "exact", field: value}
     with pytest.raises(ValueError, match=message):
-        TaperVLLMRecipe.from_policy({"name": "taperkv"}, hayate_config=config)
+        TaperKVVLLMRecipe.from_policy({"name": "taperkv"}, hayate_config=config)
 
 
 def test_faithful_full_hq_mapping_requires_plugin_and_is_explicit():

@@ -1,11 +1,12 @@
 # OneComp KV Cache Compression (`onecomp.kvcomp`) — Design Document
 
-> Status: **RFC + v0 skeleton implemented** (branch `lab/kvcomp`)
+> Status: **implemented research layer plus audited vLLM serving backends**
+> (branch `lab/kvcomp`; implementation audit 2026-07-19)
 > Scope: design of a KV-cache compression sub-package that coexists with the
 > existing weight quantizer (`onecomp/quantizer`).
 > References: `onecomp-ref/{260528.md, KVCache-Factory, ThinKV (paper), turboquant-repos}`, NVIDIA KVPress, vLLM.
 
-> ## Implementation status (2026-06-01, `lab/kvcomp`)
+> ## Implementation status (updated 2026-07-19, `lab/kvcomp`)
 >
 > | Area | Implemented | Verified |
 > |---|---|---|
@@ -23,8 +24,8 @@
 > | **main experiment `benchmark/kvcomp-longcontext/`** (Full/uniform/evict/ThinKV/PM-KVQ/TaperKV, iso-memory) | done | llama-3.1-8b, R1-Distill-Qwen-7B/1.5B |
 > | **main experiment `benchmark/kvcomp-codec/`** (HayateQuant vs TurboQuant/HALO: distortion/PPL/overhead) | done | llama-8b / Qwen-1.5B |
 > | Runner `kv_config` -> `config.json` dual-config | done | `03` |
-> | vLLM plugin: FP8 mapping, faithful packed fixed-HQ, TapeKV semantic reference, HQ+TapeKV composition | done | `tests/vllm_plugins/kvcomp` |
-> | Packed TapeKV and token-eviction vLLM backends, LongBench, ILP bit allocation | todo | roadmap |
+> | vLLM plugin: FP8 mapping, faithful packed fixed-HQ, TaperKV semantic reference, HQ+TaperKV composition | done | `tests/vllm_plugins/kvcomp` |
+> | Packed TaperKV and token-eviction vLLM backends, LongBench, ILP bit allocation | todo | roadmap |
 >
 > Verification is in-repo and self-contained: the unit suite `tests/onecomp/kvcomp/test_kvcomp.py` plus the CPU-only array-level proofs under `benchmark/kvcomp-longcontext/paper/tests/` (`verify_halo_asym_scale.py`, `verify_halo_outlier.py`, `taper_schedule.py`). Benchmark models follow the competing papers (TurboQuant: Llama-3.1-8B-Instruct + Ministral-8B; ThinKV/PM-KVQ: DeepSeek-R1-Distill family). Gemma is intentionally excluded — no KV-cache-compression baseline reports Gemma KV-cache results.
 >
@@ -242,9 +243,9 @@ KV-compression methods can be classified uniquely along three axes:
 ## 4. Architecture (three layers)
 
 ```
-Layer 3 Runtime (serving)   vllm_plugins/kvcomp/     policy engine / online controller / AttentionBackend
-Layer 2 Kernel              onecomp/kvcomp/kernels/   Triton dequant (int4/int2/fp8) / paged layout / sparse attn
-Layer 1 Research (HF)       onecomp/kvcomp/{codec,select,prune,sparse,recipe,policy,cache}/
+Layer 3 Runtime (serving)   vllm_plugins/kvcomp/     config mapping / backend registration / receipts
+Layer 2 Kernel              vllm_plugins/kvcomp/     packed HQ Triton store + decode attention
+Layer 1 Research (HF)       onecomp/kvcomp/{codec,select,prune,recipe,policy,cache,eval}/
                                                       + reuse: onecomp/{calibration,model_config,utils,runner}
 ```
 
@@ -255,29 +256,42 @@ existing OneComp).
 
 ```text
 onecomp/kvcomp/
-├── __init__.py            # registry re-exports (mirrors quantizer/__init__.py)
+├── __init__.py            # stable public API and registry-triggering imports
 ├── _base.py               # KVCodec / KVSelector / KVPolicy / ComposedPress
-├── _registry.py           # @register_kv_codec / _selector / _policy + build_*
-├── config.py              # KVCompressionConfig, Budget, RequestState, SystemState, CompressionPlan
-├── runner.py              # delegated target from Runner (thin wiring, runner_methods/ style)
-├── cache/
-│   ├── block.py           # KVBlock / CompressedKV / metadata
-│   ├── compressed_cache.py# transformers.Cache subclass
-│   ├── attention.py       # attention forward-hook (collects attention stats)
-│   └── builders.py        # build_compressed_cache / kv_compressed_generate (no monkeypatch)
-├── codec/                 # includes dynamic quantization (TurboQuant); distinguished by flag_calibration
-│   ├── _base.py fp8.py int4.py int2.py kivi.py kvquant.py kvtuner.py pm_kvq.py
-│   ├── nvfp4.py ternary.py turboquant.py qjl.py rotation.py
-│   └── calibration_kv.py
-├── select/  _base.py recent.py sink.py h2o.py snapkv.py expected_attention.py pyramid.py razor.py
-├── prune/   think.py
-├── sparse/  topk.py quest.py sparq.py rocketkv.py
-├── recipe/  thinkv.py     # composed methods
-├── policy/  _base.py static.py memory_budget.py latency_budget.py service_aware.py
-├── budget/  ilp.py        # KVTuner/PM-KVQ/ThinKV bit allocation (reuses AutoBit ortools)
-├── kernels/ triton/ torch_fallback.py
-└── eval/    needle.py ruler.py longbench.py reasoning.py kv_metrics.py
+├── _registry.py           # registration and construction only
+├── config.py              # serializable request/system/budget/config contracts
+├── cache/                 # Hugging Face cache state and composition factories
+│   ├── compressed_cache.py
+│   ├── _graded_base.py
+│   ├── taper_cache.py / block_taper_cache.py / pmkvq_cache.py
+│   ├── hayatequant_taper_cache.py
+│   └── builders.py
+├── codec/                 # stateless codec math and HayateQuant implementation
+│   ├── _packing.py / _quant_primitives.py / _scale.py / _vq.py
+│   ├── affine.py / fp8.py / turboquant.py / halo.py / fibquant.py / blockquant.py
+│   └── hayate/            # HQ codec, recipes, calibration, VQ, shipped codebooks
+├── select/                # token-selection mechanisms
+├── prune/                 # dimension pruning
+├── recipe/                # named composed policies (TaperKV, PM-KVQ, ThinKV, ...)
+├── policy/                # reusable policy primitives
+└── eval/                  # protocol-specific evaluation and provenance/accounting
+
+vllm_plugins/kvcomp/
+├── mapping.py             # dependency-light serialized-config -> execution plan
+├── vllm_plugin.py         # vLLM registration and EngineArgs integration
+├── taper_config.py / taper_reference.py  # model-dtype TaperKV reference path
+├── hayate_full_config.py / hayate_full_native.py / hayate_full_triton.py
+│                                      # faithful packed fixed-HQ path
+├── hayate_native.py / hayate_triton.py# explicitly labelled historical hybrid
+├── runtime_evidence.py                # opt-in bounded smoke evidence
+└── _validation.py / native_turboquant.py
 ```
+
+Unimplemented sparse-attention, packed TaperKV, and generic ILP allocator
+ideas remain roadmap items; they are intentionally not represented as empty
+production folders. This keeps the filesystem aligned with executable
+responsibilities and prevents planned interfaces from being mistaken for
+supported ones.
 
 ---
 
@@ -624,7 +638,7 @@ Proposal (two stages to reduce risk):
 
 Direction: **measure correctly in HF first, then vLLM** (as the existing weight path also goes
 HF→vLLM). FP8 leverages vLLM's native `kv_cache_dtype`; fixed HQ owns a packed
-key/value data plane. TapeKV uses an explicitly labelled model-dtype semantic
+key/value data plane. TaperKV uses an explicitly labelled model-dtype semantic
 backend until a packed paged-cache kernel exists. INT4/eviction/ThinKV remain
 fail-closed rather than running an uncompressed look-alike.
 

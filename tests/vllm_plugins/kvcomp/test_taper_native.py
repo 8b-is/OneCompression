@@ -1,4 +1,4 @@
-"""CPU contracts for the vLLM TapeKV reference data plane."""
+"""CPU contracts for the vLLM TaperKV reference data plane."""
 
 from __future__ import annotations
 
@@ -8,14 +8,27 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from onecomp.kvcomp.cache.hayate_taper_cache import HayateTaperKVCache
+from onecomp.kvcomp.cache.hayatequant_taper_cache import HayateQuantTaperKVCache
 from onecomp.kvcomp.cache.taper_cache import TaperKVCache
 from onecomp.kvcomp.codec.hayate import HayateQuantCodec
 from onecomp.kvcomp.recipe.taperkv import TaperKVPolicy
-from vllm_plugins.kvcomp import taper_native
-from vllm_plugins.kvcomp.taper_config import TaperVLLMRecipe
-from vllm_plugins.kvcomp.taper_native import TaperKVNativeBackend, TaperKVNativeImpl
+from vllm_plugins.kvcomp import taper_reference
+from vllm_plugins.kvcomp.taper_config import TaperKVVLLMRecipe, TaperVLLMRecipe
+from vllm_plugins.kvcomp.taper_native import (
+    TaperKVNativeBackend,
+    TaperKVNativeImpl,
+)
+from vllm_plugins.kvcomp.taper_reference import (
+    TaperKVReferenceBackend,
+    TaperKVReferenceImpl,
+)
 from vllm.v1.attention.backends.flash_attn import FlashAttentionBackend
+
+
+def test_reference_names_keep_native_compatibility_aliases():
+    assert TaperVLLMRecipe is TaperKVVLLMRecipe
+    assert TaperKVNativeBackend is TaperKVReferenceBackend
+    assert TaperKVNativeImpl is TaperKVReferenceImpl
 
 
 def _set_recipe(monkeypatch, **overrides):
@@ -28,23 +41,23 @@ def _set_recipe(monkeypatch, **overrides):
         "requant_stride": 16,
     }
     payload.update(overrides)
-    monkeypatch.setenv(taper_native.TAPER_CONFIG_ENV, json.dumps(payload))
+    monkeypatch.setenv(taper_reference.TAPER_CONFIG_ENV, json.dumps(payload))
 
 
 def _paged_cache(num_blocks: int, block_size: int, heads: int, head_dim: int):
     shape = [num_blocks, block_size, heads, head_dim]
-    shape.insert(taper_native._UPSTREAM_KV_AXIS, 2)
+    shape.insert(taper_reference._UPSTREAM_KV_AXIS, 2)
     return torch.randn(*shape)
 
 
 def test_layer_index_parses_vllm_layer_name():
     layer = SimpleNamespace(layer_name="model.layers.17.self_attn")
-    assert TaperKVNativeImpl._layer_index(layer) == 17
+    assert TaperKVReferenceImpl._layer_index(layer) == 17
 
 
 def test_skip_layers_fail_closed_when_layer_index_is_unknown(monkeypatch):
     _set_recipe(monkeypatch, skip_layers=[1])
-    impl = object.__new__(TaperKVNativeImpl)
+    impl = object.__new__(TaperKVReferenceImpl)
     with pytest.raises(RuntimeError, match="cannot honor skip_layers"):
         impl.do_kv_cache_update(
             SimpleNamespace(),
@@ -66,7 +79,7 @@ def test_hayate_is_applied_only_to_arriving_kv_before_upstream_scatter(monkeypat
         "vllm.v1.attention.backends.flash_attn.FlashAttentionImpl.do_kv_cache_update",
         fake_upstream,
     )
-    impl = object.__new__(TaperKVNativeImpl)
+    impl = object.__new__(TaperKVReferenceImpl)
     impl._hayate_roundtrip = lambda key, value, _recipe, _layer_idx: (key + 1, value + 2)
     layer = SimpleNamespace(layer_name="model.layers.0.self_attn")
     slots = torch.tensor([0])
@@ -84,7 +97,7 @@ def test_batched_decode_uses_max_query_len_not_total_slot_count(monkeypatch):
         "vllm.v1.attention.backends.flash_attn.FlashAttentionImpl.forward",
         lambda *_args, **_kwargs: "upstream",
     )
-    impl = object.__new__(TaperKVNativeImpl)
+    impl = object.__new__(TaperKVReferenceImpl)
     impl._taper_pending_slots = torch.tensor([1, 7])
     calls = []
     impl._quantize_pending_slots = lambda *_args: calls.append("new")
@@ -98,7 +111,7 @@ def test_batched_decode_uses_max_query_len_not_total_slot_count(monkeypatch):
 
 
 def test_taper_backend_uses_upstream_flash_attention_cache_layout():
-    shape = TaperKVNativeBackend.get_kv_cache_shape(
+    shape = TaperKVReferenceBackend.get_kv_cache_shape(
         num_blocks=3,
         block_size=16,
         num_kv_heads=2,
@@ -109,14 +122,14 @@ def test_taper_backend_uses_upstream_flash_attention_cache_layout():
 
 
 def test_taper_cache_split_rejects_opposite_upstream_axis_order():
-    if taper_native._UPSTREAM_KV_AXIS == 1:
+    if taper_reference._UPSTREAM_KV_AXIS == 1:
         opposite = torch.empty(2, 3, 4, 2, 8)
         message = r"\[blocks, 2, block_size"
     else:
         opposite = torch.empty(3, 2, 4, 2, 8)
         message = r"\[2, blocks, block_size"
     with pytest.raises(RuntimeError, match=message):
-        TaperKVNativeImpl._split_kv_cache(opposite)
+        TaperKVReferenceImpl._split_kv_cache(opposite)
 
 
 def test_batched_noncontiguous_multi_page_regrade_matches_hf_reference(monkeypatch):
@@ -130,10 +143,10 @@ def test_batched_noncontiguous_multi_page_regrade_matches_hf_reference(monkeypat
         recent_tokens=0,
         requant_stride=2,
     )
-    recipe = TaperVLLMRecipe.from_policy(policy.get_kv_config())
-    monkeypatch.setenv(taper_native.TAPER_CONFIG_ENV, json.dumps(recipe.to_mapping()))
+    recipe = TaperKVVLLMRecipe.from_policy(policy.get_kv_config())
+    monkeypatch.setenv(taper_reference.TAPER_CONFIG_ENV, json.dumps(recipe.to_mapping()))
     paged = _paged_cache(4, 4, 2, 4)
-    key_cache, value_cache = TaperKVNativeImpl._split_kv_cache(paged)
+    key_cache, value_cache = TaperKVReferenceImpl._split_kv_cache(paged)
     untouched_page = (key_cache[1].clone(), value_cache[1].clone())
     requests = [([2, 0], 6), ([3], 3)]
     expected = []
@@ -147,10 +160,10 @@ def test_batched_noncontiguous_multi_page_regrade_matches_hf_reference(monkeypat
         block_table=torch.tensor([[2, 0], [3, -1]], dtype=torch.int32),
         seq_lens=torch.tensor([6, 3]),
     )
-    impl = object.__new__(TaperKVNativeImpl)
+    impl = object.__new__(TaperKVReferenceImpl)
     layer = SimpleNamespace(layer_name="model.layers.0.self_attn")
     impl._requantize_cache(paged, metadata, layer)
-    key_cache, value_cache = TaperKVNativeImpl._split_kv_cache(paged)
+    key_cache, value_cache = TaperKVReferenceImpl._split_kv_cache(paged)
 
     for (page_ids, total), (expected_k, expected_v) in zip(requests, expected):
         actual_k = key_cache[page_ids].reshape(-1, 2, 4)[:total].transpose(0, 1).unsqueeze(0)
@@ -181,14 +194,14 @@ def test_hayate_taper_prefill_matches_hf_reference_cache(monkeypatch):
     )
     keys = torch.randn(1, 2, 4, 4)
     values = torch.randn_like(keys)
-    hf_cache = HayateTaperKVCache(policy, codec)
+    hf_cache = HayateQuantTaperKVCache(policy, codec)
     expected_k, expected_v = hf_cache.update(keys, values, 0)
 
-    recipe = TaperVLLMRecipe.from_policy(
+    recipe = TaperKVVLLMRecipe.from_policy(
         policy.get_kv_config(), hayate_config=codec.get_kv_config()
     )
-    monkeypatch.setenv(taper_native.TAPER_CONFIG_ENV, json.dumps(recipe.to_mapping()))
-    impl = object.__new__(TaperKVNativeImpl)
+    monkeypatch.setenv(taper_reference.TAPER_CONFIG_ENV, json.dumps(recipe.to_mapping()))
+    impl = object.__new__(TaperKVReferenceImpl)
     layer = SimpleNamespace(layer_name="model.layers.0.self_attn")
     incoming_k, incoming_v = impl._hayate_roundtrip(
         keys.squeeze(0).transpose(0, 1),
@@ -198,7 +211,7 @@ def test_hayate_taper_prefill_matches_hf_reference_cache(monkeypatch):
     )
     paged = torch.stack(
         (incoming_k.unsqueeze(0), incoming_v.unsqueeze(0)),
-        dim=taper_native._UPSTREAM_KV_AXIS,
+        dim=taper_reference._UPSTREAM_KV_AXIS,
     )
     metadata = SimpleNamespace(
         use_cascade=False,
@@ -206,7 +219,7 @@ def test_hayate_taper_prefill_matches_hf_reference_cache(monkeypatch):
         seq_lens=torch.tensor([4]),
     )
     impl._requantize_cache(paged, metadata, layer)
-    key_cache, value_cache = TaperKVNativeImpl._split_kv_cache(paged)
+    key_cache, value_cache = TaperKVReferenceImpl._split_kv_cache(paged)
     actual_k = key_cache[0].transpose(0, 1).unsqueeze(0)
     actual_v = value_cache[0].transpose(0, 1).unsqueeze(0)
     assert torch.equal(actual_k, expected_k)

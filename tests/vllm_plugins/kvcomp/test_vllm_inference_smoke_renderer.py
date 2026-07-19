@@ -22,6 +22,17 @@ def _module():
     return runpy.run_path(str(SCRIPT), run_name="kvcomp_smoke_renderer_test")
 
 
+def _required_source_hashes():
+    return {
+        "benchmark/kvcomp-codec/run_vllm_inference_smoke_suite.py",
+        "benchmark/kvcomp-codec/render_vllm_inference_smoke_latex.py",
+        "benchmark/kvcomp-codec/taperkv_vllm_reference_smoke.py",
+        "benchmark/kvcomp-codec/hayatequant_vllm_native_generate.py",
+        "vllm_plugins/kvcomp/taper_reference.py",
+        "vllm_plugins/kvcomp/hayate_full_native.py",
+    }
+
+
 def _write_receipts(tmp_path: Path) -> tuple[Path, dict]:
     model = "/models/Qwen_3%"
     generation_evidence = {
@@ -124,7 +135,12 @@ def _write_receipts(tmp_path: Path) -> tuple[Path, dict]:
         "model": model,
         "max_model_len": 256,
         "max_tokens": 8,
-        "provenance": {"packages": {"vllm": "0.20.0"}},
+        "provenance": {
+            "git_head": "a" * 40,
+            "git_status_short": [],
+            "source_sha256": {source: "b" * 64 for source in _required_source_hashes()},
+            "packages": {"vllm": "0.20.0"},
+        },
         "phases": phases,
     }
     suite_path = tmp_path / "suite.json"
@@ -160,6 +176,15 @@ def test_renderer_rejects_invalid_suite_metadata(tmp_path, mutation, message):
     mutation(invalid)
     suite_path.write_text(json.dumps(invalid), encoding="utf-8")
     with pytest.raises(module["SmokeRenderError"], match=message):
+        module["render"](suite_path)
+
+
+def test_renderer_rejects_dirty_source_worktree(tmp_path):
+    module = _module()
+    suite_path, suite = _write_receipts(tmp_path)
+    suite["provenance"]["git_status_short"] = [" M vllm_plugins/kvcomp/taper_reference.py"]
+    suite_path.write_text(json.dumps(suite), encoding="utf-8")
+    with pytest.raises(module["SmokeRenderError"], match="clean source worktree"):
         module["render"](suite_path)
 
 

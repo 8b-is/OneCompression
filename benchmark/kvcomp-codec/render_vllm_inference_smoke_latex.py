@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 
@@ -15,6 +16,14 @@ class SmokeRenderError(RuntimeError):
 
 
 EXPECTED_PHASES = ("taperkv", "hayatequant", "hayatequant_taperkv")
+REQUIRED_SOURCE_HASHES = {
+    "benchmark/kvcomp-codec/run_vllm_inference_smoke_suite.py",
+    "benchmark/kvcomp-codec/render_vllm_inference_smoke_latex.py",
+    "benchmark/kvcomp-codec/taperkv_vllm_reference_smoke.py",
+    "benchmark/kvcomp-codec/hayatequant_vllm_native_generate.py",
+    "vllm_plugins/kvcomp/taper_reference.py",
+    "vllm_plugins/kvcomp/hayate_full_native.py",
+}
 
 
 def _object(value: Any, label: str) -> dict[str, Any]:
@@ -96,10 +105,14 @@ def _validate_runtime_evidence(
         and event["maximum_pages_per_request"] > 1
         for event in events
     ):
-        raise SmokeRenderError(f"runtime evidence does not prove selected TapeKV path for {label}")
+        raise SmokeRenderError(
+            f"runtime evidence does not prove selected TaperKV path for {label}"
+        )
 
 
 def validate(suite_path: Path) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    """Validate aggregate provenance, phase contracts, and runtime evidence."""
+
     try:
         raw = suite_path.read_bytes()
         suite = _object(json.loads(raw), "suite")
@@ -132,16 +145,16 @@ def validate(suite_path: Path) -> tuple[dict[str, Any], dict[str, dict[str, Any]
         (combo, "hayatequant_then_taper_fp16_reference"),
     ):
         if receipt.get("schema_version") != 1 or receipt.get("implementation") != implementation:
-            raise SmokeRenderError(f"invalid TapeKV implementation receipt: {implementation}")
+            raise SmokeRenderError(f"invalid TaperKV implementation receipt: {implementation}")
         if receipt.get("eligible_for_packed_memory_or_speed_table") is not False:
-            raise SmokeRenderError("TapeKV reference receipt is mislabelled as packed evidence")
+            raise SmokeRenderError("TaperKV reference receipt is mislabelled as packed evidence")
         _validate_generation_evidence(receipt, implementation)
         if (
             receipt.get("exercises_batched_requests") is not True
             or receipt.get("exercises_multi_page_prompt") is not True
         ):
             raise SmokeRenderError(
-                "TapeKV smoke must cover batched requests and multiple KV pages"
+                "TaperKV smoke must cover batched requests and multiple KV pages"
             )
         _validate_runtime_evidence(
             suite_path,
@@ -201,7 +214,21 @@ def validate(suite_path: Path) -> tuple[dict[str, Any], dict[str, dict[str, Any]
     max_tokens = _positive_integer(suite.get("max_tokens"), "max_tokens")
     if max_tokens >= max_model_len:
         raise SmokeRenderError("max_tokens must be smaller than max_model_len")
-    packages = _object(_object(suite.get("provenance"), "provenance").get("packages"), "packages")
+    provenance = _object(suite.get("provenance"), "provenance")
+    git_head = provenance.get("git_head")
+    if not isinstance(git_head, str) or re.fullmatch(r"[0-9a-f]{40,64}", git_head) is None:
+        raise SmokeRenderError("provenance must contain a Git commit identity")
+    if provenance.get("git_status_short") != []:
+        raise SmokeRenderError("paper smoke must come from a clean source worktree")
+    source_hashes = _object(provenance.get("source_sha256"), "source_sha256")
+    if not REQUIRED_SOURCE_HASHES.issubset(source_hashes):
+        raise SmokeRenderError("provenance is missing required inference source hashes")
+    if any(
+        not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+        for digest in source_hashes.values()
+    ):
+        raise SmokeRenderError("provenance contains an invalid source digest")
+    packages = _object(provenance.get("packages"), "packages")
     if not isinstance(packages.get("vllm"), str) or not packages["vllm"]:
         raise SmokeRenderError("provenance must contain a nonempty vLLM version")
     suite["_sha256"] = hashlib.sha256(raw).hexdigest()
@@ -225,6 +252,8 @@ def _tex(value: object) -> str:
 
 
 def render(suite_path: Path) -> str:
+    """Render a paper fragment from one fully validated three-path receipt."""
+
     suite, receipts = validate(suite_path)
     hayate = receipts["hayatequant"]
     package_versions = _object(
@@ -249,9 +278,11 @@ def render(suite_path: Path) -> str:
             r"\toprule",
             r"path & resident KV representation & result \\",
             r"\midrule",
-            r"TapeKV & model-dtype paged cache; semantic age regrading & pass \\",
-            rf"faithful HQ (rate {hayate['bits']}) & packed fixed-HQ K/V blocks on eligible layers & pass \\",
-            r"HQ $\rightarrow$ TapeKV & model-dtype paged cache; HQ-on-arrival then age regrading & pass \\",
+            r"TaperKV & model-dtype paged cache; semantic age regrading & pass \\",
+            rf"faithful HQ (rate {hayate['bits']}) & packed fixed-HQ K/V blocks "
+            r"on eligible layers & pass \\",
+            r"HQ $\rightarrow$ TaperKV & model-dtype paged cache; HQ-on-arrival "
+            r"then age regrading & pass \\",
             r"\bottomrule",
             r"\end{tabular}",
             r"\end{table}",
@@ -261,8 +292,9 @@ def render(suite_path: Path) -> str:
             rf"{suite['max_model_len']} tokens, and {suite['max_tokens']} generated tokens per "
             r"request. Each backend ran in a fresh process. The full-HQ row exercised packed "
             r"key and value block-VQ on every compression-eligible layer while retaining "
-            r"vLLM's boundary-layer protection; the two TapeKV rows deliberately retained the "
-            r"model-dtype physical cache and are ineligible for packed-memory or throughput claims.",
+            r"vLLM's boundary-layer protection; the two TaperKV rows deliberately retained the "
+            r"model-dtype physical cache and are ineligible for packed-memory or "
+            r"throughput claims.",
             "",
             r"\noindent\textit{Receipt identity:} \KVCompVLLMSmokeSuiteSHA.",
             "",
@@ -271,6 +303,8 @@ def render(suite_path: Path) -> str:
 
 
 def main() -> int:
+    """Validate the requested suite and emit its LaTeX fragment."""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--suite", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)

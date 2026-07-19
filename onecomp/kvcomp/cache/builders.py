@@ -49,14 +49,14 @@ def build_compressed_cache(
         if isinstance(policy, TaperKVPolicy):
             if kv_config.selector is not None:
                 raise NotImplementedError(
-                    "TapeKV cannot be combined with token eviction in the HF cache path"
+                    "TaperKV cannot be combined with token eviction in the HF cache path"
                 )
             from .block_taper_cache import (  # pylint: disable=import-outside-toplevel
                 BlockTaperKVCache,
             )
-            from .hayate_taper_cache import (  # pylint: disable=import-outside-toplevel
-                HayateBlockTaperKVCache,
-                HayateTaperKVCache,
+            from .hayatequant_taper_cache import (  # pylint: disable=import-outside-toplevel
+                HayateQuantBlockTaperKVCache,
+                HayateQuantTaperKVCache,
             )
             from .taper_cache import (  # pylint: disable=import-outside-toplevel
                 BudgetTaperKVCache,
@@ -84,13 +84,13 @@ def build_compressed_cache(
                 )
             if getattr(codec, "name", None) != "hayatequant":
                 raise NotImplementedError(
-                    f"TapeKV HF composition does not support codec {codec.name!r}; "
-                    "only the explicitly defined HayateQuant-then-TapeKV path is available"
+                    f"TaperKV HF composition does not support codec {codec.name!r}; "
+                    "only the explicitly defined HayateQuant-then-TaperKV path is available"
                 )
             cache_cls = (
-                HayateBlockTaperKVCache
+                HayateQuantBlockTaperKVCache
                 if isinstance(policy, BlockTaperKVPolicy)
-                else HayateTaperKVCache
+                else HayateQuantTaperKVCache
             )
             return cache_cls(policy, codec, config=model_config)
 

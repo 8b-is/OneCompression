@@ -49,11 +49,11 @@ frozen `lut` recipe with both `lut_bins` and `lut_candidates` serialized), and
 `residual_window=0` in the saved KV config. Unsupported rates or knobs fail
 before engine construction rather than selecting a similar but different cache.
 
-TapeKV uses a separate semantic/reference backend. It retains vLLM's
+TaperKV uses a separate semantic/reference backend. It retains vLLM's
 FP16/BF16 paged allocation and applies the age ladder before attention, so its
 outputs may be used for generation and parity checks but not packed-memory or
-throughput claims. A HayateQuant codec can be combined with a TapeKV policy;
-HayateQuant is applied exactly once to each arriving KV vector before TapeKV.
+throughput claims. A HayateQuant codec can be combined with a TaperKV policy;
+HayateQuant is applied exactly once to each arriving KV vector before TaperKV.
 This mutable-page backend forces eager execution and disables prefix caching,
 and rejects cascade attention and decode context parallelism.
 

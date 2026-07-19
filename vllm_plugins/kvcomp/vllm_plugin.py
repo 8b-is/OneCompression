@@ -12,11 +12,11 @@ Scope of this plugin (agreed scaffold):
   :class:`onecomp.runner.Runner`.
 * Map the **FP8** codec onto vLLM's *native* ``kv_cache_dtype`` (the recommended
   baseline), via :func:`vllm_plugins.kvcomp.mapping.engine_kwargs_from_kv_config`.
-* Run standalone affine TapeKV through an explicit, FP16/BF16-reference
+* Run standalone affine TaperKV through an explicit, FP16/BF16-reference
   FlashAttention backend.  The backend is marked non-packed and is excluded
   from memory/throughput claims.
 * Run explicitly selected fixed-rate full HayateQuant through its faithful
-  packed key/value backend, and compose HayateQuant with TapeKV in the
+  packed key/value backend, and compose HayateQuant with TaperKV in the
   reference backend's defined one-time-HQ-then-age-regrade order.
 * For every other low-bit / eviction recipe, fail closed when the experimental
   custom attention backend is required (never start an uncompressed look-alike
@@ -43,12 +43,15 @@ from vllm_plugins.kvcomp.mapping import (
 _PLUGIN_NAME = "onecomp_kvcomp"
 _HAYATE_NATIVE_CONFIG_ENV = "KVCOMP_VLLM_HAYATE_NATIVE_CONFIG"
 _HAYATE_FULL_NATIVE_CONFIG_ENV = "KVCOMP_VLLM_HAYATE_FULL_NATIVE_CONFIG"
-_TAPER_NATIVE_CONFIG_ENV = "KVCOMP_VLLM_TAPER_CONFIG"
-# Dedicated launchers can opt into a TapeKV recipe even when the base model
+_TAPER_REFERENCE_CONFIG_ENV = "KVCOMP_VLLM_TAPER_CONFIG"
+# Dedicated launchers can opt into a TaperKV recipe even when the base model
 # has no serialized kv_compression_config.  This is intentionally separate
 # from the recipe payload so ordinary model-to-model transitions still clear
 # stale state; it is only appropriate for a fresh-process smoke/validation run.
-_TAPER_NATIVE_EXPLICIT_ENV = "KVCOMP_VLLM_TAPER_CONFIG_EXPLICIT"
+_TAPER_REFERENCE_EXPLICIT_ENV = "KVCOMP_VLLM_TAPER_CONFIG_EXPLICIT"
+# Compatibility aliases for integrations that imported the old internal names.
+_TAPER_NATIVE_CONFIG_ENV = _TAPER_REFERENCE_CONFIG_ENV
+_TAPER_NATIVE_EXPLICIT_ENV = _TAPER_REFERENCE_EXPLICIT_ENV
 
 
 def _get_logger():
@@ -145,11 +148,11 @@ def apply_to_engine_args(engine_args, model_path: Optional[str] = None):
         os.environ.pop(_HAYATE_FULL_NATIVE_CONFIG_ENV, None)
     elif plan.hayate_full_native:
         os.environ.pop(_HAYATE_NATIVE_CONFIG_ENV, None)
-    if not plan.taper_native and not os.environ.get(_TAPER_NATIVE_EXPLICIT_ENV):
+    if not plan.taper_reference and not os.environ.get(_TAPER_REFERENCE_EXPLICIT_ENV):
         # The registry override delegates to ordinary FlashAttention without a
-        # payload (see taper_native.py), so clearing this process-scoped recipe
+        # payload (see taper_reference.py), so clearing this process-scoped recipe
         # prevents it being applied to a subsequently constructed model.
-        os.environ.pop(_TAPER_NATIVE_CONFIG_ENV, None)
+        os.environ.pop(_TAPER_REFERENCE_CONFIG_ENV, None)
     for msg in plan.notes:
         logger.info("[kvcomp] %s", msg)
     for msg in plan.warnings:
@@ -159,8 +162,8 @@ def apply_to_engine_args(engine_args, model_path: Optional[str] = None):
         raise RuntimeError(
             "Serialized KV compression recipe cannot run through native vLLM: " f"{detail}"
         )
-    if plan.taper_native:
-        _install_taper_native_backend(plan, logger)
+    if plan.taper_reference:
+        _install_taper_reference_backend(plan, logger)
         # Shared prefix blocks are intentionally disabled: independently
         # regrading two sequences which alias a prefix page would mutate a
         # page according to whichever request ran last.  This is a correctness
@@ -171,7 +174,7 @@ def apply_to_engine_args(engine_args, model_path: Optional[str] = None):
             engine_args.enforce_eager = True
         if hasattr(engine_args, "attention_backend"):
             engine_args.attention_backend = "FLASH_ATTN"
-        logger.info("[kvcomp] enabled TapeKV FP16-reference semantic backend")
+        logger.info("[kvcomp] enabled TaperKV FP16-reference semantic backend")
         return engine_args
     if plan.native_supported and plan.kv_cache_dtype != "auto":
         if not _vllm_accepts_dtype(plan.kv_cache_dtype):
@@ -201,7 +204,7 @@ _PATCHED = False
 _HAYATE_NATIVE_INSTALLED = False
 _HAYATE_FULL_NATIVE_INSTALLED = False
 _HAYATE_FULL_SPEC_PATCHED = False
-_TAPER_NATIVE_INSTALLED = False
+_TAPER_REFERENCE_INSTALLED = False
 
 
 def _install_hayate_full_cache_spec_hook() -> bool:
@@ -370,22 +373,22 @@ def _install_hayate_native_backend(plan: KVCompVLLMPlan, logger) -> bool:
     return True
 
 
-def _register_taper_native_backend(logger) -> bool:
-    """Register the explicit TapeKV semantic backend in this vLLM process."""
-    global _TAPER_NATIVE_INSTALLED
-    payload = os.environ.get(_TAPER_NATIVE_CONFIG_ENV)
+def _register_taper_reference_backend(logger) -> bool:
+    """Register the explicit TaperKV semantic backend in this vLLM process."""
+    global _TAPER_REFERENCE_INSTALLED
+    payload = os.environ.get(_TAPER_REFERENCE_CONFIG_ENV)
     if not payload:
         return False
     try:
         config = json.loads(payload)
         from vllm_plugins.kvcomp.taper_config import (  # pylint: disable=import-outside-toplevel
-            TaperVLLMRecipe,
+            TaperKVVLLMRecipe,
         )
 
-        TaperVLLMRecipe.from_mapping(config)
+        TaperKVVLLMRecipe.from_mapping(config)
     except Exception as exc:
-        raise RuntimeError("invalid TapeKV native config; refusing registration") from exc
-    if _TAPER_NATIVE_INSTALLED:
+        raise RuntimeError("invalid TaperKV reference config; refusing registration") from exc
+    if _TAPER_REFERENCE_INSTALLED:
         return True
     try:
         from vllm.v1.attention.backends.registry import (  # pylint: disable=import-outside-toplevel
@@ -395,25 +398,25 @@ def _register_taper_native_backend(logger) -> bool:
 
         register_backend(
             AttentionBackendEnum.FLASH_ATTN,
-            "vllm_plugins.kvcomp.taper_native.TaperKVNativeBackend",
+            "vllm_plugins.kvcomp.taper_reference.TaperKVReferenceBackend",
         )
-        _TAPER_NATIVE_INSTALLED = True
-        logger.info("[kvcomp] registered TapeKV FP16-reference FlashAttention backend")
+        _TAPER_REFERENCE_INSTALLED = True
+        logger.info("[kvcomp] registered TaperKV FP16-reference FlashAttention backend")
         return True
     except Exception as exc:  # pragma: no cover - depends on installed vLLM
         raise RuntimeError(
-            "Could not register requested TapeKV vLLM reference backend; refusing "
+            "Could not register requested TaperKV vLLM reference backend; refusing "
             "to run an uncompressed look-alike"
         ) from exc
 
 
-def _install_taper_native_backend(plan: KVCompVLLMPlan, logger) -> bool:
-    """Export a validated TapeKV recipe and install its required backend."""
-    if not plan.taper_native:
+def _install_taper_reference_backend(plan: KVCompVLLMPlan, logger) -> bool:
+    """Export a validated TaperKV recipe and install its reference backend."""
+    if not plan.taper_reference:
         return False
-    os.environ[_TAPER_NATIVE_CONFIG_ENV] = json.dumps(plan.taper_config, sort_keys=True)
-    if not _register_taper_native_backend(logger):
-        raise RuntimeError("TapeKV vLLM plan did not install its required backend")
+    os.environ[_TAPER_REFERENCE_CONFIG_ENV] = json.dumps(plan.taper_config, sort_keys=True)
+    if not _register_taper_reference_backend(logger):
+        raise RuntimeError("TaperKV vLLM plan did not install its required backend")
     return True
 
 
@@ -473,12 +476,12 @@ def register_vllm_plugin():
         if _register_hayate_full_native_backend(logger):
             _install_hayate_full_cache_spec_hook()
         _register_hayate_native_backend(logger)
-        _register_taper_native_backend(logger)
+        _register_taper_reference_backend(logger)
         _install_engine_args_hook(logger)
         logger.info(
             "Registered OneComp KV compression plugin '%s' (FP8 and supported "
             "HayateQuant native block-VQ auto-applied to kv_cache_dtype; "
-            "TapeKV reference semantics, and supported HayateQuant native "
+            "TaperKV reference semantics, and supported HayateQuant native "
             "block-VQ auto-applied; remaining low-bit/eviction recipes require "
             "the HF cache path or an experimental attention backend).",
             _PLUGIN_NAME,
@@ -486,6 +489,13 @@ def register_vllm_plugin():
     except Exception as exc:  # pragma: no cover - vLLM internals changed
         logger.error("[kvcomp] could not install required EngineArgs hook: %s", exc)
         raise
+
+
+# Backward-compatible aliases for pre-audit internal helper names.  Keeping
+# these avoids breaking launchers while ensuring new code calls the reference
+# path by a name that cannot be mistaken for packed physical compression.
+_register_taper_native_backend = _register_taper_reference_backend
+_install_taper_native_backend = _install_taper_reference_backend
 
 
 __all__ = [

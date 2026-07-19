@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 import runpy
+import subprocess
 
 import pytest
 
@@ -52,3 +53,23 @@ def test_suite_refuses_to_mix_stale_receipts(tmp_path):
     )
     with pytest.raises(ValueError, match="new or empty"):
         module["run"](args)
+
+
+def test_suite_renderer_uses_shared_fail_closed_validator(tmp_path, monkeypatch):
+    module = _module()
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    suite = tmp_path / "suite.json"
+    output = tmp_path / "vllm_inference_smoke.tex"
+    result = module["_render_validated_suite"](suite, output)
+    assert result.returncode == 0
+    command, kwargs = calls[0]
+    assert command[1] == str(module["RENDERER"])
+    assert command[-4:] == ["--suite", str(suite), "--output", str(output)]
+    assert kwargs["check"] is False
+    assert kwargs["capture_output"] is True

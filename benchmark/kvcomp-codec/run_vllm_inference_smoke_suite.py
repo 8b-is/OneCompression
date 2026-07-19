@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run isolated GPU generation smokes for TapeKV, HQ, and HQ+TapeKV.
+"""Run isolated GPU generation smokes for TaperKV, HQ, and HQ+TaperKV.
 
 Each vLLM engine runs in a fresh interpreter because attention backend
 registration is process-global.  The suite retains child stdout/stderr and
@@ -23,12 +23,14 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CODEC_BENCHMARK = REPO_ROOT / "benchmark" / "kvcomp-codec"
+RENDERER = CODEC_BENCHMARK / "render_vllm_inference_smoke_latex.py"
 SOURCE_FILES = tuple(
     sorted(
         {
             Path(__file__).resolve(),
             CODEC_BENCHMARK / "taperkv_vllm_reference_smoke.py",
             CODEC_BENCHMARK / "hayatequant_vllm_native_generate.py",
+            RENDERER,
             *(REPO_ROOT / "vllm_plugins" / "kvcomp").glob("*.py"),
             *(REPO_ROOT / "onecomp" / "kvcomp").rglob("*.py"),
         }
@@ -192,6 +194,8 @@ def _provenance() -> dict[str, Any]:
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
+    """Run the three isolated engines and return their aggregate receipt."""
+
     args.output_dir.mkdir(parents=True, exist_ok=True)
     if any(args.output_dir.iterdir()):
         raise ValueError(
@@ -246,6 +250,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse and validate the standalone smoke-suite arguments."""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
@@ -261,11 +267,50 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+def _render_validated_suite(suite_path: Path, output_path: Path) -> subprocess.CompletedProcess:
+    """Run the fail-closed receipt validator and emit the paper-ready table."""
+
+    return subprocess.run(
+        [
+            sys.executable,
+            str(RENDERER),
+            "--suite",
+            str(suite_path),
+            "--output",
+            str(output_path),
+        ],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
 def main() -> int:
+    """Write the aggregate receipt and render it only after strict validation."""
+
     args = parse_args()
     result = run(args)
     aggregate = args.output_dir / "suite.json"
     aggregate.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    if result["passed"]:
+        rendered_path = args.output_dir / "vllm_inference_smoke.tex"
+        validation = _render_validated_suite(aggregate, rendered_path)
+        if validation.returncode != 0:
+            # A zero-exit child plus a JSON object is insufficient: the shared
+            # renderer checks schemas, model identity, generation totals,
+            # runtime-event digests, and representation labels.  Rewrite the
+            # aggregate as failed if any of those contracts is violated.
+            result["passed"] = False
+            result["receipt_validation_error"] = (
+                validation.stderr.strip()
+                or validation.stdout.strip()
+                or "receipt validator failed without diagnostic output"
+            )
+            aggregate.write_text(
+                json.dumps(result, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
     print(json.dumps(result, indent=2, ensure_ascii=False))
     return 0 if result["passed"] else 1
 

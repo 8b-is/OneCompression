@@ -1,7 +1,7 @@
-"""Validated configuration for the vLLM TapeKV reference backend.
+"""Validated configuration for the vLLM TaperKV reference backend.
 
 The backend deliberately keeps vLLM's ordinary FP16/BF16 paged allocation and
-applies TapeKV's affine fake-quantisation before attention.  It is therefore a
+applies TaperKV's affine fake-quantisation before attention.  It is therefore a
 *semantic/reference* implementation: it is suitable for generation and
 quality checks, but must never be reported as a packed-memory or throughput
 result.  Keeping that distinction in one small, dependency-free module makes
@@ -19,8 +19,8 @@ _SUPPORTED_POLICIES = {"taperkv", "block_taperkv"}
 
 
 @dataclass(frozen=True)
-class TaperVLLMRecipe:
-    """One explicit TapeKV semantic recipe accepted by the vLLM plugin."""
+class TaperKVVLLMRecipe:
+    """One explicit TaperKV semantic recipe accepted by the vLLM plugin."""
 
     policy_name: str
     key_bits: int
@@ -40,14 +40,14 @@ class TaperVLLMRecipe:
 
     def __post_init__(self) -> None:
         if self.policy_name not in _SUPPORTED_POLICIES:
-            raise ValueError(f"unsupported TapeKV policy {self.policy_name!r}")
+            raise ValueError(f"unsupported TaperKV policy {self.policy_name!r}")
         for name in ("key_bits", "value_bits", "b_min", "b_min_value"):
             value = strict_integer(getattr(self, name), name, minimum=1, maximum=16)
             object.__setattr__(self, name, value)
         if self.value_bits > self.key_bits:
             raise ValueError("value_bits must not exceed key_bits")
         if self.b_min > self.key_bits or self.b_min_value > self.value_bits:
-            raise ValueError("TapeKV floor bits must not exceed their high bits")
+            raise ValueError("TaperKV floor bits must not exceed their high bits")
         for name in ("sink_tokens", "recent_tokens"):
             object.__setattr__(self, name, strict_integer(getattr(self, name), name, minimum=0))
         ladder = self.ladder
@@ -98,7 +98,7 @@ class TaperVLLMRecipe:
             ):
                 raise ValueError(
                     "adaptive HayateQuant is request-local and cannot be composed "
-                    "with batched vLLM TapeKV"
+                    "with batched vLLM TaperKV"
                 )
             outlier_fields = (
                 "n_outlier",
@@ -114,24 +114,26 @@ class TaperVLLMRecipe:
             if any(value > 0 for value in outlier_counts):
                 raise ValueError(
                     "dynamic HayateQuant outlier selection cannot be composed with "
-                    "batched vLLM TapeKV"
+                    "batched vLLM TaperKV"
                 )
             if str(self.hayate_config.get("encoder") or "auto").lower() not in {
                 "exact",
                 "lut",
             }:
-                raise ValueError("HayateQuant+TapeKV requires an explicit exact or lut encoder")
+                raise ValueError("HayateQuant+TaperKV requires an explicit exact or lut encoder")
             object.__setattr__(self, "hayate_config", dict(self.hayate_config))
             object.__setattr__(self, "implementation", "hayatequant_then_taper_fp16_reference")
         elif self.implementation != "fp16_reference_fake_quant":
-            raise ValueError("only the explicit FP16 reference TapeKV backend is supported")
+            raise ValueError("only the explicit FP16 reference TaperKV backend is supported")
 
     @classmethod
     def from_policy(
         cls, policy: dict[str, Any], hayate_config: dict[str, Any] | None = None
-    ) -> "TaperVLLMRecipe":
+    ) -> "TaperKVVLLMRecipe":
+        """Build a validated serving recipe from serialized OneComp policies."""
+
         if not isinstance(policy, dict):
-            raise ValueError("TapeKV policy must be a mapping")
+            raise ValueError("TaperKV policy must be a mapping")
         name = str(policy.get("name", ""))
         block_size = policy.get("block_size")
         default_stride = block_size if name == "block_taperkv" else 16
@@ -156,9 +158,11 @@ class TaperVLLMRecipe:
         )
 
     @classmethod
-    def from_mapping(cls, mapping: dict[str, Any]) -> "TaperVLLMRecipe":
+    def from_mapping(cls, mapping: dict[str, Any]) -> "TaperKVVLLMRecipe":
+        """Reconstruct and validate a recipe from a JSON-compatible mapping."""
+
         if not isinstance(mapping, dict):
-            raise ValueError("TapeKV native payload must be a JSON object")
+            raise ValueError("TaperKV reference payload must be a JSON object")
         data = dict(mapping)
         for key in ("ladder", "skip_layers"):
             if data.get(key) is not None:
@@ -166,7 +170,17 @@ class TaperVLLMRecipe:
         return cls(**data)
 
     def to_mapping(self) -> dict[str, Any]:
+        """Return a JSON-compatible mapping for the worker environment."""
+
         result = asdict(self)
         result["ladder"] = list(self.ladder) if self.ladder is not None else None
         result["skip_layers"] = list(self.skip_layers)
         return result
+
+
+# Compatibility for callers written before the reference/native naming audit.
+# New code should use ``TaperKVVLLMRecipe`` so the method name and the ``KV``
+# component remain explicit.
+TaperVLLMRecipe = TaperKVVLLMRecipe
+
+__all__ = ["TaperKVVLLMRecipe", "TaperVLLMRecipe"]

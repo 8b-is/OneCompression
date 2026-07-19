@@ -1105,9 +1105,7 @@ def test_cross_model_summary_rejects_partial_paper_matrix():
         cross._require_complete_matrix([{"model": "Tiny", "results": {}}], [spec])
 
 
-def test_cross_model_summary_uses_result_filename_when_model_label_is_absent(
-    tmp_path, capsys
-):
+def test_cross_model_summary_uses_result_filename_when_model_label_is_absent(tmp_path, capsys):
     import argparse
     import importlib
     import os
@@ -3331,7 +3329,7 @@ def test_vllm_mapping_eviction_only_and_policy():
     # Eviction selector, no codec -> custom backend, dtype unchanged.
     p = plan_from_kv_config({"selector": {"name": "snapkv"}})
     assert p.needs_custom_backend and p.kv_cache_dtype == "auto" and p.codec_name is None
-    # A second codec is not silently composed with TapeKV's affine reference
+    # A second codec is not silently composed with TaperKV's affine reference
     # backend, so this adaptive composition remains fail-closed.
     p2 = plan_from_kv_config(
         {"residual_window": 0, "codec": {"name": "fp8"}, "policy": {"name": "taperkv"}}

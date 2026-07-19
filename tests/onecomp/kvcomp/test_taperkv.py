@@ -13,16 +13,21 @@ from onecomp.kvcomp import (
     KVCompressionConfig,
     TaperKVCache,
     TaperKVPolicy,
-    HayateTaperKVCache,
+    HayateQuantTaperKVCache,
     build_policy,
     list_policies,
 )
 from onecomp.kvcomp.cache.builders import build_compressed_cache
+from onecomp.kvcomp.cache.hayate_taper_cache import HayateTaperKVCache
 from onecomp.kvcomp.cache.turbotaper_cache import TurboTaperCache
 from onecomp.kvcomp.recipe.turbotaper import TurboTaperPolicy
 from onecomp.kvcomp.cache.block_taper_cache import block_taper_bits, fake_quant_blocks
 from onecomp.kvcomp.cache.taper_cache import apply_byte_budget
 from onecomp.kvcomp.codec._quant_primitives import fake_quantize_affine
+
+
+def test_hayatequant_taper_cache_keeps_legacy_alias():
+    assert HayateTaperKVCache is HayateQuantTaperKVCache
 
 
 def test_fujimoto_policy_variants_are_registered_and_constructible():
@@ -78,7 +83,7 @@ def test_hayate_taper_applies_hayate_once_per_arriving_token_and_unions_skips():
         requant_stride=2,
     )
     codec = AddOneHayate()
-    cache = HayateTaperKVCache(policy, codec)
+    cache = HayateQuantTaperKVCache(policy, codec)
     first = torch.zeros(1, 1, 2, 3)
     first_k, _ = cache.update(first, first, 0)
     assert torch.equal(first_k, torch.ones_like(first))
