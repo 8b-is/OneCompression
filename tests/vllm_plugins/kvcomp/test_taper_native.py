@@ -174,6 +174,30 @@ def test_batched_noncontiguous_multi_page_regrade_matches_hf_reference(monkeypat
     assert torch.equal(value_cache[1], untouched_page[1])
 
 
+def test_multi_page_regrade_emits_a_distinct_runtime_evidence_marker(monkeypatch):
+    _set_recipe(monkeypatch, key_bits=4, value_bits=4, b_min=2, b_min_value=2)
+    events = []
+    monkeypatch.setattr(
+        taper_reference,
+        "emit_runtime_evidence_once",
+        lambda _owner, marker, event: events.append((marker, event)),
+    )
+    paged = _paged_cache(2, 4, 1, 4)
+    metadata = SimpleNamespace(
+        use_cascade=False,
+        block_table=torch.tensor([[1, 0]], dtype=torch.int32),
+        seq_lens=torch.tensor([6]),
+    )
+    impl = object.__new__(TaperKVReferenceImpl)
+    impl._requantize_cache(paged, metadata, SimpleNamespace(layer_name="model.layers.0"))
+    assert [marker for marker, _event in events] == [
+        "taper_regrade",
+        "taper_regrade_multi_page",
+    ]
+    assert all(event["event"] == "logical_paged_cache_regraded" for _marker, event in events)
+    assert all(event["maximum_pages_per_request"] == 2 for _marker, event in events)
+
+
 def test_hayate_taper_prefill_matches_hf_reference_cache(monkeypatch):
     torch.manual_seed(7)
     policy = TaperKVPolicy(

@@ -231,8 +231,12 @@ def _parse_sacct(stdout: bytes, *, expected_job_id: str) -> dict[str, str]:
         if not line:
             continue
         fields = line.split("|")
-        if fields and fields[-1] == "":
-            fields.pop()
+        # ``--parsable2`` retains an empty final field as a terminal ``|``.
+        # That final position is the submission Comment, which is part of the
+        # immutable attempt identity.  Do not discard it: an empty comment
+        # must be parsed and then rejected by ``_verify_sacct_identity``;
+        # otherwise this parser incorrectly reports eight fields and obscures
+        # a real provenance mismatch on clusters that omit accounting comments.
         if len(fields) != len(SACCT_FIELDS):
             raise ReconcileError(f"sacct row has {len(fields)} fields, expected {len(SACCT_FIELDS)}")
         rows.append(fields)

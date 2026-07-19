@@ -20,9 +20,19 @@ import hashlib
 import json
 import os
 import platform
+import subprocess
 import sys
+import time
 from datetime import UTC, datetime
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+_PROVENANCE_SOURCES = (
+    Path(__file__).resolve(),
+    REPO_ROOT / "vllm_plugins" / "kvcomp" / "taper_config.py",
+    REPO_ROOT / "vllm_plugins" / "kvcomp" / "taper_native.py",
+    REPO_ROOT / "vllm_plugins" / "kvcomp" / "mapping.py",
+)
 
 DEFAULT_PROMPTS = [
     "The capital of France is",
@@ -37,6 +47,33 @@ DEFAULT_PROMPTS = [
 
 def _runtime_evidence_path(output: Path) -> Path:
     return output.with_suffix(f"{output.suffix}.runtime.jsonl")
+
+
+def _reference_provenance() -> dict:
+    """Record the exact code even though this path is not a speed claim."""
+
+    git_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    status = subprocess.run(
+        ["git", "status", "--short"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    return {
+        "git_head": git_head,
+        "git_status_short": status,
+        "source_sha256": {
+            str(path.relative_to(REPO_ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in _PROVENANCE_SOURCES
+        },
+    }
 
 
 def _load_runtime_evidence(path: Path, *, combined: bool) -> tuple[list[dict], str]:
@@ -96,6 +133,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--recent-tokens", type=int, default=64)
     parser.add_argument("--block-size", type=int, default=16)
     parser.add_argument("--requant-stride", type=int, default=None)
+    parser.add_argument(
+        "--gpu-memory-utilization",
+        type=float,
+        default=0.5,
+        help="vLLM allocator fraction; recorded only, never a packed-memory metric",
+    )
     parser.add_argument(
         "--hayate-bits",
         type=int,
@@ -171,6 +214,12 @@ def main() -> int:
 
     from vllm import LLM, SamplingParams
     from transformers import AutoTokenizer
+    import torch
+
+    if not torch.cuda.is_available():
+        raise RuntimeError("TapeKV vLLM reference smoke requires CUDA")
+    if not 0.0 < args.gpu_memory_utilization < 1.0:
+        raise ValueError("--gpu-memory-utilization must be in (0, 1)")
 
     tokenizer = AutoTokenizer.from_pretrained(
         args.model,
@@ -186,6 +235,9 @@ def main() -> int:
             f"{max(prompt_token_lengths)}+{args.max_tokens}>{args.max_model_len}"
         )
 
+    torch.cuda.reset_peak_memory_stats()
+    mem_free_before, mem_total = torch.cuda.mem_get_info()
+    load_started = time.perf_counter()
     llm = LLM(
         model=args.model,
         kv_cache_dtype="auto",
@@ -194,18 +246,33 @@ def main() -> int:
         attention_backend="FLASH_ATTN",
         max_model_len=args.max_model_len,
         max_num_batched_tokens=args.max_model_len,
-        gpu_memory_utilization=0.5,
+        gpu_memory_utilization=args.gpu_memory_utilization,
     )
+    torch.cuda.synchronize()
+    load_seconds = time.perf_counter() - load_started
+    mem_free_after_load, _ = torch.cuda.mem_get_info()
     cache_block_size = int(llm.llm_engine.vllm_config.cache_config.block_size)
     if max(prompt_token_lengths) <= cache_block_size:
         raise RuntimeError(
             "TaperKV smoke must include a prompt spanning more than one physical KV page; "
             f"longest prompt={max(prompt_token_lengths)}, block_size={cache_block_size}"
         )
+    # Compile/init once before the measured generation, exactly as the packed
+    # HQ generation harness does.  This is still a reference-path diagnostic:
+    # ``eligible_for_packed_memory_or_speed_table`` remains false below.
+    llm.generate(
+        [prompts[0]], SamplingParams(temperature=0.0, max_tokens=min(8, args.max_tokens))
+    )
+    torch.cuda.synchronize()
+    torch.cuda.reset_peak_memory_stats()
+    generate_started = time.perf_counter()
     results = llm.generate(
         prompts,
         SamplingParams(temperature=0.0, max_tokens=args.max_tokens, ignore_eos=True),
     )
+    torch.cuda.synchronize()
+    generate_seconds = time.perf_counter() - generate_started
+    mem_free_after_generate, _ = torch.cuda.mem_get_info()
     generations = []
     total_generated_tokens = 0
     if len(results) != len(prompts):
@@ -239,6 +306,10 @@ def main() -> int:
         "implementation": recipe.implementation,
         "physical_kv_cache": "vllm model-dtype paged cache (not packed)",
         "eligible_for_packed_memory_or_speed_table": False,
+        "timing_scope": (
+            "one warmed synchronized reference-path process; diagnostic only and excluded "
+            "from packed serving speed comparisons"
+        ),
         "prefix_caching": False,
         "enforce_eager": True,
         "policy": recipe.to_mapping(),
@@ -250,6 +321,17 @@ def main() -> int:
         "exercises_batched_requests": len(prompts) > 1,
         "exercises_multi_page_prompt": max(prompt_token_lengths) > cache_block_size,
         "generated_tokens": total_generated_tokens,
+        "elapsed_seconds": round(generate_seconds, 4),
+        "tokens_per_second": round(total_generated_tokens / max(generate_seconds, 1e-9), 3),
+        "load_seconds": round(load_seconds, 4),
+        "cuda_memory_total_gib": round(mem_total / 2**30, 3),
+        "cuda_memory_used_after_load_gib": round(
+            (mem_total - mem_free_after_load) / 2**30, 3
+        ),
+        "cuda_memory_used_after_generate_gib": round(
+            (mem_total - mem_free_after_generate) / 2**30, 3
+        ),
+        "torch_peak_reserved_gib": round(torch.cuda.max_memory_reserved() / 2**30, 3),
         "prompt": prompts[0],
         "generated_text": generations[0]["text"],
         "generations": generations,
@@ -262,6 +344,7 @@ def main() -> int:
         "python": sys.version,
         "platform": platform.platform(),
         "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+        "provenance": _reference_provenance(),
     }
     args.output.write_text(
         json.dumps(receipt, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"

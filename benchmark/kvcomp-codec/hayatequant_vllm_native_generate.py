@@ -20,11 +20,20 @@ import hashlib
 import json
 import os
 import statistics
+import subprocess
 import sys
 import time
 from pathlib import Path
 
 import torch
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+_PROVENANCE_SOURCES = (
+    Path(__file__).resolve(),
+    REPO_ROOT / "vllm_plugins" / "kvcomp" / "hayate_full_config.py",
+    REPO_ROOT / "vllm_plugins" / "kvcomp" / "hayate_full_native.py",
+    REPO_ROOT / "vllm_plugins" / "kvcomp" / "hayate_full_triton.py",
+)
 
 DEFAULT_PROMPTS = [
     "Explain why the sky appears blue in three concise sentences.",
@@ -40,6 +49,33 @@ _HAYATE_FULL_NATIVE_CONFIG_ENV = "KVCOMP_VLLM_HAYATE_FULL_NATIVE_CONFIG"
 
 def _runtime_evidence_path(output: Path) -> Path:
     return output.with_suffix(f"{output.suffix}.runtime.jsonl")
+
+
+def _generation_provenance() -> dict:
+    """Bind standalone generation receipts to the exact serving implementation."""
+
+    git_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    status = subprocess.run(
+        ["git", "status", "--short"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    return {
+        "git_head": git_head,
+        "git_status_short": status,
+        "source_sha256": {
+            str(path.relative_to(REPO_ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in _PROVENANCE_SOURCES
+        },
+    }
 
 
 def _load_full_hq_runtime_evidence(path: Path) -> tuple[list[dict], str]:
@@ -343,6 +379,7 @@ def run(args: argparse.Namespace) -> dict:
         "cuda_memory_used_after_load_gib": round((mem_total - mem_free_after_load) / 2**30, 3),
         "cuda_memory_used_after_generate_gib": round((mem_total - mem_free_after) / 2**30, 3),
         "torch_peak_reserved_gib": round(torch.cuda.max_memory_reserved() / 2**30, 3),
+        "provenance": _generation_provenance(),
         "text_sanity_summary_not_quality_metric": {
             "min_nonspace_chars": min(chars) if chars else 0,
             "mean_nonspace_chars": round(statistics.mean(chars), 2) if chars else 0.0,

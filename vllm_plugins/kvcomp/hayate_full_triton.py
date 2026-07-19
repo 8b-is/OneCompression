@@ -263,37 +263,74 @@ def _full_hq_pack_store(
         + tl.cast(head, tl.int64) * stride_cache_head
     )
 
-    # Construct each output byte one bit at a time.  CODE_BITS is compile-time
-    # constant (1..9), so this is eight simple gather/shift operations and also
-    # covers streams where one byte spans more than two short codewords.
+    # Construct the packed streams directly from their fixed-width code words.
+    # For code widths >= 7, an eight-bit byte can cross at most one code-word
+    # boundary.  Loading those two adjacent words replaces the previous eight
+    # one-bit gathers per output byte.  The fixed HQ rate-3/rate-4 b=2 recipes
+    # are partly/fully in this fast path (HQ-3 K7; HQ-4 K9/V7).  Keep the
+    # bitwise fallback for narrower recipes: a byte can cross three or more
+    # code words for widths <= 6, and a two-word shortcut would silently
+    # corrupt the packed cache.
     kb = tl.arange(0, BLOCK_K_BYTES)
     kmask = kb < K_CODE_BYTES
-    kout = tl.zeros([BLOCK_K_BYTES], tl.int32)
-    for bit in range(8):
-        stream_bit = kb * 8 + bit
-        code_idx = stream_bit // K_CODE_BITS
-        code_bit = stream_bit - code_idx * K_CODE_BITS
-        code = tl.load(
-            K_codes_ptr + vec * K_NUM_BLOCKS + code_idx,
-            mask=kmask & (code_idx < K_NUM_BLOCKS),
+    if K_CODE_BITS >= 7:
+        kstream_bit = kb * 8
+        kcode_idx = kstream_bit // K_CODE_BITS
+        kcode_shift = kstream_bit - kcode_idx * K_CODE_BITS
+        kcode0 = tl.load(
+            K_codes_ptr + vec * K_NUM_BLOCKS + kcode_idx,
+            mask=kmask & (kcode_idx < K_NUM_BLOCKS),
             other=0,
         ).to(tl.int32)
-        kout |= ((code >> code_bit) & 1) << bit
+        kcode1 = tl.load(
+            K_codes_ptr + vec * K_NUM_BLOCKS + kcode_idx + 1,
+            mask=kmask & ((kcode_idx + 1) < K_NUM_BLOCKS),
+            other=0,
+        ).to(tl.int32)
+        kout = (kcode0 >> kcode_shift) | (kcode1 << (K_CODE_BITS - kcode_shift))
+    else:
+        kout = tl.zeros([BLOCK_K_BYTES], tl.int32)
+        for bit in range(8):
+            stream_bit = kb * 8 + bit
+            code_idx = stream_bit // K_CODE_BITS
+            code_bit = stream_bit - code_idx * K_CODE_BITS
+            code = tl.load(
+                K_codes_ptr + vec * K_NUM_BLOCKS + code_idx,
+                mask=kmask & (code_idx < K_NUM_BLOCKS),
+                other=0,
+            ).to(tl.int32)
+            kout |= ((code >> code_bit) & 1) << bit
     tl.store(KV_cache_ptr + base + kb, kout.to(tl.uint8), mask=kmask)
 
     vb = tl.arange(0, BLOCK_V_BYTES)
     vmask = vb < V_CODE_BYTES
-    vout = tl.zeros([BLOCK_V_BYTES], tl.int32)
-    for bit in range(8):
-        stream_bit = vb * 8 + bit
-        code_idx = stream_bit // V_CODE_BITS
-        code_bit = stream_bit - code_idx * V_CODE_BITS
-        code = tl.load(
-            V_codes_ptr + vec * V_NUM_BLOCKS + code_idx,
-            mask=vmask & (code_idx < V_NUM_BLOCKS),
+    if V_CODE_BITS >= 7:
+        vstream_bit = vb * 8
+        vcode_idx = vstream_bit // V_CODE_BITS
+        vcode_shift = vstream_bit - vcode_idx * V_CODE_BITS
+        vcode0 = tl.load(
+            V_codes_ptr + vec * V_NUM_BLOCKS + vcode_idx,
+            mask=vmask & (vcode_idx < V_NUM_BLOCKS),
             other=0,
         ).to(tl.int32)
-        vout |= ((code >> code_bit) & 1) << bit
+        vcode1 = tl.load(
+            V_codes_ptr + vec * V_NUM_BLOCKS + vcode_idx + 1,
+            mask=vmask & ((vcode_idx + 1) < V_NUM_BLOCKS),
+            other=0,
+        ).to(tl.int32)
+        vout = (vcode0 >> vcode_shift) | (vcode1 << (V_CODE_BITS - vcode_shift))
+    else:
+        vout = tl.zeros([BLOCK_V_BYTES], tl.int32)
+        for bit in range(8):
+            stream_bit = vb * 8 + bit
+            code_idx = stream_bit // V_CODE_BITS
+            code_bit = stream_bit - code_idx * V_CODE_BITS
+            code = tl.load(
+                V_codes_ptr + vec * V_NUM_BLOCKS + code_idx,
+                mask=vmask & (code_idx < V_NUM_BLOCKS),
+                other=0,
+            ).to(tl.int32)
+            vout |= ((code >> code_bit) & 1) << bit
     tl.store(KV_cache_ptr + base + V_CODES_OFFSET + vb, vout.to(tl.uint8), mask=vmask)
 
     ks = tl.load(K_scale_ptr + vec).to(tl.float16).to(tl.uint16, bitcast=True)

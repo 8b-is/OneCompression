@@ -306,25 +306,33 @@ class TaperKVReferenceImpl(FlashAttentionImpl):
             key_cache.index_copy_(0, page_ids, key_pages)
             value_cache.index_copy_(0, page_ids, value_pages)
         if regraded_requests:
+            evidence = {
+                "backend": ("vllm_plugins.kvcomp.taper_reference.TaperKVReferenceBackend"),
+                "implementation": recipe.implementation,
+                "event": "logical_paged_cache_regraded",
+                "policy_name": recipe.policy_name,
+                "hayate_then_taper": recipe.hayate_config is not None,
+                "layer_index": layer_idx,
+                "physical_cache_shape": list(kv_cache.shape),
+                "physical_cache_dtype": str(kv_cache.dtype).removeprefix("torch."),
+                "physical_cache_device": str(kv_cache.device),
+                "page_size": int(page_size),
+                "request_count": regraded_requests,
+                "maximum_pages_per_request": max_pages,
+                "maximum_sequence_length": max(lengths),
+            }
             emit_runtime_evidence_once(
                 self,
                 "taper_regrade",
-                {
-                    "backend": ("vllm_plugins.kvcomp.taper_reference.TaperKVReferenceBackend"),
-                    "implementation": recipe.implementation,
-                    "event": "logical_paged_cache_regraded",
-                    "policy_name": recipe.policy_name,
-                    "hayate_then_taper": recipe.hayate_config is not None,
-                    "layer_index": layer_idx,
-                    "physical_cache_shape": list(kv_cache.shape),
-                    "physical_cache_dtype": str(kv_cache.dtype).removeprefix("torch."),
-                    "physical_cache_device": str(kv_cache.device),
-                    "page_size": int(page_size),
-                    "request_count": regraded_requests,
-                    "maximum_pages_per_request": max_pages,
-                    "maximum_sequence_length": max(lengths),
-                },
+                evidence,
             )
+            # The first decode can be shorter than one page even when a
+            # later decode has crossed a page boundary.  Preserve one further
+            # evidence record for the first multi-page mutation, otherwise a
+            # one-shot receipt cannot prove the paged-cache path it claims to
+            # validate.  This does not change the fake-quant data plane.
+            if max_pages > 1:
+                emit_runtime_evidence_once(self, "taper_regrade_multi_page", evidence)
 
     def forward(
         self,

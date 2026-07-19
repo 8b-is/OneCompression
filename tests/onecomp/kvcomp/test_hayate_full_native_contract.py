@@ -96,6 +96,19 @@ def test_decode_launch_tuning_is_scoped_to_the_b2_fast_path():
     assert "num_warps=stage1_num_warps" in source
 
 
+def test_store_byte_packing_keeps_a_safe_narrow_code_fallback():
+    """The two-code packing shortcut is valid only when a byte spans <=2 codes."""
+
+    source = KERNEL.read_text(encoding="utf-8")
+    assert "if K_CODE_BITS >= 7:" in source
+    assert "if V_CODE_BITS >= 7:" in source
+    assert "K_CODE_BITS - kcode_shift" in source
+    assert "V_CODE_BITS - vcode_shift" in source
+    # Widths <=6 must keep bitwise gathering: an eight-bit output byte may
+    # span more than two code words at those widths.
+    assert "for bit in range(8):" in source
+
+
 def test_generation_harness_labels_full_hq_separately_from_hybrid():
     module = _load_generate()
     full = module._implementation_contract("hayate_full")  # pylint: disable=protected-access
