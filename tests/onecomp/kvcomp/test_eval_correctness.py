@@ -22,9 +22,7 @@ from onecomp.kvcomp.cache._graded_base import GradedQuantCache
 from onecomp.kvcomp.cache.streaming_evict import StreamingLLMEvictCache
 from onecomp.kvcomp.cache.thinkv_cache import ThinKVCache
 from onecomp.kvcomp.codec.affine import Int2Codec, KIVICodec
-from onecomp.kvcomp.codec.halo import HALOCodec
-from onecomp.kvcomp.codec.hayate import HayateQuantCodec
-from onecomp.kvcomp.codec.hayate.recipes import hayate_frontier_kwargs
+from onecomp.kvcomp.codec.hayate.recipes import build_hayatequant
 from onecomp.kvcomp.codec.lowbit_fp import NVFP4Codec
 from onecomp.kvcomp.codec.turboquant import TurboQuantCodec
 from onecomp.kvcomp.config import Budget
@@ -132,8 +130,7 @@ def test_longbench_saved_fixtures_match_pinned_official_scorers_one_by_one():
 
     for fixture in fixture_document["postprocess_fixtures"]:
         assert (
-            _postprocess_prediction(fixture["task"], fixture["prediction"])
-            == fixture["expected"]
+            _postprocess_prediction(fixture["task"], fixture["prediction"]) == fixture["expected"]
         )
     for fixture in fixture_document["length_bucket_fixtures"]:
         assert _bucket(fixture["length"]) == fixture["expected"]
@@ -209,10 +206,7 @@ def test_longbench_releases_cache_before_every_next_example_factory(monkeypatch)
     assert all(reference() is None for reference in references)
     assert Cache.live == 0
     assert Cache.peak_live == 1
-    assert (
-        result.as_dict()["example_cache_lifetime"]
-        == longbench_eval.PER_EXAMPLE_CACHE_LIFETIME
-    )
+    assert result.as_dict()["example_cache_lifetime"] == longbench_eval.PER_EXAMPLE_CACHE_LIFETIME
 
 
 def test_math_grading_does_not_match_first_number_in_gold():
@@ -268,7 +262,6 @@ def test_reasoning_full_generation_scorer_receives_untruncated_text(monkeypatch)
                 "compression_fp16_bits": None,
                 "compression_stored_bits": None,
                 "compression_aggregation": "fullkv_no_cache",
-                "adaptive_hq_runtime": None,
             },
         ),
     )
@@ -331,7 +324,6 @@ def test_math_verify_polar_answer_never_confuses_legacy_regex_with_grading_input
                 "compression_fp16_bits": None,
                 "compression_stored_bits": None,
                 "compression_aggregation": "fullkv_no_cache",
-                "adaptive_hq_runtime": None,
             },
         ),
     )
@@ -390,7 +382,6 @@ def test_reasoning_compression_ratio_uses_summed_exact_bit_counters(monkeypatch)
                     "compression_fp16_bits": 160,
                     "compression_stored_bits": 80,
                     "compression_aggregation": "exact_cache_bit_counters",
-                    "adaptive_hq_runtime": None,
                 },
             ),
             (
@@ -401,7 +392,6 @@ def test_reasoning_compression_ratio_uses_summed_exact_bit_counters(monkeypatch)
                     "compression_fp16_bits": 320,
                     "compression_stored_bits": 80,
                     "compression_aggregation": "exact_cache_bit_counters",
-                    "adaptive_hq_runtime": None,
                 },
             ),
         ]
@@ -1002,10 +992,7 @@ def test_longcodeqa_releases_cache_before_every_next_example_factory(tmp_path, m
     assert all(reference() is None for reference in references)
     assert Cache.live == 0
     assert Cache.peak_live == 1
-    assert (
-        result.as_dict()["example_cache_lifetime"]
-        == longcodeqa_eval.PER_EXAMPLE_CACHE_LIFETIME
-    )
+    assert result.as_dict()["example_cache_lifetime"] == longcodeqa_eval.PER_EXAMPLE_CACHE_LIFETIME
 
 
 def test_longcodeqa_loader_rejects_count_correct_but_unpinned_data(tmp_path):
@@ -1138,6 +1125,33 @@ def test_zeroshot_pair_tokenization_matches_lm_eval_joined_boundary():
     ctx, cont = _encode_pair(Tok(), "ctx ", "choice")
     assert ctx.tolist() == [[1]]
     assert cont.tolist() == [[9]]  # not independently-tokenized [2, 3]
+
+
+def test_zeroshot_pair_tokenization_handles_cross_boundary_merge():
+    class Tok:
+        def __call__(self, text, **_kwargs):
+            mapping = {"context": [1, 2, 3], "context choice": [1, 2, 99]}
+            return type("Encoded", (), {"input_ids": torch.tensor([mapping[text]])})()
+
+    ctx, cont = _encode_pair(Tok(), "context", " choice")
+
+    assert ctx.tolist() == [[1, 2]]
+    assert cont.tolist() == [[99]]
+
+
+def test_zeroshot_pair_tokenization_uses_prefix_token_when_first_token_merges():
+    class Tok:
+        bos_token_id = 7
+        eos_token_id = 8
+
+        def __call__(self, text, **_kwargs):
+            mapping = {"x": [3], "x y": [99]}
+            return type("Encoded", (), {"input_ids": torch.tensor([mapping[text]])})()
+
+    ctx, cont = _encode_pair(Tok(), "x", " y")
+
+    assert ctx.tolist() == [[7]]
+    assert cont.tolist() == [[99]]
 
 
 def test_zeroshot_releases_protocol_probe_before_first_choice_factory(monkeypatch):
@@ -1401,7 +1415,13 @@ def test_ppl_rejects_gapped_or_empty_window_settings():
         (5, 4, 1, None, [[1, 2, 3], [4]]),
         (10, 4, 3, None, [[1, 2, 3], [4, 5, 6], [7, 8, 9]]),
         (11, 6, 4, None, [[1, 2, 3, 4, 5], [6, 7, 8, 9], [10]]),
-        (23, 8, 5, None, [list(range(1, 8)), list(range(8, 13)), list(range(13, 18)), list(range(18, 23))]),
+        (
+            23,
+            8,
+            5,
+            None,
+            [list(range(1, 8)), list(range(8, 13)), list(range(13, 18)), list(range(18, 23))],
+        ),
         # A deliberately capped disjoint one-window control remains exact over
         # the traversed prefix and cannot trigger the old dropped-boundary bug.
         (8, 4, 4, 1, [[1, 2, 3]]),
@@ -1594,10 +1614,7 @@ def test_ppl_releases_each_window_cache_before_constructing_the_next_one(monkeyp
     assert Cache.peak_live == 1
     assert result["nll_accumulation"] == ppl_eval.PPL_NLL_ACCUMULATION
     assert result["window_cache_lifetime"] == ppl_eval.PPL_WINDOW_CACHE_LIFETIME
-    assert (
-        result["cross_window_tensor_retention"]
-        == ppl_eval.PPL_CROSS_WINDOW_TENSOR_RETENTION
-    )
+    assert result["cross_window_tensor_retention"] == ppl_eval.PPL_CROSS_WINDOW_TENSOR_RETENTION
 
 
 def test_ppl_math_fsum_matches_one_concatenated_tokenwise_fp64_reference(monkeypatch):
@@ -1631,9 +1648,7 @@ def test_ppl_math_fsum_matches_one_concatenated_tokenwise_fp64_reference(monkeyp
 
     result = perplexity_over_text(Model(), Tok(), "ignored", max_length=4, stride=3)
     tokenwise_fp64_reference = float(torch.cat(loss_chunks).to(torch.float64).sum())
-    historical_fp32_window_stack = float(
-        torch.stack([chunk.sum() for chunk in loss_chunks]).sum()
-    )
+    historical_fp32_window_stack = float(torch.stack([chunk.sum() for chunk in loss_chunks]).sum())
     assert historical_fp32_window_stack != tokenwise_fp64_reference
     assert result["n_tokens"] == 8
     assert result["nll_sum"] == tokenwise_fp64_reference
@@ -1727,42 +1742,16 @@ def test_ppl_aggregates_compression_from_total_bits_not_mean_window_ratio():
     assert result["compression_stored_bits"] == 250
 
 
-def test_teacher_forcing_dependency_contract_separates_formal_hq_tq_from_global_stats():
+def test_teacher_forcing_dependency_contract_separates_canonical_codecs_from_global_stats():
     # Sequence-axis scales are temporally coupled even though attention itself
     # remains causally masked.
     assert KIVICodec().teacher_forced_temporal_dependency() == ("sequence_axis_group_statistics")
     assert NVFP4Codec().teacher_forced_temporal_dependency() == ("sequence_axis_group_statistics")
 
-    # Formal TurboQuant/HayateQuant recipes have token-local scales and no
-    # dynamic outlier/adaptive statistic, so the original one-forward metric is
-    # both causal and fast.
+    # Canonical TurboQuant/HayateQuant use token-local scales and fixed recipes.
     assert TurboQuantCodec(bits=3).teacher_forced_temporal_dependency() is None
     assert all(
-        HayateQuantCodec(**hayate_frontier_kwargs(rate)).teacher_forced_temporal_dependency()
-        is None
-        for rate in (2, 3, 4)
-    )
-
-    assert (
-        TurboQuantCodec(bits=3, n_outlier=1).teacher_forced_temporal_dependency()
-        == "dynamic_outlier_channels_over_update_tokens"
-    )
-    assert (
-        HayateQuantCodec(bits=3, n_outlier=1).teacher_forced_temporal_dependency()
-        == "dynamic_outlier_channels_over_update_tokens"
-    )
-    assert (
-        HayateQuantCodec(
-            avg_bits=3.0,
-            block_size=2,
-            adaptive_bit_split="online_stats",
-        ).teacher_forced_temporal_dependency()
-        == "cache_local_causal_bit_allocation_statistics"
-    )
-    assert HALOCodec().teacher_forced_temporal_dependency() is None
-    assert (
-        HALOCodec(center=True, precond_roles=("v",)).teacher_forced_temporal_dependency()
-        == "block_global_preconditioner_statistics"
+        build_hayatequant(rate).teacher_forced_temporal_dependency() is None for rate in (2, 3, 4)
     )
 
     token_local = Int2Codec(key_axis="token", value_axis="token")
@@ -1948,66 +1937,6 @@ def test_ppl_switches_only_temporally_coupled_caches_to_incremental_targets():
     assert matched["teacher_forced_scoring_protocol"] == CAUSAL_INCREMENTAL_PROTOCOL
     assert matched["teacher_forced_temporal_dependency"] == (FORCED_INCREMENTAL_CONTROL_DEPENDENCY)
     assert matched["force_incremental_control"] is True
-
-
-def test_ppl_preserves_adaptive_pair_histogram_for_each_reset_window():
-    class Tok:
-        def __call__(self, _text, **_kwargs):
-            return SimpleNamespace(input_ids=torch.tensor([[0, 1, 2, 3, 0]]))
-
-    class Cache:
-        fp16_bits = 400
-        stored_bits = 100
-
-        def teacher_forced_temporal_dependency(self):
-            return "cache_local_causal_bit_allocation_statistics"
-
-        def get_adaptive_hq_provenance(self):
-            return {
-                "runtime": {
-                    "kind": "adaptive_hq",
-                    "schema_version": 1,
-                    "policy_version": "test_adaptive_policy",
-                    "aggregate": {
-                        "encoded_updates": 2,
-                        "encoded_tokens": 3,
-                        "selector_bits_total": 2,
-                        "selector_incremental_stored_bits_total": 0,
-                        "selector_carrier_version": "test_carrier",
-                        "split_histogram": {
-                            "7:5": {
-                                "pair": [7, 5],
-                                "updates": 2,
-                                "tokens": 3,
-                                "vectors": 6,
-                            }
-                        },
-                    },
-                }
-            }
-
-    class Model:
-        device = torch.device("cpu")
-
-        def __call__(self, input_ids, **_kwargs):
-            return SimpleNamespace(logits=torch.zeros((*input_ids.shape, 4)))
-
-    result = perplexity_over_text(
-        Model(), Tok(), "ignored", cache_factory=Cache, max_length=4, stride=2
-    )
-    assert result["n_windows"] == 2
-    assert len(result["adaptive_hq_window_provenance"]) == 2
-    assert [
-        row["runtime"]["split_histogram"]["7:5"]["updates"]
-        for row in result["adaptive_hq_window_provenance"]
-    ] == [2, 2]
-    aggregate = result["adaptive_hq_runtime"]
-    assert aggregate["encoded_updates"] == 4
-    assert aggregate["encoded_tokens"] == 6
-    assert aggregate["selector_bits_per_encode"] == 1
-    assert aggregate["split_histogram"] == {
-        "7:5": {"pair": [7, 5], "updates": 4, "tokens": 6, "vectors": 12}
-    }
 
 
 def test_h2o_respects_total_budget_including_sink_and_recent():

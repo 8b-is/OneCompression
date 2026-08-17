@@ -1,5 +1,6 @@
 *.swp
-__pycache__
+__pycache__/
+*.py[cod]
 *.egg-info
 dist/
 build/
@@ -15,9 +16,11 @@ models
 .hydra/
 *.out
 *.err
+*.log
 md/*.md
 example/run_example.sh
 work/
+works/
 site/
 debug_code/
 .pytest_cache/
@@ -29,22 +32,28 @@ tests/onecomp/quantizer/jointq/data/model_layers_0_self_attn_k_proj.pth
 .uv-sync-vllm.lock
 .uv-sync-vllm.done
 .venv-vllm/
-# Hydra per-run log directories under benchmark results (keep the summary JSONs)
-benchmark/*/results/2[0-9][0-9][0-9]-*/
-benchmark/*/results_*/2[0-9][0-9][0-9]-*/
-# Paper-battery SLURM stdout logs (keep configs/scripts/summary JSONs)
-benchmark/kvcomp-longcontext/paper/logs/
-# SLURM stdout/stderr logs stored inside results directories (not repo data)
-benchmark/*/results_*/slurm_*.log
-benchmark/*/results_*/slurm_*.out
-benchmark/*/results/slurm_*.log
-benchmark/*/results/slurm_*.out
+
+# Benchmarks write all generated evidence to a caller-selected external root.
+# Do not version Hydra runs, Slurm logs, result trees, or generated paper files.
+results/
+results_*/
+outputs/
+logs/
+benchmark/**/results/
+benchmark/**/results_*/
+benchmark/**/outputs/
+benchmark/**/logs/
+papers/**/results/
+papers/**/results_*/
+papers/**/outputs/
+papers/**/logs/
+papers/**/*.pdf
+papers/**/*.aux
+papers/**/*.bbl
+papers/**/*.blg
+papers/**/*.fdb_latexmk
+papers/**/*.fls
+papers/**/*.synctex.gz
 
 # Data-free block-VQ codebook artifacts are first-class source (tiny, versioned)
 !onecomp/kvcomp/codec/hayate/codebooks/*.pt
-
-# Audited HayateQuant result archives are first-class reproducibility data.
-# Keep their raw Slurm logs, Hydra configs, and small codebook artifacts even
-# though those suffixes are ignored for ordinary development runs above.
-!papers/hayatequant_paper/experiments/results/
-!papers/hayatequant_paper/experiments/results/**

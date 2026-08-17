@@ -1,146 +1,99 @@
-"""Correctness contracts for TaperKV and the Fujimoto-derived variants."""
+"""Focused correctness contracts for standalone TaperKV caches."""
 
 from types import SimpleNamespace
 
 import pytest
 import torch
 
-from onecomp.kvcomp import (
+from onecomp.kvcomp import KVCompressionConfig
+from onecomp.kvcomp.cache.block_taper_cache import (
     BlockTaperKVCache,
-    BlockTaperKVPolicy,
-    BudgetTaperKVCache,
-    BudgetTaperKVPolicy,
-    KVCompressionConfig,
-    TaperKVCache,
-    TaperKVPolicy,
-    HayateQuantTaperKVCache,
-    build_policy,
-    list_policies,
+    block_taper_bits,
+    fake_quant_blocks,
 )
 from onecomp.kvcomp.cache.builders import build_compressed_cache
-from onecomp.kvcomp.cache.hayate_taper_cache import HayateTaperKVCache
-from onecomp.kvcomp.cache.turbotaper_cache import TurboTaperCache
-from onecomp.kvcomp.recipe.turbotaper import TurboTaperPolicy
-from onecomp.kvcomp.cache.block_taper_cache import block_taper_bits, fake_quant_blocks
-from onecomp.kvcomp.cache.taper_cache import apply_byte_budget
+from onecomp.kvcomp.cache.taper_cache import (
+    BudgetTaperKVCache,
+    TaperKVCache,
+    apply_byte_budget,
+    taper_bits,
+)
 from onecomp.kvcomp.codec._quant_primitives import fake_quantize_affine
+from onecomp.kvcomp.codec.hayate.recipes import build_hayatequant
+from onecomp.kvcomp.recipe.taperkv import (
+    BlockTaperKVPolicy,
+    BudgetTaperKVPolicy,
+    TaperKVPolicy,
+)
 
 
-def test_hayatequant_taper_cache_keeps_legacy_alias():
-    assert HayateTaperKVCache is HayateQuantTaperKVCache
+def test_taper_schedule_has_independent_key_value_ladders_and_protection():
+    policy = TaperKVPolicy(
+        key_bits=8,
+        value_bits=4,
+        b_min=4,
+        b_min_value=2,
+        sink_tokens=1,
+        recent_tokens=2,
+        key_ladder=[8, 6, 4],
+        value_ladder=[4, 3, 2],
+    )
+    key_bits, value_bits = TaperKVCache(policy).token_bits(10, torch.device("cpu"), 0)
 
-
-def test_fujimoto_policy_variants_are_registered_and_constructible():
-    assert {"taperkv", "block_taperkv", "budget_taperkv"} <= set(list_policies())
-    assert isinstance(build_policy("block_taperkv"), BlockTaperKVPolicy)
-    assert isinstance(build_policy("budget_taperkv"), BudgetTaperKVPolicy)
+    assert key_bits[0] == 8 and value_bits[0] == 4
+    assert torch.equal(key_bits[-2:], torch.tensor([8, 8]))
+    assert torch.equal(value_bits[-2:], torch.tensor([4, 4]))
+    assert key_bits.min() == 4
+    assert value_bits.min() == 2
+    assert torch.all(key_bits >= value_bits)
 
 
 @pytest.mark.parametrize(
     "kwargs",
     [
         {"key_bits": 0},
-        {"value_bits": 9, "key_bits": 8},
-        {"b_min": 9, "key_bits": 8},
-        {"b_min_value": 5, "value_bits": 4},
+        {"key_bits": 4, "value_bits": 5},
+        {"key_bits": 4, "b_min": 5},
+        {"value_bits": 4, "b_min_value": 5},
         {"sink_tokens": -1},
-        {"ladder": [8, 8, 4]},
-        {"ladder": [8, 10, 4]},
+        {"key_ladder": [8, 8, 4]},
+        {"key_ladder": [7, 4]},
+        {"key_ladder": [8, 4], "value_ladder": [4, 3, 2, 1]},
         {"skip_layers": [True]},
+        {"requant_stride": 0},
     ],
 )
-def test_taper_policy_rejects_invalid_schedule(kwargs):
+def test_taper_policy_rejects_invalid_schedules(kwargs):
     with pytest.raises(ValueError):
         TaperKVPolicy(**kwargs)
 
 
-@pytest.mark.parametrize("stride", [0, -1, True, 1.5])
-def test_taper_policy_rejects_invalid_requant_stride(stride):
-    with pytest.raises(ValueError, match="requant_stride"):
-        TaperKVPolicy(requant_stride=stride)
-
-
-def test_hayate_taper_applies_hayate_once_per_arriving_token_and_unions_skips():
-    class AddOneHayate:
-        name = "hayatequant"
-        skip_layers = [2]
-
-        def __init__(self):
-            self.calls = []
-
-        def fake_quant_roundtrip(self, key, value, ctx):
-            self.calls.append((key.shape[2], ctx["layer_idx"]))
-            return key + 1, value + 1, 16
-
-    policy = TaperKVPolicy(
-        key_bits=16,
-        value_bits=16,
-        b_min=16,
-        b_min_value=16,
-        sink_tokens=0,
-        recent_tokens=0,
-        skip_layers=[1],
-        requant_stride=2,
-    )
-    codec = AddOneHayate()
-    cache = HayateQuantTaperKVCache(policy, codec)
-    first = torch.zeros(1, 1, 2, 3)
-    first_k, _ = cache.update(first, first, 0)
-    assert torch.equal(first_k, torch.ones_like(first))
-    second = torch.full((1, 1, 1, 3), 2.0)
-    second_k, _ = cache.update(second, second, 0)
-    assert torch.equal(second_k[:, :, :2], torch.ones_like(first))
-    assert torch.equal(second_k[:, :, -1:], torch.full_like(second, 3.0))
-    assert codec.calls == [(2, 0), (1, 0)]
-    assert cache.skip_layers == {1, 2}
-
-
-def test_generic_cache_builder_preserves_taper_policy_subclasses():
-    model = SimpleNamespace(config=None)
-    budget = build_compressed_cache(
-        model,
-        KVCompressionConfig(policy=BudgetTaperKVPolicy(max_bytes=128)),
-    )
-    turbo = build_compressed_cache(
-        model,
-        KVCompressionConfig(policy=TurboTaperPolicy()),
-    )
-    assert isinstance(budget, BudgetTaperKVCache)
-    assert isinstance(turbo, TurboTaperCache)
-
-
-def test_taper_policy_zero_length_has_defined_rate():
-    assert TaperKVPolicy().target_avg_bits(0) == 0.0
-    assert BlockTaperKVPolicy().target_avg_bits(0) == 0.0
-
-
-def test_block_schedule_handles_empty_sequence_and_validates_block_size():
-    result = block_taper_bits(0, 16, 4, 64, 8, 2)
-    assert result.dtype == torch.int64
-    assert result.numel() == 0
+def test_taper_schedule_and_block_schedule_validate_empty_inputs():
+    empty = torch.empty(0, dtype=torch.int64)
+    assert taper_bits(empty, 0, 0, 0, 8, 4).numel() == 0
+    assert block_taper_bits(0, 16, 0, 0, 8, 4).numel() == 0
     with pytest.raises(ValueError, match="block_size"):
-        block_taper_bits(4, 0, 0, 0, 8, 2)
+        block_taper_bits(4, 0, 0, 0, 8, 4)
 
 
-def test_block_quantization_uses_one_affine_pair_per_batch_head_block():
-    # Two two-token blocks with a two-coordinate head dimension.  Reducing the
-    # final flattened dimension is the only formulation that gives a separate
-    # affine pair to each block rather than sharing each coordinate across
-    # different blocks.
-    x = torch.tensor([[[[0.0, 1.0], [2.0, 3.0], [10.0, 14.0], [18.0, 22.0]]]], dtype=torch.float32)
+def test_block_quantization_uses_one_affine_pair_per_head_and_page():
+    values = torch.tensor([[[[0.0, 1.0], [2.0, 3.0], [10.0, 14.0], [18.0, 22.0]]]])
     bits = torch.tensor([2, 2, 2, 2], dtype=torch.int64)
-    actual = fake_quant_blocks(x, bits, block_size=2)
-    expected = fake_quantize_affine(x.reshape(1, 1, 2, 4), 2, axis="channel").reshape_as(x)
+    actual = fake_quant_blocks(values, bits, block_size=2)
+    expected = fake_quantize_affine(values.reshape(1, 1, 2, 4), 2, axis="channel").reshape_as(
+        values
+    )
     assert torch.equal(actual, expected)
 
-
-def test_block_quantization_refuses_nonuniform_page_layout():
-    x = torch.randn(1, 2, 4, 3)
     with pytest.raises(ValueError, match="uniform"):
-        fake_quant_blocks(x, torch.tensor([2, 4, 2, 2]), block_size=2)
+        fake_quant_blocks(
+            torch.randn(1, 1, 4, 2),
+            torch.tensor([2, 4, 2, 2]),
+            block_size=2,
+        )
 
 
-def test_block_cache_counts_payload_and_metadata_for_every_batch_head():
+def test_block_cache_regrades_when_an_unaligned_prefill_page_becomes_full():
     policy = BlockTaperKVPolicy(
         key_bits=4,
         value_bits=2,
@@ -148,86 +101,47 @@ def test_block_cache_counts_payload_and_metadata_for_every_batch_head():
         b_min_value=2,
         sink_tokens=0,
         recent_tokens=0,
-        block_size=2,
-        residual_fp16=False,
-        quant_granularity="block",
+        block_size=4,
+        residual_fp16=True,
+        requant_stride=16,
     )
     cache = BlockTaperKVCache(policy)
-    keys = torch.randn(2, 3, 4, 5)
-    values = torch.randn(2, 3, 4, 5)
-    _, _, stored = cache._grade_layer(keys, values, 0)  # pylint: disable=protected-access
-    # B=2, H=3 => six independent metadata records per role/page.  There are
-    # two pages: K payload 4*4*6*5, V payload 2*4*6*5; K metadata 2*6*(16+4),
-    # V metadata 2*6*(16+2).
-    expected = 4 * 4 * 6 * 5 + 2 * 4 * 6 * 5 + 2 * 6 * (16 + 4) + 2 * 6 * (16 + 2)
-    assert stored == expected
+
+    cache.update(torch.randn(1, 1, 3, 2), torch.randn(1, 1, 3, 2), 0)
+    assert torch.equal(cache._layer_token_bits[0][0], torch.full((3,), 16))
+    cache.update(torch.randn(1, 1, 1, 2), torch.randn(1, 1, 1, 2), 0)
+
+    key_bits, value_bits = cache._layer_token_bits[0]
+    assert torch.equal(key_bits, torch.full((4,), 4))
+    assert torch.equal(value_bits, torch.full((4,), 2))
+    # Payload plus one scale/zero record per role for the single page/head.
+    assert cache.stored_bits == (4 * 4 * 2) + (2 * 4 * 2) + (16 + 4) + (16 + 2)
+    assert cache.fp16_bits == 4 * 2 * 2 * 16
 
 
-def test_budget_step_uses_whole_batch_payload_not_heads_only():
-    kbits = torch.tensor([4, 4], dtype=torch.int64)
-    vbits = torch.tensor([4, 4], dtype=torch.int64)
-    actual_k, actual_v = apply_byte_budget(
-        kbits,
-        vbits,
-        total=2,
-        sink_tokens=0,
-        recent_tokens=0,
-        key_bits=4,
-        value_bits=4,
-        b_min=2,
-        b_min_value=2,
-        ladder=[4, 2],
-        batch_heads=2,
-        dim=1,
-        max_bits=24,
-    )
-    assert torch.equal(actual_k, torch.tensor([2, 4]))
-    assert torch.equal(actual_v, torch.tensor([2, 4]))
-
-
-def test_budget_cache_requires_immediate_regrading_and_clears_state_on_reset():
-    policy = BudgetTaperKVPolicy(
-        key_bits=4,
-        value_bits=4,
-        b_min=2,
+def test_regrading_at_the_same_width_is_bit_exact_and_does_not_accumulate_drift():
+    policy = TaperKVPolicy(
+        key_bits=3,
+        value_bits=2,
+        b_min=3,
         b_min_value=2,
         sink_tokens=0,
         recent_tokens=0,
-        max_bytes=4,
+        requant_stride=1,
     )
-    with pytest.raises(ValueError, match="requant_stride=1"):
-        BudgetTaperKVCache(policy, requant_stride=2)
-    cache = BudgetTaperKVCache(policy)
-    keys = torch.randn(2, 1, 4, 2)
-    values = torch.randn(2, 1, 4, 2)
-    cache._grade_layer(keys, values, 0)  # pylint: disable=protected-access
-    assert 0 in cache._prev_bits  # pylint: disable=protected-access
-    cache.reset()
-    assert cache._prev_bits == {}  # pylint: disable=protected-access
+    cache = TaperKVCache(policy)
+    key = torch.randn(1, 2, 5, 8)
+    value = torch.randn_like(key)
+    first_key, first_value = cache.update(key, value, 0)
+    first_key = first_key.clone()
+    first_value = first_value.clone()
+
+    second_key, second_value, _ = cache._grade_layer(first_key, first_value, 0)
+    assert torch.equal(second_key, first_key)
+    assert torch.equal(second_value, first_value)
 
 
-def test_budget_cache_handles_cache_length_regression_without_shape_error():
-    policy = BudgetTaperKVPolicy(
-        key_bits=4,
-        value_bits=4,
-        b_min=2,
-        b_min_value=2,
-        sink_tokens=0,
-        recent_tokens=0,
-        max_bytes=8,
-    )
-    cache = BudgetTaperKVCache(policy)
-    cache._grade_layer(torch.randn(1, 1, 5, 2), torch.randn(1, 1, 5, 2), 0)
-    cache._grade_layer(torch.randn(1, 1, 3, 2), torch.randn(1, 1, 3, 2), 0)
-
-
-def test_budget_policy_refuses_shape_ambiguous_static_rate():
-    with pytest.raises(ValueError, match="shape-dependent"):
-        BudgetTaperKVPolicy(max_bytes=1024).target_avg_bits(128)
-    assert BudgetTaperKVPolicy(max_bytes=None).target_avg_bits(128) == 6.0
-
-
-def test_graded_cache_exposes_exact_whole_cache_bit_ledger():
+def test_lifecycle_operations_keep_the_precision_and_memory_ledgers_exact():
     policy = TaperKVPolicy(
         key_bits=4,
         value_bits=2,
@@ -237,46 +151,80 @@ def test_graded_cache_exposes_exact_whole_cache_bit_ledger():
         recent_tokens=0,
     )
     cache = TaperKVCache(policy)
-    keys = torch.randn(1, 1, 4, 2)
-    values = torch.randn(1, 1, 4, 2)
-    _, _, stored = cache._grade_layer(keys, values, 0)  # pylint: disable=protected-access
-    cache._layer_fp16[0] = (keys.numel() + values.numel()) * 16  # pylint: disable=protected-access
-    cache._layer_bits[0] = stored  # pylint: disable=protected-access
-    assert cache.fp16_bits == (keys.numel() + values.numel()) * 16
-    assert cache.stored_bits == cache._layer_bits[0]  # pylint: disable=protected-access
+    cache.update(torch.randn(1, 2, 6, 4), torch.randn(1, 2, 6, 4), 0)
+    cache.crop(4)
+    assert cache.get_seq_length() == 4
+    assert cache._layer_token_bits[0][0].numel() == 4
+    assert cache.fp16_bits == 1 * 2 * 4 * 4 * 2 * 16
+
+    cache.batch_repeat_interleave(3)
+    assert cache.fp16_bits == 3 * 2 * 4 * 4 * 2 * 16
+    cache.batch_select_indices(torch.tensor([2, 0]))
+    assert cache.fp16_bits == 2 * 2 * 4 * 4 * 2 * 16
     assert cache.stored_bits > 0
 
 
-def test_taper_cache_prefill_and_incremental_decode_are_length_preserving():
-    """Exercise the real DynamicCache update path, not only _grade_layer.
-
-    A previous implementation could report plausible compression numbers while
-    dropping or failing to account for tokens on the non-regrade decode steps.
-    This mirrors HF's prefill (q_len > 1) followed by one-token decode calls.
-    """
-    policy = TaperKVPolicy(
+def test_budget_lowers_oldest_tokens_and_enforces_the_payload_cap():
+    key = torch.full((4,), 4, dtype=torch.int64)
+    value = torch.full((4,), 4, dtype=torch.int64)
+    lowered_key, lowered_value = apply_byte_budget(
+        key,
+        value,
+        total=4,
+        sink_tokens=0,
+        recent_tokens=0,
         key_bits=4,
-        value_bits=2,
+        value_bits=4,
+        b_min=2,
+        b_min_value=2,
+        key_ladder=[4, 3, 2],
+        value_ladder=[4, 3, 2],
+        batch_heads=1,
+        dim=2,
+        max_bits=60,
+    )
+    assert torch.equal(lowered_key, torch.tensor([3, 4, 4, 4]))
+    assert torch.equal(lowered_value, torch.tensor([3, 4, 4, 4]))
+
+    policy = BudgetTaperKVPolicy(
+        key_bits=4,
+        value_bits=4,
+        b_min=2,
+        b_min_value=2,
+        sink_tokens=0,
+        recent_tokens=0,
+        max_bytes_per_layer=5,
+    )
+    cache = BudgetTaperKVCache(policy)
+    cache.update(torch.randn(1, 1, 4, 2), torch.randn(1, 1, 4, 2), 0)
+    key_bits, value_bits = cache._layer_token_bits[0]
+    payload_bits = int((key_bits.sum() + value_bits.sum()) * 2)
+    assert payload_bits <= 5 * 8
+    assert cache.stored_bits > payload_bits  # affine metadata is explicit.
+
+
+def test_budget_fails_when_protected_tokens_make_the_cap_impossible():
+    policy = BudgetTaperKVPolicy(
+        key_bits=4,
+        value_bits=4,
         b_min=2,
         b_min_value=2,
         sink_tokens=1,
         recent_tokens=1,
+        max_bytes_per_layer=1,
     )
-    cache = TaperKVCache(policy, requant_stride=3)
-    for q_len, expected_len in ((4, 4), (1, 5), (1, 6), (1, 7)):
-        keys = torch.randn(1, 2, q_len, 8)
-        values = torch.randn_like(keys)
-        out_k, out_v = cache.update(keys, values, 0)
-        assert out_k.shape[2] == expected_len
-        assert out_v.shape[2] == expected_len
-        assert cache.get_seq_length() == expected_len
-        assert cache.fp16_bits == (expected_len * 1 * 2 * 8 * 2 * 16)
-        assert cache.stored_bits > 0
-    assert cache.compression_ratio() > 1.0
-    cache.reset()
-    # Transformers' DynamicCache.reset() zeroes resident tensors in place and
-    # preserves their allocation/shape; the cache must not be reused as a new
-    # request without constructing a fresh cache.  Our accounting state is
-    # nevertheless fully cleared.
-    assert cache.fp16_bits == 0
-    assert cache.stored_bits == 0
+    with pytest.raises(ValueError, match="infeasible"):
+        BudgetTaperKVCache(policy).update(
+            torch.randn(1, 1, 2, 2),
+            torch.randn(1, 1, 2, 2),
+            0,
+        )
+
+
+def test_taper_is_standalone_in_the_huggingface_cache_builder():
+    config = KVCompressionConfig(
+        codec=build_hayatequant(3),
+        policy=TaperKVPolicy(),
+    )
+    with pytest.raises(NotImplementedError, match="standalone"):
+        build_compressed_cache(SimpleNamespace(config=None), config)

@@ -1,9 +1,0 @@
-Traceback (most recent call last):
-  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/worktrees/native-lut-source-f3fa130/benchmark/kvcomp-codec/hayatequant_exact_lut_tensorcore_dev.py", line 364, in <module>
-    main()
-    ~~~~^^
-  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/worktrees/native-lut-source-f3fa130/benchmark/kvcomp-codec/hayatequant_exact_lut_tensorcore_dev.py", line 260, in main
-    observed = _run_lut(z, lut, cb, csq, args.limit)
-  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/worktrees/native-lut-source-f3fa130/benchmark/kvcomp-codec/hayatequant_exact_lut_tensorcore_dev.py", line 92, in _run_lut
-    raise ValueError("development kernel requires a 16-candidate int16 table")
-ValueError: development kernel requires a 16-candidate int16 table

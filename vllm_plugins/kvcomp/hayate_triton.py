@@ -1,263 +1,773 @@
 # Copyright 2026 Fujitsu Ltd.
-"""Triton kernels for the experimental Hayate-key-VQ/TurboQuant-value path.
+"""Packed canonical HayateQuant store and attention kernels.
 
-The cache layout intentionally matches vLLM's native TurboQuant layout.  This
-lets vLLM keep its existing cache-capacity accounting and paged-cache
-allocation while replacing the key quantizer:
+This module quantizes both roles with HayateQuant's data-free rotated block
+codebooks. Keys use norm correction (NC); values use one LS fit,
+re-assignment, and a final LS refit. CUDA assignment always uses the fixed
+candidate table. Each role stores one signed fp16 scale and no zero point.
 
-* TurboQuant stores one scalar Lloyd-Max index per key coordinate.
-* HayateQuant stores one vector-codebook index per small coordinate block.
-
-The shipped native path supports the production HayateQuant presets that have
-the same byte budget as upstream TurboQuant: 3-bit and 4-bit keys with resolved
-``block_size == 2``.  Values remain vLLM-compatible uniform quantized values;
-    that keeps the kernel practical inside upstream paged attention, but it is
-    an algorithmic approximation and must not be labelled as full HayateQuant.
+The fixed CUDA candidate table makes assignment independent of request shape,
+so prefill and one-token decode use identical arithmetic. Code indices,
+scales, and packed bytes remain under the public-payload parity gate.
+Packed-cache decode and attention are native Triton.
 """
 
 from __future__ import annotations
 
-import math
-import os
 from typing import Any
 
 import torch
 
+from onecomp.kvcomp.codec._scale import fit_scale
+from onecomp.kvcomp.codec.hayate.vq import (
+    lookup_codewords,
+    quantize_and_lookup,
+    quantize_exact_pre,
+    quantize_via_lut,
+)
 from vllm.triton_utils import tl, triton
 from vllm.v1.attention.ops.triton_decode_attention import _fwd_kernel_stage2
-from vllm.v1.attention.ops.triton_turboquant_store import _store_quantized_value
-from vllm_plugins.kvcomp.hayate_triton_config import (
-    _direct_key_scale,
-    _store_group_codes,
+
+from vllm_plugins.kvcomp.hayate_config import (
+    HAYATEQUANT_LUT_BINS,
+    HAYATEQUANT_LUT_CANDIDATES,
+    HAYATEQUANT_LUT_LIMIT,
+    HayateQuantNativeRecipe,
 )
 
 
 @triton.jit
-def _hq_store_key_block_vq(
-    # Post-rotation inputs
-    Y_ptr,  # [NH, D] float32, rotated normalized keys
-    Norms_ptr,  # [NH] float32, original key L2 norms
-    Scale_scratch_ptr,  # [NH] float32, optional accumulated code-vector norm
-    Value_ptr,  # [NH, D], raw values (the kernel promotes loads to float32)
-    Codebook_ptr,  # [K, B] float32
-    # Cache and indexing
-    KV_cache_ptr,
-    Slot_mapping_ptr,
-    # Cache strides
-    stride_cache_block: tl.constexpr,
-    stride_cache_pos: tl.constexpr,
-    stride_cache_head: tl.constexpr,
-    # Dimensions
-    D: tl.constexpr,
-    H: tl.constexpr,
-    BLOCK_SIZE: tl.constexpr,
-    BLOCK_D: tl.constexpr,
-    # Layout
-    MSE_BYTES: tl.constexpr,
-    KPS: tl.constexpr,
-    VQB: tl.constexpr,
-    VAL_DATA_BYTES: tl.constexpr,
-    BLOCK_VAL: tl.constexpr,
-    # Hayate key block-VQ params
-    HAYATE_BLOCK_SIZE: tl.constexpr,
-    HAYATE_CODE_BITS: tl.constexpr,
-    NUM_CODEWORDS: tl.constexpr,
-    NUM_KEY_BLOCKS: tl.constexpr,
-    GROUP_CODES: tl.constexpr,
-    PRECOMPUTE_KEY_SCALE: tl.constexpr = 0,
-    DIRECT_KEY_SCALE: tl.constexpr = 0,
-    KEY_SCALE_MODE: tl.constexpr = 0,  # 0: NC, 1: IP/UB
-    SQRT_D: tl.constexpr = 1.0,
-    BLOCK_GRP: tl.constexpr = 16,
-):
-    """Quantize key blocks to Hayate code indices and store values uniformly."""
-    vec_pid = tl.program_id(0)
-    group_pid = tl.program_id(1)
-    token_idx = vec_pid // H
-    head_idx = vec_pid % H
-
-    slot = tl.load(Slot_mapping_ptr + token_idx)
-    if slot < 0:
-        return
-
-    blk = (slot // BLOCK_SIZE).to(tl.int64)
-    off = (slot % BLOCK_SIZE).to(tl.int64)
-    head_idx_i64 = tl.cast(head_idx, tl.int64)
-    slot_base = (
-        blk * stride_cache_block + off * stride_cache_pos + head_idx_i64 * stride_cache_head
+def _sub_rn_f16x2(a, b):
+    return tl.inline_asm_elementwise(
+        asm="sub.rn.f16x2 $0, $1, $2;",
+        constraints="=r,r,r",
+        args=[a, b],
+        dtype=tl.float16,
+        is_pure=True,
+        pack=2,
     )
 
-    block_ids = group_pid * GROUP_CODES + tl.arange(0, GROUP_CODES)
-    group_mask = block_ids < NUM_KEY_BLOCKS
 
-    # Production native path: block_size=2, code bits are 6 (3-bit rate) or
-    # 8 (4-bit rate).  Keeping this specialised avoids a giant score matrix.
-    y0 = tl.load(
-        Y_ptr + vec_pid * D + block_ids * HAYATE_BLOCK_SIZE,
-        mask=group_mask,
-        other=0.0,
-    )
-    y1 = tl.load(
-        Y_ptr + vec_pid * D + block_ids * HAYATE_BLOCK_SIZE + 1,
-        mask=group_mask,
-        other=0.0,
+@triton.jit
+def _mul_rn_f16x2(a, b):
+    return tl.inline_asm_elementwise(
+        asm="mul.rn.f16x2 $0, $1, $2;",
+        constraints="=r,r,r",
+        args=[a, b],
+        dtype=tl.float16,
+        is_pure=True,
+        pack=2,
     )
 
-    best_score = tl.full([GROUP_CODES], -float("inf"), dtype=tl.float32)
-    best_idx = tl.zeros([GROUP_CODES], dtype=tl.int32)
-    best_norm = tl.zeros([GROUP_CODES], dtype=tl.float32)
-    for cid in range(NUM_CODEWORDS):
-        c0 = tl.load(Codebook_ptr + cid * HAYATE_BLOCK_SIZE).to(tl.float32)
-        c1 = tl.load(Codebook_ptr + cid * HAYATE_BLOCK_SIZE + 1).to(tl.float32)
-        cw_norm = c0 * c0 + c1 * c1
-        score = y0 * c0 + y1 * c1 - 0.5 * cw_norm
-        take = score > best_score
-        best_score = tl.where(take, score, best_score)
-        best_idx = tl.where(take, cid, best_idx)
-        best_norm = tl.where(take, cw_norm, best_norm)
 
-    if HAYATE_CODE_BITS == 8:
-        tl.store(
-            KV_cache_ptr + slot_base + block_ids,
-            best_idx.to(tl.uint8),
-            mask=group_mask,
-        )
-    else:
-        local = tl.arange(0, GROUP_CODES)
-        byte_base = group_pid * ((GROUP_CODES * HAYATE_CODE_BITS) // 8)
-        for chunk in range(GROUP_CODES // 4):
-            chunk_start = chunk * 4
-            chunk_mask = (local >= chunk_start) & (local < chunk_start + 4)
-            shifts = (local - chunk_start) * HAYATE_CODE_BITS
-            packed = tl.sum(tl.where(chunk_mask, (best_idx & 0x3F) << shifts, 0), axis=0)
-            chunk_base = byte_base + chunk * 3
-            tl.store(
-                KV_cache_ptr + slot_base + chunk_base,
-                (packed & 0xFF).to(tl.uint8),
-            )
-            tl.store(
-                KV_cache_ptr + slot_base + chunk_base + 1,
-                ((packed >> 8) & 0xFF).to(tl.uint8),
-            )
-            tl.store(
-                KV_cache_ptr + slot_base + chunk_base + 2,
-                ((packed >> 16) & 0xFF).to(tl.uint8),
-            )
+def _assignment_lut(
+    recipe: HayateQuantNativeRecipe,
+    role: str,
+    device: torch.device,
+) -> torch.Tensor | None:
+    """Resolve the public codec's immutable cached table for one role."""
 
-    if PRECOMPUTE_KEY_SCALE and not DIRECT_KEY_SCALE:
-        if KEY_SCALE_MODE == 1:
-            # ``best_score`` is <y, c> - 0.5 ||c||^2. Recover <y, c> so the
-            # writeback kernel can store the BlockQuant UB/IP scale.
-            group_stat = tl.sum(tl.where(group_mask, best_score + 0.5 * best_norm, 0.0), axis=0)
-        else:
-            group_stat = tl.sum(tl.where(group_mask, best_norm, 0.0), axis=0)
-        tl.atomic_add(Scale_scratch_ptr + vec_pid, group_stat, sem="relaxed")
+    if role not in {"k", "v"}:
+        raise ValueError("role must be 'k' or 'v'")
+    from onecomp.kvcomp.codec.hayate.codec import (  # pylint: disable=import-outside-toplevel
+        _block_lut_code_bits_on,
+    )
 
-    # Norm + values are per vector, so one group owns them.
-    if group_pid == 0:
-        norm = tl.load(Norms_ptr + vec_pid).to(tl.float32)
-        if DIRECT_KEY_SCALE:
-            # With one code group, the complete statistic is already in this
-            # program.  Store the final scale here, avoiding a scratch tensor,
-            # atomic add, and the follow-up writeback launch.
-            if KEY_SCALE_MODE == 1:
-                stat = tl.sum(
-                    tl.where(group_mask, best_score + 0.5 * best_norm, 0.0),
-                    axis=0,
-                )
-                abs_stat = tl.maximum(tl.abs(stat), 1e-8)
-                denom = tl.where(stat < 0.0, -abs_stat, abs_stat)
-                key_scale = norm * SQRT_D / denom
+    code_bits = recipe.key_code_bits_per_block if role == "k" else recipe.value_code_bits_per_block
+    return _block_lut_code_bits_on(
+        code_bits,
+        HAYATEQUANT_LUT_BINS,
+        HAYATEQUANT_LUT_CANDIDATES,
+        str(device),
+    )
+
+
+def _encode_rotated_role(
+    xr: torch.Tensor,
+    codebook: torch.Tensor,
+    block_size: int,
+    scale_mode: str,
+    *,
+    lut: torch.Tensor | None,
+    lut_bins: int,
+    lut_limit: float,
+    scoring_codebook: torch.Tensor | None,
+    scoring_csq: torch.Tensor | None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Encode a pre-rotated HQ role with public-codec parity.
+
+    Keeping this body separate from the rotation lets the store path share
+    one *identical* fixed rotation between K and V.  It deliberately does not
+    share any assignment or scale work: K NC and V LS-refit remain the exact
+    role-specific HQ recipe.
+    """
+
+    if xr.shape[-1] % block_size:
+        raise ValueError(f"block_size={block_size} must divide D={xr.shape[-1]}")
+    rms = xr.pow(2).mean(dim=-1, keepdim=True).sqrt().clamp_min(1e-8)
+    n_blocks = xr.shape[-1] // block_size
+
+    def lookup(vector: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        blocks = vector.reshape(*vector.shape[:-1], n_blocks, block_size)
+        if lut is None:
+            if scoring_codebook is None or scoring_csq is None:
+                codes, chat_blocks = quantize_and_lookup(blocks, codebook)
             else:
-                stat = tl.sum(tl.where(group_mask, best_norm, 0.0), axis=0)
-                key_scale = norm * (1.0 / tl.sqrt(stat + 1e-16))
-            scale_f16 = key_scale.to(tl.float16)
+                score_blocks = (
+                    blocks.half() if blocks.is_cuda and blocks.dtype == torch.float32 else blocks
+                )
+                codes = quantize_exact_pre(
+                    score_blocks,
+                    scoring_codebook,
+                    scoring_csq,
+                )
+                chat_blocks = lookup_codewords(codebook, codes)
         else:
-            scale_f16 = norm.to(tl.float16)
-        scale_u16 = scale_f16.to(tl.uint16, bitcast=True)
-        tl.store(KV_cache_ptr + slot_base + MSE_BYTES, (scale_u16 & 0xFF).to(tl.uint8))
-        tl.store(
-            KV_cache_ptr + slot_base + MSE_BYTES + 1,
-            ((scale_u16 >> 8) & 0xFF).to(tl.uint8),
-        )
+            codes = quantize_via_lut(
+                blocks,
+                lut,
+                lut_bins,
+                codebook,
+                lim=lut_limit,
+                scoring_cb=scoring_codebook,
+                scoring_csq=scoring_csq,
+            )
+            chat_blocks = lookup_codewords(codebook, codes)
+        return codes, chat_blocks.reshape(*vector.shape[:-1], vector.shape[-1])
 
-        d_offs = tl.arange(0, BLOCK_D)
-        d_mask = d_offs < D
-        _store_quantized_value(
-            Value_ptr,
-            KV_cache_ptr,
-            vec_pid * D,
-            slot_base,
-            d_offs,
-            d_mask,
-            D=D,
-            KPS=KPS,
-            VQB=VQB,
-            VAL_DATA_BYTES=VAL_DATA_BYTES,
-            BLOCK_D=BLOCK_D,
-            BLOCK_VAL=BLOCK_VAL,
-            BLOCK_GRP=BLOCK_GRP,
-        )
+    codes, chat = lookup(xr / rms)
+
+    def requantize(vector: torch.Tensor):
+        codes2, chat2 = lookup(vector)
+        return chat2, codes2
+
+    scale, new_codes = fit_scale(
+        xr,
+        chat,
+        scale_mode,
+        rms,
+        requantize_fn=requantize if scale_mode == "ls_iter" else None,
+    )
+    if new_codes is not None:
+        codes = new_codes
+    return (
+        codes.reshape(-1, n_blocks).to(torch.int32).contiguous(),
+        scale.reshape(-1).to(torch.float16).contiguous(),
+    )
+
+
+def _encode_role(
+    x: torch.Tensor,
+    rotation: torch.Tensor,
+    codebook: torch.Tensor,
+    block_size: int,
+    scale_mode: str,
+    *,
+    lut: torch.Tensor | None,
+    lut_bins: int,
+    lut_limit: float,
+    scoring_codebook: torch.Tensor | None,
+    scoring_csq: torch.Tensor | None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Rotate then encode one role; retained for unequal K/V rotations."""
+
+    return _encode_rotated_role(
+        x.float() @ rotation,
+        codebook,
+        block_size,
+        scale_mode,
+        lut=lut,
+        lut_bins=lut_bins,
+        lut_limit=lut_limit,
+        scoring_codebook=scoring_codebook,
+        scoring_csq=scoring_csq,
+    )
+
+
+def _encode_roles_with_shared_rotation(
+    key: torch.Tensor,
+    value: torch.Tensor,
+    rotation: torch.Tensor,
+    key_codebook: torch.Tensor,
+    value_codebook: torch.Tensor,
+    recipe: HayateQuantNativeRecipe,
+    *,
+    key_lut: torch.Tensor | None,
+    value_lut: torch.Tensor | None,
+    key_scoring_codebook: torch.Tensor | None,
+    key_scoring_csq: torch.Tensor | None,
+    value_scoring_codebook: torch.Tensor | None,
+    value_scoring_csq: torch.Tensor | None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Encode K/V after one exact shared-rotation GEMM.
+
+    The frozen b=3/b=4 HQ recipes resolve both roles to the same cached
+    data-free rotation.  The old path launched two under-filled FP32 GEMMs;
+    concatenating their independent rows makes one larger GEMM without
+    changing any row's mathematical operation.  Pointer identity is checked
+    by the caller, so this routine can never collapse distinct role rotations.
+    """
+
+    if key.shape != value.shape:
+        raise ValueError("shared HayateQuant rotation requires matching K/V shapes")
+    rotated = torch.cat((key, value), dim=0).float() @ rotation
+    key_xr, value_xr = rotated.split(key.shape[0], dim=0)
+    key_codes, key_scales = _encode_rotated_role(
+        key_xr,
+        key_codebook,
+        recipe.key_block_size,
+        "nc",
+        lut=key_lut,
+        lut_bins=HAYATEQUANT_LUT_BINS,
+        lut_limit=HAYATEQUANT_LUT_LIMIT,
+        scoring_codebook=key_scoring_codebook,
+        scoring_csq=key_scoring_csq,
+    )
+    value_codes, value_scales = _encode_rotated_role(
+        value_xr,
+        value_codebook,
+        recipe.value_block_size,
+        "ls_iter",
+        lut=value_lut,
+        lut_bins=HAYATEQUANT_LUT_BINS,
+        lut_limit=HAYATEQUANT_LUT_LIMIT,
+        scoring_codebook=value_scoring_codebook,
+        scoring_csq=value_scoring_csq,
+    )
+    return key_codes, key_scales, value_codes, value_scales
 
 
 @triton.jit
-def _hq_write_key_scales(
-    Norms_ptr,
-    Scale_scratch_ptr,
+def _hayatequant_encode_roles_b2(
+    K_xr_ptr,
+    V_xr_ptr,
+    K_lut_ptr,
+    V_lut_ptr,
+    K_cb_ptr,
+    V_cb_ptr,
+    K_cbh_ptr,
+    V_cbh_ptr,
+    K_csq_ptr,
+    V_csq_ptr,
+    K_codes_ptr,
+    V_codes_ptr,
+    K_scale_ptr,
+    V_scale_ptr,
+    HEAD_DIM: tl.constexpr,
+    NUM_BLOCKS: tl.constexpr,
+    BINS: tl.constexpr,
+    LIM: tl.constexpr,
+    STEP: tl.constexpr,
+):
+    """Fuse canonical b=2 K-NC/V-LS-iter encoding into one launch."""
+
+    row = tl.program_id(0)
+    blocks = tl.arange(0, NUM_BLOCKS)
+    base = row * HEAD_DIM + blocks * 2
+
+    k0 = tl.load(K_xr_ptr + base)
+    k1 = tl.load(K_xr_ptr + base + 1)
+    ksum = tl.sum(k0 * k0 + k1 * k1, axis=0)
+    krms = tl.maximum(tl.sqrt(ksum / HEAD_DIM), 1.0e-8)
+    kz0 = k0 / krms
+    kz1 = k1 / krms
+    kzi0 = ((tl.maximum(tl.minimum(kz0, LIM), -LIM) + LIM) * STEP).to(tl.int32)
+    kzi1 = ((tl.maximum(tl.minimum(kz1, LIM), -LIM) + LIM) * STEP).to(tl.int32)
+    kzi0 = tl.maximum(0, tl.minimum(kzi0, BINS - 1))
+    kzi1 = tl.maximum(0, tl.minimum(kzi1, BINS - 1))
+    kflat = kzi0 * BINS + kzi1
+    kc0 = tl.load(K_lut_ptr + kflat * 2).to(tl.int32)
+    kc1 = tl.load(K_lut_ptr + kflat * 2 + 1).to(tl.int32)
+    kzh0 = kz0.to(tl.float16)
+    kzh1 = kz1.to(tl.float16)
+    kcb00 = tl.load(K_cbh_ptr + kc0 * 2)
+    kcb01 = tl.load(K_cbh_ptr + kc0 * 2 + 1)
+    kcb10 = tl.load(K_cbh_ptr + kc1 * 2)
+    kcb11 = tl.load(K_cbh_ptr + kc1 * 2 + 1)
+    kdot0 = (
+        kzh0.to(tl.float32) * kcb00.to(tl.float32) + kzh1.to(tl.float32) * kcb01.to(tl.float32)
+    ).to(tl.float16)
+    kdot1 = (
+        kzh0.to(tl.float32) * kcb10.to(tl.float32) + kzh1.to(tl.float32) * kcb11.to(tl.float32)
+    ).to(tl.float16)
+    kpen0 = _mul_rn_f16x2(tl.load(K_csq_ptr + kc0), tl.full((NUM_BLOCKS,), 0.5, tl.float16))
+    kpen1 = _mul_rn_f16x2(tl.load(K_csq_ptr + kc1), tl.full((NUM_BLOCKS,), 0.5, tl.float16))
+    kscore0 = _sub_rn_f16x2(kdot0, kpen0)
+    kscore1 = _sub_rn_f16x2(kdot1, kpen1)
+    kcode = tl.where(kscore1 > kscore0, kc1, kc0)
+    kchat0 = tl.load(K_cb_ptr + kcode * 2)
+    kchat1 = tl.load(K_cb_ptr + kcode * 2 + 1)
+    kchat_norm = tl.maximum(
+        tl.sqrt(tl.sum(kchat0 * kchat0 + kchat1 * kchat1, axis=0)),
+        1.0e-8,
+    )
+    kscale = tl.sqrt(ksum) / kchat_norm
+
+    v0 = tl.load(V_xr_ptr + base)
+    v1 = tl.load(V_xr_ptr + base + 1)
+    vsum = tl.sum(v0 * v0 + v1 * v1, axis=0)
+    vrms = tl.maximum(tl.sqrt(vsum / HEAD_DIM), 1.0e-8)
+    vz0 = v0 / vrms
+    vz1 = v1 / vrms
+    vzi0 = ((tl.maximum(tl.minimum(vz0, LIM), -LIM) + LIM) * STEP).to(tl.int32)
+    vzi1 = ((tl.maximum(tl.minimum(vz1, LIM), -LIM) + LIM) * STEP).to(tl.int32)
+    vzi0 = tl.maximum(0, tl.minimum(vzi0, BINS - 1))
+    vzi1 = tl.maximum(0, tl.minimum(vzi1, BINS - 1))
+    vflat = vzi0 * BINS + vzi1
+    vc0 = tl.load(V_lut_ptr + vflat * 2).to(tl.int32)
+    vc1 = tl.load(V_lut_ptr + vflat * 2 + 1).to(tl.int32)
+    vzh0 = vz0.to(tl.float16)
+    vzh1 = vz1.to(tl.float16)
+    vcb00 = tl.load(V_cbh_ptr + vc0 * 2)
+    vcb01 = tl.load(V_cbh_ptr + vc0 * 2 + 1)
+    vcb10 = tl.load(V_cbh_ptr + vc1 * 2)
+    vcb11 = tl.load(V_cbh_ptr + vc1 * 2 + 1)
+    vdot0 = (
+        vzh0.to(tl.float32) * vcb00.to(tl.float32) + vzh1.to(tl.float32) * vcb01.to(tl.float32)
+    ).to(tl.float16)
+    vdot1 = (
+        vzh0.to(tl.float32) * vcb10.to(tl.float32) + vzh1.to(tl.float32) * vcb11.to(tl.float32)
+    ).to(tl.float16)
+    vpen0 = _mul_rn_f16x2(tl.load(V_csq_ptr + vc0), tl.full((NUM_BLOCKS,), 0.5, tl.float16))
+    vpen1 = _mul_rn_f16x2(tl.load(V_csq_ptr + vc1), tl.full((NUM_BLOCKS,), 0.5, tl.float16))
+    vscore0 = _sub_rn_f16x2(vdot0, vpen0)
+    vscore1 = _sub_rn_f16x2(vdot1, vpen1)
+    vcode = tl.where(vscore1 > vscore0, vc1, vc0)
+    vchat0 = tl.load(V_cb_ptr + vcode * 2)
+    vchat1 = tl.load(V_cb_ptr + vcode * 2 + 1)
+    vnum = tl.sum(v0 * vchat0 + v1 * vchat1, axis=0)
+    vden = tl.maximum(
+        tl.sum(vchat0 * vchat0 + vchat1 * vchat1, axis=0),
+        1.0e-8,
+    )
+    vscale_initial = vnum / vden
+    vscale_safe = tl.where(
+        vscale_initial < 0,
+        -tl.maximum(tl.abs(vscale_initial), 1.0e-8),
+        tl.maximum(tl.abs(vscale_initial), 1.0e-8),
+    )
+    vz20 = v0 / vscale_safe
+    vz21 = v1 / vscale_safe
+    v2zi0 = ((tl.maximum(tl.minimum(vz20, LIM), -LIM) + LIM) * STEP).to(tl.int32)
+    v2zi1 = ((tl.maximum(tl.minimum(vz21, LIM), -LIM) + LIM) * STEP).to(tl.int32)
+    v2zi0 = tl.maximum(0, tl.minimum(v2zi0, BINS - 1))
+    v2zi1 = tl.maximum(0, tl.minimum(v2zi1, BINS - 1))
+    v2flat = v2zi0 * BINS + v2zi1
+    v2c0 = tl.load(V_lut_ptr + v2flat * 2).to(tl.int32)
+    v2c1 = tl.load(V_lut_ptr + v2flat * 2 + 1).to(tl.int32)
+    v2zh0 = vz20.to(tl.float16)
+    v2zh1 = vz21.to(tl.float16)
+    v2cb00 = tl.load(V_cbh_ptr + v2c0 * 2)
+    v2cb01 = tl.load(V_cbh_ptr + v2c0 * 2 + 1)
+    v2cb10 = tl.load(V_cbh_ptr + v2c1 * 2)
+    v2cb11 = tl.load(V_cbh_ptr + v2c1 * 2 + 1)
+    v2dot0 = (
+        v2zh0.to(tl.float32) * v2cb00.to(tl.float32) + v2zh1.to(tl.float32) * v2cb01.to(tl.float32)
+    ).to(tl.float16)
+    v2dot1 = (
+        v2zh0.to(tl.float32) * v2cb10.to(tl.float32) + v2zh1.to(tl.float32) * v2cb11.to(tl.float32)
+    ).to(tl.float16)
+    v2pen0 = _mul_rn_f16x2(tl.load(V_csq_ptr + v2c0), tl.full((NUM_BLOCKS,), 0.5, tl.float16))
+    v2pen1 = _mul_rn_f16x2(tl.load(V_csq_ptr + v2c1), tl.full((NUM_BLOCKS,), 0.5, tl.float16))
+    v2score0 = _sub_rn_f16x2(v2dot0, v2pen0)
+    v2score1 = _sub_rn_f16x2(v2dot1, v2pen1)
+    v2code = tl.where(v2score1 > v2score0, v2c1, v2c0)
+    v2chat0 = tl.load(V_cb_ptr + v2code * 2)
+    v2chat1 = tl.load(V_cb_ptr + v2code * 2 + 1)
+    v2num = tl.sum(v0 * v2chat0 + v1 * v2chat1, axis=0)
+    v2den = tl.maximum(
+        tl.sum(v2chat0 * v2chat0 + v2chat1 * v2chat1, axis=0),
+        1.0e-8,
+    )
+    vscale = v2num / v2den
+
+    tl.store(K_codes_ptr + row * NUM_BLOCKS + blocks, kcode.to(tl.int32))
+    tl.store(V_codes_ptr + row * NUM_BLOCKS + blocks, v2code.to(tl.int32))
+    tl.store(K_scale_ptr + row, kscale.to(tl.float16))
+    tl.store(V_scale_ptr + row, vscale.to(tl.float16))
+
+
+def _encode_rotated_roles_b2(
+    key_xr: torch.Tensor,
+    value_xr: torch.Tensor,
+    key_codebook: torch.Tensor,
+    value_codebook: torch.Tensor,
+    key_lut: torch.Tensor,
+    value_lut: torch.Tensor,
+    key_scoring_codebook: torch.Tensor,
+    key_scoring_csq: torch.Tensor,
+    value_scoring_codebook: torch.Tensor,
+    value_scoring_csq: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Launch the serving-only fused canonical b=2 encoder."""
+
+    if key_xr.shape != value_xr.shape or key_xr.shape[-1] % 2:
+        raise ValueError("fused HayateQuant encoding requires matching even-width roles")
+    rows = key_xr.numel() // key_xr.shape[-1]
+    head_dim = int(key_xr.shape[-1])
+    num_blocks = head_dim // 2
+    key_codes = torch.empty(rows, num_blocks, dtype=torch.int32, device=key_xr.device)
+    value_codes = torch.empty_like(key_codes)
+    key_scales = torch.empty(rows, dtype=torch.float16, device=key_xr.device)
+    value_scales = torch.empty_like(key_scales)
+    _hayatequant_encode_roles_b2[(rows,)](
+        key_xr,
+        value_xr,
+        key_lut,
+        value_lut,
+        key_codebook,
+        value_codebook,
+        key_scoring_codebook,
+        value_scoring_codebook,
+        key_scoring_csq,
+        value_scoring_csq,
+        key_codes,
+        value_codes,
+        key_scales,
+        value_scales,
+        HEAD_DIM=head_dim,
+        NUM_BLOCKS=num_blocks,
+        BINS=HAYATEQUANT_LUT_BINS,
+        LIM=HAYATEQUANT_LUT_LIMIT,
+        STEP=HAYATEQUANT_LUT_BINS / (2.0 * HAYATEQUANT_LUT_LIMIT),
+        num_warps=4,
+        num_stages=1,
+    )
+    return key_codes, key_scales, value_codes, value_scales
+
+
+@triton.jit
+def _hayatequant_pack_store(
+    K_codes_ptr,
+    K_scale_ptr,
+    V_codes_ptr,
+    V_scale_ptr,
     KV_cache_ptr,
     Slot_mapping_ptr,
     stride_cache_block: tl.constexpr,
     stride_cache_pos: tl.constexpr,
     stride_cache_head: tl.constexpr,
     H: tl.constexpr,
-    BLOCK_SIZE: tl.constexpr,
-    D: tl.constexpr,
-    SQRT_D: tl.constexpr,
-    MSE_BYTES: tl.constexpr,
-    KEY_SCALE_MODE: tl.constexpr = 0,  # 0: NC, 1: IP/UB
+    PAGE_SIZE: tl.constexpr,
+    K_NUM_BLOCKS: tl.constexpr,
+    V_NUM_BLOCKS: tl.constexpr,
+    K_CODE_BITS: tl.constexpr,
+    V_CODE_BITS: tl.constexpr,
+    K_CODE_BYTES: tl.constexpr,
+    V_CODE_BYTES: tl.constexpr,
+    K_SCALE_OFFSET: tl.constexpr,
+    V_CODES_OFFSET: tl.constexpr,
+    V_SCALE_OFFSET: tl.constexpr,
+    BLOCK_K_BYTES: tl.constexpr,
+    BLOCK_V_BYTES: tl.constexpr,
 ):
-    vec_pid = tl.program_id(0)
-    token_idx = vec_pid // H
-    head_idx = vec_pid % H
+    """Bit-pack two fixed-width code streams and scatter one cache slot."""
 
-    slot = tl.load(Slot_mapping_ptr + token_idx)
+    vec = tl.program_id(0)
+    token = vec // H
+    head = vec % H
+    slot = tl.load(Slot_mapping_ptr + token)
     if slot < 0:
         return
-
-    blk = (slot // BLOCK_SIZE).to(tl.int64)
-    off = (slot % BLOCK_SIZE).to(tl.int64)
-    slot_base = (
-        blk * stride_cache_block
-        + off * stride_cache_pos
-        + tl.cast(head_idx, tl.int64) * stride_cache_head
+    page = (slot // PAGE_SIZE).to(tl.int64)
+    pos = (slot % PAGE_SIZE).to(tl.int64)
+    base = (
+        page * stride_cache_block
+        + pos * stride_cache_pos
+        + tl.cast(head, tl.int64) * stride_cache_head
     )
 
-    norm = tl.load(Norms_ptr + vec_pid).to(tl.float32)
-    stat = tl.load(Scale_scratch_ptr + vec_pid).to(tl.float32)
-    if KEY_SCALE_MODE == 1:
-        # HayateQuant assigns y = x_rot / rms to the block codebook.  For
-        # UB/IP, s = ||x||^2 / <x, c> = sqrt(D) * ||x|| / <y, c>.
-        abs_stat = tl.maximum(tl.abs(stat), 1e-8)
-        denom = tl.where(stat < 0.0, -abs_stat, abs_stat)
-        key_scale = norm * SQRT_D / denom
+    # Construct the packed streams directly from their fixed-width code words.
+    # For code widths >= 7, an eight-bit byte can cross at most one code-word
+    # boundary.  Loading those two adjacent words replaces the previous eight
+    # one-bit gathers per output byte.  The fixed HayateQuant rate-3/rate-4
+    # b=2 recipes use this fast path for their wider role streams. Keep the
+    # bitwise fallback for narrower recipes: a byte can cross three or more
+    # code words for widths <= 6, and a two-word shortcut would silently
+    # corrupt the packed cache.
+    kb = tl.arange(0, BLOCK_K_BYTES)
+    kmask = kb < K_CODE_BYTES
+    if K_CODE_BITS >= 7:
+        kstream_bit = kb * 8
+        kcode_idx = kstream_bit // K_CODE_BITS
+        kcode_shift = kstream_bit - kcode_idx * K_CODE_BITS
+        kcode0 = tl.load(
+            K_codes_ptr + vec * K_NUM_BLOCKS + kcode_idx,
+            mask=kmask & (kcode_idx < K_NUM_BLOCKS),
+            other=0,
+        ).to(tl.int32)
+        kcode1 = tl.load(
+            K_codes_ptr + vec * K_NUM_BLOCKS + kcode_idx + 1,
+            mask=kmask & ((kcode_idx + 1) < K_NUM_BLOCKS),
+            other=0,
+        ).to(tl.int32)
+        kout = (kcode0 >> kcode_shift) | (kcode1 << (K_CODE_BITS - kcode_shift))
     else:
-        key_scale = norm * (1.0 / tl.sqrt(stat + 1e-16))
-    scale_f16 = key_scale.to(tl.float16)
-    scale_u16 = scale_f16.to(tl.uint16, bitcast=True)
-    tl.store(KV_cache_ptr + slot_base + MSE_BYTES, (scale_u16 & 0xFF).to(tl.uint8))
-    tl.store(
-        KV_cache_ptr + slot_base + MSE_BYTES + 1,
-        ((scale_u16 >> 8) & 0xFF).to(tl.uint8),
+        kout = tl.zeros([BLOCK_K_BYTES], tl.int32)
+        for bit in range(8):
+            stream_bit = kb * 8 + bit
+            code_idx = stream_bit // K_CODE_BITS
+            code_bit = stream_bit - code_idx * K_CODE_BITS
+            code = tl.load(
+                K_codes_ptr + vec * K_NUM_BLOCKS + code_idx,
+                mask=kmask & (code_idx < K_NUM_BLOCKS),
+                other=0,
+            ).to(tl.int32)
+            kout |= ((code >> code_bit) & 1) << bit
+    tl.store(KV_cache_ptr + base + kb, kout.to(tl.uint8), mask=kmask)
+
+    vb = tl.arange(0, BLOCK_V_BYTES)
+    vmask = vb < V_CODE_BYTES
+    if V_CODE_BITS >= 7:
+        vstream_bit = vb * 8
+        vcode_idx = vstream_bit // V_CODE_BITS
+        vcode_shift = vstream_bit - vcode_idx * V_CODE_BITS
+        vcode0 = tl.load(
+            V_codes_ptr + vec * V_NUM_BLOCKS + vcode_idx,
+            mask=vmask & (vcode_idx < V_NUM_BLOCKS),
+            other=0,
+        ).to(tl.int32)
+        vcode1 = tl.load(
+            V_codes_ptr + vec * V_NUM_BLOCKS + vcode_idx + 1,
+            mask=vmask & ((vcode_idx + 1) < V_NUM_BLOCKS),
+            other=0,
+        ).to(tl.int32)
+        vout = (vcode0 >> vcode_shift) | (vcode1 << (V_CODE_BITS - vcode_shift))
+    else:
+        vout = tl.zeros([BLOCK_V_BYTES], tl.int32)
+        for bit in range(8):
+            stream_bit = vb * 8 + bit
+            code_idx = stream_bit // V_CODE_BITS
+            code_bit = stream_bit - code_idx * V_CODE_BITS
+            code = tl.load(
+                V_codes_ptr + vec * V_NUM_BLOCKS + code_idx,
+                mask=vmask & (code_idx < V_NUM_BLOCKS),
+                other=0,
+            ).to(tl.int32)
+            vout |= ((code >> code_bit) & 1) << bit
+    tl.store(KV_cache_ptr + base + V_CODES_OFFSET + vb, vout.to(tl.uint8), mask=vmask)
+
+    ks = tl.load(K_scale_ptr + vec).to(tl.float16).to(tl.uint16, bitcast=True)
+    vs = tl.load(V_scale_ptr + vec).to(tl.float16).to(tl.uint16, bitcast=True)
+    tl.store(KV_cache_ptr + base + K_SCALE_OFFSET, (ks & 0xFF).to(tl.uint8))
+    tl.store(KV_cache_ptr + base + K_SCALE_OFFSET + 1, ((ks >> 8) & 0xFF).to(tl.uint8))
+    tl.store(KV_cache_ptr + base + V_SCALE_OFFSET, (vs & 0xFF).to(tl.uint8))
+    tl.store(KV_cache_ptr + base + V_SCALE_OFFSET + 1, ((vs >> 8) & 0xFF).to(tl.uint8))
+
+
+def _pack_encoded_hq(
+    key_codes: torch.Tensor,
+    key_scales: torch.Tensor,
+    value_codes: torch.Tensor,
+    value_scales: torch.Tensor,
+    kv_cache: torch.Tensor,
+    slot_mapping: torch.Tensor,
+    recipe: HayateQuantNativeRecipe,
+    head_dim: int,
+) -> None:
+    """Pack pre-encoded HQ payloads; separated for stage-level profiling."""
+
+    n = int(slot_mapping.numel())
+    if n < 1 or key_codes.shape[0] % n:
+        raise ValueError("encoded HQ rows must be a positive multiple of token slots")
+    h = key_codes.shape[0] // n
+    layout = recipe.layout(head_dim)
+    nh = n * h
+    _hayatequant_pack_store[(nh,)](
+        key_codes,
+        key_scales,
+        value_codes,
+        value_scales,
+        kv_cache.view(-1),
+        slot_mapping,
+        stride_cache_block=kv_cache.stride(0),
+        stride_cache_pos=kv_cache.stride(1),
+        stride_cache_head=kv_cache.stride(2),
+        H=h,
+        PAGE_SIZE=kv_cache.shape[1],
+        K_NUM_BLOCKS=head_dim // recipe.key_block_size,
+        V_NUM_BLOCKS=head_dim // recipe.value_block_size,
+        K_CODE_BITS=recipe.key_code_bits_per_block,
+        V_CODE_BITS=recipe.value_code_bits_per_block,
+        K_CODE_BYTES=layout["key_code_bytes"],
+        V_CODE_BYTES=layout["value_code_bytes"],
+        K_SCALE_OFFSET=layout["key_scale_offset"],
+        V_CODES_OFFSET=layout["value_codes_offset"],
+        V_SCALE_OFFSET=layout["value_scale_offset"],
+        BLOCK_K_BYTES=triton.next_power_of_2(layout["key_code_bytes"]),
+        BLOCK_V_BYTES=triton.next_power_of_2(layout["value_code_bytes"]),
+        num_warps=4,
+        num_stages=1,
     )
+
+
+def triton_hayatequant_store(
+    key: torch.Tensor,
+    value: torch.Tensor,
+    kv_cache: torch.Tensor,
+    slot_mapping: torch.Tensor,
+    key_rotation: torch.Tensor,
+    value_rotation: torch.Tensor,
+    key_codebook: torch.Tensor,
+    value_codebook: torch.Tensor,
+    recipe: HayateQuantNativeRecipe,
+    key_lut: torch.Tensor | None = None,
+    value_lut: torch.Tensor | None = None,
+    key_scoring_codebook: torch.Tensor | None = None,
+    key_scoring_csq: torch.Tensor | None = None,
+    value_scoring_codebook: torch.Tensor | None = None,
+    value_scoring_csq: torch.Tensor | None = None,
+    shared_rotation: bool | None = None,
+    return_payload: bool = True,
+    require_fused: bool = False,
+) -> dict[str, torch.Tensor] | None:
+    """Encode and pack canonical HayateQuant K/V into a paged byte cache.
+
+    ``return_payload`` exists for parity tests and diagnostic tooling.  vLLM
+    serving sets it false because the cache owns the only persistent
+    representation and constructing a per-layer Python dictionary is needless
+    request-thread work.
+    """
+
+    if key.shape != value.shape or key.ndim != 3:
+        raise ValueError("key and value must have matching [N,H,D] shapes")
+    n, h, d = key.shape
+    recipe.validate_head_dim(d)
+    layout = recipe.layout(d)
+    if kv_cache.shape[-1] != layout["slot_size_aligned"]:
+        raise ValueError(
+            f"HayateQuant cache slot is {kv_cache.shape[-1]} bytes, expected "
+            f"{layout['slot_size_aligned']} for D={d}"
+        )
+    if key_lut is None:
+        key_lut = _assignment_lut(recipe, "k", key.device)
+    if value_lut is None:
+        value_lut = _assignment_lut(recipe, "v", value.device)
+    if key_scoring_codebook is None:
+        key_scoring_codebook = key_codebook.half() if key.is_cuda else key_codebook
+    if value_scoring_codebook is None:
+        value_scoring_codebook = value_codebook.half() if value.is_cuda else value_codebook
+    if key_scoring_csq is None:
+        key_scoring_csq = key_scoring_codebook.pow(2).sum(dim=1)
+    if value_scoring_csq is None:
+        value_scoring_csq = value_scoring_codebook.pow(2).sum(dim=1)
+    # Both roles may use the same immutable rotation matrix (the frozen b=3
+    # and b=4 recipes do).  Only aliasing is accepted: comparing contents at
+    # request time would synchronise the host, while assuming same-looking
+    # matrices could silently violate the role-specific recipe.
+    if shared_rotation is None:
+        shared_rotation = (
+            key_rotation.device == value_rotation.device
+            and key_rotation.dtype == value_rotation.dtype
+            and key_rotation.shape == value_rotation.shape
+            and key_rotation.data_ptr() == value_rotation.data_ptr()
+        )
+    elif not isinstance(shared_rotation, bool):
+        raise TypeError("shared_rotation must be bool or None")
+    fused_b2 = (
+        key.is_cuda
+        and recipe.key_block_size == 2
+        and recipe.value_block_size == 2
+        and key_lut is not None
+        and value_lut is not None
+        and key_scoring_codebook is not None
+        and key_scoring_csq is not None
+        and value_scoring_codebook is not None
+        and value_scoring_csq is not None
+        and key_scoring_codebook.dtype == torch.float16
+        and value_scoring_codebook.dtype == torch.float16
+        and key_scoring_csq.dtype == torch.float16
+        and value_scoring_csq.dtype == torch.float16
+    )
+    if require_fused and not fused_b2:
+        raise RuntimeError("requested HayateQuant fused b=2 CUDA store is unavailable")
+    if fused_b2:
+        if shared_rotation:
+            rotated = torch.cat((key, value), dim=0).float() @ key_rotation
+            key_xr, value_xr = rotated.split(key.shape[0], dim=0)
+        else:
+            key_xr = key.float() @ key_rotation
+            value_xr = value.float() @ value_rotation
+        key_codes, key_scales, value_codes, value_scales = _encode_rotated_roles_b2(
+            key_xr,
+            value_xr,
+            key_codebook,
+            value_codebook,
+            key_lut,
+            value_lut,
+            key_scoring_codebook,
+            key_scoring_csq,
+            value_scoring_codebook,
+            value_scoring_csq,
+        )
+    elif shared_rotation:
+        key_codes, key_scales, value_codes, value_scales = _encode_roles_with_shared_rotation(
+            key,
+            value,
+            key_rotation,
+            key_codebook,
+            value_codebook,
+            recipe,
+            key_lut=key_lut,
+            value_lut=value_lut,
+            key_scoring_codebook=key_scoring_codebook,
+            key_scoring_csq=key_scoring_csq,
+            value_scoring_codebook=value_scoring_codebook,
+            value_scoring_csq=value_scoring_csq,
+        )
+    else:
+        key_codes, key_scales = _encode_role(
+            key,
+            key_rotation,
+            key_codebook,
+            recipe.key_block_size,
+            "nc",
+            lut=key_lut,
+            lut_bins=HAYATEQUANT_LUT_BINS,
+            lut_limit=HAYATEQUANT_LUT_LIMIT,
+            scoring_codebook=key_scoring_codebook,
+            scoring_csq=key_scoring_csq,
+        )
+        value_codes, value_scales = _encode_role(
+            value,
+            value_rotation,
+            value_codebook,
+            recipe.value_block_size,
+            "ls_iter",
+            lut=value_lut,
+            lut_bins=HAYATEQUANT_LUT_BINS,
+            lut_limit=HAYATEQUANT_LUT_LIMIT,
+            scoring_codebook=value_scoring_codebook,
+            scoring_csq=value_scoring_csq,
+        )
+    _pack_encoded_hq(
+        key_codes,
+        key_scales,
+        value_codes,
+        value_scales,
+        kv_cache,
+        slot_mapping,
+        recipe,
+        d,
+    )
+    if return_payload:
+        return {
+            "key_codes": key_codes,
+            "key_scales": key_scales,
+            "value_codes": value_codes,
+            "value_scales": value_scales,
+        }
+    return None
 
 
 @triton.jit
-def _hq_decode_stage1(
+def _hayatequant_decode_stage1_b2(
     Q_rot_ptr,
     KV_cache_ptr,
     Block_table_ptr,
     Seq_lens_ptr,
-    Codebook_ptr,
+    K_codebook_ptr,
+    V_codebook_ptr,
     Mid_o_ptr,
     stride_qb,
     stride_qh,
@@ -270,25 +780,26 @@ def _hq_decode_stage1(
     stride_mid_s,
     NUM_KV_HEADS: tl.constexpr,
     HEAD_DIM: tl.constexpr,
-    BLOCK_SIZE: tl.constexpr,
+    PAGE_SIZE: tl.constexpr,
     NUM_KV_SPLITS: tl.constexpr,
     KV_GROUP_SIZE: tl.constexpr,
-    MSE_BYTES: tl.constexpr,
-    KPS: tl.constexpr,
-    VQB: tl.constexpr,
-    VAL_DATA_BYTES: tl.constexpr,
+    K_CODE_BITS: tl.constexpr,
+    V_CODE_BITS: tl.constexpr,
+    K_CODE_BYTES: tl.constexpr,
+    V_CODE_BYTES: tl.constexpr,
+    K_SCALE_OFFSET: tl.constexpr,
+    V_CODES_OFFSET: tl.constexpr,
+    V_SCALE_OFFSET: tl.constexpr,
     ATTN_SCALE: tl.constexpr,
     BLOCK_D: tl.constexpr,
+    BLOCK_NB: tl.constexpr,
     BLOCK_KV: tl.constexpr,
-    HAYATE_BLOCK_SIZE: tl.constexpr,
-    HAYATE_CODE_BITS: tl.constexpr,
-    NORM_CORRECTION: tl.constexpr = 1,
-    PRECOMPUTE_KEY_SCALE: tl.constexpr = 0,
 ):
+    """Formal fixed-HQ b=2 decode without duplicate per-coordinate loads."""
+
     bid = tl.program_id(0)
     hid = tl.program_id(1)
     sid = tl.program_id(2)
-
     kv_head = hid // KV_GROUP_SIZE
     seq_len = tl.load(Seq_lens_ptr + bid)
     split_len = tl.cdiv(seq_len, NUM_KV_SPLITS)
@@ -297,173 +808,266 @@ def _hq_decode_stage1(
     if split_start >= split_end:
         return
 
-    d_offs = tl.arange(0, BLOCK_D)
-    d_mask = d_offs < HEAD_DIM
-    kv_range = tl.arange(0, BLOCK_KV)
-
-    q_base = bid * stride_qb + hid * stride_qh
-    key_block_offs = tl.arange(0, BLOCK_D // HAYATE_BLOCK_SIZE)
-    key_block_mask = key_block_offs < (HEAD_DIM // HAYATE_BLOCK_SIZE)
-    q0 = tl.load(
-        Q_rot_ptr + q_base + key_block_offs * HAYATE_BLOCK_SIZE,
-        mask=key_block_mask,
-        other=0.0,
-    ).to(tl.float32)
-    q1 = tl.load(
-        Q_rot_ptr + q_base + key_block_offs * HAYATE_BLOCK_SIZE + 1,
-        mask=key_block_mask,
-        other=0.0,
-    ).to(tl.float32)
-    if HAYATE_CODE_BITS == 8:
-        key_code_byte_idx = key_block_offs
-    else:
-        key_code_group_idx = key_block_offs // 4
-        key_code_shift = (key_block_offs - key_code_group_idx * 4) * 6
-        key_code_byte_idx = key_code_group_idx * 3
-
-    if VQB == 3:
-        val_bit_off = d_offs * 3
-        val_byte_idx = val_bit_off // 8
-        val_bit_shift = val_bit_off % 8
-
+    blocks = tl.arange(0, BLOCK_NB)
+    bmask = blocks < (HEAD_DIM // 2)
+    qbase = bid * stride_qb + hid * stride_qh
+    q0 = tl.load(Q_rot_ptr + qbase + blocks * 2, mask=bmask, other=0.0).to(tl.float32)
+    q1 = tl.load(Q_rot_ptr + qbase + blocks * 2 + 1, mask=bmask, other=0.0).to(tl.float32)
+    kbit = blocks * K_CODE_BITS
+    kbyte = kbit // 8
+    kshift = kbit - kbyte * 8
+    vbit = blocks * V_CODE_BITS
+    vbyte = vbit // 8
+    vshift = vbit - vbyte * 8
+    krange = tl.arange(0, BLOCK_KV)
+    d = tl.arange(0, BLOCK_D)
+    dmask = d < HEAD_DIM
     m_prev = -float("inf")
     l_prev = 0.0
-    acc = tl.zeros([BLOCK_D], dtype=tl.float32)
-    bt_base = bid * stride_bt_b
+    acc = tl.zeros([BLOCK_D], tl.float32)
+    btbase = bid * stride_bt_b
 
-    for start_n in range(split_start, split_end, BLOCK_KV):
-        kv_offs = start_n + kv_range
-        kv_mask = kv_offs < split_end
-
-        page_idx = kv_offs // BLOCK_SIZE
-        page_off = kv_offs % BLOCK_SIZE
-        block_nums = tl.load(
-            Block_table_ptr + bt_base + page_idx,
-            mask=kv_mask,
-            other=0,
-        ).to(tl.int64)
-        slot_bases = (
-            block_nums * stride_cache_block
-            + page_off.to(tl.int64) * stride_cache_pos
+    for start in range(split_start, split_end, BLOCK_KV):
+        pos = start + krange
+        pmask = pos < split_end
+        pidx = pos // PAGE_SIZE
+        poff = pos % PAGE_SIZE
+        pages = tl.load(Block_table_ptr + btbase + pidx, mask=pmask, other=0).to(tl.int64)
+        bases = (
+            pages * stride_cache_block
+            + poff.to(tl.int64) * stride_cache_pos
             + tl.cast(kv_head, tl.int64) * stride_cache_head
         )
 
-        if HAYATE_CODE_BITS == 8:
-            key_code_raw = tl.load(
-                KV_cache_ptr + slot_bases[:, None] + key_code_byte_idx[None, :],
-                mask=kv_mask[:, None] & key_block_mask[None, :],
-                other=0,
-            ).to(tl.int32)
-            key_code_idx = key_code_raw & 0xFF
-        else:
-            raw0 = tl.load(
-                KV_cache_ptr + slot_bases[:, None] + key_code_byte_idx[None, :],
-                mask=kv_mask[:, None] & key_block_mask[None, :],
-                other=0,
-            ).to(tl.int32)
-            raw1 = tl.load(
-                KV_cache_ptr + slot_bases[:, None] + key_code_byte_idx[None, :] + 1,
-                mask=kv_mask[:, None] & key_block_mask[None, :],
-                other=0,
-            ).to(tl.int32)
-            raw2 = tl.load(
-                KV_cache_ptr + slot_bases[:, None] + key_code_byte_idx[None, :] + 2,
-                mask=kv_mask[:, None] & key_block_mask[None, :],
-                other=0,
-            ).to(tl.int32)
-            raw24 = raw0 | (raw1 << 8) | (raw2 << 16)
-            key_code_idx = (raw24 >> key_code_shift[None, :]) & 0x3F
-
-        c0 = tl.load(
-            Codebook_ptr + key_code_idx * HAYATE_BLOCK_SIZE,
-            mask=kv_mask[:, None] & key_block_mask[None, :],
+        kr0 = tl.load(
+            KV_cache_ptr + bases[:, None] + kbyte[None, :],
+            mask=pmask[:, None] & bmask[None, :] & (kbyte[None, :] < K_CODE_BYTES),
+            other=0,
+        ).to(tl.int32)
+        kr1 = tl.load(
+            KV_cache_ptr + bases[:, None] + kbyte[None, :] + 1,
+            mask=pmask[:, None] & bmask[None, :] & ((kbyte[None, :] + 1) < K_CODE_BYTES),
+            other=0,
+        ).to(tl.int32)
+        kcode = ((kr0 | (kr1 << 8)) >> kshift[None, :]) & ((1 << K_CODE_BITS) - 1)
+        kc0 = tl.load(
+            K_codebook_ptr + kcode * 2,
+            mask=pmask[:, None] & bmask[None, :],
             other=0.0,
-        )
-        c1 = tl.load(
-            Codebook_ptr + key_code_idx * HAYATE_BLOCK_SIZE + 1,
-            mask=kv_mask[:, None] & key_block_mask[None, :],
+        ).to(tl.float32)
+        kc1 = tl.load(
+            K_codebook_ptr + kcode * 2 + 1,
+            mask=pmask[:, None] & bmask[None, :],
             other=0.0,
-        )
-
-        term1 = tl.sum(
-            tl.where(key_block_mask[None, :], q0[None, :] * c0 + q1[None, :] * c1, 0.0),
+        ).to(tl.float32)
+        ks0 = tl.load(KV_cache_ptr + bases + K_SCALE_OFFSET, mask=pmask, other=0).to(tl.uint16)
+        ks1 = tl.load(KV_cache_ptr + bases + K_SCALE_OFFSET + 1, mask=pmask, other=0).to(tl.uint16)
+        kscale = (ks0 | (ks1 << 8)).to(tl.float16, bitcast=True).to(tl.float32)
+        dot = tl.sum(
+            tl.where(bmask[None, :], q0[None, :] * kc0 + q1[None, :] * kc1, 0.0),
             axis=1,
         )
-        if NORM_CORRECTION and not PRECOMPUTE_KEY_SCALE:
-            block_norm_sq = c0 * c0 + c1 * c1
-            c_norm_sq = tl.sum(
-                tl.where(key_block_mask[None, :], block_norm_sq, 0.0),
-                axis=1,
-            )
-            term1 = term1 * (1.0 / tl.sqrt(c_norm_sq + 1e-16))
+        scores = tl.where(pmask, dot * kscale * ATTN_SCALE, -float("inf"))
 
-        norm_bases = slot_bases + MSE_BYTES
-        n_lo = tl.load(KV_cache_ptr + norm_bases, mask=kv_mask, other=0).to(tl.uint16)
-        n_hi = tl.load(KV_cache_ptr + norm_bases + 1, mask=kv_mask, other=0).to(tl.uint16)
-        key_scales = (n_lo | (n_hi << 8)).to(tl.float16, bitcast=True).to(tl.float32)
-        scores = key_scales * term1 * ATTN_SCALE
-        scores = tl.where(kv_mask, scores, -float("inf"))
+        vr0 = tl.load(
+            KV_cache_ptr + bases[:, None] + V_CODES_OFFSET + vbyte[None, :],
+            mask=pmask[:, None] & bmask[None, :] & (vbyte[None, :] < V_CODE_BYTES),
+            other=0,
+        ).to(tl.int32)
+        vr1 = tl.load(
+            KV_cache_ptr + bases[:, None] + V_CODES_OFFSET + vbyte[None, :] + 1,
+            mask=pmask[:, None] & bmask[None, :] & ((vbyte[None, :] + 1) < V_CODE_BYTES),
+            other=0,
+        ).to(tl.int32)
+        vcode = ((vr0 | (vr1 << 8)) >> vshift[None, :]) & ((1 << V_CODE_BITS) - 1)
+        vc0 = tl.load(
+            V_codebook_ptr + vcode * 2,
+            mask=pmask[:, None] & bmask[None, :],
+            other=0.0,
+        ).to(tl.float32)
+        vc1 = tl.load(
+            V_codebook_ptr + vcode * 2 + 1,
+            mask=pmask[:, None] & bmask[None, :],
+            other=0.0,
+        ).to(tl.float32)
+        vs0 = tl.load(KV_cache_ptr + bases + V_SCALE_OFFSET, mask=pmask, other=0).to(tl.uint16)
+        vs1 = tl.load(KV_cache_ptr + bases + V_SCALE_OFFSET + 1, mask=pmask, other=0).to(tl.uint16)
+        vscale = (vs0 | (vs1 << 8)).to(tl.float16, bitcast=True).to(tl.float32)
+        values = tl.interleave(vc0, vc1) * vscale[:, None]
 
-        n_e_max = tl.maximum(tl.max(scores, 0), m_prev)
-        re_scale = tl.exp(m_prev - n_e_max)
-        p = tl.exp(scores - n_e_max)
+        new_m = tl.maximum(tl.max(scores, 0), m_prev)
+        rescale = tl.exp(m_prev - new_m)
+        p = tl.exp(scores - new_m)
+        acc = acc * rescale + tl.sum(p[:, None] * values, axis=0)
+        l_prev = l_prev * rescale + tl.sum(p, axis=0)
+        m_prev = new_m
 
-        val_bases = slot_bases + KPS
-        if VQB == 3:
-            val_addrs0 = val_bases[:, None] + val_byte_idx[None, :]
-            val_raw0 = tl.load(
-                KV_cache_ptr + val_addrs0,
-                mask=kv_mask[:, None] & d_mask[None, :],
-                other=0,
-            ).to(tl.int32)
-            val_raw1 = tl.load(
-                KV_cache_ptr + val_addrs0 + 1,
-                mask=kv_mask[:, None] & d_mask[None, :],
-                other=0,
-            ).to(tl.int32)
-            raw16 = val_raw0 | (val_raw1 << 8)
-            v_idx = ((raw16 >> val_bit_shift[None, :]) & 0x7).to(tl.float32)
-            sc_bases = val_bases + VAL_DATA_BYTES
-            sc_lo = tl.load(KV_cache_ptr + sc_bases, mask=kv_mask, other=0).to(tl.uint16)
-            sc_hi = tl.load(KV_cache_ptr + sc_bases + 1, mask=kv_mask, other=0).to(tl.uint16)
-            v_scales = (sc_lo | (sc_hi << 8)).to(tl.float16, bitcast=True).to(tl.float32)
-            zr_lo = tl.load(KV_cache_ptr + sc_bases + 2, mask=kv_mask, other=0).to(tl.uint16)
-            zr_hi = tl.load(KV_cache_ptr + sc_bases + 3, mask=kv_mask, other=0).to(tl.uint16)
-            v_zeros = (zr_lo | (zr_hi << 8)).to(tl.float16, bitcast=True).to(tl.float32)
-            values = v_idx * v_scales[:, None] + v_zeros[:, None]
-        else:
-            vb_idx = d_offs // 2
-            vb_shift = (d_offs % 2) * 4
-            val_raw = tl.load(
-                KV_cache_ptr + val_bases[:, None] + vb_idx[None, :],
-                mask=kv_mask[:, None] & d_mask[None, :],
-                other=0,
-            ).to(tl.int32)
-            v_idx = ((val_raw >> vb_shift[None, :]) & 0xF).to(tl.float32)
-            sc_bases = val_bases + VAL_DATA_BYTES
-            sc_lo = tl.load(KV_cache_ptr + sc_bases, mask=kv_mask, other=0).to(tl.uint16)
-            sc_hi = tl.load(KV_cache_ptr + sc_bases + 1, mask=kv_mask, other=0).to(tl.uint16)
-            v_scales = (sc_lo | (sc_hi << 8)).to(tl.float16, bitcast=True).to(tl.float32)
-            zr_lo = tl.load(KV_cache_ptr + sc_bases + 2, mask=kv_mask, other=0).to(tl.uint16)
-            zr_hi = tl.load(KV_cache_ptr + sc_bases + 3, mask=kv_mask, other=0).to(tl.uint16)
-            v_zeros = (zr_lo | (zr_hi << 8)).to(tl.float16, bitcast=True).to(tl.float32)
-            values = v_idx * v_scales[:, None] + v_zeros[:, None]
-
-        acc = acc * re_scale + tl.sum(p[:, None] * values, 0)
-        l_prev = l_prev * re_scale + tl.sum(p, 0)
-        m_prev = n_e_max
-
-    out_base = bid * stride_mid_b + hid * stride_mid_h + sid * stride_mid_s
+    obase = bid * stride_mid_b + hid * stride_mid_h + sid * stride_mid_s
     safe_l = tl.where(l_prev > 0.0, l_prev, 1.0)
-    tl.store(Mid_o_ptr + out_base + d_offs, acc / safe_l, mask=d_mask)
-    tl.store(Mid_o_ptr + out_base + HEAD_DIM, m_prev + tl.log(safe_l))
+    tl.store(Mid_o_ptr + obase + d, acc / safe_l, mask=dmask)
+    tl.store(Mid_o_ptr + obase + HEAD_DIM, m_prev + tl.log(safe_l))
 
 
 @triton.jit
-def _hq_full_dequant_kv(
+def _hayatequant_decode_stage1(
+    Q_rot_ptr,
     KV_cache_ptr,
     Block_table_ptr,
-    Codebook_ptr,
+    Seq_lens_ptr,
+    K_codebook_ptr,
+    V_codebook_ptr,
+    Mid_o_ptr,
+    stride_qb,
+    stride_qh,
+    stride_cache_block,
+    stride_cache_pos,
+    stride_cache_head,
+    stride_bt_b,
+    stride_mid_b,
+    stride_mid_h,
+    stride_mid_s,
+    NUM_KV_HEADS: tl.constexpr,
+    HEAD_DIM: tl.constexpr,
+    PAGE_SIZE: tl.constexpr,
+    NUM_KV_SPLITS: tl.constexpr,
+    KV_GROUP_SIZE: tl.constexpr,
+    K_BLOCK_SIZE: tl.constexpr,
+    V_BLOCK_SIZE: tl.constexpr,
+    K_CODE_BITS: tl.constexpr,
+    V_CODE_BITS: tl.constexpr,
+    K_CODE_BYTES: tl.constexpr,
+    V_CODE_BYTES: tl.constexpr,
+    K_SCALE_OFFSET: tl.constexpr,
+    V_CODES_OFFSET: tl.constexpr,
+    V_SCALE_OFFSET: tl.constexpr,
+    ATTN_SCALE: tl.constexpr,
+    BLOCK_D: tl.constexpr,
+    BLOCK_KV: tl.constexpr,
+):
+    bid = tl.program_id(0)
+    hid = tl.program_id(1)
+    sid = tl.program_id(2)
+    kv_head = hid // KV_GROUP_SIZE
+    seq_len = tl.load(Seq_lens_ptr + bid)
+    split_len = tl.cdiv(seq_len, NUM_KV_SPLITS)
+    split_start = split_len * sid
+    split_end = tl.minimum(split_start + split_len, seq_len)
+    if split_start >= split_end:
+        return
+
+    d = tl.arange(0, BLOCK_D)
+    dmask = d < HEAD_DIM
+    krange = tl.arange(0, BLOCK_KV)
+    qbase = bid * stride_qb + hid * stride_qh
+    qrot = tl.load(Q_rot_ptr + qbase + d, mask=dmask, other=0.0).to(tl.float32)
+
+    kbidx = d // K_BLOCK_SIZE
+    kelem = d - kbidx * K_BLOCK_SIZE
+    kbit = kbidx * K_CODE_BITS
+    kbyte = kbit // 8
+    kshift = kbit - kbyte * 8
+    vbidx = d // V_BLOCK_SIZE
+    velem = d - vbidx * V_BLOCK_SIZE
+    vbit = vbidx * V_CODE_BITS
+    vbyte = vbit // 8
+    vshift = vbit - vbyte * 8
+
+    m_prev = -float("inf")
+    l_prev = 0.0
+    acc = tl.zeros([BLOCK_D], tl.float32)
+    btbase = bid * stride_bt_b
+    for start in range(split_start, split_end, BLOCK_KV):
+        pos = start + krange
+        pmask = pos < split_end
+        pidx = pos // PAGE_SIZE
+        poff = pos % PAGE_SIZE
+        pages = tl.load(Block_table_ptr + btbase + pidx, mask=pmask, other=0).to(tl.int64)
+        bases = (
+            pages * stride_cache_block
+            + poff.to(tl.int64) * stride_cache_pos
+            + tl.cast(kv_head, tl.int64) * stride_cache_head
+        )
+
+        kraw0 = tl.load(
+            KV_cache_ptr + bases[:, None] + kbyte[None, :],
+            mask=pmask[:, None] & dmask[None, :] & (kbyte[None, :] < K_CODE_BYTES),
+            other=0,
+        ).to(tl.int32)
+        kraw1 = tl.load(
+            KV_cache_ptr + bases[:, None] + kbyte[None, :] + 1,
+            mask=pmask[:, None] & dmask[None, :] & ((kbyte[None, :] + 1) < K_CODE_BYTES),
+            other=0,
+        ).to(tl.int32)
+        kraw2 = tl.load(
+            KV_cache_ptr + bases[:, None] + kbyte[None, :] + 2,
+            mask=pmask[:, None] & dmask[None, :] & ((kbyte[None, :] + 2) < K_CODE_BYTES),
+            other=0,
+        ).to(tl.int32)
+        kcode = ((kraw0 | (kraw1 << 8) | (kraw2 << 16)) >> kshift[None, :]) & (
+            (1 << K_CODE_BITS) - 1
+        )
+        kval = tl.load(
+            K_codebook_ptr + kcode * K_BLOCK_SIZE + kelem[None, :],
+            mask=pmask[:, None] & dmask[None, :],
+            other=0.0,
+        ).to(tl.float32)
+        kslo = tl.load(KV_cache_ptr + bases + K_SCALE_OFFSET, mask=pmask, other=0).to(tl.uint16)
+        kshi = tl.load(KV_cache_ptr + bases + K_SCALE_OFFSET + 1, mask=pmask, other=0).to(
+            tl.uint16
+        )
+        kscale = (kslo | (kshi << 8)).to(tl.float16, bitcast=True).to(tl.float32)
+        scores = tl.sum(qrot[None, :] * kval, axis=1) * kscale * ATTN_SCALE
+        scores = tl.where(pmask, scores, -float("inf"))
+
+        vraw0 = tl.load(
+            KV_cache_ptr + bases[:, None] + V_CODES_OFFSET + vbyte[None, :],
+            mask=pmask[:, None] & dmask[None, :] & (vbyte[None, :] < V_CODE_BYTES),
+            other=0,
+        ).to(tl.int32)
+        vraw1 = tl.load(
+            KV_cache_ptr + bases[:, None] + V_CODES_OFFSET + vbyte[None, :] + 1,
+            mask=pmask[:, None] & dmask[None, :] & ((vbyte[None, :] + 1) < V_CODE_BYTES),
+            other=0,
+        ).to(tl.int32)
+        vraw2 = tl.load(
+            KV_cache_ptr + bases[:, None] + V_CODES_OFFSET + vbyte[None, :] + 2,
+            mask=pmask[:, None] & dmask[None, :] & ((vbyte[None, :] + 2) < V_CODE_BYTES),
+            other=0,
+        ).to(tl.int32)
+        vcode = ((vraw0 | (vraw1 << 8) | (vraw2 << 16)) >> vshift[None, :]) & (
+            (1 << V_CODE_BITS) - 1
+        )
+        vval = tl.load(
+            V_codebook_ptr + vcode * V_BLOCK_SIZE + velem[None, :],
+            mask=pmask[:, None] & dmask[None, :],
+            other=0.0,
+        ).to(tl.float32)
+        vslo = tl.load(KV_cache_ptr + bases + V_SCALE_OFFSET, mask=pmask, other=0).to(tl.uint16)
+        vshi = tl.load(KV_cache_ptr + bases + V_SCALE_OFFSET + 1, mask=pmask, other=0).to(
+            tl.uint16
+        )
+        vscale = (vslo | (vshi << 8)).to(tl.float16, bitcast=True).to(tl.float32)
+        values = vval * vscale[:, None]
+
+        new_m = tl.maximum(tl.max(scores, 0), m_prev)
+        rescale = tl.exp(m_prev - new_m)
+        p = tl.exp(scores - new_m)
+        acc = acc * rescale + tl.sum(p[:, None] * values, axis=0)
+        l_prev = l_prev * rescale + tl.sum(p, axis=0)
+        m_prev = new_m
+
+    obase = bid * stride_mid_b + hid * stride_mid_h + sid * stride_mid_s
+    safe_l = tl.where(l_prev > 0.0, l_prev, 1.0)
+    tl.store(Mid_o_ptr + obase + d, acc / safe_l, mask=dmask)
+    tl.store(Mid_o_ptr + obase + HEAD_DIM, m_prev + tl.log(safe_l))
+
+
+@triton.jit
+def _hayatequant_dequant_kv(
+    KV_cache_ptr,
+    Block_table_ptr,
+    K_codebook_ptr,
+    V_codebook_ptr,
     K_out_ptr,
     V_out_ptr,
     stride_ko_b,
@@ -477,278 +1081,88 @@ def _hq_full_dequant_kv(
     stride_cache_head,
     stride_bt_b,
     HEAD_DIM: tl.constexpr,
-    BLOCK_SIZE: tl.constexpr,
+    PAGE_SIZE: tl.constexpr,
     NUM_KV_HEADS: tl.constexpr,
-    MSE_BYTES: tl.constexpr,
-    KPS: tl.constexpr,
-    VQB: tl.constexpr,
-    VAL_DATA_BYTES: tl.constexpr,
+    K_BLOCK_SIZE: tl.constexpr,
+    V_BLOCK_SIZE: tl.constexpr,
+    K_CODE_BITS: tl.constexpr,
+    V_CODE_BITS: tl.constexpr,
+    K_CODE_BYTES: tl.constexpr,
+    V_CODE_BYTES: tl.constexpr,
+    K_SCALE_OFFSET: tl.constexpr,
+    V_CODES_OFFSET: tl.constexpr,
+    V_SCALE_OFFSET: tl.constexpr,
     BLOCK_D: tl.constexpr,
-    HAYATE_BLOCK_SIZE: tl.constexpr,
-    HAYATE_CODE_BITS: tl.constexpr,
-    NORM_CORRECTION: tl.constexpr = 1,
-    PRECOMPUTE_KEY_SCALE: tl.constexpr = 0,
 ):
     pos = tl.program_id(0)
     bh = tl.program_id(1)
     bid = bh // NUM_KV_HEADS
     hid = bh % NUM_KV_HEADS
-
-    page_idx = pos // BLOCK_SIZE
-    page_off = pos % BLOCK_SIZE
-    block_num = tl.load(Block_table_ptr + bid * stride_bt_b + page_idx).to(tl.int64)
-    slot_base = (
-        block_num * stride_cache_block
-        + tl.cast(page_off, tl.int64) * stride_cache_pos
+    pidx = pos // PAGE_SIZE
+    poff = pos % PAGE_SIZE
+    page = tl.load(Block_table_ptr + bid * stride_bt_b + pidx).to(tl.int64)
+    base = (
+        page * stride_cache_block
+        + tl.cast(poff, tl.int64) * stride_cache_pos
         + tl.cast(hid, tl.int64) * stride_cache_head
     )
+    d = tl.arange(0, BLOCK_D)
+    mask = d < HEAD_DIM
 
-    d_offs = tl.arange(0, BLOCK_D)
-    d_mask = d_offs < HEAD_DIM
-    block_idx = d_offs // HAYATE_BLOCK_SIZE
-    elem_idx = d_offs - block_idx * HAYATE_BLOCK_SIZE
-
-    if HAYATE_CODE_BITS == 8:
-        code_raw = tl.load(
-            KV_cache_ptr + slot_base + block_idx,
-            mask=d_mask,
-            other=0,
-        ).to(tl.int32)
-        code_idx = code_raw & 0xFF
-    else:
-        code_group_idx = block_idx // 4
-        code_shift = (block_idx - code_group_idx * 4) * 6
-        code_byte_idx = code_group_idx * 3
-        raw0 = tl.load(KV_cache_ptr + slot_base + code_byte_idx, mask=d_mask, other=0).to(tl.int32)
-        raw1 = tl.load(KV_cache_ptr + slot_base + code_byte_idx + 1, mask=d_mask, other=0).to(
-            tl.int32
-        )
-        raw2 = tl.load(KV_cache_ptr + slot_base + code_byte_idx + 2, mask=d_mask, other=0).to(
-            tl.int32
-        )
-        raw24 = raw0 | (raw1 << 8) | (raw2 << 16)
-        code_idx = (raw24 >> code_shift) & 0x3F
-
-    k_mse = tl.load(
-        Codebook_ptr + code_idx * HAYATE_BLOCK_SIZE + elem_idx,
-        mask=d_mask,
-        other=0.0,
+    kbidx = d // K_BLOCK_SIZE
+    kelem = d - kbidx * K_BLOCK_SIZE
+    kbit = kbidx * K_CODE_BITS
+    kbyte = kbit // 8
+    kshift = kbit - kbyte * 8
+    kr0 = tl.load(KV_cache_ptr + base + kbyte, mask=mask & (kbyte < K_CODE_BYTES), other=0).to(
+        tl.int32
     )
-    if NORM_CORRECTION and not PRECOMPUTE_KEY_SCALE:
-        c_norm_sq = tl.sum(tl.where(d_mask, k_mse * k_mse, 0.0), axis=0)
-        k_mse = k_mse * (1.0 / tl.sqrt(c_norm_sq + 1e-16))
+    kr1 = tl.load(
+        KV_cache_ptr + base + kbyte + 1,
+        mask=mask & ((kbyte + 1) < K_CODE_BYTES),
+        other=0,
+    ).to(tl.int32)
+    kr2 = tl.load(
+        KV_cache_ptr + base + kbyte + 2,
+        mask=mask & ((kbyte + 2) < K_CODE_BYTES),
+        other=0,
+    ).to(tl.int32)
+    kcode = ((kr0 | (kr1 << 8) | (kr2 << 16)) >> kshift) & ((1 << K_CODE_BITS) - 1)
+    kval = tl.load(K_codebook_ptr + kcode * K_BLOCK_SIZE + kelem, mask=mask, other=0.0)
+    ks0 = tl.load(KV_cache_ptr + base + K_SCALE_OFFSET).to(tl.uint16)
+    ks1 = tl.load(KV_cache_ptr + base + K_SCALE_OFFSET + 1).to(tl.uint16)
+    kscale = (ks0 | (ks1 << 8)).to(tl.float16, bitcast=True).to(tl.float32)
 
-    n_lo = tl.load(KV_cache_ptr + slot_base + MSE_BYTES).to(tl.uint16)
-    n_hi = tl.load(KV_cache_ptr + slot_base + MSE_BYTES + 1).to(tl.uint16)
-    key_scale = (n_lo | (n_hi << 8)).to(tl.float16, bitcast=True).to(tl.float32)
-    ko_base = bid * stride_ko_b + hid * stride_ko_h + pos * stride_ko_s
-    tl.store(K_out_ptr + ko_base + d_offs, (key_scale * k_mse).to(tl.float16), mask=d_mask)
+    vbidx = d // V_BLOCK_SIZE
+    velem = d - vbidx * V_BLOCK_SIZE
+    vbit = vbidx * V_CODE_BITS
+    vbyte = vbit // 8
+    vshift = vbit - vbyte * 8
+    vr0 = tl.load(
+        KV_cache_ptr + base + V_CODES_OFFSET + vbyte,
+        mask=mask & (vbyte < V_CODE_BYTES),
+        other=0,
+    ).to(tl.int32)
+    vr1 = tl.load(
+        KV_cache_ptr + base + V_CODES_OFFSET + vbyte + 1,
+        mask=mask & ((vbyte + 1) < V_CODE_BYTES),
+        other=0,
+    ).to(tl.int32)
+    vr2 = tl.load(
+        KV_cache_ptr + base + V_CODES_OFFSET + vbyte + 2,
+        mask=mask & ((vbyte + 2) < V_CODE_BYTES),
+        other=0,
+    ).to(tl.int32)
+    vcode = ((vr0 | (vr1 << 8) | (vr2 << 16)) >> vshift) & ((1 << V_CODE_BITS) - 1)
+    vval = tl.load(V_codebook_ptr + vcode * V_BLOCK_SIZE + velem, mask=mask, other=0.0)
+    vs0 = tl.load(KV_cache_ptr + base + V_SCALE_OFFSET).to(tl.uint16)
+    vs1 = tl.load(KV_cache_ptr + base + V_SCALE_OFFSET + 1).to(tl.uint16)
+    vscale = (vs0 | (vs1 << 8)).to(tl.float16, bitcast=True).to(tl.float32)
 
-    val_base = slot_base + KPS
-    if VQB == 4:
-        vb_idx = d_offs // 2
-        vb_shift = (d_offs % 2) * 4
-        val_raw = tl.load(KV_cache_ptr + val_base + vb_idx, mask=d_mask, other=0).to(tl.int32)
-        v_idx = ((val_raw >> vb_shift) & 0xF).to(tl.float32)
-    else:
-        val_bit_off = d_offs * 3
-        val_byte_idx = val_bit_off // 8
-        val_bit_shift = val_bit_off % 8
-        raw0 = tl.load(KV_cache_ptr + val_base + val_byte_idx, mask=d_mask, other=0).to(tl.int32)
-        raw1 = tl.load(KV_cache_ptr + val_base + val_byte_idx + 1, mask=d_mask, other=0).to(
-            tl.int32
-        )
-        v_idx = (((raw0 | (raw1 << 8)) >> val_bit_shift) & 0x7).to(tl.float32)
-
-    sc_base = val_base + VAL_DATA_BYTES
-    sc_lo = tl.load(KV_cache_ptr + sc_base).to(tl.uint16)
-    sc_hi = tl.load(KV_cache_ptr + sc_base + 1).to(tl.uint16)
-    v_scale = (sc_lo | (sc_hi << 8)).to(tl.float16, bitcast=True).to(tl.float32)
-    zr_lo = tl.load(KV_cache_ptr + sc_base + 2).to(tl.uint16)
-    zr_hi = tl.load(KV_cache_ptr + sc_base + 3).to(tl.uint16)
-    v_zero = (zr_lo | (zr_hi << 8)).to(tl.float16, bitcast=True).to(tl.float32)
-    vo_base = bid * stride_vo_b + hid * stride_vo_h + pos * stride_vo_s
-    tl.store(V_out_ptr + vo_base + d_offs, (v_idx * v_scale + v_zero).to(tl.float16), mask=d_mask)
-
-
-def triton_hayatequant_store(
-    key: torch.Tensor,
-    value: torch.Tensor,
-    kv_cache: torch.Tensor,
-    slot_mapping: torch.Tensor,
-    rotation: torch.Tensor,
-    codebook: torch.Tensor,
-    hayate_block_size: int,
-    key_bits: int,
-    key_packed_size: int,
-    value_quant_bits: int,
-    key_scale_mode: str = "nc",
-) -> None:
-    """Store K/V into a TurboQuant-layout cache using Hayate key block-VQ."""
-    if hayate_block_size != 2:
-        raise ValueError("native vLLM HayateQuant currently supports block_size=2")
-    if key_bits not in (3, 4):
-        raise ValueError("native vLLM HayateQuant currently supports 3/4-bit keys")
-
-    N, H, D = key.shape
-    NH = N * H
-    block_size = kv_cache.shape[1]
-    block_d = triton.next_power_of_2(D)
-    mse_bytes = math.ceil(D * key_bits / 8)
-    val_data_bytes = math.ceil(D * value_quant_bits / 8)
-    block_val = triton.next_power_of_2(val_data_bytes)
-    block_grp = triton.next_power_of_2(D // 8) if D >= 8 else 1
-    n_key_blocks = D // hayate_block_size
-    code_bits = key_bits * hayate_block_size
-    # The cache layout is unchanged, but each store program can score many
-    # adjacent 2D blocks to reduce repeated codebook loads and launch work.
-    group_codes = _store_group_codes(code_bits, n_key_blocks)
-    n_groups = math.ceil(n_key_blocks / group_codes)
-    key_scale_id = _key_scale_mode_id(key_scale_mode)
-
-    k_flat = key.float().reshape(NH, D)
-    norms = k_flat.norm(dim=1, keepdim=True)
-    # HayateQuant codebooks are fit for unit-RMS rotated vectors.  The decode
-    # kernel applies NC scaling by normalizing the gathered code vector and
-    # multiplying by the original L2 norm, matching the HF cache path's key
-    # scale mode.  Unit-L2 normalization here would shrink the assignment input
-    # by sqrt(D) and collapses the code usage.
-    rms = k_flat.pow(2).mean(dim=1, keepdim=True).sqrt()
-    y = (k_flat @ rotation) / (rms + 1e-8)
-    # ``_store_quantized_value`` promotes each load to float32 inside Triton.
-    # Materialising a full-size float32 value tensor here only adds an eager
-    # allocation/cast and doubles input traffic before the store kernel.
-    v_flat = value.reshape(NH, D)
-    norms_flat = norms.squeeze(1).contiguous()
-    precompute_key_scale = _precompute_key_scale(key_bits, key_scale_mode)
-    direct_key_scale = _direct_key_scale(n_groups, precompute_key_scale)
-    scale_scratch = (
-        torch.zeros(NH, device=key.device, dtype=torch.float32)
-        if precompute_key_scale and not direct_key_scale
-        else norms_flat
-    )
-
-    _hq_store_key_block_vq[(NH, n_groups)](
-        y.contiguous(),
-        norms_flat,
-        scale_scratch,
-        v_flat.contiguous(),
-        codebook.contiguous(),
-        kv_cache.view(-1),
-        slot_mapping,
-        stride_cache_block=kv_cache.stride(0),
-        stride_cache_pos=kv_cache.stride(1),
-        stride_cache_head=kv_cache.stride(2),
-        D=D,
-        H=H,
-        BLOCK_SIZE=block_size,
-        BLOCK_D=block_d,
-        MSE_BYTES=mse_bytes,
-        KPS=key_packed_size,
-        VQB=value_quant_bits,
-        VAL_DATA_BYTES=val_data_bytes,
-        BLOCK_VAL=block_val,
-        HAYATE_BLOCK_SIZE=hayate_block_size,
-        HAYATE_CODE_BITS=code_bits,
-        NUM_CODEWORDS=codebook.shape[0],
-        NUM_KEY_BLOCKS=n_key_blocks,
-        GROUP_CODES=group_codes,
-        PRECOMPUTE_KEY_SCALE=1 if precompute_key_scale else 0,
-        DIRECT_KEY_SCALE=1 if direct_key_scale else 0,
-        KEY_SCALE_MODE=key_scale_id,
-        SQRT_D=math.sqrt(D),
-        BLOCK_GRP=block_grp,
-        num_warps=4,
-        num_stages=1,
-    )
-    if precompute_key_scale and not direct_key_scale:
-        _hq_write_key_scales[(NH,)](
-            norms_flat,
-            scale_scratch,
-            kv_cache.view(-1),
-            slot_mapping,
-            stride_cache_block=kv_cache.stride(0),
-            stride_cache_pos=kv_cache.stride(1),
-            stride_cache_head=kv_cache.stride(2),
-            H=H,
-            BLOCK_SIZE=block_size,
-            D=D,
-            SQRT_D=math.sqrt(D),
-            MSE_BYTES=mse_bytes,
-            KEY_SCALE_MODE=key_scale_id,
-            num_warps=1,
-            num_stages=1,
-        )
-
-
-_layout_cache: dict[tuple[int, int, int, int, int], dict[str, int]] = {}
-
-
-def _get_layout(
-    dim: int,
-    key_bits: int,
-    value_quant_bits: int,
-    key_packed_size: int,
-    hayate_block_size: int,
-) -> dict[str, int]:
-    cache_key = (dim, key_bits, value_quant_bits, key_packed_size, hayate_block_size)
-    cfg = _layout_cache.get(cache_key)
-    if cfg is None:
-        cfg = {
-            "mse_bytes": math.ceil(dim * key_bits / 8),
-            "val_data_bytes": math.ceil(dim * value_quant_bits / 8),
-            "block_d": triton.next_power_of_2(dim),
-            "code_bits": key_bits * hayate_block_size,
-        }
-        _layout_cache[cache_key] = cfg
-    return cfg
-
-
-def _canonical_key_scale_mode(mode: str | None) -> str:
-    mode = (mode or "nc").strip().lower().replace("-", "_")
-    if mode == "ub":
-        mode = "ip"
-    if mode not in {"nc", "ip"}:
-        raise ValueError("native vLLM HayateQuant currently supports key_scale_mode='nc' or 'ub'")
-    return mode
-
-
-def _key_scale_mode_id(mode: str | None) -> int:
-    return 1 if _canonical_key_scale_mode(mode) == "ip" else 0
-
-
-def _precompute_key_scale(key_bits: int, key_scale_mode: str | None = "nc") -> bool:
-    if _canonical_key_scale_mode(key_scale_mode) == "ip":
-        return True
-    mode = os.environ.get("KVCOMP_VLLM_HAYATE_PRECOMPUTE_SCALE", "auto")
-    mode = mode.strip().lower().replace("-", "_")
-    if mode in {"1", "true", "yes", "on", "always"}:
-        return True
-    if mode in {"0", "false", "no", "off", "never"}:
-        return False
-    return key_bits == 3
-
-
-def _decode_block_kv(key_bits: int) -> int:
-    mode = os.environ.get("KVCOMP_VLLM_HAYATE_BLOCK_KV", "auto")
-    mode = mode.strip().lower().replace("-", "_")
-    if mode == "auto":
-        return 16
-    block_kv = int(mode)
-    if block_kv not in {1, 2, 4, 8, 16}:
-        raise ValueError("KVCOMP_VLLM_HAYATE_BLOCK_KV must be one of 1,2,4,8,16")
-    return block_kv
-
-
-def _decode_num_warps(key_bits: int) -> int:
-    mode = os.environ.get("KVCOMP_VLLM_HAYATE_NUM_WARPS", "auto")
-    mode = mode.strip().lower().replace("-", "_")
-    if mode == "auto":
-        return 4
-    num_warps = int(mode)
-    if num_warps not in {1, 2, 4, 8}:
-        raise ValueError("KVCOMP_VLLM_HAYATE_NUM_WARPS must be one of 1,2,4,8")
-    return num_warps
+    kobase = bid * stride_ko_b + hid * stride_ko_h + pos * stride_ko_s
+    vobase = bid * stride_vo_b + hid * stride_vo_h + pos * stride_vo_s
+    tl.store(K_out_ptr + kobase + d, kval.to(tl.float32) * kscale, mask=mask)
+    tl.store(V_out_ptr + vobase + d, vval.to(tl.float32) * vscale, mask=mask)
 
 
 def triton_hayatequant_decode_attention(
@@ -756,51 +1170,93 @@ def triton_hayatequant_decode_attention(
     kv_cache: torch.Tensor,
     block_table: torch.Tensor,
     seq_lens: torch.Tensor,
-    rotation: torch.Tensor,
-    codebook: torch.Tensor,
+    key_rotation: torch.Tensor,
+    value_rotation: torch.Tensor,
+    key_codebook: torch.Tensor,
+    value_codebook: torch.Tensor,
+    recipe: HayateQuantNativeRecipe,
     scale: float,
-    key_bits: int,
-    key_packed_size: int,
-    value_quant_bits: int,
-    hayate_block_size: int,
-    norm_correction: bool = True,
-    key_scale_mode: str = "nc",
     mid_o_buf: torch.Tensor | None = None,
-    output_buf: torch.Tensor | None = None,
+    rotated_output_buf: torch.Tensor | None = None,
     lse_buf: torch.Tensor | None = None,
     buf_holder: Any = None,
     max_num_kv_splits: int = 32,
 ) -> torch.Tensor:
-    """Decode attention from a Hayate key-block-VQ cache."""
-    if hayate_block_size != 2:
-        raise ValueError("native vLLM HayateQuant currently supports block_size=2")
-    B, Hq, D = query.shape
-    Hk = kv_cache.shape[2]
-    block_size = kv_cache.shape[1]
-    kv_group_size = Hq // Hk
-    cfg = _get_layout(D, key_bits, value_quant_bits, key_packed_size, hayate_block_size)
-    precompute_key_scale = _precompute_key_scale(key_bits, key_scale_mode)
-    block_kv = _decode_block_kv(key_bits)
-    num_warps = _decode_num_warps(key_bits)
+    """Attend directly over packed HQ K/V and invert V rotation once.
 
-    q_rot = (query.float() @ rotation).contiguous()
-    num_splits = max_num_kv_splits
-    if mid_o_buf is not None and mid_o_buf.shape[0] >= B and mid_o_buf.shape[2] >= num_splits:
-        mid_o = mid_o_buf[:B, :Hq, :num_splits, :]
+    If ``v_hat_i = (s_i c_i) W_v^T``, linearity gives
+    ``sum_i a_i v_hat_i = (sum_i a_i s_i c_i) W_v^T``.  The kernel therefore
+    accumulates values in rotated space in fp32, performs the split reduction
+    in fp32, applies exactly one fp32 inverse-rotation GEMM per output vector,
+    and only then rounds to the query dtype.
+    """
+
+    bsz, hq, d = query.shape
+    hk = kv_cache.shape[2]
+    if hq % hk:
+        raise ValueError("query heads must be divisible by KV heads")
+    recipe.validate_head_dim(d)
+    layout = recipe.layout(d)
+    if kv_cache.shape[-1] != layout["slot_size_aligned"]:
+        raise ValueError("packed HQ cache layout mismatch")
+    qrot = (query.float() @ key_rotation).contiguous()
+    splits = int(max_num_kv_splits)
+    if (
+        mid_o_buf is not None
+        and mid_o_buf.dtype == torch.float32
+        and mid_o_buf.shape[0] >= bsz
+        and mid_o_buf.shape[1] >= hq
+        and mid_o_buf.shape[2] >= splits
+    ):
+        mid_o = mid_o_buf[:bsz, :hq, :splits, : d + 1]
     else:
-        mid_o = torch.empty(B, Hq, num_splits, D + 1, dtype=torch.float32, device=query.device)
+        mid_o = torch.empty(bsz, hq, splits, d + 1, device=query.device, dtype=torch.float32)
         if buf_holder is not None:
-            buf_holder._hq_mid_o_buf = mid_o
-
-    _hq_decode_stage1[(B, Hq, num_splits)](
-        q_rot,
+            buf_holder._hayate_mid_o = mid_o
+    block_d = triton.next_power_of_2(d)
+    use_b2_fast_path = (
+        recipe.key_block_size == 2
+        and recipe.value_block_size == 2
+        and recipe.key_code_bits_per_block <= 10
+        and recipe.value_code_bits_per_block <= 10
+    )
+    stage1 = _hayatequant_decode_stage1_b2 if use_b2_fast_path else _hayatequant_decode_stage1
+    block_kv = 8 if use_b2_fast_path else 16
+    stage1_num_warps = 2 if use_b2_fast_path else 4
+    common = dict(
+        NUM_KV_HEADS=hk,
+        HEAD_DIM=d,
+        PAGE_SIZE=kv_cache.shape[1],
+        NUM_KV_SPLITS=splits,
+        KV_GROUP_SIZE=hq // hk,
+        K_CODE_BITS=recipe.key_code_bits_per_block,
+        V_CODE_BITS=recipe.value_code_bits_per_block,
+        K_CODE_BYTES=layout["key_code_bytes"],
+        V_CODE_BYTES=layout["value_code_bytes"],
+        K_SCALE_OFFSET=layout["key_scale_offset"],
+        V_CODES_OFFSET=layout["value_codes_offset"],
+        V_SCALE_OFFSET=layout["value_scale_offset"],
+        ATTN_SCALE=scale,
+        BLOCK_D=block_d,
+        BLOCK_KV=block_kv,
+        num_warps=stage1_num_warps,
+        num_stages=1,
+    )
+    if stage1 is _hayatequant_decode_stage1_b2:
+        common["BLOCK_NB"] = triton.next_power_of_2(d // 2)
+    else:
+        common["K_BLOCK_SIZE"] = recipe.key_block_size
+        common["V_BLOCK_SIZE"] = recipe.value_block_size
+    stage1[(bsz, hq, splits)](
+        qrot,
         kv_cache,
         block_table,
         seq_lens,
-        codebook.contiguous(),
+        key_codebook,
+        value_codebook,
         mid_o,
-        q_rot.stride(0),
-        q_rot.stride(1),
+        qrot.stride(0),
+        qrot.stride(1),
         kv_cache.stride(0),
         kv_cache.stride(1),
         kv_cache.stride(2),
@@ -808,105 +1264,103 @@ def triton_hayatequant_decode_attention(
         mid_o.stride(0),
         mid_o.stride(1),
         mid_o.stride(2),
-        NUM_KV_HEADS=Hk,
-        HEAD_DIM=D,
-        BLOCK_SIZE=block_size,
-        NUM_KV_SPLITS=num_splits,
-        KV_GROUP_SIZE=kv_group_size,
-        MSE_BYTES=cfg["mse_bytes"],
-        KPS=key_packed_size,
-        VQB=value_quant_bits,
-        VAL_DATA_BYTES=cfg["val_data_bytes"],
-        ATTN_SCALE=scale,
-        BLOCK_D=cfg["block_d"],
-        BLOCK_KV=block_kv,
-        HAYATE_BLOCK_SIZE=hayate_block_size,
-        HAYATE_CODE_BITS=cfg["code_bits"],
-        NORM_CORRECTION=1 if norm_correction else 0,
-        PRECOMPUTE_KEY_SCALE=1 if precompute_key_scale else 0,
-        num_warps=num_warps,
-        num_stages=1,
+        **common,
     )
-
-    out_dtype = query.dtype
-    if output_buf is not None and output_buf.shape[0] >= B and output_buf.dtype == out_dtype:
-        output = output_buf[:B, :Hq, :D]
+    if (
+        rotated_output_buf is not None
+        and rotated_output_buf.dtype == torch.float32
+        and rotated_output_buf.shape[0] >= bsz
+        and rotated_output_buf.shape[1] >= hq
+    ):
+        rotated = rotated_output_buf[:bsz, :hq, :d]
     else:
-        output = torch.empty(B, Hq, D, dtype=out_dtype, device=query.device)
+        rotated = torch.empty(bsz, hq, d, device=query.device, dtype=torch.float32)
         if buf_holder is not None:
-            buf_holder._hq_output_buf = output
-    if lse_buf is not None and lse_buf.shape[0] >= B:
-        lse = lse_buf[:B, :Hq]
+            buf_holder._hayate_rotated_output = rotated
+    if lse_buf is not None and lse_buf.shape[0] >= bsz and lse_buf.shape[1] >= hq:
+        lse = lse_buf[:bsz, :hq]
     else:
-        lse = torch.empty(B, Hq, dtype=torch.float32, device=query.device)
+        lse = torch.empty(bsz, hq, device=query.device, dtype=torch.float32)
         if buf_holder is not None:
-            buf_holder._hq_lse_buf = lse
-
-    _fwd_kernel_stage2[(B, Hq)](
+            buf_holder._hayate_lse = lse
+    _fwd_kernel_stage2[(bsz, hq)](
         mid_o,
-        output,
+        rotated,
         lse,
         seq_lens,
         mid_o.stride(0),
         mid_o.stride(1),
         mid_o.stride(2),
-        output.stride(0),
-        output.stride(1),
+        rotated.stride(0),
+        rotated.stride(1),
         lse.stride(0),
-        NUM_KV_SPLITS=num_splits,
-        BLOCK_DV=cfg["block_d"],
-        Lv=D,
+        NUM_KV_SPLITS=splits,
+        BLOCK_DV=block_d,
+        Lv=d,
         num_warps=4,
         num_stages=2,
     )
-    return output
+    return (rotated @ value_rotation.t()).to(query.dtype)
 
 
-def triton_hayatequant_full_dequant_kv(
+def triton_hayatequant_dequant_kv(
     kv_cache: torch.Tensor,
     block_table: torch.Tensor,
-    codebook: torch.Tensor,
+    key_codebook: torch.Tensor,
+    value_codebook: torch.Tensor,
+    key_rotation: torch.Tensor,
+    value_rotation: torch.Tensor,
+    recipe: HayateQuantNativeRecipe,
     k_out: torch.Tensor,
     v_out: torch.Tensor,
-    key_bits: int,
-    key_packed_size: int,
-    value_quant_bits: int,
-    hayate_block_size: int,
-    norm_correction: bool = True,
-    key_scale_mode: str = "nc",
 ) -> None:
-    """Bulk dequantize cached K/V for large continuation prefill."""
-    B, Hk, alloc_len, D = k_out.shape
-    block_size = kv_cache.shape[1]
-    cfg = _get_layout(D, key_bits, value_quant_bits, key_packed_size, hayate_block_size)
-    precompute_key_scale = _precompute_key_scale(key_bits, key_scale_mode)
-    _hq_full_dequant_kv[(alloc_len, B * Hk)](
+    """Bulk dequantize a packed cache, inverse rotating in fp32 before cast."""
+
+    bsz, hk, alloc_len, d = k_out.shape
+    if v_out.shape != k_out.shape:
+        raise ValueError("k_out and v_out must have matching [B,H,S,D] shapes")
+    layout = recipe.layout(d)
+    krot = torch.empty_like(k_out, dtype=torch.float32)
+    vrot = torch.empty_like(v_out, dtype=torch.float32)
+    _hayatequant_dequant_kv[(alloc_len, bsz * hk)](
         kv_cache,
         block_table,
-        codebook.contiguous(),
-        k_out,
-        v_out,
-        k_out.stride(0),
-        k_out.stride(1),
-        k_out.stride(2),
-        v_out.stride(0),
-        v_out.stride(1),
-        v_out.stride(2),
+        key_codebook,
+        value_codebook,
+        krot,
+        vrot,
+        krot.stride(0),
+        krot.stride(1),
+        krot.stride(2),
+        vrot.stride(0),
+        vrot.stride(1),
+        vrot.stride(2),
         kv_cache.stride(0),
         kv_cache.stride(1),
         kv_cache.stride(2),
         block_table.stride(0),
-        HEAD_DIM=D,
-        BLOCK_SIZE=block_size,
-        NUM_KV_HEADS=Hk,
-        MSE_BYTES=cfg["mse_bytes"],
-        KPS=key_packed_size,
-        VQB=value_quant_bits,
-        VAL_DATA_BYTES=cfg["val_data_bytes"],
-        BLOCK_D=cfg["block_d"],
-        HAYATE_BLOCK_SIZE=hayate_block_size,
-        HAYATE_CODE_BITS=cfg["code_bits"],
-        NORM_CORRECTION=1 if norm_correction else 0,
-        PRECOMPUTE_KEY_SCALE=1 if precompute_key_scale else 0,
+        HEAD_DIM=d,
+        PAGE_SIZE=kv_cache.shape[1],
+        NUM_KV_HEADS=hk,
+        K_BLOCK_SIZE=recipe.key_block_size,
+        V_BLOCK_SIZE=recipe.value_block_size,
+        K_CODE_BITS=recipe.key_code_bits_per_block,
+        V_CODE_BITS=recipe.value_code_bits_per_block,
+        K_CODE_BYTES=layout["key_code_bytes"],
+        V_CODE_BYTES=layout["value_code_bytes"],
+        K_SCALE_OFFSET=layout["key_scale_offset"],
+        V_CODES_OFFSET=layout["value_codes_offset"],
+        V_SCALE_OFFSET=layout["value_scale_offset"],
+        BLOCK_D=triton.next_power_of_2(d),
         num_warps=4,
+        num_stages=1,
     )
+    k_out.copy_((krot @ key_rotation.t()).to(k_out.dtype))
+    v_out.copy_((vrot @ value_rotation.t()).to(v_out.dtype))
+
+
+__all__ = [
+    "triton_hayatequant_store",
+    "triton_hayatequant_decode_attention",
+    "triton_hayatequant_dequant_kv",
+]

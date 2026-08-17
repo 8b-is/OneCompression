@@ -1,15 +1,9 @@
-"""Fit and save the high-budget data-free block-VQ codebook artifacts.
+"""Regenerate HayateQuant's shipped data-free block-VQ codebooks.
 
-The online fit in :func:`..vq.lloyd_vq_gaussian_block` uses a budget sized
-for acceptable first-encode latency (100k samples, 25 iters, 4 restarts).
-Fitting once, offline, with ~8-16x that budget measurably improves the
-codebook on the exact source law it is fit to (block distortion -1.4% at the
-2-bit ``(b=4, K=256)`` point and -2.6% at the 3-bit ``(b=4, K=4096)`` point;
-``ichikawa_works/kvcomp_hayatequant/bench_rvq_gain.py``) at zero runtime
-cost.  This script fits every ``(block_size, K)`` pair the codec's default
-configurations can resolve and saves them as plain fp32 tensors
-``gauss_b{b}_k{K}.pt`` next to this file; ``lloyd_vq_gaussian_block``
-auto-prefers a matching artifact over the online fit.
+The canonical method fixes the vector block size to two and supports average
+rates 2, 3, and 4 bits per element. Those rates require five Gaussian
+codebooks: K=4, 16, 64, 256, and 1024. This utility fits exactly that audited set
+and writes plain fp32 tensors named ``gauss_b2_k{K}.pt``.
 
 Still 100% data-free: the fit sees only synthetic ``N(0,1)`` samples (the
 same law as the online fit), never any real KV data.  Committing the
@@ -20,10 +14,10 @@ online fits can differ in the last ulp; a fixed artifact cannot).
 Run (GPU strongly recommended for large K):
     python -m onecomp.kvcomp.codec.hayate.codebooks.fit_codebooks
 
-To add missing tracked artifacts without replacing existing files::
+To regenerate selected artifacts into a separate directory::
 
     python -m onecomp.kvcomp.codec.hayate.codebooks.fit_codebooks \
-      --target 2:4 --target 2:1024
+      --output-dir /path/to/output --target 2:4 --target 2:16
 """
 
 from __future__ import annotations
@@ -35,18 +29,13 @@ import torch
 
 from ..vq import _kmeans_best_of, _gaussian_block_samples
 
-# Every (block_size, K) the default configs resolve to:
-#   1-bit: b=8 K=256 | 2-bit: b=4 K=256, b=2 K=16 | 3-bit: b=2 K=64,
-#   b=4 K=4096 (max_codebook_bits=12) | 4-bit: b=2 K=256.
+# Every (block_size, K) required by the canonical rates 2, 3, and 4.
 _TARGETS = (
     (2, 4),
     (2, 16),
     (2, 64),
     (2, 256),
     (2, 1024),
-    (4, 256),
-    (4, 4096),
-    (8, 256),
 )
 
 # ~8-16x the online budget; n is capped per-K so the K-means score matrix

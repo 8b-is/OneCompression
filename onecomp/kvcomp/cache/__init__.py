@@ -15,18 +15,9 @@ from .taper_cache import (
     step_down_bits,
 )
 from .block_taper_cache import BlockTaperKVCache, block_taper_bits, fake_quant_blocks
-from .hayatequant_taper_cache import (
-    HayateQuantBlockTaperKVCache,
-    HayateQuantTaperKVCache,
-)
-from .turbotaper_cache import TurboTaperCache
 from .pmkvq_cache import PMKVQCache
 from .streaming_evict import StreamingLLMEvictCache
 from .role_cache import RoleKVCache
-
-# Compatibility aliases for the pre-audit shortened class names.
-HayateTaperKVCache = HayateQuantTaperKVCache
-HayateBlockTaperKVCache = HayateQuantBlockTaperKVCache
 
 __all__ = [
     "CompressedDynamicCache",
@@ -42,13 +33,8 @@ __all__ = [
     "apply_byte_budget",
     "step_down_bits",
     "BlockTaperKVCache",
-    "HayateTaperKVCache",
-    "HayateBlockTaperKVCache",
-    "HayateQuantTaperKVCache",
-    "HayateQuantBlockTaperKVCache",
     "block_taper_bits",
     "fake_quant_blocks",
-    "TurboTaperCache",
     "PMKVQCache",
     "StreamingLLMEvictCache",
     "RoleKVCache",

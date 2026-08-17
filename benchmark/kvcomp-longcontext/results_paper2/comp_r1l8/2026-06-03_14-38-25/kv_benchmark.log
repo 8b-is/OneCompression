@@ -1,2 +1,0 @@
-[2026-06-03 14:38:58,645][onecomp.kvcomp.recipe.pmkvq_calib][INFO] - PM-KVQ block allocation: 32 layers, bits used=[2, 4], avg=2.50
-[2026-06-03 14:38:58,763][onecomp.kvcomp.recipe.pmkvq_calib][INFO] - PM-KVQ channel reparam: calibrated 32 layers (pos_scale=4)

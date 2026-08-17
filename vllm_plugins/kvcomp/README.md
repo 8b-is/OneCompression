@@ -1,68 +1,66 @@
 # KVComp vLLM backends
 
-This directory contains vLLM KV-cache integration for HayateQuant and TaperKV.
-Model weights are never stored here: pass a local model path or Hugging Face
-identifier to the benchmark drivers.
+This directory contains the vLLM integration for the two independent proposal
+methods, HayateQuant and TaperKV. Model paths and result paths are always
+provided by the caller.
 
-## Backend split
+## HayateQuant
 
-* `hayate_full_native.py` and `hayate_full_triton.py` implement the faithful
-  packed fixed-rate HQ key and value layout. `vllm_mode="full_native"` selects
-  it from a saved config. Rates 3 and 4 are supported by the current upstream
-  vLLM TurboQuant cache specifications; rate 2 fails closed.
-* `hayate_native.py`, `hayate_triton.py`, and `hayate_triton_config.py` are the
-  historical key-block-VQ/scalar-value hybrid. It is not faithful full HQ.
-* `taper_reference.py` reproduces TaperKV fake-quant semantics in a model-dtype
-  paged cache. It is suitable for quality/parity checks, not packed-memory or
-  throughput claims. Prefix caching, CUDA graphs, cascade attention, and DCP
-  are disabled or rejected because this backend mutates resident pages. The
-  former `taper_native.py` module is retained only as an import-compatibility shim.
-* A saved HayateQuant codec plus a `taperkv` or `block_taperkv` policy composes
-  the methods in one defined order: HayateQuant is applied once to arriving KV,
-  then TaperKV manages age-dependent resident precision.
+`hayate_config.py` defines the fixed average-rate recipes: K3/V1, K4/V2, and
+K5/V3 bits per coordinate at rates 2, 3, and 4. `hayate_native.py` owns the
+packed slot layout; `hayate_triton.py` contains the fused K/V store and packed
+attention kernels. There is no secondary mode name or hybrid compatibility
+recipe.
 
-`mapping.py` fails closed when a recipe cannot be represented. It never falls
-back from faithful full HQ to the hybrid, or from TaperKV to an uncompressed
-cache. Full HQ requires an explicit `exact` or frozen `lut` assignment mode;
-the latter must serialize `lut_bins` and `lut_candidates`. Shape-dependent
-`auto` assignment is rejected for cross-backend parity.
+`mapping.py` accepts only `name`, `bits`, optional `skip_layers`, and an absent
+calibration artifact. `residual_window` must be zero. Unsupported fields fail
+before engine construction. The upstream TurboQuant dtype is only a registry
+carrier: the cache-spec hook replaces the slot width, and the HayateQuant
+backend replaces storage and attention.
 
-## Smoke checks
+Only serialized `skip_layers` are honored. OneComp disables vLLM's implicit
+TurboQuant first/last-two-layer protection before engine configuration so an
+empty list means all model layers for both HayateQuant and TurboQuant. The
+benchmark fails unless its custom-backend evidence covers every model layer.
 
-From the repository root, run:
+## TaperKV
 
-```bash
-.venv/bin/python -m pytest -q tests/vllm_plugins/kvcomp
-```
+`taper_config.py` validates independent key and value ladders.
+`taper_backend.py` regrades request pages on GPU and applies the resulting
+values before attention. It currently retains model-dtype physical pages, so
+generation and semantic quality are valid but packed-memory savings are not.
+Prefix caching is disabled because sharing mutable aged pages would violate
+request isolation. Token TaperKV uses a fused quantize-and-scatter update and
+a fixed-shape, sequence-length-aligned boundary regrade, so vLLM's CUDA-graph
+and `torch.compile` paths remain enabled. Block TaperKV retains its eager
+whole-page cadence. Cascade attention and decode context parallelism fail
+closed.
 
-GPU-dependent tests are skipped when CUDA is absent. CPU tests cover config,
-registration, page mutation, and one-time HayateQuant composition contracts.
+TaperKV is standalone. A serialized TaperKV policy together with any codec or
+selector is rejected rather than being reported as either proposal.
 
-Run all three generation paths in isolated fresh processes with:
+## Verification
 
-```bash
-.venv/bin/python benchmark/kvcomp-codec/run_vllm_inference_smoke_suite.py \
-  --model /path/to/local/model \
-  --output-dir /path/to/new/receipt-directory
-```
-
-The suite writes child logs, one receipt per path, source/package provenance,
-a fail-closed `suite.json`, and a validated `vllm_inference_smoke.tex`. It also isolates FlashInfer's generated cache
-inside the output directory, so stale absolute paths from another environment
-cannot contaminate the smoke. The suite disables optional DeepGEMM warmup;
-these checks validate KV-cache integration and generation, not weight-GEMM
-performance. The receipt directory must be new or empty; the runner refuses to
-mix a new run with stale artifacts.
-
-The table can also be regenerated independently from the immutable suite:
+Run CPU/config tests with the vLLM environment:
 
 ```bash
-.venv/bin/python benchmark/kvcomp-codec/render_vllm_inference_smoke_latex.py \
-  --suite /path/to/receipt-directory/suite.json \
-  --output /path/to/generated/kvcomp_vllm_smoke.tex
+.venv-vllm/bin/python -m pytest -q tests/vllm_plugins/kvcomp
 ```
 
-The renderer rejects missing/failed phases, mismatched model identities,
-non-faithful HQ contracts, or TaperKV rows presented as packed evidence. The
-result is explicitly implementation-smoke evidence, never a quality, physical
-memory, or throughput claim.
+Run each GPU path in a fresh process and store all evidence outside Git:
+
+```bash
+.venv-vllm/bin/python benchmark/kvcomp-codec/vllm_benchmark.py \
+  --model /path/to/local/model --method hayatequant --rate 3 \
+  --output /path/to/results/hayatequant-r3.json
+
+.venv-vllm/bin/python benchmark/kvcomp-codec/vllm_benchmark.py \
+  --model /path/to/local/model --method taperkv \
+  --output /path/to/results/taperkv.json
+```
+
+The driver requires backend-emitted runtime evidence for both custom paths.
+HayateQuant evidence must identify the fused CUDA store, packed `uint8` cache,
+packed decode, and every model layer. TaperKV results must continue to identify
+their physical cache as model dtype until a variable-width page allocator is
+implemented and measured.

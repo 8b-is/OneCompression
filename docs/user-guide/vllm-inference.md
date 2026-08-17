@@ -37,32 +37,35 @@ Supported native TurboQuant presets are:
 | 3 | 4 | `turboquant_k3v4_nc` |
 | 3 | 3 | `turboquant_3bit_nc` |
 
-HayateQuant has two explicit native paths:
+HayateQuant has one canonical packed K/V backend. Average rates 2, 3, and 4
+map to the fixed K3/V1, K4/V2, and K5/V3 per-coordinate rates (K6/V2,
+K8/V4, and K10/V6 per two-coordinate block). A saved recipe must
+contain the canonical `hayatequant` codec, `bits`, optional `skip_layers`, and
+`residual_window=0`; old mode names and component knobs are rejected. Learned
+calibration artifacts currently remain on the Hugging Face path.
 
-| Mode | K/V implementation | Claim scope |
-|------|--------------------|-------------|
-| `full_native` | Faithful packed fixed-HQ block-VQ for both K and V | Quality, memory, and serving measurements at average rate 3 or 4 |
-| `native` | HayateQuant block-VQ keys plus scalar TurboQuant values | Compatibility/deployment ablation only; not full HayateQuant |
+TaperKV is a distinct proposal and must be configured without another codec or
+selector. Its current vLLM backend performs the age-dependent schedule on GPU,
+but physical pages remain FP16/BF16. It supports generation and semantic
+quality checks; it is not evidence of packed memory savings. Prefix caching is
+disabled because mutable aged pages cannot be shared safely. Token TaperKV's
+fused quantize-and-scatter update and fixed-shape, sequence-length-aligned
+boundary regrade are CUDA-graph safe, so CUDA graphs and `torch.compile` remain
+enabled. Block TaperKV retains an eager whole-page cadence. Cascade attention
+and decode context parallelism are rejected.
 
-Set `codec.vllm_mode="full_native"`, `encoder="exact"` (or an explicitly
-frozen `lut` recipe with both `lut_bins` and `lut_candidates` serialized), and
-`residual_window=0` in the saved KV config. Unsupported rates or knobs fail
-before engine construction rather than selecting a similar but different cache.
-
-TaperKV uses a separate semantic/reference backend. It retains vLLM's
-FP16/BF16 paged allocation and applies the age ladder before attention, so its
-outputs may be used for generation and parity checks but not packed-memory or
-throughput claims. A HayateQuant codec can be combined with a TaperKV policy;
-HayateQuant is applied exactly once to each arriving KV vector before TaperKV.
-This mutable-page backend forces eager execution and disables prefix caching,
-and rejects cascade attention and decode context parallelism.
-
-The standalone combined smoke launcher is:
+Use the isolated benchmark driver for an end-to-end check. It creates a
+temporary model-config overlay, leaves the source checkpoint unchanged, and
+writes backend runtime evidence next to the selected output file:
 
 ```bash
-python benchmark/kvcomp-codec/taperkv_vllm_reference_smoke.py \
-  --model /models/Qwen3-0.6B --output /tmp/hayate_taper.json \
-  --policy block_taperkv --hayate-bits 3 --hayate-encoder exact
+python benchmark/kvcomp-codec/vllm_benchmark.py \
+  --model /path/to/local/model --method hayatequant --rate 3 \
+  --output /path/to/results/hayatequant-r3.json
+
+python benchmark/kvcomp-codec/vllm_benchmark.py \
+  --model /path/to/local/model --method taperkv \
+  --output /path/to/results/taperkv.json
 ```
 
 !!! warning "Rotation-preprocessed models are not supported"

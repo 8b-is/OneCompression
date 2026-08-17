@@ -10,8 +10,10 @@ from vllm_plugins.kvcomp.mapping import (
 )
 from vllm_plugins.kvcomp.native_turboquant import (
     TURBOQUANT_PRESETS,
+    disable_vllm_implicit_turboquant_boundary_skip,
     resolve_turboquant_preset,
     turboquant_engine_kwargs,
+    vllm_implicit_turboquant_boundary_skip_disabled,
 )
 from vllm_plugins.kvcomp.vllm_plugin import (
     apply_to_engine_args,
@@ -23,10 +25,12 @@ from vllm_plugins.kvcomp.vllm_plugin import (
 __all__ = [
     "KVCompVLLMPlan",
     "TURBOQUANT_PRESETS",
+    "disable_vllm_implicit_turboquant_boundary_skip",
     "engine_kwargs_from_kv_config",
     "plan_from_kv_config",
     "resolve_turboquant_preset",
     "turboquant_engine_kwargs",
+    "vllm_implicit_turboquant_boundary_skip_disabled",
     "apply_to_engine_args",
     "plan_for_model",
     "read_kv_compression_config",

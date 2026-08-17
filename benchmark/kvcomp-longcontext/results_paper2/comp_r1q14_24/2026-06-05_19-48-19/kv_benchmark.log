@@ -1,4 +1,0 @@
-[2026-06-05 19:49:12,859][onecomp.kvcomp.recipe.pmkvq_calib][INFO] - PM-KVQ block allocation: 48 layers, bits used=[2, 4, 8], avg=3.29
-[2026-06-05 19:49:13,043][onecomp.kvcomp.recipe.pmkvq_calib][INFO] - PM-KVQ channel reparam: calibrated 41 layers (pos_scale=4)
-[2026-06-05 19:49:13,056][datasets.load][WARNING] - Using the latest cached version of the dataset since AI-MO/aimo-validation-aime couldn't be found on the Hugging Face Hub (offline mode is enabled).
-[2026-06-05 19:49:13,063][datasets.packaged_modules.cache.cache][WARNING] - Found the latest cached dataset configuration 'default' at /lustre/home/frj/yuma-ichikawa/.cache/huggingface/datasets/AI-MO___aimo-validation-aime/default/0.0.0/13f9e12f613e720c2a2b2f345dd04b998a29494d (last modified on Mon Jun  1 19:34:47 2026).

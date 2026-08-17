@@ -213,14 +213,6 @@ class CompressedDynamicCache(DynamicCache):
             "runtime": copy.deepcopy(runtime),
         }
 
-    def get_adaptive_hq_provenance(self) -> dict:
-        """Convenience accessor for Adaptive HQ's cache-local audit record."""
-        provenance = self.get_codec_runtime_provenance()
-        runtime = provenance["runtime"]
-        if runtime and runtime.get("kind") != "adaptive_hq":
-            raise TypeError("installed codec does not expose Adaptive HQ provenance")
-        return provenance
-
     def update(self, key_states, value_states, layer_idx, *args, **kwargs):
         # Defensive guard for callers that replace/append cache layers after
         # construction. The normal configured path is rejected in ``__init__``

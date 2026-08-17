@@ -1,168 +1,0 @@
-==============================
-TurboQuant paper benchmark
-Model: /lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct
-Started: Mon Jun  1 21:09:23 JST 2026
-==============================
-model_path: /lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct
-device: cuda:0
-dtype: bfloat16
-attn_implementation: sdpa
-output_dir: /lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_turboquant
-methods:
-- FullKV
-- Uniform-INT4
-- Uniform-INT2
-- KIVI-INT2
-- StreamingLLM
-- TurboQuant-4bit
-- TurboQuant-3.5bit
-- TurboQuant-3bit
-- TurboQuant-2.5bit
-- TurboQuant-2bit
-sink_tokens: 4
-recent_tokens: 64
-requant_stride: 16
-target_mem: 0.27
-uniform_bits:
-- 4
-- 2
-turboquant_variants:
-- label: TurboQuant-4bit
-  bits: 4
-  dist: beta
-- label: TurboQuant-3.5bit
-  bits: 3
-  n_outlier: 32
-  outlier_bits: 4
-  dist: beta
-- label: TurboQuant-3bit
-  bits: 3
-  dist: beta
-- label: TurboQuant-2.5bit
-  bits: 2
-  n_outlier: 32
-  outlier_bits: 3
-  dist: beta
-- label: TurboQuant-2bit
-  bits: 2
-  dist: beta
-kivi_bits:
-- 2
-skip_outliers: true
-outlier_ratio: 50.0
-thinkv:
-  group_size: 16
-  precision:
-    R: 4
-    E: 4
-    T: 2
-  auto_configure: false
-  calib_max_new: 200
-  capture_long: false
-pmkvq:
-  key_bits: 8
-  value_bits: 4
-  final_bits: 2
-  key_final_bits: 4
-  ladder_span: 256
-  block_allocation: false
-  channel_reparam: false
-  bit_options:
-  - 2
-  - 4
-  - 8
-  avg_bit_budget: null
-  pos_scale: 4
-taperkv:
-  key_bits: 8
-  value_bits: 4
-  b_min: 4
-  b_min_value: 2
-taperkv_sweep:
-- label: TaperKV-aggr
-  key_bits: 4
-  value_bits: 2
-  b_min: 2
-  b_min_value: 2
-  recent_tokens: 32
-- label: TaperKV-mid
-  key_bits: 6
-  value_bits: 3
-  b_min: 2
-  b_min_value: 2
-  recent_tokens: 48
-context_lens:
-- 4096
-- 8192
-- 16384
-depths:
-- 0.1
-- 0.25
-- 0.5
-- 0.75
-- 0.9
-seeds: 3
-max_new_needle: 32
-run_ruler: true
-ruler_keys: 4
-ruler_seeds: 5
-run_needle: true
-run_gsm8k: false
-gsm8k_limit: 50
-max_new_reason: 1024
-run_math: false
-math_limit: 50
-max_new_math: 3072
-run_longbench: true
-longbench_tasks: []
-longbench_max_length: 7500
-longbench_limit: 20
-run_ppl: true
-ppl_max_length: 4096
-ppl_stride: 2048
-ppl_windows: 16
-
-Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 1/291 [00:00<01:46,  2.73it/s]Loading weights:   1%|          | 2/291 [00:00<01:48,  2.66it/s]Loading weights:   2%|▏         | 6/291 [00:00<00:33,  8.56it/s]Loading weights:   5%|▍         | 14/291 [00:01<00:12, 22.01it/s]Loading weights:   7%|▋         | 21/291 [00:01<00:09, 29.75it/s]Loading weights:  11%|█         | 31/291 [00:01<00:05, 43.62it/s]Loading weights:  13%|█▎        | 37/291 [00:01<00:05, 46.20it/s]Loading weights:  15%|█▍        | 43/291 [00:01<00:05, 43.18it/s]Loading weights:  18%|█▊        | 51/291 [00:01<00:05, 47.15it/s]Loading weights:  20%|█▉        | 57/291 [00:01<00:04, 49.79it/s]Loading weights:  23%|██▎       | 67/291 [00:01<00:03, 60.16it/s]Loading weights:  25%|██▌       | 74/291 [00:02<00:03, 60.51it/s]Loading weights:  28%|██▊       | 81/291 [00:02<00:03, 55.09it/s]Loading weights:  30%|██▉       | 87/291 [00:02<00:03, 52.92it/s]Loading weights:  33%|███▎      | 95/291 [00:02<00:03, 57.63it/s]Loading weights:  35%|███▍      | 101/291 [00:02<00:04, 46.66it/s]Loading weights:  39%|███▉      | 113/291 [00:02<00:02, 61.33it/s]Loading weights:  41%|████      | 120/291 [00:02<00:03, 51.73it/s]Loading weights:  45%|████▍     | 130/291 [00:03<00:02, 55.18it/s]Loading weights:  48%|████▊     | 140/291 [00:03<00:02, 63.00it/s]Loading weights:  51%|█████     | 148/291 [00:03<00:02, 54.48it/s]Loading weights:  53%|█████▎    | 154/291 [00:03<00:02, 49.76it/s]Loading weights:  57%|█████▋    | 167/291 [00:03<00:01, 64.89it/s]Loading weights:  60%|██████    | 175/291 [00:03<00:01, 60.72it/s]Loading weights:  63%|██████▎   | 184/291 [00:04<00:01, 55.16it/s]Loading weights:  67%|██████▋   | 194/291 [00:04<00:01, 57.87it/s]Loading weights:  70%|██████▉   | 203/291 [00:04<00:01, 62.79it/s]Loading weights:  72%|███████▏  | 210/291 [00:04<00:01, 57.29it/s]Loading weights:  76%|███████▌  | 220/291 [00:04<00:01, 64.80it/s]Loading weights:  78%|███████▊  | 227/291 [00:04<00:00, 64.06it/s]Loading weights:  80%|████████  | 234/291 [00:04<00:01, 45.31it/s]Loading weights:  84%|████████▍ | 244/291 [00:05<00:00, 50.30it/s]Loading weights:  88%|████████▊ | 257/291 [00:05<00:00, 64.87it/s]Loading weights:  91%|█████████ | 265/291 [00:05<00:00, 56.43it/s]Loading weights:  93%|█████████▎| 272/291 [00:05<00:00, 53.33it/s]Loading weights:  98%|█████████▊| 284/291 [00:05<00:00, 64.94it/s]Loading weights: 100%|██████████| 291/291 [00:05<00:00, 50.67it/s]
-  [outlier] skip_layers (all quant methods) = []
-
-===== FullKV =====
-  needle: {'accuracy': 1.0, 'mem_fraction': 1.0, 'by_length': {4096: 1.0, 8192: 1.0, 16384: 1.0}, 'n': 45}
-  ruler: {'accuracy': 1.0, 'mem_fraction': 1.0, 'by_length': {4096: 1.0, 8192: 1.0, 16384: 1.0}, 'n': 15}
-[2026-06-01 21:10:16,398][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 21:10:16,586][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
-Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
-[2026-06-01 21:10:16,588][huggingface_hub.utils._http][WARNING] - Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
-    [LongBench-E] qasper: 12.98 (n=20)
-[2026-06-01 21:20:23,531][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 21:20:23,712][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
-    [LongBench-E] multifieldqa_en: 24.77 (n=20)
-[2026-06-01 21:24:50,698][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 21:24:50,878][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
-    [LongBench-E] hotpotqa: 14.38 (n=20)
-[2026-06-01 21:26:33,705][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 21:26:33,886][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
-    [LongBench-E] 2wikimqa: 17.73 (n=20)
-[2026-06-01 21:27:51,583][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 21:27:51,757][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
-    [LongBench-E] gov_report: 18.86 (n=20)
-[2026-06-01 21:38:16,477][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 21:38:16,655][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
-    [LongBench-E] multi_news: 14.90 (n=20)
-[2026-06-01 21:46:53,044][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 21:46:53,222][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
-    [LongBench-E] trec: 40.00 (n=20)
-[2026-06-01 21:47:30,020][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 21:47:30,261][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
-    [LongBench-E] triviaqa: 21.51 (n=20)
-[2026-06-01 21:48:03,788][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 21:48:03,962][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
-    [LongBench-E] samsum: 14.86 (n=20)
-[2026-06-01 21:49:28,644][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 21:49:28,822][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
-    [LongBench-E] passage_count: 25.00 (n=20)
-[2026-06-01 21:49:56,265][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 21:49:56,463][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
-    [LongBench-E] passage_retrieval_en: 80.00 (n=20)
-[2026-06-01 21:50:20,376][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 21:50:20,555][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip "HTTP/1.1 302 Found"
-[2026-06-01T21:51:12.822] error: *** JOB 45710 ON kagura-gpu06 CANCELLED AT 2026-06-01T21:51:12 DUE to SIGNAL Terminated ***

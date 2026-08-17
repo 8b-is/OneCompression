@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import math
 from dataclasses import dataclass
 from types import SimpleNamespace
@@ -17,7 +16,6 @@ from onecomp.kvcomp.cache._graded_base import GradedQuantCache
 from onecomp.kvcomp.cache.compressed_cache import CompressedDynamicCache
 from onecomp.kvcomp.cache.streaming_evict import StreamingLLMEvictCache
 from onecomp.kvcomp.cache.thinkv_cache import ThinKVCache
-from onecomp.kvcomp.codec.hayate.codec import ADAPTIVE_HQ_POLICY_VERSION
 from onecomp.kvcomp.eval._teacher_forcing import causal_teacher_forced_logits
 from onecomp.kvcomp.eval.compression_accounting import (
     aggregate_compression_sufficient_statistics,
@@ -178,13 +176,11 @@ def test_exact_memory_fraction_is_ratio_of_bit_sums_not_mean_of_ratios():
             "compression_aggregation": "exact_cache_bit_counters",
             "compression_fp16_bits": 100,
             "compression_stored_bits": 50,
-            "adaptive_hq_runtime": None,
         },
         {
             "compression_aggregation": "exact_cache_bit_counters",
             "compression_fp16_bits": 900,
             "compression_stored_bits": 90,
-            "adaptive_hq_runtime": None,
         },
     ]
     statistics = aggregate_compression_sufficient_statistics(records)
@@ -192,83 +188,6 @@ def test_exact_memory_fraction_is_ratio_of_bit_sums_not_mean_of_ratios():
     assert fraction == pytest.approx(140 / 1000)
     assert fraction != pytest.approx((0.5 + 0.1) / 2)
     assert mode == "sum_stored_bits_over_sum_fp16_bits"
-
-
-def _valid_adaptive_cache_runtime() -> dict:
-    return {
-        "kind": "adaptive_hq",
-        "schema_version": 1,
-        "policy_version": ADAPTIVE_HQ_POLICY_VERSION,
-        "aggregate": {
-            "encoded_updates": 2,
-            "encoded_tokens": 3,
-            "selector_bits_total": 2,
-            "selector_incremental_stored_bits_total": 0,
-            "selector_carrier_version": "value_scale_fp16_fraction_lsb_v1",
-            "split_histogram": {
-                "5:3": {
-                    "pair": [5, 3],
-                    "updates": 2,
-                    "tokens": 3,
-                    "vectors": 7,
-                }
-            },
-        },
-    }
-
-
-def test_adaptive_cache_runtime_accepts_only_exact_current_ledger():
-    runtime = _valid_adaptive_cache_runtime()
-    cache = SimpleNamespace(
-        fp16_bits=1024,
-        stored_bits=512,
-        get_adaptive_hq_provenance=lambda: {"runtime": runtime},
-    )
-    record = cache_compression_sufficient_statistics(cache)
-    assert record["adaptive_hq_runtime"] == {
-        "schema_version": 1,
-        "policy_version": ADAPTIVE_HQ_POLICY_VERSION,
-        **runtime["aggregate"],
-    }
-    combined = aggregate_compression_sufficient_statistics([record, record])
-    assert combined["adaptive_hq_runtime"]["encoded_updates"] == 4
-    assert combined["adaptive_hq_runtime"]["selector_bits_total"] == 4
-    assert combined["adaptive_hq_runtime"]["split_histogram"]["5:3"] == {
-        "pair": [5, 3],
-        "updates": 4,
-        "tokens": 6,
-        "vectors": 14,
-    }
-
-
-@pytest.mark.parametrize(
-    ("path", "bad_value"),
-    [
-        (("policy_version",), "fabricated-policy"),
-        (("aggregate", "selector_carrier_version"), "fabricated-carrier"),
-        (("aggregate", "selector_bits_total"), 1),
-        (("aggregate", "encoded_updates"), True),
-        (("aggregate", "encoded_tokens"), True),
-        (("aggregate", "split_histogram", "5:3", "updates"), 0),
-        (("aggregate", "split_histogram", "5:3", "tokens"), 0),
-        (("aggregate", "split_histogram", "5:3", "vectors"), 0),
-        (("aggregate", "split_histogram", "5:3", "updates"), 1),
-        (("aggregate", "split_histogram", "5:3", "tokens"), 2),
-    ],
-)
-def test_adaptive_cache_runtime_rejects_fabricated_or_inconsistent_ledger(path, bad_value):
-    runtime = copy.deepcopy(_valid_adaptive_cache_runtime())
-    target = runtime
-    for key in path[:-1]:
-        target = target[key]
-    target[path[-1]] = bad_value
-    cache = SimpleNamespace(
-        fp16_bits=1024,
-        stored_bits=512,
-        get_adaptive_hq_provenance=lambda: {"runtime": runtime},
-    )
-    with pytest.raises(RuntimeError, match="AdaptiveHQ"):
-        cache_compression_sufficient_statistics(cache)
 
 
 @pytest.mark.parametrize("bad", [float("nan"), -0.1, float("inf")])
@@ -353,7 +272,6 @@ def test_reasoning_zero_bit_payload_reports_infinite_compression(monkeypatch):
                 "compression_fp16_bits": 100,
                 "compression_stored_bits": 0,
                 "compression_aggregation": "exact_cache_bit_counters",
-                "adaptive_hq_runtime": None,
             },
         ),
     )

@@ -1,116 +1,0 @@
-SLURM job: kv-paper-qwen14b
-Node: kagura-gpu06, GPU: 0
-Started: Mon Jun  1 19:42:36 JST 2026
-model_path: /lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Qwen-14B
-device: cuda:0
-dtype: bfloat16
-attn_implementation: eager
-output_dir: /lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_paper
-methods:
-- FullKV
-- Uniform-INT4
-- ThinKV
-- PM-KVQ
-- TaperKV
-sink_tokens: 4
-recent_tokens: 128
-requant_stride: 16
-target_mem: 0.25
-uniform_bits:
-- 4
-skip_outliers: true
-outlier_ratio: 50.0
-thinkv:
-  group_size: 16
-  precision:
-    R: 4
-    E: 4
-    T: 2
-  auto_configure: true
-  calib_max_new: 300
-  capture_long: false
-pmkvq:
-  key_bits: 8
-  value_bits: 4
-  final_bits: 2
-  key_final_bits: 4
-  ladder_span: 256
-taperkv:
-  key_bits: 8
-  value_bits: 4
-  b_min: 4
-  b_min_value: 2
-taperkv_sweep: []
-context_lens:
-- 2048
-- 4096
-- 8192
-depths:
-- 0.1
-- 0.25
-- 0.4
-- 0.5
-- 0.6
-- 0.75
-- 0.9
-seeds: 3
-max_new_needle: 64
-run_ruler: false
-ruler_keys: 4
-ruler_seeds: 5
-run_needle: false
-run_gsm8k: true
-gsm8k_limit: 100
-max_new_reason: 8192
-run_math: true
-math_limit: 100
-max_new_math: 8192
-run_ppl: true
-ppl_max_length: 2048
-ppl_stride: 1024
-ppl_windows: 16
-aime_years:
-- 2024
-- 2025
-aime_k: 8
-aime_limit: 30
-max_new_aime: 8192
-
-Loading weights:   0%|          | 0/579 [00:00<?, ?it/s]Loading weights:   0%|          | 1/579 [00:00<08:42,  1.11it/s]Loading weights:   0%|          | 2/579 [00:01<08:41,  1.11it/s]Loading weights:   1%|          | 4/579 [00:01<03:43,  2.57it/s]Loading weights:   1%|          | 5/579 [00:02<03:14,  2.95it/s]Loading weights:   3%|▎         | 16/579 [00:02<00:46, 12.13it/s]Loading weights:   4%|▍         | 24/579 [00:02<00:28, 19.69it/s]Loading weights:   5%|▍         | 28/579 [00:02<00:29, 18.58it/s]Loading weights:   6%|▌         | 32/579 [00:03<00:25, 21.20it/s]Loading weights:   7%|▋         | 39/579 [00:03<00:23, 22.61it/s]Loading weights:   8%|▊         | 46/579 [00:03<00:18, 29.16it/s]Loading weights:   9%|▉         | 52/579 [00:03<00:19, 27.24it/s]Loading weights:  10%|▉         | 56/579 [00:03<00:20, 25.69it/s]Loading weights:  11%|█         | 64/579 [00:04<00:19, 26.86it/s]Loading weights:  12%|█▏        | 67/579 [00:04<00:21, 23.98it/s]Loading weights:  13%|█▎        | 76/579 [00:04<00:19, 26.09it/s]Loading weights:  14%|█▎        | 79/579 [00:04<00:22, 22.27it/s]Loading weights:  15%|█▌        | 87/579 [00:05<00:19, 25.10it/s]Loading weights:  16%|█▌        | 90/579 [00:05<00:22, 21.93it/s]Loading weights:  17%|█▋        | 100/579 [00:05<00:17, 27.80it/s]Loading weights:  18%|█▊        | 103/579 [00:05<00:20, 23.62it/s]Loading weights:  19%|█▉        | 112/579 [00:06<00:17, 27.24it/s]Loading weights:  20%|█▉        | 115/579 [00:06<00:18, 25.02it/s]Loading weights:  21%|██▏       | 124/579 [00:06<00:16, 27.02it/s]Loading weights:  22%|██▏       | 127/579 [00:06<00:18, 24.43it/s]Loading weights:  23%|██▎       | 136/579 [00:06<00:16, 27.14it/s]Loading weights:  24%|██▍       | 139/579 [00:07<00:18, 24.34it/s]Loading weights:  26%|██▌       | 148/579 [00:07<00:14, 29.43it/s]Loading weights:  26%|██▌       | 151/579 [00:07<00:16, 25.73it/s]Loading weights:  28%|██▊       | 160/579 [00:07<00:15, 27.88it/s]Loading weights:  28%|██▊       | 163/579 [00:08<00:18, 22.56it/s]Loading weights:  29%|██▊       | 166/579 [00:08<00:18, 22.93it/s]Loading weights:  30%|██▉       | 172/579 [00:08<00:18, 22.32it/s]Loading weights:  30%|███       | 175/579 [00:08<00:21, 18.77it/s]Loading weights:  32%|███▏      | 184/579 [00:08<00:15, 24.88it/s]Loading weights:  32%|███▏      | 187/579 [00:09<00:17, 22.73it/s]Loading weights:  34%|███▍      | 196/579 [00:09<00:15, 25.16it/s]Loading weights:  34%|███▍      | 199/579 [00:09<00:16, 22.84it/s]Loading weights:  36%|███▌      | 208/579 [00:09<00:14, 25.62it/s]Loading weights:  36%|███▋      | 211/579 [00:10<00:15, 23.57it/s]Loading weights:  38%|███▊      | 220/579 [00:10<00:13, 25.92it/s]Loading weights:  39%|███▊      | 223/579 [00:10<00:14, 23.92it/s]Loading weights:  40%|████      | 232/579 [00:10<00:13, 25.99it/s]Loading weights:  41%|████      | 235/579 [00:11<00:14, 23.95it/s]Loading weights:  42%|████▏     | 244/579 [00:11<00:12, 26.07it/s]Loading weights:  43%|████▎     | 247/579 [00:11<00:13, 23.87it/s]Loading weights:  44%|████▍     | 255/579 [00:11<00:14, 22.49it/s]Loading weights:  45%|████▍     | 258/579 [00:12<00:13, 23.19it/s]Loading weights:  46%|████▌     | 267/579 [00:12<00:11, 27.96it/s]Loading weights:  47%|████▋     | 270/579 [00:12<00:12, 23.92it/s]Loading weights:  48%|████▊     | 280/579 [00:12<00:10, 29.46it/s]Loading weights:  49%|████▉     | 283/579 [00:12<00:10, 29.00it/s]Loading weights:  50%|█████     | 292/579 [00:13<00:09, 30.44it/s]Loading weights:  51%|█████     | 296/579 [00:13<00:08, 31.46it/s]Loading weights:  52%|█████▏    | 303/579 [00:13<00:09, 29.25it/s]Loading weights:  53%|█████▎    | 306/579 [00:13<00:09, 27.52it/s]Loading weights:  55%|█████▍    | 316/579 [00:13<00:07, 33.55it/s]Loading weights:  55%|█████▌    | 320/579 [00:14<00:09, 27.73it/s]Loading weights:  57%|█████▋    | 328/579 [00:14<00:08, 29.51it/s]Loading weights:  57%|█████▋    | 332/579 [00:14<00:08, 30.58it/s]Loading weights:  59%|█████▊    | 339/579 [00:14<00:09, 26.46it/s]Loading weights:  59%|█████▉    | 342/579 [00:14<00:08, 26.72it/s]Loading weights:  61%|██████    | 351/579 [00:15<00:07, 31.30it/s]Loading weights:  61%|██████▏   | 355/579 [00:15<00:08, 26.60it/s]Loading weights:  63%|██████▎   | 364/579 [00:15<00:07, 30.39it/s]Loading weights:  64%|██████▎   | 368/579 [00:15<00:06, 30.63it/s]Loading weights:  65%|██████▍   | 376/579 [00:15<00:06, 33.02it/s]Loading weights:  66%|██████▌   | 380/579 [00:16<00:06, 30.51it/s]Loading weights:  67%|██████▋   | 387/579 [00:16<00:06, 29.04it/s]Loading weights:  67%|██████▋   | 390/579 [00:16<00:07, 26.04it/s]Loading weights:  69%|██████▉   | 400/579 [00:16<00:06, 28.13it/s]Loading weights:  70%|██████▉   | 404/579 [00:16<00:05, 29.51it/s]Loading weights:  71%|███████   | 411/579 [00:17<00:06, 27.84it/s]Loading weights:  72%|███████▏  | 414/579 [00:17<00:06, 26.36it/s]Loading weights:  73%|███████▎  | 424/579 [00:17<00:04, 34.05it/s]Loading weights:  74%|███████▍  | 428/579 [00:17<00:04, 31.35it/s]Loading weights:  75%|███████▌  | 436/579 [00:18<00:04, 28.97it/s]Loading weights:  76%|███████▌  | 441/579 [00:18<00:04, 31.48it/s]Loading weights:  77%|███████▋  | 448/579 [00:18<00:04, 31.35it/s]Loading weights:  78%|███████▊  | 452/579 [00:18<00:04, 29.24it/s]Loading weights:  79%|███████▉  | 460/579 [00:18<00:04, 29.50it/s]Loading weights:  80%|███████▉  | 463/579 [00:19<00:04, 26.39it/s]Loading weights:  82%|████████▏ | 472/579 [00:19<00:03, 27.06it/s]Loading weights:  82%|████████▏ | 477/579 [00:19<00:03, 29.97it/s]Loading weights:  84%|████████▎ | 484/579 [00:19<00:03, 28.33it/s]Loading weights:  84%|████████▍ | 488/579 [00:19<00:03, 29.60it/s]Loading weights:  86%|████████▌ | 496/579 [00:20<00:02, 29.65it/s]Loading weights:  86%|████████▋ | 500/579 [00:20<00:02, 30.67it/s]Loading weights:  88%|████████▊ | 507/579 [00:20<00:02, 28.79it/s]Loading weights:  89%|████████▉ | 514/579 [00:20<00:01, 34.90it/s]Loading weights:  90%|████████▉ | 520/579 [00:20<00:01, 31.88it/s]Loading weights:  91%|█████████ | 524/579 [00:21<00:02, 26.56it/s]Loading weights:  92%|█████████▏| 532/579 [00:21<00:01, 29.89it/s]Loading weights:  93%|█████████▎| 536/579 [00:21<00:01, 25.62it/s]Loading weights:  94%|█████████▍| 544/579 [00:21<00:01, 26.24it/s]Loading weights:  94%|█████████▍| 547/579 [00:22<00:01, 23.82it/s]Loading weights:  96%|█████████▌| 556/579 [00:22<00:00, 26.05it/s]Loading weights:  97%|█████████▋| 561/579 [00:22<00:00, 28.95it/s]Loading weights:  98%|█████████▊| 568/579 [00:22<00:00, 29.27it/s]Loading weights:  99%|█████████▉| 573/579 [00:22<00:00, 32.12it/s]Loading weights: 100%|██████████| 579/579 [00:22<00:00, 25.37it/s]
-  [outlier] skip_layers (all quant methods) = [23, 25, 26, 27, 28, 29, 30, 31, 33]
-[transformers] The following generation flags are not valid and may be ignored: ['temperature', 'top_p']. Set `TRANSFORMERS_VERBOSITY=info` for more details.
-[transformers] The attention mask is not set and cannot be inferred from input because pad token is same as eos token. As a consequence, you may observe unexpected behavior. Please pass your input's `attention_mask` to obtain reliable results.
-  [ThinKV] skip_layers=[23, 25, 26, 27, 28, 29, 30, 31, 33] L*=[11] thresholds=(0.524, 0.562)
-
-===== FullKV =====
-[2026-06-01 19:44:18,662][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/gsm8k/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 19:44:18,840][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
-Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
-[2026-06-01 19:44:18,841][huggingface_hub.utils._http][WARNING] - Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
-[2026-06-01 19:44:18,856][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/openai/gsm8k/740312add88f781978c0658806c59bc2815b9866/README.md "HTTP/1.1 200 OK"
-[2026-06-01 19:44:19,036][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/gsm8k.py "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 19:44:19,204][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/gsm8k.py "HTTP/1.1 404 Not Found"
-[2026-06-01 19:44:19,766][httpx][INFO] - HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/gsm8k/gsm8k.py "HTTP/1.1 404 Not Found"
-[2026-06-01 19:44:19,952][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/gsm8k/revision/740312add88f781978c0658806c59bc2815b9866 "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 19:44:20,189][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/revision/740312add88f781978c0658806c59bc2815b9866 "HTTP/1.1 200 OK"
-[2026-06-01 19:44:20,367][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/.huggingface.yaml "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 19:44:20,546][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/.huggingface.yaml "HTTP/1.1 404 Not Found"
-[2026-06-01 19:44:20,765][httpx][INFO] - HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=gsm8k "HTTP/1.1 404 Not Found"
-[2026-06-01 19:44:20,943][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/gsm8k/tree/740312add88f781978c0658806c59bc2815b9866/main?recursive=true&expand=false "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 19:44:21,126][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/tree/740312add88f781978c0658806c59bc2815b9866/main?recursive=true&expand=false "HTTP/1.1 200 OK"
-[2026-06-01 19:44:21,306][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/gsm8k/tree/740312add88f781978c0658806c59bc2815b9866?recursive=false&expand=false "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 19:44:21,489][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/tree/740312add88f781978c0658806c59bc2815b9866?recursive=false&expand=false "HTTP/1.1 200 OK"
-[2026-06-01 19:44:21,671][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/dataset_infos.json "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 19:44:21,844][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/dataset_infos.json "HTTP/1.1 404 Not Found"
-  gsm8k: {'task': 'gsm8k', 'n': 100, 'k': 1, 'pass@1': 0.87, 'avg_gen_len': 465.0, 'compression_ratio': 1.0}
-[2026-06-01 20:03:23,917][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/HuggingFaceH4/MATH-500/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 20:03:23,939][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/HuggingFaceH4/MATH-500/6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be/README.md "HTTP/1.1 200 OK"
-[2026-06-01 20:03:24,119][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/HuggingFaceH4/MATH-500/resolve/6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be/MATH-500.py "HTTP/1.1 404 Not Found"
-[2026-06-01 20:03:24,817][httpx][INFO] - HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/HuggingFaceH4/MATH-500/HuggingFaceH4/MATH-500.py "HTTP/1.1 404 Not Found"
-[2026-06-01 20:03:24,994][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/HuggingFaceH4/MATH-500/revision/6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be "HTTP/1.1 200 OK"
-[2026-06-01 20:03:25,185][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/HuggingFaceH4/MATH-500/resolve/6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be/.huggingface.yaml "HTTP/1.1 404 Not Found"
-[2026-06-01 20:03:25,478][httpx][INFO] - HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=HuggingFaceH4/MATH-500 "HTTP/1.1 200 OK"
-[2026-06-01 20:03:25,666][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/HuggingFaceH4/MATH-500/tree/6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be/data?recursive=true&expand=false "HTTP/1.1 404 Not Found"
-[2026-06-01 20:03:25,845][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/HuggingFaceH4/MATH-500/tree/6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be?recursive=false&expand=false "HTTP/1.1 200 OK"
-[2026-06-01 20:03:26,076][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/HuggingFaceH4/MATH-500/resolve/6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be/dataset_infos.json "HTTP/1.1 404 Not Found"
-[2026-06-01T20:45:32.926] error: *** JOB 45676 ON kagura-gpu06 CANCELLED AT 2026-06-01T20:45:32 DUE to SIGNAL Terminated ***

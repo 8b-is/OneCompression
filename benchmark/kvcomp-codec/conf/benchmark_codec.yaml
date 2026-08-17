@@ -1,16 +1,14 @@
-# KV codec (HayateQuant vs HALO vs TurboQuant) speed-quality benchmark config (Hydra).
-#   python codec_benchmark.py model_path=/lustre/.../models/llama-3.1-8b-instruct
+# HayateQuant versus TurboQuant speed-quality benchmark (Hydra).
+# Both model_path and output_dir are supplied by the caller.
 
 model_path: ???
 device: cuda:0
 dtype: bfloat16
 
-output_dir: ${hydra:runtime.cwd}/results
+output_dir: ???
 
 bits: [4, 3, 2]
-sink_tokens: 4
-recent_tokens: 0
-extra_skip_layers: []
+methods: [turboquant, hayatequant]
 
 capture_tokens: 2048        # real-KV capture length for distortion
 
@@ -23,8 +21,8 @@ sample_seed: 0
 run_ppl: true
 ppl_max_length: 2048
 ppl_stride: 1024
-# Smoke preset: this cap is emitted as ppl_complete_text_eval=false. Paper
-# presets override it with null to score the complete WikiText-2 test text.
+# Smoke preset: this cap is emitted as ppl_complete_text_eval=false. The paper
+# preset pins its separately labelled 32-window protocol.
 ppl_windows: 8
 
 hydra:

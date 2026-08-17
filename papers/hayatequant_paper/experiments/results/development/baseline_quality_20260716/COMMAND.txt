@@ -1,7 +1,0 @@
-Submitted from the repository root with:
-
-  sbatch papers/hayatequant_paper/experiments/results/development/baseline_quality_20260716/runtime/submit_dev_baseline_quality.sh
-
-The exact per-model benchmark command and all fixed overrides are preserved in
-runtime/submit_dev_baseline_quality.sh.  This is a development-only one-window
-WikiText-2 comparison and is not accepted as a formal-paper result.

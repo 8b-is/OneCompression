@@ -42,9 +42,6 @@ def build_compressed_cache(
             BudgetTaperKVPolicy,
             TaperKVPolicy,
         )
-        from ..recipe.turbotaper import (  # pylint: disable=import-outside-toplevel
-            TurboTaperPolicy,
-        )
 
         if isinstance(policy, TaperKVPolicy):
             if kv_config.selector is not None:
@@ -54,45 +51,25 @@ def build_compressed_cache(
             from .block_taper_cache import (  # pylint: disable=import-outside-toplevel
                 BlockTaperKVCache,
             )
-            from .hayatequant_taper_cache import (  # pylint: disable=import-outside-toplevel
-                HayateQuantBlockTaperKVCache,
-                HayateQuantTaperKVCache,
-            )
             from .taper_cache import (  # pylint: disable=import-outside-toplevel
                 BudgetTaperKVCache,
                 TaperKVCache,
             )
-            from .turbotaper_cache import (  # pylint: disable=import-outside-toplevel
-                TurboTaperCache,
-            )
 
             model_config = getattr(model, "config", None)
             codec = kv_config.codec
-            if codec is None:
-                if isinstance(policy, TurboTaperPolicy):
-                    cache_cls = TurboTaperCache
-                elif isinstance(policy, BudgetTaperKVPolicy):
-                    cache_cls = BudgetTaperKVCache
-                elif isinstance(policy, BlockTaperKVPolicy):
-                    cache_cls = BlockTaperKVCache
-                else:
-                    cache_cls = TaperKVCache
-                return cache_cls(policy, config=model_config)
-            if isinstance(policy, (BudgetTaperKVPolicy, TurboTaperPolicy)):
+            if codec is not None:
                 raise NotImplementedError(
-                    f"Policy {policy.name!r} cannot be composed with a separate codec"
+                    "TaperKV is a standalone proposed method and cannot be composed "
+                    f"with codec {codec.name!r}"
                 )
-            if getattr(codec, "name", None) != "hayatequant":
-                raise NotImplementedError(
-                    f"TaperKV HF composition does not support codec {codec.name!r}; "
-                    "only the explicitly defined HayateQuant-then-TaperKV path is available"
-                )
-            cache_cls = (
-                HayateQuantBlockTaperKVCache
-                if isinstance(policy, BlockTaperKVPolicy)
-                else HayateQuantTaperKVCache
-            )
-            return cache_cls(policy, codec, config=model_config)
+            if isinstance(policy, BudgetTaperKVPolicy):
+                cache_cls = BudgetTaperKVCache
+            elif isinstance(policy, BlockTaperKVPolicy):
+                cache_cls = BlockTaperKVCache
+            else:
+                cache_cls = TaperKVCache
+            return cache_cls(policy, config=model_config)
 
     plan = policy.plan() if policy is not None else None
     codec = plan.codec if plan is not None and plan.codec is not None else kv_config.codec

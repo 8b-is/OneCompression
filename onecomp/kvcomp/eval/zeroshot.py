@@ -55,6 +55,9 @@ LM_EVAL_VERSION = "0.4.11"
 LM_EVAL_PROTOCOL_COMMIT = "27988a293647d5853e48edea291640b4af54740c"
 LM_EVAL_TASK_METADATA_VERSION = "1.0"
 PROTOCOL_INPUT_HASH_SCHEMA = "lm_eval_multiple_choice_prompt_v1"
+TOKEN_BOUNDARY_PROTOCOL = (
+    "lm_eval_joined_tokenization_with_longest_common_prefix_merge_fallback_v1"
+)
 ZEROSHOT_PROTOCOL_PROBE_CACHE_LIFETIME = (
     "released_after_protocol_dependency_snapshot_before_first_choice_factory"
 )
@@ -106,15 +109,14 @@ class ZeroShotResult:
             "num_fewshot": 0,
             "target_delimiter": " ",
             "apply_chat_template": False,
+            "token_boundary_protocol": TOKEN_BOUNDARY_PROTOCOL,
             "protocol_input_hash_schema": PROTOCOL_INPUT_HASH_SCHEMA,
             "protocol_input_sha256": self.protocol_input_sha256,
             "teacher_forced_scoring_protocol": self.teacher_forced_scoring_protocol,
             "teacher_forced_temporal_dependency": self.teacher_forced_temporal_dependency,
             "protocol_probe_cache_lifetime": ZEROSHOT_PROTOCOL_PROBE_CACHE_LIFETIME,
             "choice_cache_lifetime": PER_EXAMPLE_CACHE_LIFETIME,
-            "cross_iteration_tensor_retention": (
-                PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
-            ),
+            "cross_iteration_tensor_retention": (PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION),
             "correct": self.correct,
             "correct_norm": self.correct_norm,
             "selection": {
@@ -253,12 +255,15 @@ def _load_task(task: str):
 
 
 def _encode_pair(tokenizer, context: str, continuation: str):
-    """Match lm-eval's causal ``HFLM._encode_pair`` boundary handling.
+    """Apply lm-eval joined tokenization with a merge-safe split fallback.
 
     Tokenizing context and continuation independently can change BPE/SentencePiece
     merges at their boundary.  lm-eval moves trailing context whitespace into
     the continuation, tokenizes the joined text once, and splits that sequence
-    at the separately-tokenized context length.
+    at the separately-tokenized context length.  Some tokenizers merge the final
+    context token with the first continuation token, making that split empty or
+    misaligned.  In that case the longest common token prefix is the exact point
+    at which continuation-dependent tokens begin.
     """
     if not context:
         raise ValueError("multiple-choice context must not be empty")
@@ -267,10 +272,27 @@ def _encode_pair(tokenizer, context: str, continuation: str):
         continuation = context[-n_spaces:] + continuation
         context = context[:-n_spaces]
     whole = tokenizer(context + continuation, return_tensors="pt").input_ids
-    ctx = tokenizer(context, return_tensors="pt").input_ids
-    cont = whole[:, ctx.shape[1] :]
+    separate_ctx = tokenizer(context, return_tensors="pt").input_ids
+    limit = min(separate_ctx.shape[1], whole.shape[1])
+    mismatch = torch.nonzero(
+        separate_ctx[:, :limit] != whole[:, :limit],
+        as_tuple=False,
+    )
+    split = int(mismatch[0, 1]) if mismatch.numel() else int(separate_ctx.shape[1])
+    if split > whole.shape[1]:
+        split = int(whole.shape[1])
+    cont = whole[:, split:]
     if cont.shape[1] == 0:
         raise ValueError("Continuation tokenized to zero tokens under lm-eval boundary handling")
+    if split == 0:
+        prefix_token = getattr(tokenizer, "bos_token_id", None)
+        if prefix_token is None:
+            prefix_token = getattr(tokenizer, "eos_token_id", None)
+        if prefix_token is None:
+            raise ValueError("Tokenizer has no prefix token for a fully merged boundary")
+        ctx = torch.tensor([[prefix_token]], dtype=whole.dtype, device=whole.device)
+    else:
+        ctx = whole[:, :split]
     return ctx, cont
 
 

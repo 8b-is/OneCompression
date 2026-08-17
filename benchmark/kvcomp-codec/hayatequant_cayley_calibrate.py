@@ -1,6 +1,6 @@
 """Build a Cayley-optimized HayateQuant calibration artifact.
 
-This keeps the same single operating recipe as HQ frontier at a target
+This keeps the same canonical HayateQuant operating recipe at a target
 average rate, but learns a fixed per-role orthogonal rotation and optional
 codebook refit offline.  Inference uses the existing calibrated HayateQuant
 runtime path.
@@ -18,10 +18,9 @@ sys.path.insert(0, str(REPO_ROOT))
 import torch  # noqa: E402
 from transformers import AutoModelForCausalLM, AutoTokenizer  # noqa: E402
 
-from onecomp.kvcomp.codec import HayateQuantCodec  # noqa: E402
 from onecomp.kvcomp.codec.hayate.recipes import (  # noqa: E402
-    hayate_hq_kwargs,
-    hayate_hq_role_rates,
+    build_hayatequant,
+    hayatequant_role_rates,
 )
 from onecomp.kvcomp.codec.hayate.calibration import (  # noqa: E402
     calibrate_hayatequant,
@@ -35,10 +34,7 @@ DEFAULT_TEXT = (
 
 
 def _kv_asym(bits: int) -> tuple[float, float]:
-    kv_bits = hayate_hq_role_rates(bits)
-    if kv_bits is None:
-        raise ValueError(f"average bits must be one of 2, 3, or 4, got {bits}")
-    return kv_bits
+    return hayatequant_role_rates(bits)
 
 
 def main() -> None:
@@ -64,21 +60,14 @@ def main() -> None:
         layer_stride=args.layer_stride,
         device=model.device,
     )
-    if args.block_size not in (None, 2):
-        raise ValueError("the fixed HQ calibration recipe requires block_size=2")
-    codec = HayateQuantCodec(
-        **hayate_hq_kwargs(
-            args.avg_bits,
-            max_codebook_bits=args.max_codebook_bits,
-            encoder="exact",
-        )
-    )
+    codec = build_hayatequant(args.avg_bits)
     cal = calibrate_hayatequant(
         codec,
         ks,
         vs,
         learn_rotation=not args.no_rotation,
-        learn_codebook=not args.no_codebook_refit,
+        # A refit keeps exactly the same role cardinalities and packed layout.
+        learn_codebook=not args.rotation_only,
         steps=args.steps,
         lr=args.lr,
         batch_vectors=args.batch_vectors,
@@ -95,7 +84,7 @@ def main() -> None:
             "avg_bits": args.avg_bits,
             "key_bits": key_bits,
             "value_bits": value_bits,
-            "recipe": "HQ_b2_Kplus0.5_Vminus0.5_NCkey_LSiterValue_CayleyCalib",
+            "method": "hayatequant",
         }
     )
     out = Path(args.output)
@@ -110,8 +99,6 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--model-path", required=True)
     ap.add_argument("--output", required=True)
     ap.add_argument("--avg-bits", type=int, default=2)
-    ap.add_argument("--block-size", type=int)
-    ap.add_argument("--max-codebook-bits", type=int, default=8)
     ap.add_argument("--max-tokens", type=int, default=1024)
     ap.add_argument("--layer-stride", type=int, default=4)
     ap.add_argument("--max-vectors", type=int, default=200_000)
@@ -121,7 +108,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--batch-vectors", type=int, default=8192)
     ap.add_argument("--refit-every", type=int, default=16)
     ap.add_argument("--no-rotation", action="store_true")
-    ap.add_argument("--no-codebook-refit", action="store_true")
+    ap.add_argument("--rotation-only", action="store_true")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--dtype", default="bfloat16")
     ap.add_argument("--device", default="auto")
