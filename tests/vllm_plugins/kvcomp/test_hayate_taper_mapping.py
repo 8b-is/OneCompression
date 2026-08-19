@@ -227,3 +227,41 @@ def test_native_turboquant_kwargs_disable_hidden_boundary_skips(monkeypatch):
         "kv_cache_dtype": "turboquant_3bit_nc"
     }
     assert calls == [True]
+
+
+def test_turboquant_rate2_maps_to_a_real_custom_packed_backend(monkeypatch):
+    monkeypatch.setenv("KVCOMP_VLLM_TURBOQUANT_MODE", "native")
+    plan = plan_from_kv_config(
+        _config(
+            codec={
+                "name": "turboquant",
+                "bits": 2,
+                "dist": "beta",
+                "rotation_mode": "hadamard",
+                "skip_layers": [],
+            }
+        )
+    )
+
+    assert plan.native_supported and plan.turboquant2_native
+    assert not plan.needs_custom_backend
+    assert plan.kv_cache_dtype == "turboquant_3bit_nc"
+    assert plan.turboquant2_config == {"rate": 2}
+    preset = native_turboquant.resolve_turboquant_preset(2)
+    assert preset is not None and preset.custom_backend
+
+
+def test_turboquant_rate2_helper_installs_the_plugin_backend(monkeypatch):
+    calls = []
+    import vllm_plugins.kvcomp.turboquant2_native as turboquant2_native
+
+    monkeypatch.setattr(
+        turboquant2_native,
+        "configure_turboquant2_native_backend",
+        lambda: calls.append(True),
+    )
+
+    assert native_turboquant.turboquant_engine_kwargs(2) == {
+        "kv_cache_dtype": "turboquant_3bit_nc"
+    }
+    assert calls == [True]

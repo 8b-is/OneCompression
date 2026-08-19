@@ -64,7 +64,7 @@ def test_virtualenv_launcher_symlink_is_not_resolved(tmp_path: Path):
     assert Path(resolved).is_symlink()
 
 
-def test_canonical_plan_has_exact_jobs_and_no_fake_turboquant_rate2(tmp_path: Path):
+def test_canonical_plan_has_exact_jobs_including_packed_turboquant_rate2(tmp_path: Path):
     models_root, model_manifest = _model_manifest(tmp_path)
     output_root = tmp_path / "outside-repository-results"
     args = reproduction.build_parser().parse_args(
@@ -138,7 +138,7 @@ def test_canonical_plan_has_exact_jobs_and_no_fake_turboquant_rate2(tmp_path: Pa
     } == {
         "ppl": 7,
         "zeroshot": 7,
-        "speed": 6,
+        "speed": 7,
     }
     ppl_jobs = [job for job in manifest["jobs"] if job["stage"] == "ppl"]
     assert all(
@@ -152,6 +152,7 @@ def test_canonical_plan_has_exact_jobs_and_no_fake_turboquant_rate2(tmp_path: Pa
     }
     assert speed_pairs == {
         ("fullkv", None),
+        ("turboquant", 2),
         ("turboquant", 3),
         ("turboquant", 4),
         ("hayatequant", 2),

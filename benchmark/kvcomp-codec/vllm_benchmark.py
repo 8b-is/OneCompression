@@ -157,12 +157,36 @@ def _validate_runtime_evidence(
     method: str,
     evidence: list[dict],
     expected_layer_count: int | None = None,
+    rate: int | None = None,
 ) -> None:
     """Fail closed unless the requested custom data plane actually ran."""
 
     expected_schema = {"name": "onecomp.kvcomp_vllm_runtime_evidence", "version": 1}
     if any(row.get("schema") != expected_schema for row in evidence):
         raise RuntimeError("custom-backend runtime evidence has an invalid schema")
+    if method == "turboquant" and rate == 2:
+        required = {
+            "packed_turboquant2_store_launched",
+            "packed_turboquant2_decode_attention_launched",
+        }
+        events = {row.get("event") for row in evidence}
+        missing = sorted(required - events)
+        if missing:
+            raise RuntimeError(f"turboquant rate 2 runtime evidence is missing: {missing}")
+        for row in evidence:
+            if row.get("event") not in required:
+                continue
+            if row.get("implementation") != "native_packed_turboquant2":
+                raise RuntimeError("turboquant rate 2 did not use its packed implementation")
+            if row.get("rate") != 2 or row.get("key_bits") != 2 or row.get("value_bits") != 2:
+                raise RuntimeError("turboquant rate 2 runtime recipe is inconsistent")
+            if row.get("cache_dtype") != "uint8":
+                raise RuntimeError("turboquant rate 2 cache is not packed uint8 storage")
+            if not str(row.get("cache_device", "")).startswith("cuda"):
+                raise RuntimeError("turboquant rate 2 physical cache is not on CUDA")
+        for event in sorted(required):
+            _validate_layer_coverage("turboquant rate 2", event, evidence, expected_layer_count)
+        return
     if method in {"fullkv", "turboquant"}:
         if evidence:
             raise RuntimeError(f"{method} unexpectedly emitted custom-backend evidence")
@@ -186,7 +210,7 @@ def _validate_runtime_evidence(
                 raise RuntimeError("hayatequant did not use its native packed implementation")
             if (
                 row.get("event") == "packed_hayatequant_store_launched"
-                and row.get("store_encoder") != "triton_fused_b2_k_nc_v_ls_iter"
+                and row.get("store_encoder") != "triton_fused_b2_k_nc_v_ls_iter_encode_pack"
             ):
                 raise RuntimeError("hayatequant did not use its fused CUDA store encoder")
             if row.get("cache_dtype") != "uint8":
@@ -421,7 +445,8 @@ def run(args: argparse.Namespace) -> dict:
             outputs = llm.generate([prompt], sampling, use_tqdm=False)
             elapsed = time.perf_counter() - started
             output = outputs[0]
-            generated = len(output.outputs[0].token_ids)
+            generated_token_ids = list(output.outputs[0].token_ids)
+            generated = len(generated_token_ids)
             decode_tokens, decode_seconds, decode_rate = _decode_measurement(
                 output.metrics,
                 generated,
@@ -436,6 +461,12 @@ def run(args: argparse.Namespace) -> dict:
                     "decode_seconds": decode_seconds,
                     "decode_tokens_per_second": decode_rate,
                     "finish_reason": output.outputs[0].finish_reason,
+                    "generated_token_ids_sha256": hashlib.sha256(
+                        json.dumps(
+                            generated_token_ids,
+                            separators=(",", ":"),
+                        ).encode("ascii")
+                    ).hexdigest(),
                 }
             )
 
@@ -450,7 +481,26 @@ def run(args: argparse.Namespace) -> dict:
             "for a formal speed result"
         )
     evidence = _read_evidence(evidence_path)
-    _validate_runtime_evidence(args.method, evidence, expected_layer_count)
+    _validate_runtime_evidence(args.method, evidence, expected_layer_count, args.rate)
+    hayatequant_projection_fusion = None
+    if args.method == "hayatequant":
+        decode_evidence = [
+            row
+            for row in evidence
+            if row.get("event") == "packed_hayatequant_decode_attention_launched"
+        ]
+        hayatequant_projection_fusion = {
+            "output_projection_layer_indices": sorted(
+                row["layer_index"]
+                for row in decode_evidence
+                if row.get("output_projection_fused") is True
+            ),
+            "value_projection_layer_indices": sorted(
+                row["layer_index"]
+                for row in decode_evidence
+                if row.get("value_projection_fused") is True
+            ),
+        }
     if args.method in {"turboquant", "hayatequant"}:
         from vllm_plugins.kvcomp.native_turboquant import (
             vllm_implicit_turboquant_boundary_skip_disabled,
@@ -481,12 +531,17 @@ def run(args: argparse.Namespace) -> dict:
         "compressed_layer_indices": (
             list(range(expected_layer_count)) if args.method != "fullkv" else []
         ),
-        "physical_cache_contract": {
-            "fullkv": "model_dtype",
-            "turboquant": "vllm_native_packed",
-            "hayatequant": "onecomp_native_packed",
-            "taperkv": "model_dtype_semantic_regrading",
-        }[args.method],
+        "physical_cache_contract": (
+            "onecomp_native_packed_turboquant2"
+            if args.method == "turboquant" and args.rate == 2
+            else {
+                "fullkv": "model_dtype",
+                "turboquant": "vllm_native_packed",
+                "hayatequant": "onecomp_native_packed",
+                "taperkv": "model_dtype_semantic_regrading",
+            }[args.method]
+        ),
+        "hayatequant_projection_fusion": hayatequant_projection_fusion,
         "accelerator": (
             torch.cuda.get_device_name(torch.cuda.current_device())
             if torch.cuda.is_available()
@@ -531,8 +586,6 @@ def parse_args() -> argparse.Namespace:
         parser.error("prompt tokens/repeats must be positive and --max-tokens must be >= 2")
     if not 0 < args.gpu_memory_utilization <= 1:
         parser.error("--gpu-memory-utilization must be in (0, 1]")
-    if args.method == "turboquant" and args.rate == 2:
-        parser.error("installed vLLM has no native 2-bit TurboQuant preset; use rate 3 or 4")
     return args
 
 

@@ -21,9 +21,14 @@ class TurboQuantPreset:
     key_bits: int
     value_bits: int
     kv_cache_dtype: str
+    custom_backend: bool = False
 
 
 TURBOQUANT_PRESETS: dict[tuple[int, int], str] = {
+    # vLLM validates the cache dtype before selecting a plugin backend.  The
+    # OneComp 2-bit implementation therefore uses the 3-bit dtype only as a
+    # carrier; its backend and cache-spec hook replace every physical detail.
+    (2, 2): "turboquant_3bit_nc",
     (8, 4): "turboquant_k8v4",
     (4, 4): "turboquant_4bit_nc",
     (3, 4): "turboquant_k3v4_nc",
@@ -85,7 +90,12 @@ def resolve_turboquant_preset(
     dtype = TURBOQUANT_PRESETS.get((key_bits, val_bits))
     if dtype is None:
         return None
-    return TurboQuantPreset(key_bits=key_bits, value_bits=val_bits, kv_cache_dtype=dtype)
+    return TurboQuantPreset(
+        key_bits=key_bits,
+        value_bits=val_bits,
+        kv_cache_dtype=dtype,
+        custom_backend=(key_bits, val_bits) == (2, 2),
+    )
 
 
 def resolve_turboquant_codec(codec: dict) -> TurboQuantPreset | None:
@@ -109,5 +119,12 @@ def turboquant_engine_kwargs(bits: int, value_bits: int | None = None) -> dict:
             f"Unsupported vLLM TurboQuant preset k{bits}v{value_bits or bits}; "
             f"supported presets are {supported}."
         )
-    disable_vllm_implicit_turboquant_boundary_skip()
+    if preset.custom_backend:
+        from vllm_plugins.kvcomp.turboquant2_native import (  # pylint: disable=import-outside-toplevel
+            configure_turboquant2_native_backend,
+        )
+
+        configure_turboquant2_native_backend()
+    else:
+        disable_vllm_implicit_turboquant_boundary_skip()
     return {"kv_cache_dtype": preset.kv_cache_dtype}

@@ -45,6 +45,181 @@ from vllm_plugins.kvcomp.hayate_triton import (
 from vllm_plugins.kvcomp.runtime_evidence import emit_runtime_evidence_once
 
 HAYATEQUANT_CONFIG_ENV = "KVCOMP_VLLM_HAYATEQUANT_CONFIG"
+HAYATEQUANT_DISABLE_PROJECTION_FUSION_ENV = "KVCOMP_VLLM_HAYATEQUANT_DISABLE_PROJECTION_FUSION"
+_HAYATE_PROJECTION_CLASSES_PATCHED = False
+
+
+def install_hayatequant_projection_fusion() -> bool:
+    """Link supported attention modules to their output projection.
+
+    HQ reconstructs values in a rotated basis.  For an unquantized row-
+    parallel output projection, ``(x R^T) W^T == x (W R)^T``.  Linking the
+    sibling modules lets the backend fold ``R`` into ``W`` once after weight
+    loading and remove one small GEMM from every layer and decode token.
+    Unsupported architectures and quantized projections retain the ordinary
+    inverse-rotation path.
+    """
+
+    global _HAYATE_PROJECTION_CLASSES_PATCHED
+    if _HAYATE_PROJECTION_CLASSES_PATCHED:
+        return True
+
+    candidates = (
+        ("vllm.model_executor.models.llama", "LlamaAttention"),
+        ("vllm.model_executor.models.qwen2", "Qwen2Attention"),
+        ("vllm.model_executor.models.qwen3", "Qwen3Attention"),
+    )
+    patched = 0
+    for module_name, class_name in candidates:
+        try:
+            module = __import__(module_name, fromlist=[class_name])
+            owner_cls = getattr(module, class_name)
+        except (ImportError, AttributeError):  # pragma: no cover - vLLM version dependent
+            continue
+        if getattr(owner_cls, "_onecomp_hayate_projection_linked", False):
+            patched += 1
+            continue
+        original_init = owner_cls.__init__
+
+        def _linked_init(self, *args, __original=original_init, __name=class_name, **kwargs):
+            __original(self, *args, **kwargs)
+            attention = getattr(self, "attn", None)
+            projection = getattr(self, "o_proj", None)
+            if attention is not None and projection is not None:
+                attention._hayate_output_projection = projection
+                attention._hayate_qkv_projection = getattr(self, "qkv_proj", None)
+                attention._hayate_q_size = getattr(self, "q_size", None)
+                attention._hayate_kv_size = getattr(self, "kv_size", None)
+                attention._hayate_projection_owner = __name
+                implementation = getattr(attention, "impl", None)
+                if implementation is not None:
+                    implementation._hayate_layer = attention
+
+        _linked_init._onecomp_hayate_original = original_init
+        owner_cls.__init__ = _linked_init
+        owner_cls._onecomp_hayate_projection_linked = True
+        patched += 1
+    _HAYATE_PROJECTION_CLASSES_PATCHED = patched > 0
+    return _HAYATE_PROJECTION_CLASSES_PATCHED
+
+
+def _fold_value_rotation_into_projection(
+    layer: Any,
+    value_rotation: torch.Tensor,
+    head_dim: int,
+) -> bool:
+    """Fold one per-head value rotation into a safe dense output weight."""
+
+    if os.environ.get(HAYATEQUANT_DISABLE_PROJECTION_FUSION_ENV) == "1":
+        return False
+    projection = getattr(layer, "_hayate_output_projection", None)
+    if projection is None:
+        return False
+    if getattr(projection, "_hayate_value_rotation_folded", False):
+        return True
+    quant_method = getattr(projection, "quant_method", None)
+    if quant_method is None or quant_method.__class__.__name__ != "UnquantizedLinearMethod":
+        return False
+    weight = getattr(projection, "weight", None)
+    if (
+        weight is None
+        or weight.ndim != 2
+        or not weight.is_cuda
+        or not weight.dtype.is_floating_point
+        or weight.shape[1] % head_dim
+        or value_rotation.shape != (head_dim, head_dim)
+    ):
+        return False
+    with torch.no_grad():
+        output_size, local_input_size = weight.shape
+        local_heads = local_input_size // head_dim
+        folded = (
+            weight.detach().reshape(output_size * local_heads, head_dim).float() @ value_rotation
+        )
+        weight.copy_(folded.reshape_as(weight).to(weight.dtype))
+    projection._hayate_value_rotation_folded = True
+    projection._hayate_value_rotation_head_dim = int(head_dim)
+    return True
+
+
+def _fold_value_rotation_into_qkv_projection(
+    layer: Any,
+    value_rotation: torch.Tensor,
+    head_dim: int,
+) -> bool:
+    """Make the fused QKV projection emit values in HQ's rotated basis.
+
+    Values do not pass through RoPE, so ``v R`` can be produced once by
+    replacing each value-head weight ``W_v`` with ``R^T W_v``.  Query and key
+    weights deliberately remain untouched because their Hayate rotation is
+    applied after position-dependent RoPE and cannot be folded safely.
+    """
+
+    if os.environ.get(HAYATEQUANT_DISABLE_PROJECTION_FUSION_ENV) == "1":
+        return False
+    projection = getattr(layer, "_hayate_qkv_projection", None)
+    if projection is None:
+        return False
+    if getattr(projection, "_hayate_value_input_rotation_folded", False):
+        return True
+    quant_method = getattr(projection, "quant_method", None)
+    if quant_method is None or quant_method.__class__.__name__ != "UnquantizedLinearMethod":
+        return False
+    q_size = getattr(layer, "_hayate_q_size", None)
+    kv_size = getattr(layer, "_hayate_kv_size", None)
+    weight = getattr(projection, "weight", None)
+    if (
+        not isinstance(q_size, int)
+        or not isinstance(kv_size, int)
+        or q_size <= 0
+        or kv_size <= 0
+        or kv_size % head_dim
+        or weight is None
+        or weight.ndim != 2
+        or not weight.is_cuda
+        or not weight.dtype.is_floating_point
+        or weight.shape[0] != q_size + 2 * kv_size
+        or value_rotation.shape != (head_dim, head_dim)
+    ):
+        return False
+
+    value_start = q_size + kv_size
+    local_value_heads = kv_size // head_dim
+    bias = getattr(projection, "bias", None)
+    if bias is not None and (bias.ndim != 1 or bias.shape[0] != weight.shape[0]):
+        return False
+    with torch.no_grad():
+        value_weight = (
+            weight[value_start : value_start + kv_size]
+            .detach()
+            .reshape(local_value_heads, head_dim, weight.shape[1])
+        )
+        folded_weight = torch.matmul(value_rotation.t(), value_weight.float())
+        weight[value_start : value_start + kv_size].copy_(
+            folded_weight.reshape(kv_size, weight.shape[1]).to(weight.dtype)
+        )
+        if bias is not None:
+            value_bias = (
+                bias[value_start : value_start + kv_size]
+                .detach()
+                .reshape(local_value_heads, head_dim)
+            )
+            bias[value_start : value_start + kv_size].copy_(
+                (value_bias.float() @ value_rotation).reshape(kv_size).to(bias.dtype)
+            )
+    projection._hayate_value_input_rotation_folded = True
+    projection._hayate_value_input_rotation_head_dim = int(head_dim)
+    return True
+
+
+def _to_folded_value_basis(output: torch.Tensor, layer: Any) -> torch.Tensor:
+    """Convert an ordinary prefill result to the projection-folded basis."""
+
+    if not getattr(layer, "_hayate_projection_folded", False):
+        return output
+    if getattr(layer, "_hayate_value_input_folded", False):
+        return output
+    return (output.float() @ layer._hayate_value_rotation).to(output.dtype)
 
 
 def _layer_index(layer: Any) -> int | None:
@@ -109,6 +284,7 @@ def configure_hayatequant_native_backend(config: dict[str, Any]) -> HayateQuantN
 
     recipe = hayatequant_native_recipe_from_mapping(config)
     disable_vllm_implicit_turboquant_boundary_skip()
+    install_hayatequant_projection_fusion()
     os.environ[HAYATEQUANT_CONFIG_ENV] = json.dumps(config, sort_keys=True)
     from vllm.v1.attention.backends.registry import (  # pylint: disable=import-outside-toplevel
         AttentionBackendEnum,
@@ -159,6 +335,22 @@ class HayateQuantNativeBackend(TurboQuantAttentionBackend):
 
 class HayateQuantNativeImpl(TurboQuantAttentionImpl):
     """Canonical HayateQuant store/decode implementation for both K and V."""
+
+    @staticmethod
+    def _onecomp_native_enabled(layer: Any) -> bool:
+        """Allow sibling packed backends to reuse the robust prefill path."""
+
+        return bool(getattr(layer, "_hayate_native_enabled", False))
+
+    def process_weights_after_loading(self, act_dtype: torch.dtype) -> None:
+        """Fold linked dense projections after loading and before first QKV."""
+
+        super().process_weights_after_loading(act_dtype)
+        layer = getattr(self, "_hayate_layer", None)
+        projection = getattr(layer, "_hayate_output_projection", None)
+        weight = getattr(projection, "weight", None)
+        if layer is not None and weight is not None and weight.is_cuda:
+            self._ensure_on_device(layer, weight.device)
 
     def _ensure_on_device(self, layer, device):
         if hasattr(layer, "_hayate_cached"):
@@ -239,6 +431,15 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
             and key_rotation.shape == value_rotation.shape
             and key_rotation.data_ptr() == value_rotation.data_ptr()
         )
+        layer._hayate_projection_folded = _fold_value_rotation_into_projection(
+            layer,
+            value_rotation,
+            d,
+        )
+        layer._hayate_value_input_folded = bool(
+            layer._hayate_projection_folded
+            and _fold_value_rotation_into_qkv_projection(layer, value_rotation, d)
+        )
         layer._hayate_native_enabled = True
         # Base forward fetches these three fields before dispatching into our
         # override.  Aliasing them avoids changing upstream control flow.
@@ -287,6 +488,7 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
             value_scoring_codebook=layer._hayate_value_scoring_codebook,
             value_scoring_csq=layer._hayate_value_scoring_csq,
             shared_rotation=layer._hayate_shared_rotation,
+            value_in_rotated_basis=layer._hayate_value_input_folded,
             return_payload=False,
             require_fused=True,
         )
@@ -297,13 +499,16 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
                 "backend": ("vllm_plugins.kvcomp.hayate_native." "HayateQuantNativeBackend"),
                 "implementation": "native_packed_hayatequant",
                 "event": "packed_hayatequant_store_launched",
-                "store_encoder": "triton_fused_b2_k_nc_v_ls_iter",
+                "store_encoder": "triton_fused_b2_k_nc_v_ls_iter_encode_pack",
                 "layer_index": layer._hayate_layer_index,
                 **hayatequant_native_runtime_fields(layer._hayate_recipe, int(key.shape[-1])),
                 "cache_shape": list(kv_cache.shape),
                 "cache_dtype": str(kv_cache.dtype).removeprefix("torch."),
                 "cache_device": str(kv_cache.device),
-                "shared_rotation_fast_path": bool(layer._hayate_shared_rotation),
+                "shared_rotation_fast_path": bool(
+                    layer._hayate_shared_rotation and not layer._hayate_value_input_folded
+                ),
+                "value_projection_fused": bool(layer._hayate_value_input_folded),
             },
         )
 
@@ -317,7 +522,7 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
         PiT: torch.Tensor | None = None,
         layer: torch.nn.Module | None = None,
     ) -> torch.Tensor:
-        if layer is None or not getattr(layer, "_hayate_native_enabled", False):
+        if layer is None or not self._onecomp_native_enabled(layer):
             return super()._decode_attention(
                 query, kv_cache, attn_metadata, Pi, centroids, PiT, layer
             )
@@ -327,11 +532,13 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
         # sequence-dependent grids create extra specializations and can force
         # graph recapture after the prompt boundary.
         splits = self.max_num_kv_splits
-        mid = rotated = lse = None
+        projection_folded = bool(getattr(layer, "_hayate_projection_folded", False))
+        mid = qrot = rotated = lse = None
         if is_workspace_manager_initialized():
-            mid, rotated, lse = current_workspace_manager().get_simultaneous(
+            mid, qrot, rotated, lse = current_workspace_manager().get_simultaneous(
                 ((bsz, hq, splits, d + 1), torch.float32),
                 ((bsz, hq, d), torch.float32),
+                ((bsz, hq, d), query.dtype if projection_folded else torch.float32),
                 ((bsz, hq), torch.float32),
             )
         result = triton_hayatequant_decode_attention(
@@ -346,10 +553,12 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
             recipe=layer._hayate_recipe,
             scale=self.scale,
             mid_o_buf=mid,
+            query_rotation_buf=qrot,
             rotated_output_buf=rotated,
             lse_buf=lse,
             buf_holder=layer,
             max_num_kv_splits=splits,
+            output_in_rotated_basis=projection_folded,
         )
         emit_runtime_evidence_once(
             self,
@@ -365,6 +574,8 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
                 "cache_device": str(kv_cache.device),
                 "query_shape": list(query.shape),
                 "kv_splits": int(splits),
+                "output_projection_fused": projection_folded,
+                "value_projection_fused": bool(layer._hayate_value_input_folded),
             },
         )
         return result
@@ -381,7 +592,7 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
         PiT: torch.Tensor | None = None,
         layer: Any = None,
     ) -> torch.Tensor:
-        if layer is None or not getattr(layer, "_hayate_native_enabled", False):
+        if layer is None or not self._onecomp_native_enabled(layer):
             return super()._prefill_attention(
                 query, key, value, kv_cache, attn_metadata, Pi, centroids, PiT, layer
             )
@@ -401,7 +612,7 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
         # a long fresh prompt can hide a shorter continuation request. Check
         # every CPU-resident request length before ignoring the packed cache.
         if _HAS_FLASH_ATTN and _all_first_chunk_prefills(qsl, slens):
-            return self._flash_attn_varlen(
+            out = self._flash_attn_varlen(
                 q=query,
                 k=key,
                 v=value,
@@ -410,6 +621,7 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
                 max_seqlen_q=attn_metadata.max_query_len,
                 max_seqlen_k=attn_metadata.max_query_len,
             )
+            return _to_folded_value_basis(out, layer)
         hk = key.shape[1]
         use_gqa = hk < hq
         nreq = qloc.shape[0] - 1
@@ -451,7 +663,7 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
                         scale=self.scale,
                         enable_gqa=use_gqa,
                     ).transpose(0, 1)
-                output[qs:qe] = out.to(query.dtype)
+                output[qs:qe] = _to_folded_value_basis(out, layer).to(query.dtype)
                 continue
             cached = seqlen - qlen
             if qlen <= _CONTINUATION_DECODE_THRESHOLD:
@@ -510,7 +722,7 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
         Pi: torch.Tensor,
         centroids: torch.Tensor,
     ) -> torch.Tensor:
-        if not getattr(layer, "_hayate_native_enabled", False):
+        if not self._onecomp_native_enabled(layer):
             return super()._continuation_prefill(
                 layer,
                 query,
@@ -541,6 +753,7 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
             recipe=layer._hayate_recipe,
             k_out=kbuf,
             v_out=vbuf,
+            value_in_rotated_basis=layer._hayate_value_input_folded,
         )
         kcached = kbuf[0, :, :cached_len, :].transpose(0, 1)
         vcached = vbuf[0, :, :cached_len, :].transpose(0, 1)
@@ -554,7 +767,7 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
                 self._hayate_cu2k = torch.zeros(2, device=query.device, dtype=torch.int32)
             self._hayate_cu2q[1:2] = qlen
             self._hayate_cu2k[1:2] = seq_len
-            return self._flash_attn_varlen(
+            out = self._flash_attn_varlen(
                 q=query,
                 k=kfull,
                 v=vfull,
@@ -563,6 +776,7 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
                 max_seqlen_q=qlen,
                 max_seqlen_k=seq_len,
             )
+            return _to_folded_value_basis(out, layer)
         qpos = torch.arange(qlen, device=query.device).unsqueeze(1) + cached_len
         kpos = torch.arange(seq_len, device=query.device).unsqueeze(0)
         out = F.scaled_dot_product_attention(
@@ -573,13 +787,15 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
             scale=self.scale,
             enable_gqa=(hk < hq),
         )
-        return out[0].transpose(0, 1)
+        return _to_folded_value_basis(out[0].transpose(0, 1), layer)
 
 
 __all__ = [
     "HAYATEQUANT_CONFIG_ENV",
+    "HAYATEQUANT_DISABLE_PROJECTION_FUSION_ENV",
     "_all_first_chunk_prefills",
     "configure_hayatequant_native_backend",
+    "install_hayatequant_projection_fusion",
     "HayateQuantNativeBackend",
     "HayateQuantNativeImpl",
 ]

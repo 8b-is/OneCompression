@@ -581,6 +581,7 @@ def build_jobs(
         speed_model = next(model for model in models if model.key == speed_key)
         pairs: list[tuple[str, int | None]] = [
             ("fullkv", None),
+            ("turboquant", 2),
             ("turboquant", 3),
             ("turboquant", 4),
             ("hayatequant", 2),
@@ -675,7 +676,7 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
             "speed_prompt_tokens": args.prompt_tokens,
             "speed_generated_tokens": args.max_tokens,
             "speed_repeats": args.repeats,
-            "turboquant_vllm_rates": [3, 4],
+            "turboquant_vllm_rates": list(RATES),
             "hayatequant_vllm_rates": list(RATES),
             "taperkv_speed_included": bool(args.include_taperkv_speed),
         },

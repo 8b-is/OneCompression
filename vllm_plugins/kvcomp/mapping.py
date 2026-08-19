@@ -70,6 +70,8 @@ class KVCompVLLMPlan:
     needs_custom_backend: bool = False
     hayatequant_native: bool = False
     hayatequant_config: dict = field(default_factory=dict)
+    turboquant2_native: bool = False
+    turboquant2_config: dict = field(default_factory=dict)
     taper_backend: bool = False
     taper_config: dict = field(default_factory=dict)
     skip_layers: list[int] = field(default_factory=list)
@@ -340,10 +342,18 @@ def _plan_from_kv_config(
                 plan.notes.append("This key/value width has no native vLLM TurboQuant preset.")
             else:
                 plan.skip_layers = _integer_list(codec, "skip_layers")
+                plan.turboquant2_native = preset.custom_backend
+                if preset.custom_backend:
+                    plan.turboquant2_config = {"rate": 2}
                 set_native(
                     preset.kv_cache_dtype,
-                    f"TurboQuant k{preset.key_bits}v{preset.value_bits} uses "
-                    f"native vLLM dtype {preset.kv_cache_dtype!r}.",
+                    (
+                        "TurboQuant k2v2 uses OneComp's packed vLLM backend "
+                        f"(carrier dtype {preset.kv_cache_dtype!r})."
+                        if preset.custom_backend
+                        else f"TurboQuant k{preset.key_bits}v{preset.value_bits} uses "
+                        f"native vLLM dtype {preset.kv_cache_dtype!r}."
+                    ),
                 )
                 _check_turboquant_semantics(codec, plan)
     elif name in _NATIVE_OTHER:
@@ -387,7 +397,7 @@ def engine_kwargs_from_kv_config(
     if plan.needs_custom_backend or not plan.native_supported:
         detail = "; ".join(plan.notes + plan.warnings) or "no faithful native mapping"
         raise RuntimeError(f"KV recipe cannot run through native vLLM kwargs: {detail}")
-    if plan.taper_backend or plan.hayatequant_native:
+    if plan.taper_backend or plan.hayatequant_native or plan.turboquant2_native:
         raise RuntimeError(
             "This KV recipe requires the onecomp_kvcomp plugin's attention backend."
         )

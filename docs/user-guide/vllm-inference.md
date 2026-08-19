@@ -28,14 +28,20 @@ llm = LLM(
 )
 ```
 
-Supported native TurboQuant presets are:
+Supported packed TurboQuant presets are:
 
 | Key bits | Value bits | vLLM `kv_cache_dtype` |
 |----------|------------|-----------------------|
+| 2 | 2 | OneComp packed backend (validated 3-bit carrier) |
 | 8 | 4 | `turboquant_k8v4` |
 | 4 | 4 | `turboquant_4bit_nc` |
 | 3 | 4 | `turboquant_k3v4_nc` |
 | 3 | 3 | `turboquant_3bit_nc` |
+
+The K2/V2 row is implemented by OneComp's vLLM plugin because upstream vLLM
+does not currently expose a 2-bit TurboQuant dtype. It uses specialized fused
+Triton store and decode kernels and a physically packed cache; the carrier
+dtype does not control its layout or arithmetic.
 
 HayateQuant has one canonical packed K/V backend. Average rates 2, 3, and 4
 map to the fixed K3/V1, K4/V2, and K5/V3 per-coordinate rates (K6/V2,
@@ -43,6 +49,16 @@ K8/V4, and K10/V6 per two-coordinate block). A saved recipe must
 contain the canonical `hayatequant` codec, `bits`, optional `skip_layers`, and
 `residual_window=0`; old mode names and component knobs are rejected. Learned
 calibration artifacts currently remain on the Hugging Face path.
+
+On supported Llama and Qwen-family models with unquantized attention
+projections, the plugin folds HQ's fixed value rotation into the loaded V and
+output-projection weights once after loading. This removes the corresponding
+per-token value transforms without changing the codec. Query/key rotation
+remains after RoPE, where folding would be incorrect. Quantized or unsupported
+projections automatically retain the explicit inverse-rotation path; set
+`KVCOMP_VLLM_HAYATEQUANT_DISABLE_PROJECTION_FUSION=1` to force that fallback
+for diagnosis. Rate-specialized packed store and attention kernels are used in
+both cases.
 
 TaperKV is a distinct proposal and must be configured without another codec or
 selector. Its current vLLM backend performs the age-dependent schedule on GPU,

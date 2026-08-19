@@ -90,7 +90,7 @@ def test_hayate_runtime_evidence_requires_packed_store_and_decode():
         implementation="native_packed_hayatequant",
         cache_dtype="uint8",
         cache_device="cuda:0",
-        store_encoder="triton_fused_b2_k_nc_v_ls_iter",
+        store_encoder="triton_fused_b2_k_nc_v_ls_iter_encode_pack",
     )
     decode = _evidence(
         "packed_hayatequant_decode_attention_launched",
@@ -115,7 +115,7 @@ def test_hayate_runtime_evidence_requires_every_layer_for_both_events():
             "implementation": "native_packed_hayatequant",
             "cache_dtype": "uint8",
             "cache_device": "cuda:0",
-            "store_encoder": "triton_fused_b2_k_nc_v_ls_iter",
+            "store_encoder": "triton_fused_b2_k_nc_v_ls_iter_encode_pack",
             "layer_index": layer_index,
         }
         rows.extend(
@@ -128,6 +128,33 @@ def test_hayate_runtime_evidence_requires_every_layer_for_both_events():
     benchmark._validate_runtime_evidence("hayatequant", rows, 3)
     with pytest.raises(RuntimeError, match="did not cover every model layer"):
         benchmark._validate_runtime_evidence("hayatequant", rows[:-1], 3)
+
+
+def test_turboquant2_runtime_evidence_proves_packed_all_layer_execution():
+    rows = []
+    for layer_index in range(2):
+        common = {
+            "implementation": "native_packed_turboquant2",
+            "cache_dtype": "uint8",
+            "cache_device": "cuda:0",
+            "rate": 2,
+            "key_bits": 2,
+            "value_bits": 2,
+            "layer_index": layer_index,
+        }
+        rows.extend(
+            [
+                _evidence("packed_turboquant2_store_launched", **common),
+                _evidence("packed_turboquant2_decode_attention_launched", **common),
+            ]
+        )
+
+    benchmark._validate_runtime_evidence("turboquant", rows, 2, rate=2)
+    with pytest.raises(RuntimeError, match="did not cover every model layer"):
+        benchmark._validate_runtime_evidence("turboquant", rows[:-1], 2, rate=2)
+    with pytest.raises(RuntimeError, match="packed uint8"):
+        broken = [rows[0] | {"cache_dtype": "float16"}, *rows[1:]]
+        benchmark._validate_runtime_evidence("turboquant", broken, 2, rate=2)
 
 
 def test_taper_runtime_evidence_requires_cuda_regrading_backend():

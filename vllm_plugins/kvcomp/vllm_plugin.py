@@ -20,6 +20,7 @@ from vllm_plugins.kvcomp.mapping import (
 
 _PLUGIN_NAME = "onecomp_kvcomp"
 _HAYATEQUANT_CONFIG_ENV = "KVCOMP_VLLM_HAYATEQUANT_CONFIG"
+_TURBOQUANT2_CONFIG_ENV = "KVCOMP_VLLM_TURBOQUANT2_CONFIG"
 _TAPER_CONFIG_ENV = "KVCOMP_VLLM_TAPER_CONFIG"
 _TAPER_EXPLICIT_ENV = "KVCOMP_VLLM_TAPER_CONFIG_EXPLICIT"
 
@@ -94,6 +95,8 @@ def apply_to_engine_args(engine_args, model_path: Optional[str] = None):
     # payload intact.
     if plan.codec_name is not None and not plan.hayatequant_native:
         os.environ.pop(_HAYATEQUANT_CONFIG_ENV, None)
+    if plan.codec_name is not None and not plan.turboquant2_native:
+        os.environ.pop(_TURBOQUANT2_CONFIG_ENV, None)
     if not plan.taper_backend and not os.environ.get(_TAPER_EXPLICIT_ENV):
         os.environ.pop(_TAPER_CONFIG_ENV, None)
 
@@ -128,6 +131,8 @@ def apply_to_engine_args(engine_args, model_path: Optional[str] = None):
             )
         if plan.hayatequant_native:
             _install_hayatequant_backend(plan, logger)
+        if plan.turboquant2_native:
+            _install_turboquant2_backend(plan, logger)
         engine_args.kv_cache_dtype = plan.kv_cache_dtype
         if plan.calculate_kv_scales and hasattr(engine_args, "calculate_kv_scales"):
             engine_args.calculate_kv_scales = True
@@ -142,6 +147,8 @@ def apply_to_engine_args(engine_args, model_path: Optional[str] = None):
 _PATCHED = False
 _HAYATEQUANT_INSTALLED = False
 _HAYATEQUANT_SPEC_PATCHED = False
+_TURBOQUANT2_INSTALLED = False
+_TURBOQUANT2_SPEC_PATCHED = False
 _TAPER_INSTALLED = False
 
 
@@ -214,6 +221,44 @@ def _install_hayatequant_cache_spec_hook() -> bool:
     return True
 
 
+def _install_turboquant2_cache_spec_hook() -> bool:
+    """Make vLLM allocate the packed K2/V2 slot instead of its 3-bit carrier."""
+
+    global _TURBOQUANT2_SPEC_PATCHED
+    if not os.environ.get(_TURBOQUANT2_CONFIG_ENV):
+        return False
+    if _TURBOQUANT2_SPEC_PATCHED:
+        return True
+
+    from dataclasses import replace  # pylint: disable=import-outside-toplevel
+    from vllm.model_executor.layers.attention.attention import (  # pylint: disable=import-outside-toplevel
+        Attention,
+    )
+    from vllm.v1.kv_cache_interface import (  # pylint: disable=import-outside-toplevel
+        TQFullAttentionSpec,
+    )
+    from vllm_plugins.kvcomp.turboquant2_triton import (  # pylint: disable=import-outside-toplevel
+        turboquant2_layout,
+    )
+
+    original = Attention.get_kv_cache_spec
+
+    def _turboquant2_spec(self, vllm_config):
+        spec = original(self, vllm_config)
+        raw = os.environ.get(_TURBOQUANT2_CONFIG_ENV)
+        if not raw or not isinstance(spec, TQFullAttentionSpec):
+            return spec
+        if json.loads(raw) != {"rate": 2}:
+            raise RuntimeError("invalid TurboQuant2 cache-spec payload")
+        slot_size = turboquant2_layout(self.head_size)["slot_size_aligned"]
+        return replace(spec, tq_slot_size=slot_size)
+
+    _turboquant2_spec._onecomp_turboquant2_original = original
+    Attention.get_kv_cache_spec = _turboquant2_spec
+    _TURBOQUANT2_SPEC_PATCHED = True
+    return True
+
+
 def _register_hayatequant_backend(logger) -> bool:
     """Validate and register HayateQuant in this process or spawn child."""
 
@@ -228,8 +273,12 @@ def _register_hayatequant_backend(logger) -> bool:
         from vllm_plugins.kvcomp.hayate_config import (  # pylint: disable=import-outside-toplevel
             hayatequant_native_recipe_from_mapping,
         )
+        from vllm_plugins.kvcomp.hayate_native import (  # pylint: disable=import-outside-toplevel
+            install_hayatequant_projection_fusion,
+        )
 
         hayatequant_native_recipe_from_mapping(config)
+        projection_fusion_available = install_hayatequant_projection_fusion()
     except Exception as exc:
         raise RuntimeError("invalid HayateQuant native config") from exc
     if _HAYATEQUANT_INSTALLED:
@@ -248,6 +297,13 @@ def _register_hayatequant_backend(logger) -> bool:
         raise RuntimeError("could not register HayateQuant vLLM backend") from exc
     _HAYATEQUANT_INSTALLED = True
     logger.info("[kvcomp] registered packed HayateQuant backend")
+    if projection_fusion_available:
+        logger.info("[kvcomp] enabled HayateQuant output-projection fusion")
+    else:
+        logger.warning(
+            "[kvcomp] no supported output projection was found; "
+            "HayateQuant will retain its inverse value rotation"
+        )
     return True
 
 
@@ -267,6 +323,56 @@ def _install_hayatequant_backend(plan: KVCompVLLMPlan, logger) -> bool:
         raise RuntimeError("HayateQuant plan did not register its backend")
     if not _install_hayatequant_cache_spec_hook():
         raise RuntimeError("HayateQuant plan did not install its cache-spec hook")
+    return True
+
+
+def _register_turboquant2_backend(logger) -> bool:
+    """Validate and register the packed K2/V2 backend in this process."""
+
+    global _TURBOQUANT2_INSTALLED
+    payload = os.environ.get(_TURBOQUANT2_CONFIG_ENV)
+    if not payload:
+        return False
+    try:
+        if json.loads(payload) != {"rate": 2}:
+            raise ValueError("payload must contain exactly rate=2")
+    except Exception as exc:
+        raise RuntimeError("invalid TurboQuant2 native config") from exc
+    if _TURBOQUANT2_INSTALLED:
+        return True
+    try:
+        from vllm.v1.attention.backends.registry import (  # pylint: disable=import-outside-toplevel
+            AttentionBackendEnum,
+            register_backend,
+        )
+
+        register_backend(
+            AttentionBackendEnum.TURBOQUANT,
+            "vllm_plugins.kvcomp.turboquant2_native.TurboQuant2NativeBackend",
+        )
+    except Exception as exc:  # pragma: no cover - vLLM version dependent
+        raise RuntimeError("could not register TurboQuant2 vLLM backend") from exc
+    _TURBOQUANT2_INSTALLED = True
+    logger.info("[kvcomp] registered packed TurboQuant K2/V2 backend")
+    return True
+
+
+def _install_turboquant2_backend(plan: KVCompVLLMPlan, logger) -> bool:
+    if not plan.turboquant2_native:
+        return False
+    from vllm_plugins.kvcomp.native_turboquant import (  # pylint: disable=import-outside-toplevel
+        disable_vllm_implicit_turboquant_boundary_skip,
+    )
+
+    disable_vllm_implicit_turboquant_boundary_skip()
+    os.environ[_TURBOQUANT2_CONFIG_ENV] = json.dumps(
+        plan.turboquant2_config,
+        sort_keys=True,
+    )
+    if not _register_turboquant2_backend(logger):
+        raise RuntimeError("TurboQuant2 plan did not register its backend")
+    if not _install_turboquant2_cache_spec_hook():
+        raise RuntimeError("TurboQuant2 plan did not install its cache-spec hook")
     return True
 
 
@@ -344,6 +450,8 @@ def register_vllm_plugin():
 
     logger = _get_logger()
     try:
+        if _register_turboquant2_backend(logger):
+            _install_turboquant2_cache_spec_hook()
         if _register_hayatequant_backend(logger):
             _install_hayatequant_cache_spec_hook()
         _register_taper_backend(logger)

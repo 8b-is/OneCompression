@@ -84,15 +84,16 @@ revision, and every checkpoint artifact identity.
 ## Serving scope
 
 `vllm_benchmark.py` runs each method/rate in a fresh process and requires
-backend-emitted runtime evidence for HayateQuant and TaperKV. HayateQuant uses
-its fused store, packed cache, and packed attention backend at rates 2/3/4.
+backend-emitted runtime evidence for HayateQuant, TurboQuant K2/V2, and
+TaperKV. HayateQuant uses its fused store, packed cache, and packed attention
+backend at rates 2/3/4.
 The speed protocol applies compression to every model layer: OneComp removes
 vLLM's implicit first/last-two-layer TurboQuant skip while retaining only
 explicitly serialized `skip_layers`. Runtime evidence must cover the complete
-model layer range. The installed vLLM exposes native TurboQuant presets only at
-rates 3 and 4, so the runner does not silently substitute a different codec
-for the missing 2-bit serving cell. TaperKV is measured separately and is
-never labelled HayateQuant.
+model layer range. Upstream vLLM supplies the TurboQuant rate-3 and rate-4
+presets; OneComp supplies a specialized packed K2/V2 backend for rate 2, with
+runtime evidence proving its 70-byte slot at head dimension 128. TaperKV is
+measured separately and is never labelled HayateQuant.
 
 TaperKV uses a CUDA-Graph-safe fused quantize-and-scatter update plus an
 incremental ladder-boundary regrade kernel. Its current vLLM cache allocator is
