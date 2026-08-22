@@ -1,3 +1,0 @@
-69532|CANCELLED by 10003|0:0|00:00:37|kagura-gpu15
-69532.batch|CANCELLED|0:15|00:00:38|kagura-gpu15
-69532.extern|CANCELLED|0:0|00:00:37|kagura-gpu15

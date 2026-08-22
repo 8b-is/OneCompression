@@ -1,32 +1,0 @@
-Loading weights:   0%|          | 0/339 [00:00<?, ?it/s]Loading weights:   0%|          | 1/339 [00:00<03:39,  1.54it/s]Loading weights:   1%|          | 2/339 [00:01<03:00,  1.86it/s]Loading weights:   5%|▍         | 16/339 [00:01<00:16, 19.08it/s]Loading weights:   6%|▋         | 22/339 [00:01<00:20, 15.43it/s]Loading weights:  22%|██▏       | 76/339 [00:01<00:03, 76.56it/s]Loading weights:  29%|██▊       | 97/339 [00:02<00:02, 81.95it/s]Loading weights:  34%|███▍      | 115/339 [00:02<00:02, 77.42it/s]Loading weights:  38%|███▊      | 129/339 [00:02<00:02, 79.52it/s]Loading weights:  42%|████▏     | 142/339 [00:02<00:02, 81.05it/s]Loading weights:  45%|████▌     | 154/339 [00:02<00:02, 79.45it/s]Loading weights:  48%|████▊     | 164/339 [00:02<00:02, 76.77it/s]Loading weights:  51%|█████     | 173/339 [00:03<00:02, 73.84it/s]Loading weights:  54%|█████▍    | 184/339 [00:03<00:02, 74.82it/s]Loading weights:  58%|█████▊    | 197/339 [00:03<00:01, 80.93it/s]Loading weights:  61%|██████    | 207/339 [00:03<00:01, 82.43it/s]Loading weights:  64%|██████▍   | 217/339 [00:03<00:01, 86.49it/s]Loading weights:  67%|██████▋   | 227/339 [00:03<00:01, 81.60it/s]Loading weights:  70%|██████▉   | 236/339 [00:03<00:01, 78.65it/s]Loading weights:  72%|███████▏  | 245/339 [00:04<00:01, 75.80it/s]Loading weights:  76%|███████▌  | 256/339 [00:04<00:00, 84.16it/s]Loading weights:  78%|███████▊  | 265/339 [00:04<00:01, 67.44it/s]Loading weights:  83%|████████▎ | 281/339 [00:04<00:00, 77.78it/s]Loading weights:  86%|████████▌ | 290/339 [00:04<00:00, 77.34it/s]Loading weights:  90%|████████▉ | 304/339 [00:04<00:00, 90.61it/s]Loading weights:  93%|█████████▎| 314/339 [00:04<00:00, 91.67it/s]Loading weights:  96%|█████████▌| 324/339 [00:04<00:00, 82.81it/s]Loading weights:  98%|█████████▊| 333/339 [00:05<00:00, 80.02it/s]Loading weights: 100%|██████████| 339/339 [00:05<00:00, 66.31it/s]
-Using the latest cached version of the dataset since Salesforce/wikitext couldn't be found on the Hugging Face Hub (offline mode is enabled).
-Found the latest cached dataset configuration 'wikitext-2-raw-v1' at /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/hf_home/datasets/Salesforce___wikitext/wikitext-2-raw-v1/0.0.0/b08601e04326c79dfdd32d625aee71d232d685c3 (last modified on Wed Jul 15 20:23:07 2026).
-[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (327418 > 16384). Running this sequence through the model will result in indexing errors
-Error executing job with overrides: ['model_path=/lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Qwen-1.5B', 'device=cuda:0', 'dtype=bfloat16', 'output_dir=/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/results/dev/hq_fixed_recipe_r1qwen15_20260716', 'bits=[2,3,4]', 'sink_tokens=0', 'recent_tokens=0', 'capture_tokens=512', 'timing_heads=8', 'timing_seq=4096', 'timing_iters=20', 'run_ppl=true', 'ppl_max_length=512', 'ppl_stride=256', 'ppl_windows=8', '+methods=[TurboQuant-paper,HQ-dev-paper-NC-LSiter-Gauss,HQ-dev-fixed-delta0-Gauss-NC-LSiter,HQ-dev-fixed-delta05-Gauss-NC-LSiter,HQ-dev-fixed-delta05-Beta-NC-LSiter,HQ-dev-fixed-delta05-Gauss-NC-LS,HQ-dev-fixed-delta05-b2-Gauss-NC-LSiter,HQ-dev-fixed-delta05-b2-Beta-NC-LSiter,HQ-dev-fixed-delta1-Beta-NC-LSiter]', '+skip_outliers=false']
-Traceback (most recent call last):
-  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/benchmark/kvcomp-codec/codec_benchmark.py", line 1014, in main
-    codecs = _codecs(bits, ablation=bool(getattr(cfg, "ablation", False)))
-  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/runtime/hq_fixed_recipe_search.py", line 104, in development_codecs
-    "HQ-dev-fixed-delta05-Gauss-NC-LSiter": _half_bit_codec(
-                                            ~~~~~~~~~~~~~~~^
-        bits, dist="gaussian", value_scale_mode="ls_iter"
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    ),
-    ^
-  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/runtime/hq_fixed_recipe_search.py", line 46, in _half_bit_codec
-    return HayateQuantCodec(
-        bits=bits,
-    ...<8 lines>...
-        value_scale_mode=value_scale_mode,
-    )
-  File "<string>", line 42, in __init__
-  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/_base.py", line 128, in __post_init__
-    self.validate_params()
-    ~~~~~~~~~~~~~~~~~~~~^^
-  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codec.py", line 991, in validate_params
-    raise ValueError(
-    ...<2 lines>...
-    )
-ValueError: key_code_bits_per_block=10 exceeds max_codebook_bits=9; raise max_codebook_bits explicitly if this large codebook is intended
-
-Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.

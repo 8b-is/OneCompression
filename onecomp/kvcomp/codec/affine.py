@@ -48,10 +48,17 @@ class AffineKVCodec(KVCodec):
 
     def encode(self, key, value, ctx=None) -> CompressedKV:
         kq, ks, kz = quantize_affine(
-            key, self.bits, axis=self.key_axis, symmetric=self.symmetric, group_size=self.group_size
+            key,
+            self.bits,
+            axis=self.key_axis,
+            symmetric=self.symmetric,
+            group_size=self.group_size,
         )
         vq, vs, vz = quantize_affine(
-            value, self.bits, axis=self.value_axis, symmetric=self.symmetric,
+            value,
+            self.bits,
+            axis=self.value_axis,
+            symmetric=self.symmetric,
             group_size=self.group_size,
         )
         stored = _stored_bits(key, self.bits, self.key_axis, self.group_size)
@@ -94,7 +101,7 @@ class Int4Codec(AffineKVCodec):
 @register_kv_codec("int3")
 @dataclass
 class Int3Codec(AffineKVCodec):
-    """3-bit affine KV quantization (the iso-bit reference for HALO/TurboQuant 3-bit)."""
+    """3-bit affine KV quantization baseline."""
 
     bits: int = 3
 
@@ -132,10 +139,17 @@ class KIVICodec(KVCodec):
 
     def encode(self, key, value, ctx=None) -> CompressedKV:
         kq, ks, kz = quantize_affine(
-            key, self.bits, axis=self.key_axis, symmetric=self.symmetric, group_size=self.group_size
+            key,
+            self.bits,
+            axis=self.key_axis,
+            symmetric=self.symmetric,
+            group_size=self.group_size,
         )
         vq, vs, vz = quantize_affine(
-            value, self.bits, axis=self.value_axis, symmetric=self.symmetric,
+            value,
+            self.bits,
+            axis=self.value_axis,
+            symmetric=self.symmetric,
             group_size=self.group_size,
         )
         stored = _stored_bits(key, self.bits, self.key_axis, self.group_size)

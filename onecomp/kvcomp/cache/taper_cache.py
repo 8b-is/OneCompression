@@ -1,9 +1,8 @@
 """TaperKV: retrieval-preserving graded KV quantization (no eviction).
 
-Motivation (onecomp-ref/260528.md): ThinKV compresses by *progressive
-eviction* -- it permanently drops tokens.  That is strong for reasoning but
-fragile for **long-context retrieval** (Needle / RULER): if the evicted token
-*is* the needle, the answer is unrecoverable.
+ThinKV compresses by *progressive eviction* and permanently drops tokens. That
+can be fragile for long-context retrieval: if the evicted token is the needle,
+the answer is unrecoverable.
 
 TaperKV keeps **every** token but assigns each a bit-width that *tapers* with
 age: a full-precision sink + recent window, then a precision ladder that decays
@@ -31,8 +30,15 @@ from ._graded_base import GradedQuantCache, fake_quant_tokens
 logger = getLogger(__name__)
 
 
-def taper_bits(age: torch.Tensor, total: int, sink_tokens: int, recent_tokens: int,
-               hi_bits: int, b_min: int, ladder=None) -> torch.Tensor:
+def taper_bits(
+    age: torch.Tensor,
+    total: int,
+    sink_tokens: int,
+    recent_tokens: int,
+    hi_bits: int,
+    b_min: int,
+    ladder=None,
+) -> torch.Tensor:
     """Per-token bit-width as a function of token *age* (0 = newest).
 
     Sink (oldest ``sink_tokens``) and the ``recent_tokens`` newest stay at
@@ -45,6 +51,8 @@ def taper_bits(age: torch.Tensor, total: int, sink_tokens: int, recent_tokens: i
     mid = ~(is_sink | is_recent)
     if ladder is None:
         ladder = list(range(hi_bits, b_min - 1, -1)) or [b_min]
+    if not ladder:
+        raise ValueError("ladder must not be empty")
     # Do not branch on ``mid.any()``: on CUDA that scalar conversion inserts a
     # host synchronisation into every cache update.  Computing the candidate
     # bands for the protected sink/recent entries too is cheap and ``where``
@@ -82,17 +90,20 @@ class TaperKVCache(GradedQuantCache):
     def __init__(self, policy, config=None, requant_stride: int | None = None, **kwargs):
         if requant_stride is None:
             requant_stride = policy.requant_stride or 16
-        super().__init__(config=config, skip_layers=policy.skip_layers,
-                         requant_stride=requant_stride, **kwargs)
+        super().__init__(
+            config=config, skip_layers=policy.skip_layers, requant_stride=requant_stride, **kwargs
+        )
         self.policy = policy
 
     def token_bits(self, total, device, layer_idx):
         p = self.policy
         age = torch.arange(total - 1, -1, -1, device=device)  # 0 = newest
-        kbits = taper_bits(age, total, p.sink_tokens, p.recent_tokens,
-                           p.key_bits, p.b_min, p.ladder)
-        vbits = taper_bits(age, total, p.sink_tokens, p.recent_tokens,
-                           p.value_bits, p.b_min_value, p.ladder)
+        kbits = taper_bits(
+            age, total, p.sink_tokens, p.recent_tokens, p.key_bits, p.b_min, p.key_ladder
+        )
+        vbits = taper_bits(
+            age, total, p.sink_tokens, p.recent_tokens, p.value_bits, p.b_min_value, p.value_ladder
+        )
         return kbits, vbits
 
 
@@ -123,12 +134,13 @@ def apply_byte_budget(
     value_bits: int,
     b_min: int,
     b_min_value: int,
-    ladder,
+    key_ladder,
+    value_ladder,
     batch_heads: int,
     dim: int,
     max_bits: int | None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Apply one oldest-first ladder step toward a payload-only bit budget.
+    """Apply one oldest-first ladder step toward a per-layer payload budget.
 
     Metadata is intentionally absent from both the budget and this helper:
     the policy documents a payload cap and the cache reports metadata
@@ -148,17 +160,32 @@ def apply_byte_budget(
     start = min(sink_tokens, total)
     stop = max(start, total - recent_tokens)
     if stop <= start:
-        return kbits, vbits
+        raise ValueError(
+            f"TaperKV payload budget is infeasible: protected tokens require "
+            f"{total_bits} bits but max_bits={max_bits}"
+        )
     indices = torch.arange(start, stop, device=kbits.device)
-    next_k = step_down_bits(kbits[indices], key_bits, b_min, ladder)
-    next_v = step_down_bits(vbits[indices], value_bits, b_min_value, ladder)
+    next_k = step_down_bits(kbits[indices], key_bits, b_min, key_ladder)
+    next_v = step_down_bits(vbits[indices], value_bits, b_min_value, value_ladder)
     savings = ((kbits[indices] - next_k) + (vbits[indices] - next_v)) * per_token_role
     if int(savings.sum()) <= 0:
-        return kbits, vbits
+        minimum_k = kbits.clone()
+        minimum_v = vbits.clone()
+        minimum_k[indices] = b_min
+        minimum_v[indices] = b_min_value
+        minimum_bits = int((minimum_k.sum() + minimum_v.sum()) * per_token_role)
+        raise ValueError(
+            f"TaperKV payload budget is infeasible at the configured floors: "
+            f"minimum={minimum_bits} bits, max_bits={max_bits}"
+        )
     excess = total_bits - max_bits
     cumulative = torch.cumsum(savings, dim=0)
     enough = cumulative >= excess
-    count = int(torch.nonzero(enough, as_tuple=False)[0]) + 1 if bool(enough.any()) else indices.numel()
+    count = (
+        int(torch.nonzero(enough, as_tuple=False)[0]) + 1
+        if bool(enough.any())
+        else indices.numel()
+    )
     out_k, out_v = kbits.clone(), vbits.clone()
     chosen = indices[:count]
     out_k[chosen] = next_k[:count]
@@ -178,11 +205,6 @@ class BudgetTaperKVCache(TaperKVCache):
         if requant_stride != 1:
             raise ValueError("BudgetTaperKVCache requires requant_stride=1 for its payload budget")
         super().__init__(policy, config=config, requant_stride=1, **kwargs)
-        self._prev_bits: dict[int, tuple[torch.Tensor, torch.Tensor]] = {}
-
-    def reset(self):
-        super().reset()
-        self._prev_bits.clear()
 
     def token_bits(self, total, device, layer_idx):
         p = self.policy
@@ -196,20 +218,12 @@ class BudgetTaperKVCache(TaperKVCache):
         total = keys.shape[2]
         batch_heads = keys.shape[0] * keys.shape[1]
         dim = keys.shape[-1]
-        kbits, vbits = self.token_bits(total, keys.device, layer_idx)
-        previous = self._prev_bits.get(layer_idx)
-        if previous is not None:
-            previous_k, previous_v = previous
-            count = min(total, previous_k.numel(), previous_v.numel())
-            if count:
-                kbits[:count] = torch.minimum(
-                    kbits[:count], previous_k[:count].to(device=keys.device, dtype=kbits.dtype)
-                )
-                vbits[:count] = torch.minimum(
-                    vbits[:count], previous_v[:count].to(device=keys.device, dtype=vbits.dtype)
-                )
+        requested_k, requested_v = self.token_bits(total, keys.device, layer_idx)
+        previous_k, previous_v = self._previous_bits(layer_idx, total, keys.device)
+        kbits = torch.minimum(requested_k, previous_k)
+        vbits = torch.minimum(requested_v, previous_v)
 
-        if p.max_bytes is not None:
+        if p.max_bytes_per_layer is not None:
             while True:
                 next_k, next_v = apply_byte_budget(
                     kbits,
@@ -221,23 +235,26 @@ class BudgetTaperKVCache(TaperKVCache):
                     p.value_bits,
                     p.b_min,
                     p.b_min_value,
-                    p.ladder,
+                    p.key_ladder,
+                    p.value_ladder,
                     batch_heads,
                     dim,
-                    p.max_bytes * 8,
+                    p.max_bytes_per_layer * 8,
                 )
                 if next_k is kbits and next_v is vbits:
                     break
                 kbits, vbits = next_k, next_v
 
-        self._prev_bits[layer_idx] = (kbits.detach().clone(), vbits.detach().clone())
-        key_quantized = fake_quant_tokens(keys, kbits)
-        value_quantized = fake_quant_tokens(values, vbits)
+        kbits, kwork = self._lowering_work_bits(kbits, previous_k)
+        vbits, vwork = self._lowering_work_bits(vbits, previous_v)
+        self._record_token_bits(layer_idx, kbits, vbits)
+        key_quantized = fake_quant_tokens(keys, kwork)
+        value_quantized = fake_quant_tokens(values, vwork)
         per_token_role = batch_heads * dim
         stored_bits = int(
             kbits.sum() * per_token_role
             + vbits.sum() * per_token_role
-            + self._meta_bits(kbits, batch_heads)
-            + self._meta_bits(vbits, batch_heads)
+            + self._meta_bits_for_role(kbits, batch_heads, "k")
+            + self._meta_bits_for_role(vbits, batch_heads, "v")
         )
         return key_quantized, value_quantized, stored_bits

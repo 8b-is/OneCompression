@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "speed_model": "llama31-8b",
+  "models": [
+    {"key": "llama2-7b", "display": "Llama-2-7B", "ref": "Llama-2-7b-hf"},
+    {"key": "llama31-8b", "display": "Llama-3.1-8B", "ref": "llama-3.1-8b-instruct"},
+    {"key": "qwen3-4b", "display": "Qwen3-4B", "ref": "Qwen3-4B"},
+    {"key": "qwen3-8b", "display": "Qwen3-8B", "ref": "Qwen3-8B"},
+    {"key": "r1-llama-8b", "display": "DeepSeek-R1-Distill-Llama-8B", "ref": "DeepSeek-R1-Distill-Llama-8B"},
+    {"key": "r1-qwen-1.5b", "display": "DeepSeek-R1-Distill-Qwen-1.5B", "ref": "DeepSeek-R1-Distill-Qwen-1.5B"},
+    {"key": "r1-qwen-7b", "display": "DeepSeek-R1-Distill-Qwen-7B", "ref": "DeepSeek-R1-Distill-Qwen-7B"}
+  ]
+}

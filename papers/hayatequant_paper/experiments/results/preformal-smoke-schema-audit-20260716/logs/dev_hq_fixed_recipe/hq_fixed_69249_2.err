@@ -1,32 +1,0 @@
-Loading weights:   0%|          | 0/398 [00:00<?, ?it/s]Loading weights:   0%|          | 1/398 [00:00<03:29,  1.89it/s]Loading weights:   1%|          | 2/398 [00:00<01:49,  3.62it/s]Loading weights:   1%|▏         | 5/398 [00:00<00:40,  9.65it/s]Loading weights:   3%|▎         | 11/398 [00:00<00:17, 21.83it/s]Loading weights:   4%|▍         | 15/398 [00:01<00:16, 22.77it/s]Loading weights:   5%|▍         | 18/398 [00:01<00:16, 22.98it/s]Loading weights:   6%|▋         | 25/398 [00:01<00:12, 30.08it/s]Loading weights:   7%|▋         | 29/398 [00:01<00:11, 31.25it/s]Loading weights:   9%|▊         | 34/398 [00:01<00:14, 25.68it/s]Loading weights:  11%|█         | 44/398 [00:01<00:08, 39.98it/s]Loading weights:  12%|█▏        | 49/398 [00:01<00:10, 33.71it/s]Loading weights:  14%|█▍        | 55/398 [00:02<00:10, 32.83it/s]Loading weights:  16%|█▌        | 64/398 [00:02<00:07, 43.92it/s]Loading weights:  18%|█▊        | 70/398 [00:02<00:08, 39.89it/s]Loading weights:  19%|█▉        | 75/398 [00:02<00:08, 39.10it/s]Loading weights:  20%|██        | 80/398 [00:02<00:09, 35.16it/s]Loading weights:  22%|██▏       | 89/398 [00:02<00:06, 45.80it/s]Loading weights:  24%|██▍       | 95/398 [00:03<00:06, 43.45it/s]Loading weights:  25%|██▌       | 100/398 [00:03<00:08, 36.45it/s]Loading weights:  28%|██▊       | 111/398 [00:03<00:07, 37.98it/s]Loading weights:  31%|███       | 124/398 [00:03<00:05, 49.79it/s]Loading weights:  33%|███▎      | 130/398 [00:03<00:05, 47.23it/s]Loading weights:  34%|███▍      | 136/398 [00:04<00:06, 41.22it/s]Loading weights:  35%|███▌      | 141/398 [00:04<00:06, 40.80it/s]Loading weights:  37%|███▋      | 147/398 [00:04<00:05, 42.70it/s]Loading weights:  38%|███▊      | 152/398 [00:04<00:05, 42.77it/s]Loading weights:  39%|███▉      | 157/398 [00:04<00:06, 35.98it/s]Loading weights:  42%|████▏     | 168/398 [00:04<00:07, 31.86it/s]Loading weights:  43%|████▎     | 173/398 [00:05<00:08, 27.42it/s]Loading weights:  49%|████▉     | 197/398 [00:05<00:03, 59.15it/s]Loading weights:  52%|█████▏    | 207/398 [00:05<00:03, 56.93it/s]Loading weights:  54%|█████▍    | 215/398 [00:06<00:06, 29.06it/s]Loading weights:  66%|██████▋   | 264/398 [00:06<00:01, 78.66it/s]Loading weights:  71%|███████   | 283/398 [00:06<00:01, 68.30it/s]Loading weights:  75%|███████▍  | 298/398 [00:07<00:02, 48.84it/s]Loading weights:  78%|███████▊  | 312/398 [00:07<00:01, 55.51it/s]Loading weights:  81%|████████  | 323/398 [00:07<00:01, 50.51it/s]Loading weights:  86%|████████▌ | 343/398 [00:07<00:00, 65.91it/s]Loading weights:  89%|████████▉ | 354/398 [00:08<00:00, 63.88it/s]Loading weights:  91%|█████████▏| 364/398 [00:08<00:00, 49.12it/s]Loading weights:  93%|█████████▎| 372/398 [00:08<00:00, 44.89it/s]Loading weights:  97%|█████████▋| 388/398 [00:08<00:00, 51.98it/s]Loading weights:  99%|█████████▉| 395/398 [00:09<00:00, 53.37it/s]Loading weights: 100%|██████████| 398/398 [00:09<00:00, 43.91it/s]
-Using the latest cached version of the dataset since Salesforce/wikitext couldn't be found on the Hugging Face Hub (offline mode is enabled).
-Found the latest cached dataset configuration 'wikitext-2-raw-v1' at /lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/data/hf_home/datasets/Salesforce___wikitext/wikitext-2-raw-v1/0.0.0/b08601e04326c79dfdd32d625aee71d232d685c3 (last modified on Wed Jul 15 20:23:07 2026).
-[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (299078 > 131072). Running this sequence through the model will result in indexing errors
-Error executing job with overrides: ['model_path=/lustre/home/frj/yuma-ichikawa/conference/models/Qwen3-4B', 'device=cuda:0', 'dtype=bfloat16', 'output_dir=/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/results/dev/hq_fixed_recipe_qwen34_20260716', 'bits=[2,3,4]', 'sink_tokens=0', 'recent_tokens=0', 'capture_tokens=512', 'timing_heads=8', 'timing_seq=4096', 'timing_iters=20', 'run_ppl=true', 'ppl_max_length=512', 'ppl_stride=256', 'ppl_windows=8', '+methods=[TurboQuant-paper,HQ-dev-paper-NC-LSiter-Gauss,HQ-dev-fixed-delta0-Gauss-NC-LSiter,HQ-dev-fixed-delta05-Gauss-NC-LSiter,HQ-dev-fixed-delta05-Beta-NC-LSiter,HQ-dev-fixed-delta05-Gauss-NC-LS,HQ-dev-fixed-delta05-b2-Gauss-NC-LSiter,HQ-dev-fixed-delta05-b2-Beta-NC-LSiter,HQ-dev-fixed-delta1-Beta-NC-LSiter]', '+skip_outliers=false']
-Traceback (most recent call last):
-  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/benchmark/kvcomp-codec/codec_benchmark.py", line 1014, in main
-    codecs = _codecs(bits, ablation=bool(getattr(cfg, "ablation", False)))
-  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/runtime/hq_fixed_recipe_search.py", line 104, in development_codecs
-    "HQ-dev-fixed-delta05-Gauss-NC-LSiter": _half_bit_codec(
-                                            ~~~~~~~~~~~~~~~^
-        bits, dist="gaussian", value_scale_mode="ls_iter"
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    ),
-    ^
-  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/hayate_iclr2027_refresh_20260715/runtime/hq_fixed_recipe_search.py", line 46, in _half_bit_codec
-    return HayateQuantCodec(
-        bits=bits,
-    ...<8 lines>...
-        value_scale_mode=value_scale_mode,
-    )
-  File "<string>", line 42, in __init__
-  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/_base.py", line 128, in __post_init__
-    self.validate_params()
-    ~~~~~~~~~~~~~~~~~~~~^^
-  File "/lustre/home/frj/yuma-ichikawa/conference/ichikawa_works/onecomp-lab-kvcomp-correctness/onecomp/kvcomp/codec/hayate/codec.py", line 991, in validate_params
-    raise ValueError(
-    ...<2 lines>...
-    )
-ValueError: key_code_bits_per_block=10 exceeds max_codebook_bits=9; raise max_codebook_bits explicitly if this large codebook is intended
-
-Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.

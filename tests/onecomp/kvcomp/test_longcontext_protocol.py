@@ -11,9 +11,7 @@ import onecomp.kvcomp.eval.longcontext as longcontext
 
 
 @pytest.mark.parametrize("evaluator", ["needle", "multikey"])
-def test_synthetic_evaluators_release_cache_before_every_next_factory(
-    evaluator, monkeypatch
-):
+def test_synthetic_evaluators_release_cache_before_every_next_factory(evaluator, monkeypatch):
     class Cache:
         live = 0
         peak_live = 0
@@ -41,9 +39,7 @@ def test_synthetic_evaluators_release_cache_before_every_next_factory(
         def decode(self, *_args, **_kwargs):
             return "1234"
 
-    model = SimpleNamespace(
-        config=SimpleNamespace(max_position_embeddings=16, text_config=None)
-    )
+    model = SimpleNamespace(config=SimpleNamespace(max_position_embeddings=16, text_config=None))
     monkeypatch.setattr(longcontext, "_encode", lambda *_args: torch.tensor([[1, 2]]))
     monkeypatch.setattr(
         longcontext, "greedy_answer", lambda *_args, **_kwargs: torch.tensor([[3]])
@@ -82,10 +78,7 @@ def test_synthetic_evaluators_release_cache_before_every_next_factory(
     assert all(reference() is None for reference in references)
     assert Cache.live == 0
     assert Cache.peak_live == 1
-    assert (
-        result.as_dict()["example_cache_lifetime"]
-        == longcontext.PER_EXAMPLE_CACHE_LIFETIME
-    )
+    assert result.as_dict()["example_cache_lifetime"] == longcontext.PER_EXAMPLE_CACHE_LIFETIME
 
 
 def test_chat_template_failure_never_falls_back_to_raw_tokenization():
@@ -285,12 +278,10 @@ def test_synthetic_grid_legacy_memory_fraction_is_explicitly_labeled():
         {
             "compression_aggregation": "legacy_cache_ratio_only",
             "compression_ratio": 2.0,
-            "adaptive_hq_runtime": None,
         },
         {
             "compression_aggregation": "legacy_cache_ratio_only",
             "compression_ratio": 10.0,
-            "adaptive_hq_runtime": None,
         },
     ]
 
@@ -312,12 +303,10 @@ def test_synthetic_grid_rejects_mixed_exact_and_legacy_accounting():
             "compression_aggregation": "exact_cache_bit_counters",
             "compression_fp16_bits": 100,
             "compression_stored_bits": 50,
-            "adaptive_hq_runtime": None,
         },
         {
             "compression_aggregation": "legacy_cache_ratio_only",
             "compression_ratio": 2.0,
-            "adaptive_hq_runtime": None,
         },
     ]
 

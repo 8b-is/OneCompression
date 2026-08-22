@@ -15,7 +15,6 @@ from .thinkv import (
     detect_outlier_layers,
 )
 from .taperkv import TaperKVPolicy, BlockTaperKVPolicy, BudgetTaperKVPolicy
-from .turbotaper import TurboTaperPolicy
 from .pmkvq import PMKVQPolicy
 from .rolekv import (
     RolePrecisionPolicy,
@@ -44,7 +43,6 @@ __all__ = [
     "TaperKVPolicy",
     "BlockTaperKVPolicy",
     "BudgetTaperKVPolicy",
-    "TurboTaperPolicy",
     "PMKVQPolicy",
     "RolePrecisionPolicy",
     "RoleSpan",

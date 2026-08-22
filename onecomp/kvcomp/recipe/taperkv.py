@@ -6,7 +6,7 @@ precision with age, down to a non-zero floor.  This preserves long-context
 retrieval (the needle is never dropped) while still hitting an aggressive
 average-bit target.
 
-Key design choices (from onecomp-ref/260528.md):
+Key design choices:
 
 * **No eviction.**  All tokens retained; old tokens are quantized harder, not
   removed (PM-KVQ-style progressive quantization applied by *age*, not by global
@@ -40,18 +40,19 @@ class TaperKVPolicy(KVPolicy):
         b_min_value: Floor bit-width for the oldest values.
         sink_tokens: Leading tokens kept at high precision.
         recent_tokens: Most-recent tokens kept at high precision.
-        ladder: Explicit descending bit ladder for the middle region
-            (default: every integer from ``key_bits`` down to ``b_min``).
+        key_ladder: Explicit descending key ladder for the middle region.
+        value_ladder: Explicit descending value ladder for the middle region.
         skip_layers: Layers left in full precision (outlier layers).
     """
 
     key_bits: int = 8
     value_bits: int = 4
-    b_min: int = 2
+    b_min: int = 4
     b_min_value: int = 2
     sink_tokens: int = 4
-    recent_tokens: int = 64
-    ladder: Optional[list] = None
+    recent_tokens: int = 128
+    key_ladder: Optional[list] = None
+    value_ladder: Optional[list] = None
     skip_layers: list = field(default_factory=list)
     requant_stride: Optional[int] = None
 
@@ -87,18 +88,46 @@ class TaperKVPolicy(KVPolicy):
         ):
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
                 raise ValueError(f"{name} must be a non-negative integer")
-        if self.ladder is not None:
-            if not isinstance(self.ladder, (list, tuple)) or not self.ladder:
-                raise ValueError("ladder must be a non-empty list or tuple when supplied")
-            if any(isinstance(bit, bool) or not isinstance(bit, int) for bit in self.ladder):
-                raise ValueError("ladder must contain integer bit-widths")
-            if any(bit < 1 or bit > self.key_bits for bit in self.ladder):
-                raise ValueError("ladder bit-widths must lie in [1, key_bits]")
-            if any(left <= right for left, right in zip(self.ladder, self.ladder[1:])):
-                raise ValueError("ladder must be strictly descending")
+
+        def validate_ladder(ladder, name, high, floor):
+            if ladder is None:
+                return tuple(range(high, floor - 1, -1))
+            if not isinstance(ladder, (list, tuple)) or not ladder:
+                raise ValueError(f"{name} must be a non-empty list or tuple when supplied")
+            if any(isinstance(bit, bool) or not isinstance(bit, int) for bit in ladder):
+                raise ValueError(f"{name} must contain integer bit-widths")
+            if ladder[0] != high or ladder[-1] != floor:
+                raise ValueError(f"{name} must start at {high} and end at {floor}")
+            if any(bit < floor or bit > high for bit in ladder):
+                raise ValueError(f"{name} entries must lie in [{floor}, {high}]")
+            if any(left <= right for left, right in zip(ladder, ladder[1:])):
+                raise ValueError(f"{name} must be strictly descending")
+            return tuple(ladder)
+
+        key_ladder = validate_ladder(self.key_ladder, "key_ladder", self.key_bits, self.b_min)
+        value_ladder = validate_ladder(
+            self.value_ladder, "value_ladder", self.value_bits, self.b_min_value
+        )
+        # The two roles may use different numbers of bands.  Check every joint
+        # piecewise-constant interval so K >= V holds throughout the schedule.
+        boundaries = sorted(
+            {0.0, 1.0}
+            | {index / len(key_ladder) for index in range(1, len(key_ladder))}
+            | {index / len(value_ladder) for index in range(1, len(value_ladder))}
+        )
+        probes = boundaries[:-1] + [
+            (left + right) / 2.0 for left, right in zip(boundaries, boundaries[1:])
+        ]
+        for fraction in probes:
+            key_bit = key_ladder[min(int(fraction * len(key_ladder)), len(key_ladder) - 1)]
+            value_bit = value_ladder[min(int(fraction * len(value_ladder)), len(value_ladder) - 1)]
+            if key_bit < value_bit:
+                raise ValueError("key_ladder must preserve key precision >= value precision")
         if not isinstance(self.skip_layers, (list, tuple)):
             raise ValueError("skip_layers must be a list or tuple of integer layer indices")
-        if any(isinstance(layer, bool) or not isinstance(layer, int) for layer in self.skip_layers):
+        if any(
+            isinstance(layer, bool) or not isinstance(layer, int) for layer in self.skip_layers
+        ):
             raise ValueError("skip_layers must contain integer layer indices")
         if self.requant_stride is not None and (
             isinstance(self.requant_stride, bool)
@@ -118,18 +147,46 @@ class TaperKVPolicy(KVPolicy):
             return 0.0
 
         age = torch.arange(seq_len - 1, -1, -1)
-        kb = taper_bits(age, seq_len, self.sink_tokens, self.recent_tokens,
-                        self.key_bits, self.b_min, self.ladder).float().mean()
-        vb = taper_bits(age, seq_len, self.sink_tokens, self.recent_tokens,
-                        self.value_bits, self.b_min_value, self.ladder).float().mean()
+        kb = (
+            taper_bits(
+                age,
+                seq_len,
+                self.sink_tokens,
+                self.recent_tokens,
+                self.key_bits,
+                self.b_min,
+                self.key_ladder,
+            )
+            .float()
+            .mean()
+        )
+        vb = (
+            taper_bits(
+                age,
+                seq_len,
+                self.sink_tokens,
+                self.recent_tokens,
+                self.value_bits,
+                self.b_min_value,
+                self.value_ladder,
+            )
+            .float()
+            .mean()
+        )
         return float((kb + vb) / 2)
 
     def get_kv_config(self) -> dict:
         return {
-            "name": "taperkv", "key_bits": self.key_bits, "value_bits": self.value_bits,
-            "b_min": self.b_min, "b_min_value": self.b_min_value,
-            "sink_tokens": self.sink_tokens, "recent_tokens": self.recent_tokens,
-            "ladder": self.ladder, "skip_layers": list(self.skip_layers),
+            "name": "taperkv",
+            "key_bits": self.key_bits,
+            "value_bits": self.value_bits,
+            "b_min": self.b_min,
+            "b_min_value": self.b_min_value,
+            "sink_tokens": self.sink_tokens,
+            "recent_tokens": self.recent_tokens,
+            "key_ladder": self.key_ladder,
+            "value_ladder": self.value_ladder,
+            "skip_layers": list(self.skip_layers),
             "requant_stride": self.requant_stride,
         }
 
@@ -158,8 +215,12 @@ class BlockTaperKVPolicy(TaperKVPolicy):
             raise ValueError("residual_fp16 must be a bool")
         if self.quant_granularity not in ("block", "token"):
             raise ValueError(
-                "quant_granularity must be 'block' or 'token', "
-                f"got {self.quant_granularity!r}"
+                "quant_granularity must be 'block' or 'token', " f"got {self.quant_granularity!r}"
+            )
+        if self.quant_granularity == "block" and not self.residual_fp16:
+            raise ValueError(
+                "block-granularity TaperKV requires residual_fp16=True so a "
+                "partially written block is never repeatedly requantized"
             )
 
     def target_avg_bits(self, seq_len: int) -> float:
@@ -175,26 +236,34 @@ class BlockTaperKVPolicy(TaperKVPolicy):
             raise ValueError("seq_len must be a non-negative integer")
         if seq_len == 0:
             return 0.0
-        kb = block_taper_bits(
-            seq_len,
-            self.block_size,
-            self.sink_tokens,
-            self.recent_tokens,
-            self.key_bits,
-            self.b_min,
-            self.ladder,
-            self.residual_fp16,
-        ).float().mean()
-        vb = block_taper_bits(
-            seq_len,
-            self.block_size,
-            self.sink_tokens,
-            self.recent_tokens,
-            self.value_bits,
-            self.b_min_value,
-            self.ladder,
-            self.residual_fp16,
-        ).float().mean()
+        kb = (
+            block_taper_bits(
+                seq_len,
+                self.block_size,
+                self.sink_tokens,
+                self.recent_tokens,
+                self.key_bits,
+                self.b_min,
+                self.key_ladder,
+                self.residual_fp16,
+            )
+            .float()
+            .mean()
+        )
+        vb = (
+            block_taper_bits(
+                seq_len,
+                self.block_size,
+                self.sink_tokens,
+                self.recent_tokens,
+                self.value_bits,
+                self.b_min_value,
+                self.value_ladder,
+                self.residual_fp16,
+            )
+            .float()
+            .mean()
+        )
         return float((kb + vb) / 2)
 
     def get_kv_config(self) -> dict:
@@ -215,21 +284,21 @@ class BlockTaperKVPolicy(TaperKVPolicy):
 class BudgetTaperKVPolicy(TaperKVPolicy):
     """Payload-budgeted no-eviction TaperKV policy.
 
-    ``max_bytes`` is a cap on K/V *payload* only.  Affine scale/zero metadata
+    ``max_bytes_per_layer`` is a per-layer cap on K/V *payload* only.  Affine scale/zero metadata
     remains explicitly counted in ``GradedQuantCache`` reporting, but cannot
     be folded into this policy without the runtime batch/head/dimension shape.
     """
 
-    max_bytes: Optional[int] = None
+    max_bytes_per_layer: Optional[int] = None
 
     def __post_init__(self):
         super().__post_init__()
-        if self.max_bytes is not None and (
-            isinstance(self.max_bytes, bool)
-            or not isinstance(self.max_bytes, int)
-            or self.max_bytes < 1
+        if self.max_bytes_per_layer is not None and (
+            isinstance(self.max_bytes_per_layer, bool)
+            or not isinstance(self.max_bytes_per_layer, int)
+            or self.max_bytes_per_layer < 1
         ):
-            raise ValueError("max_bytes must be a positive integer or None")
+            raise ValueError("max_bytes_per_layer must be a positive integer or None")
 
     def target_avg_bits(self, seq_len: int) -> float:
         """Return a rate only when no budget cap is active.
@@ -239,7 +308,7 @@ class BudgetTaperKVPolicy(TaperKVPolicy):
         Refuse the ambiguous estimate rather than reporting TaperKV's static
         age schedule for this different algorithm.
         """
-        if self.max_bytes is not None:
+        if self.max_bytes_per_layer is not None:
             raise ValueError(
                 "BudgetTaperKV target_avg_bits is shape-dependent; use live "
                 "cache accounting (avg_bits/mem_fraction) instead"
@@ -253,8 +322,8 @@ class BudgetTaperKVPolicy(TaperKVPolicy):
         cfg.update(
             {
                 "name": "budget_taperkv",
-                "max_bytes": self.max_bytes,
-                "budget_scope": "key_value_payload_only_excludes_affine_metadata",
+                "max_bytes_per_layer": self.max_bytes_per_layer,
+                "budget_scope": "per_layer_key_value_payload_only_excludes_affine_metadata",
             }
         )
         return cfg

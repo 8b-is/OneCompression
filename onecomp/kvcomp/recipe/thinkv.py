@@ -539,7 +539,10 @@ class ThinKVPolicy(KVPolicy):
                 self.calib_layers = []
             return self.calib_layers, self.thresholds
         chosen = sorted(eligible)[: self.max_calib_layers]
-        avg = [sum(eligible[l][j] for l in chosen) / len(chosen) for j in range(self.num_thoughts - 1)]
+        avg = [
+            sum(eligible[layer_idx][j] for layer_idx in chosen) / len(chosen)
+            for j in range(self.num_thoughts - 1)
+        ]
         self.calib_layers = chosen
         self.thresholds = tuple(avg)
         return self.calib_layers, self.thresholds

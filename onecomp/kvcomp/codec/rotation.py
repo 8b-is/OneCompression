@@ -314,9 +314,8 @@ def lloyd_max_beta(bits: int, d: int, iters: int = 64, grid: int = 4096) -> torc
 def random_orthogonal(dim: int, seed: int, device=None, dtype=torch.float32) -> torch.Tensor:
     """A deterministic random orthogonal matrix ``(dim, dim)`` via QR.
 
-    Used for the paper's *dense* random rotation (Algorithm 1/2) and for
-    rotating channel subsets whose size is not a power of two (outlier
-    mixed-precision), where the fast Walsh-Hadamard transform does not apply.
+    Used for dense random rotations where a structured Walsh-Hadamard
+    transform is not the adopted choice.
     """
     gen = torch.Generator(device="cpu").manual_seed(seed)
     a = torch.randn(dim, dim, generator=gen, dtype=torch.float64)
@@ -333,7 +332,7 @@ def quantize_to_codebook(z: torch.Tensor, centroids: torch.Tensor) -> torch.Tens
 
 # --- Block-dense rotation (HayateQuant) -----------------------------------
 #
-# Motivation (see ``hayatequant.py`` module docstring for the full derivation):
+# Motivation (see ``hayate/codec.py`` for the adopted method contract):
 # a single dense random-orthogonal D x D rotation gives the best incoherence
 # (hence the best per-coordinate Gaussianisation) but costs O(D^2); the
 # Walsh-Hadamard / signed-Hadamard-GEMM rotation costs only O(D log D) /
@@ -341,8 +340,8 @@ def quantize_to_codebook(z: torch.Tensor, centroids: torch.Tensor) -> torch.Tens
 # flip) structured transform, so on small blocks its output is less
 # isotropic than a true Haar-random rotation.  HayateQuant's block-VQ needs
 # each ``block_size``-dim block of the rotated vector to be close to an
-# *isotropic* Gaussian/Beta block (that is what the offline codebook in
-# ``_vq.py`` is fit to) -- so we compose:
+# *isotropic* Gaussian/Beta block (the source used for the shipped Hayate
+# codebooks) -- so we compose:
 #
 #   R = HS_D  followed by  (Q_b_1 (+) Q_b_2 (+) ... (+) Q_b_{D/b})   ((+) = block-diagonal)
 #
@@ -355,10 +354,10 @@ def quantize_to_codebook(z: torch.Tensor, centroids: torch.Tensor) -> torch.Tens
 # cost O(D log D + D * b) is far below the O(D^2) of a single dense D x D
 # rotation while giving each block much better local isotropy than the
 # Hadamard-only rotation alone (verified by
-# ``benchmark/kvcomp-longcontext/paper/tests/verify_hayatequant_isotropy.py``).
+# the codec rotation regression tests).
 #
-# This directly answers the trade-off discussed for HALO/TurboQuant ("Hadamard
-# is faster, Dense is more accurate -- can we interpolate?"): the block size
+# This interpolates between TurboQuant's fast Hadamard transform and a more
+# accurate dense transform: the block size
 # ``b`` is exactly that interpolation knob.  ``b=1`` recovers the pure
 # Hadamard rotation (no block-dense factor applied); ``b=D`` recovers a full
 # dense rotation (up to the harmless extra Hadamard pre-mix).

@@ -53,9 +53,7 @@ def block_taper_bits(
     if tail:
         tail_bits = bits[n_full * block_size :]
         parts.append(
-            torch.full_like(tail_bits, 16)
-            if residual_fp16
-            else tail_bits.amax().expand(tail)
+            torch.full_like(tail_bits, 16) if residual_fp16 else tail_bits.amax().expand(tail)
         )
     return parts[0] if len(parts) == 1 else torch.cat(parts)
 
@@ -101,7 +99,9 @@ def fake_quant_blocks(
         # their finite CPU-side width set and avoids that device->host round
         # trip.  Keep the generic fallback for external callers with arbitrary
         # per-block bit vectors.
-        widths = torch.unique(block_bits).tolist() if known_bit_widths is None else known_bit_widths
+        widths = (
+            torch.unique(block_bits).tolist() if known_bit_widths is None else known_bit_widths
+        )
         for bit_width in widths:
             bit_width = int(bit_width)
             if bit_width < 1 or bit_width > 16:
@@ -115,8 +115,10 @@ def fake_quant_blocks(
                 block_indices[:, None] * block_size
                 + torch.arange(block_size, device=x.device)[None, :]
             ).reshape(-1)
-            groups = x[:, :, selected, :].float().reshape(
-                batch, heads, block_indices.numel(), block_size * dim
+            groups = (
+                x[:, :, selected, :]
+                .float()
+                .reshape(batch, heads, block_indices.numel(), block_size * dim)
             )
             # ``axis='channel'`` reduces the final flattened block dimension,
             # yielding one (scale, zero) pair for each batch/head/block.
@@ -151,7 +153,7 @@ class BlockTaperKVCache(TaperKVCache):
                 p.recent_tokens,
                 p.key_bits,
                 p.b_min,
-                p.ladder,
+                p.key_ladder,
                 p.residual_fp16,
                 device,
             ),
@@ -162,11 +164,27 @@ class BlockTaperKVCache(TaperKVCache):
                 p.recent_tokens,
                 p.value_bits,
                 p.b_min_value,
-                p.ladder,
+                p.value_ladder,
                 p.residual_fp16,
                 device,
             ),
         )
+
+    def _should_regrade(self, q_len: int, total: int) -> bool:
+        """Keep each completed page physically and logically uniform.
+
+        A prompt need not end on a page boundary.  Waiting only for the
+        decode stride in that case used to quantize the token that completed
+        the page while leaving its older page-mates at fp16.  The next full
+        regrade then received a non-uniform work vector and either failed or
+        misrepresented the page layout.  Regrade exactly when an update turns
+        a partial page into one or more full pages.
+        """
+
+        if super()._should_regrade(q_len, total):
+            return True
+        previous = total - q_len
+        return previous // self.policy.block_size < total // self.policy.block_size
 
     def _meta_bits(self, bits_vec, batch_heads):
         if self.policy.quant_granularity != "block":
@@ -190,7 +208,11 @@ class BlockTaperKVCache(TaperKVCache):
     def _grade_layer(self, keys, values, layer_idx):
         if self.policy.quant_granularity != "block":
             return super()._grade_layer(keys, values, layer_idx)
-        kbits, vbits = self.token_bits(keys.shape[2], keys.device, layer_idx)
+        total = keys.shape[2]
+        requested_k, requested_v = self.token_bits(total, keys.device, layer_idx)
+        previous_k, previous_v = self._previous_bits(layer_idx, total, keys.device)
+        kbits, kwork = self._lowering_work_bits(requested_k, previous_k)
+        vbits, vwork = self._lowering_work_bits(requested_v, previous_v)
         # The schedule is policy-defined; pass its possible widths so the CUDA
         # hot path does not materialise ``torch.unique(...).tolist()`` on the
         # host once per layer/update.  The inclusive ranges also cover clipped
@@ -198,17 +220,18 @@ class BlockTaperKVCache(TaperKVCache):
         key_widths = tuple(range(self.policy.b_min, self.policy.key_bits + 1))
         value_widths = tuple(range(self.policy.b_min_value, self.policy.value_bits + 1))
         key_quantized = fake_quant_blocks(
-            keys, kbits, self.policy.block_size, known_bit_widths=key_widths
+            keys, kwork, self.policy.block_size, known_bit_widths=key_widths
         )
         value_quantized = fake_quant_blocks(
-            values, vbits, self.policy.block_size, known_bit_widths=value_widths
+            values, vwork, self.policy.block_size, known_bit_widths=value_widths
         )
+        self._record_token_bits(layer_idx, kbits, vbits)
         batch_heads = keys.shape[0] * keys.shape[1]
         per_token_role = batch_heads * keys.shape[-1]
         stored_bits = int(
             kbits.sum() * per_token_role
             + vbits.sum() * per_token_role
-            + self._meta_bits(kbits, batch_heads)
-            + self._meta_bits(vbits, batch_heads)
+            + self._meta_bits_for_role(kbits, batch_heads, "k")
+            + self._meta_bits_for_role(vbits, batch_heads, "v")
         )
         return key_quantized, value_quantized, stored_bits

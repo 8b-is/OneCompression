@@ -1,25 +1,11 @@
 {
   "schema": "hayatequant.shipped_gaussian_codebooks.v1",
   "artifacts": {
-    "gauss_b2_k8.pt": {"block_size": 2, "k": 8, "shape": [8, 2], "dtype": "torch.float32", "file_sha256": "d0b4402fa70317c6a72a85915becc9fd2923d8815793039349f7844c3000947a", "tensor_sha256": "55d09c31d8bcfe4d597dff7021b85a6c9736b900dd3a298d214de9ec78333390", "origin": "exact_current_online_fallback_serialization_20260716"},
+    "gauss_b2_k4.pt": {"block_size": 2, "k": 4, "shape": [4, 2], "dtype": "torch.float32", "file_sha256": "919fd882c6e8dd2dd63514d3e72e2cdb504ae34f24152868787f95e01c3515d3", "tensor_sha256": "85a347de72b0eb2d4ebd35eb048da77cd98ed4f44a768ed9c0454ea36fd5e9d2", "origin": "offline_gaussian_kmeans_n1600000_iter60_restart8_seed0_20260719"},
     "gauss_b2_k16.pt": {"block_size": 2, "k": 16, "shape": [16, 2], "dtype": "torch.float32", "file_sha256": "388bddfe30c6ed8e2ba583c10c91be72772cc4764138a5d4843bb4d91daf8016", "tensor_sha256": "a8097e52bc8fa14aeeb11a6736a0c7c6a3321ba289d4a404cbe1a25b3f11fac8", "origin": "existing_high_budget_gaussian_fit"},
-    "gauss_b2_k32.pt": {"block_size": 2, "k": 32, "shape": [32, 2], "dtype": "torch.float32", "file_sha256": "2e81e59d367252758d4ffbbf151d798c379732ecc43a3f21fefedd7b6466ced3", "tensor_sha256": "5a6383c6742243ef42f6009e724b5a5bb55fa5b13c1ee93f7a9ce59b0d583926", "origin": "exact_current_online_fallback_serialization_20260716"},
     "gauss_b2_k64.pt": {"block_size": 2, "k": 64, "shape": [64, 2], "dtype": "torch.float32", "file_sha256": "b9853b19965a245487898fa773aad757861ba47b7cb8cc7d11bd916db71a8933", "tensor_sha256": "bca9cc714b7fbc64c33ffe4c5ad4cfd083383686ceefe036caf10be250073dd8", "origin": "existing_high_budget_gaussian_fit"},
-    "gauss_b2_k128.pt": {"block_size": 2, "k": 128, "shape": [128, 2], "dtype": "torch.float32", "file_sha256": "67b131bdea9045a8414ec43a81ecce806f87339a7a092ed19a2e5722506c7b51", "tensor_sha256": "39e5d9b4958c4935180bba5844dcc41a8f2dfa012e2d44cd4611da40491f43fb", "origin": "exact_current_online_fallback_serialization_20260716"},
     "gauss_b2_k256.pt": {"block_size": 2, "k": 256, "shape": [256, 2], "dtype": "torch.float32", "file_sha256": "7d7a2bebad4ec4491410cbb26de9b01e66b136cba5cc6854ee20400e51254a76", "tensor_sha256": "cf6c3944f8506d5aa2e91d3602716401536b2ee2eb682f24d783eae60eb80f1d", "origin": "existing_high_budget_gaussian_fit"},
-    "gauss_b2_k512.pt": {"block_size": 2, "k": 512, "shape": [512, 2], "dtype": "torch.float32", "file_sha256": "e931ace83ba25147a8dcdce9a822c5318650fc392e1fa84026c89cc89baabfed", "tensor_sha256": "97fd30ff4347c60a90e81560afb7833d98bb9c537004d9ba57f83592991bcce2", "origin": "exact_current_online_fallback_serialization_20260716"},
-    "gauss_b4_k256.pt": {"block_size": 4, "k": 256, "shape": [256, 4], "dtype": "torch.float32", "file_sha256": "7cec1eb5d3b446bf025f2558b5e21f387025406dd6f8a3170b2cf846627eacd4", "tensor_sha256": "9ebb9dec413e99618d4e98afc56abc8fa5938e7f5fbd325603f31ab373733f86", "origin": "existing_high_budget_gaussian_fit"},
-    "gauss_b4_k4096.pt": {"block_size": 4, "k": 4096, "shape": [4096, 4], "dtype": "torch.float32", "file_sha256": "9f35adf3d829da41d8409d4dd65d524583b2ba96b4cc7802d83b962338d8c804", "tensor_sha256": "db34950b945e57a54264a6b5b9aefe9d89edfec69ce434923d3d2b459fe588de", "origin": "existing_high_budget_gaussian_fit"},
-    "gauss_b8_k256.pt": {"block_size": 8, "k": 256, "shape": [256, 8], "dtype": "torch.float32", "file_sha256": "3fdd9592007fcfcd8ba721223c01b6a88514ada84bd895036b3d91c27b6307be", "tensor_sha256": "c92ab8f94bb4ab904ace84358ed447179b7aa3d23c1c463740183ca6c216cda5", "origin": "existing_high_budget_gaussian_fit"}
+    "gauss_b2_k1024.pt": {"block_size": 2, "k": 1024, "shape": [1024, 2], "dtype": "torch.float32", "file_sha256": "a798cb977087e37aa6534871f05e38521862c9c9dc89f39a26971dde9257f6c6", "tensor_sha256": "19281a2d110c3735f523381772ded3561caddc0a791dcba97eb2dfdd3c5d3e86", "origin": "offline_gaussian_kmeans_n390625_iter60_restart8_seed0_20260719"}
   },
-  "required_bundles": {
-    "fixed_hq_b2_v1": ["gauss_b2_k8.pt", "gauss_b2_k32.pt", "gauss_b2_k128.pt", "gauss_b2_k512.pt"],
-    "adaptive_hq_b2_safe_v1": ["gauss_b2_k8.pt", "gauss_b2_k16.pt", "gauss_b2_k32.pt", "gauss_b2_k64.pt", "gauss_b2_k128.pt", "gauss_b2_k256.pt", "gauss_b2_k512.pt"]
-  },
-  "development_override": {
-    "environment_variable": "KVCOMP_CODEBOOK_DIR",
-    "formal_allowed": false,
-    "strict_tensor_validation_required": true,
-    "pinned_sha_required": false
-  }
+  "required_artifacts": ["gauss_b2_k4.pt", "gauss_b2_k16.pt", "gauss_b2_k64.pt", "gauss_b2_k256.pt", "gauss_b2_k1024.pt"]
 }

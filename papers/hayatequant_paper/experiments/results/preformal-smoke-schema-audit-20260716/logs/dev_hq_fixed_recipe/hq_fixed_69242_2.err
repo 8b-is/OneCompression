@@ -1,4 +1,0 @@
-Primary config module 'conf' not found.
-Check that it's correct and contains an __init__.py file
-
-Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.

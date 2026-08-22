@@ -1,151 +1,0 @@
-==============================
-Paper benchmark: Qwen-14B
-Model: /lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Qwen-14B
-Started: Mon Jun  1 20:45:36 JST 2026
-==============================
-model_path: /lustre/home/frj/yuma-ichikawa/conference/models/DeepSeek-R1-Distill-Qwen-14B
-device: cuda:0
-dtype: bfloat16
-attn_implementation: eager
-output_dir: /lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_paper
-methods:
-- FullKV
-- Uniform-INT4
-- ThinKV
-- PM-KVQ
-- TaperKV
-sink_tokens: 4
-recent_tokens: 128
-requant_stride: 16
-target_mem: 0.25
-uniform_bits:
-- 4
-skip_outliers: true
-outlier_ratio: 50.0
-thinkv:
-  group_size: 16
-  precision:
-    R: 4
-    E: 4
-    T: 2
-  auto_configure: true
-  calib_max_new: 300
-  capture_long: false
-pmkvq:
-  key_bits: 8
-  value_bits: 4
-  final_bits: 2
-  key_final_bits: 4
-  ladder_span: 256
-  block_allocation: true
-  channel_reparam: true
-  bit_options:
-  - 2
-  - 4
-  - 8
-  avg_bit_budget: 2.5
-  pos_scale: 4
-taperkv:
-  key_bits: 8
-  value_bits: 4
-  b_min: 4
-  b_min_value: 2
-taperkv_sweep: []
-context_lens:
-- 2048
-- 4096
-- 8192
-depths:
-- 0.1
-- 0.25
-- 0.4
-- 0.5
-- 0.6
-- 0.75
-- 0.9
-seeds: 3
-max_new_needle: 64
-run_ruler: false
-ruler_keys: 4
-ruler_seeds: 5
-run_needle: false
-run_gsm8k: true
-gsm8k_limit: 100
-max_new_reason: 8192
-run_math: true
-math_limit: 100
-max_new_math: 8192
-run_ppl: true
-ppl_max_length: 2048
-ppl_stride: 1024
-ppl_windows: 16
-aime_years:
-- 2024
-- 2025
-aime_k: 8
-aime_limit: 30
-max_new_aime: 8192
-
-Loading weights:   0%|          | 0/579 [00:00<?, ?it/s]Loading weights:   0%|          | 1/579 [00:00<06:06,  1.58it/s]Loading weights:   0%|          | 2/579 [00:01<07:30,  1.28it/s]Loading weights:   1%|          | 3/579 [00:01<05:35,  1.72it/s]Loading weights:   2%|▏         | 12/579 [00:01<00:54, 10.42it/s]Loading weights:   3%|▎         | 16/579 [00:02<00:45, 12.49it/s]Loading weights:   3%|▎         | 19/579 [00:02<00:44, 12.55it/s]Loading weights:   5%|▍         | 28/579 [00:02<00:28, 19.16it/s]Loading weights:   5%|▌         | 31/579 [00:02<00:29, 18.32it/s]Loading weights:   7%|▋         | 40/579 [00:03<00:23, 22.60it/s]Loading weights:   7%|▋         | 43/579 [00:03<00:25, 21.09it/s]Loading weights:   9%|▉         | 52/579 [00:03<00:21, 24.44it/s]Loading weights:   9%|▉         | 55/579 [00:03<00:23, 22.62it/s]Loading weights:  11%|█         | 64/579 [00:04<00:20, 25.12it/s]Loading weights:  12%|█▏        | 67/579 [00:04<00:23, 22.02it/s]Loading weights:  13%|█▎        | 76/579 [00:04<00:19, 26.47it/s]Loading weights:  14%|█▎        | 79/579 [00:04<00:21, 23.73it/s]Loading weights:  15%|█▌        | 88/579 [00:05<00:18, 26.17it/s]Loading weights:  16%|█▌        | 91/579 [00:05<00:20, 23.40it/s]Loading weights:  17%|█▋        | 100/579 [00:05<00:18, 25.75it/s]Loading weights:  18%|█▊        | 103/579 [00:05<00:21, 22.26it/s]Loading weights:  19%|█▉        | 111/579 [00:06<00:18, 24.84it/s]Loading weights:  20%|█▉        | 114/579 [00:06<00:20, 23.13it/s]Loading weights:  21%|██        | 123/579 [00:06<00:18, 24.66it/s]Loading weights:  22%|██▏       | 128/579 [00:06<00:16, 27.72it/s]Loading weights:  23%|██▎       | 136/579 [00:06<00:15, 28.98it/s]Loading weights:  24%|██▍       | 140/579 [00:07<00:16, 27.00it/s]Loading weights:  26%|██▌       | 148/579 [00:07<00:15, 28.66it/s]Loading weights:  26%|██▌       | 151/579 [00:07<00:16, 25.35it/s]Loading weights:  28%|██▊       | 160/579 [00:07<00:17, 23.80it/s]Loading weights:  28%|██▊       | 165/579 [00:08<00:16, 25.26it/s]Loading weights:  30%|██▉       | 172/579 [00:08<00:16, 25.14it/s]Loading weights:  31%|███       | 177/579 [00:08<00:15, 26.70it/s]Loading weights:  32%|███▏      | 184/579 [00:08<00:14, 27.87it/s]Loading weights:  32%|███▏      | 187/579 [00:08<00:15, 24.87it/s]Loading weights:  34%|███▍      | 196/579 [00:09<00:14, 26.67it/s]Loading weights:  34%|███▍      | 199/579 [00:09<00:15, 24.25it/s]Loading weights:  36%|███▌      | 208/579 [00:09<00:13, 26.64it/s]Loading weights:  36%|███▋      | 211/579 [00:09<00:15, 24.53it/s]Loading weights:  38%|███▊      | 220/579 [00:10<00:13, 26.64it/s]Loading weights:  39%|███▊      | 223/579 [00:10<00:14, 24.18it/s]Loading weights:  40%|████      | 232/579 [00:10<00:13, 26.42it/s]Loading weights:  41%|████      | 235/579 [00:10<00:14, 24.07it/s]Loading weights:  42%|████▏     | 244/579 [00:11<00:12, 26.37it/s]Loading weights:  43%|████▎     | 247/579 [00:11<00:13, 24.13it/s]Loading weights:  44%|████▍     | 256/579 [00:11<00:12, 26.32it/s]Loading weights:  45%|████▍     | 259/579 [00:11<00:13, 24.22it/s]Loading weights:  46%|████▋     | 268/579 [00:12<00:11, 26.67it/s]Loading weights:  47%|████▋     | 271/579 [00:12<00:12, 24.41it/s]Loading weights:  48%|████▊     | 279/579 [00:12<00:11, 25.66it/s]Loading weights:  49%|████▊     | 282/579 [00:12<00:12, 23.72it/s]Loading weights:  50%|█████     | 292/579 [00:13<00:10, 26.66it/s]Loading weights:  51%|█████▏    | 297/579 [00:13<00:09, 29.34it/s]Loading weights:  53%|█████▎    | 304/579 [00:13<00:09, 28.85it/s]Loading weights:  53%|█████▎    | 307/579 [00:13<00:10, 25.98it/s]Loading weights:  55%|█████▍    | 316/579 [00:13<00:09, 27.58it/s]Loading weights:  55%|█████▌    | 319/579 [00:14<00:10, 24.85it/s]Loading weights:  57%|█████▋    | 328/579 [00:14<00:09, 26.11it/s]Loading weights:  58%|█████▊    | 333/579 [00:14<00:08, 27.75it/s]Loading weights:  59%|█████▊    | 340/579 [00:14<00:07, 29.96it/s]Loading weights:  59%|█████▉    | 344/579 [00:14<00:08, 26.41it/s]Loading weights:  61%|██████    | 352/579 [00:15<00:07, 28.77it/s]Loading weights:  61%|██████▏   | 355/579 [00:15<00:08, 25.24it/s]Loading weights:  63%|██████▎   | 364/579 [00:15<00:07, 27.80it/s]Loading weights:  63%|██████▎   | 367/579 [00:15<00:08, 24.85it/s]Loading weights:  65%|██████▍   | 376/579 [00:16<00:07, 25.50it/s]Loading weights:  66%|██████▌   | 381/579 [00:16<00:07, 28.00it/s]Loading weights:  67%|██████▋   | 388/579 [00:16<00:06, 28.51it/s]Loading weights:  68%|██████▊   | 391/579 [00:16<00:08, 23.39it/s]Loading weights:  69%|██████▉   | 400/579 [00:17<00:06, 27.94it/s]Loading weights:  70%|██████▉   | 403/579 [00:17<00:06, 25.26it/s]Loading weights:  71%|███████   | 412/579 [00:17<00:06, 26.09it/s]Loading weights:  72%|███████▏  | 417/579 [00:17<00:05, 28.64it/s]Loading weights:  73%|███████▎  | 424/579 [00:17<00:05, 29.66it/s]Loading weights:  74%|███████▍  | 428/579 [00:18<00:05, 25.88it/s]Loading weights:  75%|███████▌  | 436/579 [00:18<00:04, 29.14it/s]Loading weights:  76%|███████▌  | 439/579 [00:18<00:05, 25.88it/s]Loading weights:  77%|███████▋  | 448/579 [00:18<00:04, 26.41it/s]Loading weights:  78%|███████▊  | 451/579 [00:18<00:05, 25.32it/s]Loading weights:  79%|███████▉  | 460/579 [00:19<00:03, 31.35it/s]Loading weights:  80%|████████  | 464/579 [00:19<00:03, 29.24it/s]Loading weights:  82%|████████▏ | 472/579 [00:19<00:03, 29.58it/s]Loading weights:  82%|████████▏ | 475/579 [00:19<00:03, 26.51it/s]Loading weights:  84%|████████▎ | 484/579 [00:20<00:03, 29.51it/s]Loading weights:  84%|████████▍ | 487/579 [00:20<00:03, 26.46it/s]Loading weights:  86%|████████▌ | 496/579 [00:20<00:02, 29.45it/s]Loading weights:  86%|████████▌ | 499/579 [00:20<00:03, 26.48it/s]Loading weights:  88%|████████▊ | 508/579 [00:21<00:02, 24.90it/s]Loading weights:  90%|████████▉ | 520/579 [00:21<00:01, 30.99it/s]Loading weights:  91%|█████████ | 524/579 [00:21<00:01, 29.31it/s]Loading weights:  92%|█████████▏| 532/579 [00:21<00:01, 29.09it/s]Loading weights:  92%|█████████▏| 535/579 [00:21<00:01, 24.63it/s]Loading weights:  94%|█████████▍| 544/579 [00:22<00:01, 27.02it/s]Loading weights:  94%|█████████▍| 547/579 [00:22<00:01, 23.59it/s]Loading weights:  96%|█████████▌| 556/579 [00:22<00:00, 26.92it/s]Loading weights:  97%|█████████▋| 561/579 [00:22<00:00, 29.75it/s]Loading weights:  98%|█████████▊| 568/579 [00:23<00:00, 30.91it/s]Loading weights:  99%|█████████▉| 572/579 [00:23<00:00, 29.05it/s]Loading weights: 100%|██████████| 579/579 [00:23<00:00, 24.85it/s]
-  [outlier] skip_layers (all quant methods) = [23, 25, 26, 27, 28, 29, 30, 31, 33]
-[transformers] The following generation flags are not valid and may be ignored: ['temperature', 'top_p']. Set `TRANSFORMERS_VERBOSITY=info` for more details.
-[transformers] The attention mask is not set and cannot be inferred from input because pad token is same as eos token. As a consequence, you may observe unexpected behavior. Please pass your input's `attention_mask` to obtain reliable results.
-  [ThinKV] skip_layers=[23, 25, 26, 27, 28, 29, 30, 31, 33] L*=[11] thresholds=(0.524, 0.562)
-[2026-06-01 20:46:50,509][onecomp.kvcomp.recipe.pmkvq_calib][INFO] - PM-KVQ block allocation: 48 layers, bits used=[2, 4, 8], avg=3.50
-[2026-06-01 20:46:50,662][onecomp.kvcomp.recipe.pmkvq_calib][INFO] - PM-KVQ channel reparam: calibrated 39 layers (pos_scale=4)
-  [PM-KVQ] block_final_bits set for 48 layers; channel_reparam on 39 layers
-
-===== FullKV =====
-[2026-06-01 20:46:50,879][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/gsm8k/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 20:46:51,052][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 20:46:51,067][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/openai/gsm8k/740312add88f781978c0658806c59bc2815b9866/README.md "HTTP/1.1 200 OK"
-[2026-06-01 20:46:51,244][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/gsm8k.py "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 20:46:51,414][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/gsm8k.py "HTTP/1.1 404 Not Found"
-[2026-06-01 20:46:51,977][httpx][INFO] - HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/gsm8k/gsm8k.py "HTTP/1.1 404 Not Found"
-[2026-06-01 20:46:52,171][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/gsm8k/revision/740312add88f781978c0658806c59bc2815b9866 "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 20:46:52,346][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/revision/740312add88f781978c0658806c59bc2815b9866 "HTTP/1.1 200 OK"
-[2026-06-01 20:46:52,526][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/.huggingface.yaml "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 20:46:52,710][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/.huggingface.yaml "HTTP/1.1 404 Not Found"
-Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
-[2026-06-01 20:46:52,711][huggingface_hub.utils._http][WARNING] - Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
-[2026-06-01 20:46:52,925][httpx][INFO] - HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=gsm8k "HTTP/1.1 404 Not Found"
-[2026-06-01 20:46:53,105][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/gsm8k/tree/740312add88f781978c0658806c59bc2815b9866/main?recursive=true&expand=false "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 20:46:53,290][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/tree/740312add88f781978c0658806c59bc2815b9866/main?recursive=true&expand=false "HTTP/1.1 200 OK"
-[2026-06-01 20:46:53,465][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/gsm8k/tree/740312add88f781978c0658806c59bc2815b9866?recursive=false&expand=false "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 20:46:53,639][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/tree/740312add88f781978c0658806c59bc2815b9866?recursive=false&expand=false "HTTP/1.1 200 OK"
-[2026-06-01 20:46:53,817][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/dataset_infos.json "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 20:46:53,987][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/dataset_infos.json "HTTP/1.1 404 Not Found"
-  gsm8k: {'task': 'gsm8k', 'n': 100, 'k': 1, 'pass@1': 0.87, 'avg_gen_len': 465.0, 'compression_ratio': 1.0}
-[2026-06-01 21:05:07,782][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/HuggingFaceH4/MATH-500/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 21:05:07,797][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/HuggingFaceH4/MATH-500/6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be/README.md "HTTP/1.1 200 OK"
-[2026-06-01 21:05:07,980][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/HuggingFaceH4/MATH-500/resolve/6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be/MATH-500.py "HTTP/1.1 404 Not Found"
-[2026-06-01 21:05:08,562][httpx][INFO] - HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/HuggingFaceH4/MATH-500/HuggingFaceH4/MATH-500.py "HTTP/1.1 404 Not Found"
-[2026-06-01 21:05:08,744][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/HuggingFaceH4/MATH-500/revision/6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be "HTTP/1.1 200 OK"
-[2026-06-01 21:05:08,982][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/HuggingFaceH4/MATH-500/resolve/6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be/.huggingface.yaml "HTTP/1.1 404 Not Found"
-[2026-06-01 21:05:09,318][httpx][INFO] - HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=HuggingFaceH4/MATH-500 "HTTP/1.1 200 OK"
-[2026-06-01 21:05:09,499][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/HuggingFaceH4/MATH-500/tree/6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be/data?recursive=true&expand=false "HTTP/1.1 404 Not Found"
-[2026-06-01 21:05:09,680][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/HuggingFaceH4/MATH-500/tree/6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be?recursive=false&expand=false "HTTP/1.1 200 OK"
-[2026-06-01 21:05:09,920][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/HuggingFaceH4/MATH-500/resolve/6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be/dataset_infos.json "HTTP/1.1 404 Not Found"
-  math500: {'task': 'math500', 'n': 100, 'k': 1, 'pass@1': 0.69, 'avg_gen_len': 1911.6, 'compression_ratio': 1.0}
-[2026-06-01 22:22:30,978][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/AI-MO/aimo-validation-aime/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
-[2026-06-01 22:22:31,002][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/AI-MO/aimo-validation-aime/13f9e12f613e720c2a2b2f345dd04b998a29494d/README.md "HTTP/1.1 200 OK"
-[2026-06-01 22:22:31,196][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/AI-MO/aimo-validation-aime/resolve/13f9e12f613e720c2a2b2f345dd04b998a29494d/aimo-validation-aime.py "HTTP/1.1 404 Not Found"
-[2026-06-01 22:22:31,807][httpx][INFO] - HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/AI-MO/aimo-validation-aime/AI-MO/aimo-validation-aime.py "HTTP/1.1 404 Not Found"
-[2026-06-01 22:22:31,995][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/AI-MO/aimo-validation-aime/revision/13f9e12f613e720c2a2b2f345dd04b998a29494d "HTTP/1.1 200 OK"
-[2026-06-01 22:22:32,190][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/AI-MO/aimo-validation-aime/resolve/13f9e12f613e720c2a2b2f345dd04b998a29494d/.huggingface.yaml "HTTP/1.1 404 Not Found"
-[2026-06-01 22:22:32,485][httpx][INFO] - HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=AI-MO/aimo-validation-aime "HTTP/1.1 200 OK"
-[2026-06-01 22:22:32,669][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/AI-MO/aimo-validation-aime/tree/13f9e12f613e720c2a2b2f345dd04b998a29494d/data?recursive=true&expand=false "HTTP/1.1 200 OK"
-[2026-06-01 22:22:32,850][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/AI-MO/aimo-validation-aime/tree/13f9e12f613e720c2a2b2f345dd04b998a29494d?recursive=false&expand=false "HTTP/1.1 200 OK"
-[2026-06-01 22:22:33,030][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/AI-MO/aimo-validation-aime/resolve/13f9e12f613e720c2a2b2f345dd04b998a29494d/dataset_infos.json "HTTP/1.1 404 Not Found"
-  aime2024: {'task': 'aime2024', 'n': 30, 'k': 8, 'pass@1': 0.4333, 'avg_gen_len': 6495.0, 'compression_ratio': 1.0}
-[2026-06-02 09:37:50,197][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/yentinglin/aime_2025/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
-[2026-06-02 09:37:50,226][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/yentinglin/aime_2025/6f71d77b0b89b9dabe07ab466c51df33f514df7f/README.md "HTTP/1.1 200 OK"
-[2026-06-02 09:37:50,414][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/yentinglin/aime_2025/resolve/6f71d77b0b89b9dabe07ab466c51df33f514df7f/aime_2025.py "HTTP/1.1 404 Not Found"
-[2026-06-02 09:37:51,062][httpx][INFO] - HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/yentinglin/aime_2025/yentinglin/aime_2025.py "HTTP/1.1 404 Not Found"
-[2026-06-02 09:37:51,255][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/yentinglin/aime_2025/revision/6f71d77b0b89b9dabe07ab466c51df33f514df7f "HTTP/1.1 200 OK"
-[2026-06-02 09:37:51,445][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/yentinglin/aime_2025/resolve/6f71d77b0b89b9dabe07ab466c51df33f514df7f/.huggingface.yaml "HTTP/1.1 404 Not Found"
-[2026-06-02 09:37:51,925][httpx][INFO] - HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=yentinglin/aime_2025 "HTTP/1.1 200 OK"
-[2026-06-02 09:37:52,119][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/yentinglin/aime_2025/tree/6f71d77b0b89b9dabe07ab466c51df33f514df7f/data?recursive=true&expand=false "HTTP/1.1 200 OK"
-[2026-06-02 09:37:52,301][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/datasets/yentinglin/aime_2025/tree/6f71d77b0b89b9dabe07ab466c51df33f514df7f?recursive=false&expand=false "HTTP/1.1 200 OK"
-[2026-06-02 09:37:52,489][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/datasets/yentinglin/aime_2025/resolve/6f71d77b0b89b9dabe07ab466c51df33f514df7f/dataset_infos.json "HTTP/1.1 404 Not Found"
-[2026-06-02T12:39:50.259] error: *** JOB 45705 ON kagura-gpu06 CANCELLED AT 2026-06-02T12:39:50 DUE to SIGNAL Terminated ***

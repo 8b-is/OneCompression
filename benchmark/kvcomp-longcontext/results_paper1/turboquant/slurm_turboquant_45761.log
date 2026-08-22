@@ -1,160 +1,0 @@
-==============================
-TurboQuant paper benchmark
-Model: /lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct
-Started: Tue Jun  2 12:25:34 JST 2026
-==============================
-model_path: /lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct
-device: cuda:0
-dtype: bfloat16
-attn_implementation: sdpa
-output_dir: /lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_turboquant
-methods:
-- FullKV
-- Uniform-INT4
-- Uniform-INT3
-- Uniform-INT2
-- KIVI-INT2
-- StreamingLLM
-- TurboQuant-4bit
-- TurboQuant-3.5bit
-- TurboQuant-3bit
-- TurboQuant-2.5bit
-- TurboQuant-2bit
-- HALO-4bit
-- HALO-3bit
-- HALO-2bit
-- FP8
-- NVFP4
-- TaperKV
-- TaperKV-3bit
-- TurboTaper
-sink_tokens: 4
-recent_tokens: 64
-requant_stride: 16
-target_mem: 0.27
-uniform_bits:
-- 4
-- 3
-- 2
-turboquant_variants:
-- label: TurboQuant-4bit
-  bits: 4
-  dist: beta
-- label: TurboQuant-3.5bit
-  bits: 3
-  n_outlier: 32
-  outlier_bits: 4
-  dist: beta
-- label: TurboQuant-3bit
-  bits: 3
-  dist: beta
-- label: TurboQuant-2.5bit
-  bits: 2
-  n_outlier: 32
-  outlier_bits: 3
-  dist: beta
-- label: TurboQuant-2bit
-  bits: 2
-  dist: beta
-kivi_bits:
-- 2
-halo_variants:
-- label: HALO-4bit
-  bits: 4
-- label: HALO-3bit
-  bits: 3
-- label: HALO-2bit
-  bits: 2
-codec_variants:
-- label: FP8
-  codec: fp8
-- label: NVFP4
-  codec: nvfp4
-turbotaper:
-  dist: gaussian
-  rotation_mode: hadamard
-  n_outlier_floor: 32
-skip_outliers: true
-outlier_ratio: 50.0
-thinkv:
-  group_size: 16
-  precision:
-    R: 4
-    E: 4
-    T: 2
-  auto_configure: false
-  calib_max_new: 200
-  capture_long: false
-pmkvq:
-  key_bits: 8
-  value_bits: 4
-  final_bits: 2
-  key_final_bits: 4
-  ladder_span: 256
-  block_allocation: false
-  channel_reparam: false
-  bit_options:
-  - 2
-  - 4
-  - 8
-  avg_bit_budget: null
-  pos_scale: 4
-taperkv:
-  key_bits: 8
-  value_bits: 4
-  b_min: 2
-  b_min_value: 2
-taperkv_sweep:
-- label: TaperKV-3bit
-  key_bits: 4
-  value_bits: 3
-  b_min: 2
-  b_min_value: 2
-  recent_tokens: 64
-turbotaper_sweep: []
-context_lens:
-- 4096
-- 8192
-- 16384
-depths:
-- 0.1
-- 0.25
-- 0.5
-- 0.75
-- 0.9
-seeds: 3
-max_new_needle: 32
-run_ruler: true
-ruler_keys: 4
-ruler_seeds: 5
-run_needle: true
-run_gsm8k: false
-gsm8k_limit: 50
-max_new_reason: 1024
-run_math: false
-math_limit: 50
-max_new_math: 3072
-run_longbench: true
-longbench_tasks: []
-longbench_max_length: 7500
-longbench_limit: 10
-run_ppl: true
-ppl_max_length: 4096
-ppl_stride: 2048
-ppl_windows: 16
-
-Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 1/291 [00:01<07:41,  1.59s/it]Loading weights:   1%|          | 2/291 [00:03<07:19,  1.52s/it]Loading weights:   1%|▏         | 4/291 [00:03<02:57,  1.62it/s]Loading weights:   2%|▏         | 5/291 [00:03<02:15,  2.11it/s]Loading weights:   2%|▏         | 6/291 [00:03<01:43,  2.76it/s]Loading weights:   3%|▎         | 8/291 [00:03<01:06,  4.24it/s]Loading weights:   6%|▌         | 18/291 [00:03<00:17, 15.74it/s]Loading weights:   8%|▊         | 22/291 [00:04<00:16, 16.25it/s]Loading weights:   9%|▉         | 26/291 [00:04<00:13, 19.19it/s]Loading weights:  11%|█▏        | 33/291 [00:04<00:11, 22.97it/s]Loading weights:  13%|█▎        | 37/291 [00:04<00:09, 25.60it/s]Loading weights:  14%|█▍        | 41/291 [00:04<00:12, 19.78it/s]Loading weights:  16%|█▋        | 48/291 [00:04<00:09, 24.96it/s]Loading weights:  18%|█▊        | 52/291 [00:05<00:09, 24.03it/s]Loading weights:  21%|██        | 60/291 [00:05<00:07, 31.64it/s]Loading weights:  23%|██▎       | 67/291 [00:05<00:07, 29.51it/s]Loading weights:  26%|██▌       | 76/291 [00:05<00:07, 30.11it/s]Loading weights:  29%|██▊       | 83/291 [00:05<00:05, 35.99it/s]Loading weights:  30%|███       | 88/291 [00:06<00:09, 21.18it/s]Loading weights:  32%|███▏      | 93/291 [00:06<00:11, 17.62it/s]Loading weights:  36%|███▌      | 104/291 [00:07<00:07, 24.97it/s]Loading weights:  37%|███▋      | 108/291 [00:07<00:07, 24.61it/s]Loading weights:  38%|███▊      | 112/291 [00:07<00:07, 24.71it/s]Loading weights:  40%|███▉      | 115/291 [00:07<00:08, 20.82it/s]Loading weights:  42%|████▏     | 121/291 [00:07<00:07, 23.50it/s]Loading weights:  43%|████▎     | 124/291 [00:08<00:07, 23.27it/s]Loading weights:  45%|████▍     | 130/291 [00:08<00:05, 28.39it/s]Loading weights:  46%|████▌     | 134/291 [00:08<00:05, 27.15it/s]Loading weights:  48%|████▊     | 139/291 [00:08<00:06, 24.78it/s]Loading weights:  51%|█████     | 148/291 [00:08<00:04, 34.34it/s]Loading weights:  52%|█████▏    | 152/291 [00:08<00:04, 31.23it/s]Loading weights:  54%|█████▎    | 156/291 [00:09<00:05, 25.04it/s]Loading weights:  57%|█████▋    | 166/291 [00:09<00:04, 30.91it/s]Loading weights:  60%|██████    | 175/291 [00:09<00:03, 35.51it/s]Loading weights:  62%|██████▏   | 179/291 [00:09<00:03, 34.78it/s]Loading weights:  63%|██████▎   | 184/291 [00:10<00:04, 25.95it/s]Loading weights:  66%|██████▋   | 193/291 [00:10<00:03, 28.99it/s]Loading weights:  69%|██████▉   | 202/291 [00:10<00:03, 28.96it/s]Loading weights:  73%|███████▎  | 211/291 [00:10<00:02, 35.15it/s]Loading weights:  74%|███████▍  | 215/291 [00:10<00:02, 34.29it/s]Loading weights:  76%|███████▌  | 220/291 [00:11<00:02, 34.79it/s]Loading weights:  77%|███████▋  | 224/291 [00:11<00:02, 22.94it/s]Loading weights:  79%|███████▊  | 229/291 [00:11<00:03, 20.57it/s]Loading weights:  81%|████████  | 236/291 [00:11<00:02, 27.23it/s]Loading weights:  82%|████████▏ | 240/291 [00:12<00:02, 19.53it/s]Loading weights:  85%|████████▍ | 247/291 [00:12<00:02, 21.27it/s]Loading weights:  86%|████████▌ | 250/291 [00:12<00:01, 20.67it/s]Loading weights:  87%|████████▋ | 253/291 [00:12<00:01, 21.74it/s]Loading weights:  88%|████████▊ | 257/291 [00:12<00:01, 23.99it/s]Loading weights:  89%|████████▉ | 260/291 [00:13<00:01, 16.97it/s]Loading weights:  91%|█████████ | 265/291 [00:13<00:01, 21.78it/s]Loading weights:  92%|█████████▏| 268/291 [00:13<00:01, 22.46it/s]Loading weights:  94%|█████████▍| 274/291 [00:13<00:00, 22.91it/s]Loading weights:  95%|█████████▌| 277/291 [00:14<00:00, 16.03it/s]Loading weights:  96%|█████████▌| 280/291 [00:14<00:00, 16.43it/s]Loading weights:  98%|█████████▊| 284/291 [00:14<00:00, 19.56it/s]Loading weights:  99%|█████████▉| 288/291 [00:14<00:00, 22.81it/s]Loading weights: 100%|██████████| 291/291 [00:14<00:00, 20.00it/s]
-  [outlier] skip_layers (all quant methods) = []
-Error executing job with overrides: ['model_path=/lustre/home/frj/yuma-ichikawa/conference/models/llama-3.1-8b-instruct', 'output_dir=/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/results_turboquant']
-Traceback (most recent call last):
-  File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/kv_benchmark.py", line 282, in main
-    methods = build_methods(cfg, model, tok)
-  File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/benchmark/kvcomp-longcontext/kv_benchmark.py", line 93, in build_methods
-    codec = build_codec(f"int{b}", skip_layers=skip, key_axis="token", value_axis="token")
-  File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/onecomp/kvcomp/_registry.py", line 51, in build_codec
-    return _build(_KV_CODECS, "KV codec", name, **kwargs)
-  File "/lustre/home/frj/yuma-ichikawa/conference/onecomp-lab/onecomp/kvcomp/_registry.py", line 45, in _build
-    raise KeyError(f"Unknown {kind} '{name}'. Registered: {available}")
-KeyError: "Unknown KV codec 'int3'. Registered: fp8, halo, int2, int4, int8, kivi, nvfp4, ternary, turboquant"
-
-Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.

@@ -63,7 +63,6 @@ def test_code_pass_at_1_uses_exact_summed_compression_counters(monkeypatch):
                 "compression_fp16_bits": fp16_bits,
                 "compression_stored_bits": stored_bits,
                 "compression_aggregation": "exact_cache_bit_counters",
-                "adaptive_hq_runtime": None,
             },
         )
 
@@ -91,7 +90,6 @@ def test_code_pass_at_1_uses_exact_summed_compression_counters(monkeypatch):
         "compression_stored_bits": 75,
         "compression_aggregation": "sum_exact_per_generation_cache_bit_counters",
         "compression_observations": 2,
-        "adaptive_hq_runtime": None,
     }
 
 
@@ -107,7 +105,6 @@ def test_code_zero_bit_payload_reports_infinite_compression(monkeypatch):
                 "compression_fp16_bits": 100,
                 "compression_stored_bits": 0,
                 "compression_aggregation": "exact_cache_bit_counters",
-                "adaptive_hq_runtime": None,
             },
         ),
     )
@@ -134,7 +131,6 @@ def test_code_fullkv_factory_uses_non_eviction_fullkv_schema(monkeypatch):
                 "compression_fp16_bits": None,
                 "compression_stored_bits": None,
                 "compression_aggregation": "fullkv_no_cache",
-                "adaptive_hq_runtime": None,
             },
         ),
     )

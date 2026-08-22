@@ -1,47 +1,12 @@
-"""Data-free block vector quantization (VQ) codebooks.
+"""Canonical data-free vector quantization primitives for HayateQuant.
 
-TurboQuant (arXiv:2504.19874) rotates a KV vector so its finite-dimensional
-coordinates are identically distributed Beta marginals but remain dependent
-through the fixed norm; finite coordinate subsets approach independent
-Gaussians as ``d -> inf``.  It then fits a
-**scalar** Lloyd-Max quantizer to that law (``rotation.lloyd_max_beta`` /
-``rotation.lloyd_max_gaussian``).
+HayateQuant fixes two-coordinate Gaussian Lloyd codebooks.  The five shipped
+tables cover the key/value widths needed by average rates 2, 3, and 4.  They
+are manifest-pinned so inference never fits or selects a codebook at runtime.
 
-Classical rate-distortion theory (Gersho & Gray, *Vector Quantization and
-Signal Compression*, 1992; Zamir, *Lattice Coding for Signals and Networks*,
-2014) says this leaves a *known, quantified* gap open: independent scalar
-quantization of a memoryless Gaussian source loses the **space-filling
-gain** (Voronoi cells are hypercubes, not the rounder cells a higher-dimension
-quantizer can use) *and*, at finite rate, some of the **shape gain** (the
-optimal quantizer's cell shape should follow the source density, which is
-increasingly spherical/isotropic in higher joint dimension). The high-rate
-loss of scalar quantization relative to the memoryless Shannon
-rate-distortion bound is the classical ``1.53`` dB (``~0.255`` bit/dim);
-lattice/vector quantizers close part of this: the block/lattice dimension
-``b`` trades quantizer complexity for how much of that gap is recovered
-(``b=1``: scalar, the largest gap; ``b -> inf``: the full gap closes). This
-is exactly TurboQuant's own stated slack -- the paper's distortion bound is
-"near-optimal ... within a small constant factor (~2.7x)" of the
-information-theoretic optimum, and a part of that constant is plausibly
-associated with this
-scalar-vs-vector gap (independently flagged as unexplored "future work,
-Lever 5" in this repo's HALO analysis, ``papers/halo_paper`` /
-``benchmark/kvcomp-longcontext/paper/HALO_ENHANCED_REPORT.md``).
-
-This module implements the **data-free** (no calibration on real data)
-generalization: instead of a scalar codebook, fit a ``block_size``-dimensional
-vector codebook to synthetic samples drawn *exactly* from TurboQuant's own
-source law (the finite-``d`` Beta/Dirichlet joint law, or its Gaussian limit),
-using Lloyd's algorithm (batched K-means) -- the same "data-free calibration"
-principle TurboQuant itself uses for the scalar codebook, just in
-``block_size`` dimensions instead of 1. Exact nearest-codeword search can be
-expressed as one GEMM (``z @ cb.T``) plus an ``argmax``; the optional
-deployment LUT reduces this to a short candidate list. No explicit lattice
-decoder is required. Lloyd training is only a local optimization, so it does
-*not* guarantee dominance over every fixed lattice; any such comparison must
-be measured. The codebook remains just as data-free as TurboQuant's own
-scalar codebook (see ``verify_hayatequant_vq_gain.py`` for the measured,
-CPU-only ``b in {1,2,4,8}`` distortion curve).
+This module also contains the exact and candidate-LUT assignment primitives
+shared by the research codec and the packed vLLM backend.  The offline fitting
+helpers remain private and are used only by :mod:`.codebooks.fit_codebooks`.
 
 Copyright 2025-2026 Fujitsu Ltd.
 """
@@ -50,235 +15,22 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import os
 from functools import lru_cache
 
 import torch
 
 # Committed Lloyd codebook artifacts (see ``codebooks/manifest.json`` and
-# ``codebooks/fit_codebooks.py``).  Some entries serialize the historical
-# online-fit tensor exactly, while older b4/b8 entries use a higher offline
-# fit budget.  In both cases the manifest-pinned tensor prevents a machine or
-# BLAS-dependent first-use refit in a canonical HQ run.
+# ``codebooks/fit_codebooks.py``).  The manifest-pinned tensors prevent a
+# machine- or BLAS-dependent first-use refit in a canonical HayateQuant run.
 _CODEBOOK_DIR = os.path.join(os.path.dirname(__file__), "codebooks")
 _CODEBOOK_MANIFEST_NAME = "manifest.json"
 _SHIPPED_CODEBOOK_MANIFEST_SHA256 = (
-    "df02ba5fd41fd0cc3fd2d39474fcfe7a628c15eb9ea012e8c70b1ffb3dabecde"
+    "f144f4a066c786f9fafef66ed3b2cb09cdc9bf6c804df84c32dcc15423d0a6dc"
 )
 
-# Candidate block sizes considered by :func:`resolve_block_size`, largest first.
-_BLOCK_CANDIDATES = (8, 4, 2, 1)
-_CODEBOOK_INITS = ("auto", "forgy", "fibquant")
 
-
-def resolve_block_size(bits: int, block_size: "int | None", max_codebook_bits: int, m: int) -> int:
-    """Pick the largest feasible block size for a ``bits``-per-coordinate rate.
-
-    The block codebook has ``2 ** (bits * block_size)`` entries; this is
-    capped at ``2 ** max_codebook_bits`` for Lloyd-fit and encode/decode cost.
-    A candidate must also evenly divide the subset dimension ``m`` (so the
-    vector splits into whole blocks with no ragged remainder). ``block_size=1``
-    is the unconditional fallback (even when ``bits > max_codebook_bits``,
-    i.e. the cap constrains only the *block-size selection*, never the scalar
-    codebook's own ``2**bits`` size) and reproduces the scalar TurboQuant/HALO
-    codebook exactly.  HayateQuant can therefore always fall back to the same
-    scalar assignments and rate; the finite-Beta L2-vs-RMS fp16 scale
-    parameterization means the reconstructed tensors are not promised to be
-    bit-identical after metadata and output-dtype rounding.
-
-    Args:
-        bits: Bits per coordinate (the nominal codec rate).
-        block_size: Requested block size, or ``None`` to auto-select the
-            largest candidate in ``(8, 4, 2, 1)`` that fits under the cap.
-        max_codebook_bits: Log2 cap on the number of codewords.
-        m: Dimension of the subset being quantized (block size must divide it).
-    """
-
-    def _feasible(b: int) -> bool:
-        return bits * b <= max_codebook_bits and m % b == 0
-
-    if block_size is not None:
-        if block_size < 1:
-            raise ValueError(f"block_size must be >= 1, got {block_size}")
-        for b in _BLOCK_CANDIDATES:
-            if b <= block_size and _feasible(b):
-                return b
-        return 1
-    for b in _BLOCK_CANDIDATES:
-        if _feasible(b):
-            return b
-    return 1
-
-
-def _normal_icdf(p: torch.Tensor) -> torch.Tensor:
-    """Inverse standard-normal CDF without adding a SciPy dependency."""
-    p = p.clamp(1.0e-12, 1.0 - 1.0e-12)
-    return math.sqrt(2.0) * torch.erfinv(2.0 * p - 1.0)
-
-
-def _regularized_beta(a: float, b: float, x: float) -> float:
-    """Regularized incomplete beta I_x(a,b), Numerical Recipes continued fraction."""
-    if x <= 0.0:
-        return 0.0
-    if x >= 1.0:
-        return 1.0
-
-    def _betacf(aa: float, bb: float, xx: float) -> float:
-        qab = aa + bb
-        qap = aa + 1.0
-        qam = aa - 1.0
-        c = 1.0
-        d = 1.0 - qab * xx / qap
-        if abs(d) < 1.0e-300:
-            d = 1.0e-300
-        d = 1.0 / d
-        h = d
-        for m in range(1, 101):
-            m2 = 2 * m
-            aa_step = m * (bb - m) * xx / ((qam + m2) * (aa + m2))
-            d = 1.0 + aa_step * d
-            if abs(d) < 1.0e-300:
-                d = 1.0e-300
-            c = 1.0 + aa_step / c
-            if abs(c) < 1.0e-300:
-                c = 1.0e-300
-            d = 1.0 / d
-            h *= d * c
-            aa_step = -(aa + m) * (qab + m) * xx / ((aa + m2) * (qap + m2))
-            d = 1.0 + aa_step * d
-            if abs(d) < 1.0e-300:
-                d = 1.0e-300
-            c = 1.0 + aa_step / c
-            if abs(c) < 1.0e-300:
-                c = 1.0e-300
-            d = 1.0 / d
-            delta = d * c
-            h *= delta
-            if abs(delta - 1.0) < 3.0e-14:
-                break
-        return h
-
-    bt = math.exp(
-        math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b) + a * math.log(x) + b * math.log1p(-x)
-    )
-    if x < (a + 1.0) / (a + b + 2.0):
-        return bt * _betacf(a, b, x) / a
-    return 1.0 - bt * _betacf(b, a, 1.0 - x) / b
-
-
-def _beta_ppf(q: float, a: float, b: float) -> float:
-    """Inverse regularized beta by monotone bisection."""
-    q = min(max(float(q), 0.0), 1.0)
-    if q <= 0.0:
-        return 0.0
-    if q >= 1.0:
-        return 1.0
-    lo, hi = 0.0, 1.0
-    for _ in range(64):
-        mid = (lo + hi) * 0.5
-        if _regularized_beta(a, b, mid) < q:
-            lo = mid
-        else:
-            hi = mid
-    return (lo + hi) * 0.5
-
-
-def _roberts_phi(dim: int) -> float:
-    lo, hi = 1.0, 2.0
-    for _ in range(96):
-        mid = (lo + hi) * 0.5
-        if mid ** (dim + 1) - mid - 1.0 > 0.0:
-            hi = mid
-        else:
-            lo = mid
-    return (lo + hi) * 0.5
-
-
-def _fibquant_directions(block_size: int, k: int) -> torch.Tensor:
-    """Quasi-uniform FibQuant directions on S^(block_size-1)."""
-    if block_size < 2:
-        raise ValueError("FibQuant directions require block_size >= 2")
-    idx = torch.arange(k, dtype=torch.float64)
-    golden = 1.618033988749895
-    theta_g = 1.0 - 1.0 / golden
-    if block_size == 2:
-        theta = 2.0 * math.pi * idx * theta_g
-        return torch.stack((theta.cos(), theta.sin()), dim=1).to(torch.float32)
-    if block_size == 3:
-        z = 1.0 - (2.0 * (idx + 1.0) - 1.0) / float(k)
-        theta = 2.0 * math.pi * idx * theta_g
-        r = (1.0 - z.square()).clamp_min(0.0).sqrt()
-        return torch.stack((r * theta.cos(), r * theta.sin(), z), dim=1).to(torch.float32)
-    phi = _roberts_phi(block_size)
-    cols = []
-    for j in range(1, block_size + 1):
-        frac = ((idx + 0.5) * (phi ** (-j))).remainder(1.0).clamp(1.0e-12, 1.0 - 1.0e-12)
-        cols.append(_normal_icdf(frac))
-    dirs = torch.stack(cols, dim=1)
-    return (dirs / dirs.norm(dim=1, keepdim=True).clamp_min(1.0e-12)).to(torch.float32)
-
-
-def _fibquant_radii(block_size: int, ambient_dim: int, k: int) -> torch.Tensor:
-    """FibQuant Bennett-Gersho radial companding, RMS-scaled for HayateQuant."""
-    d = max(int(ambient_dim), block_size)
-    qs = [(i + 0.5) / float(k) for i in range(k)]
-    if block_size == d:
-        unit = torch.ones(k, dtype=torch.float64)
-    elif block_size == 2 and d > 2:
-        unit = torch.tensor(
-            [math.sqrt(max(0.0, 1.0 - (1.0 - q) ** (4.0 / d))) for q in qs],
-            dtype=torch.float64,
-        )
-    else:
-        alpha = block_size / 2.0
-        beta = block_size / (block_size + 2.0) * ((d - block_size - 2.0) / 2.0) + 1.0
-        beta = max(beta, 1.0e-6)
-        unit = torch.tensor(
-            [math.sqrt(_beta_ppf(q, alpha, beta)) for q in qs], dtype=torch.float64
-        )
-    return (unit * math.sqrt(float(d))).to(torch.float32)
-
-
-def fibquant_initial_codebook(bits: int, block_size: int, ambient_dim: int) -> torch.Tensor:
-    """Deterministic FibQuant radial-angular initial codebook.
-
-    It is used as a Lloyd warm-start, not as a raw replacement for the learned
-    HayateQuant codebook.
-    """
-    if block_size < 2:
-        raise ValueError("FibQuant initial codebook requires block_size >= 2")
-    k = 1 << (bits * block_size)
-    dirs = _fibquant_directions(block_size, k)
-    radii = _fibquant_radii(block_size, ambient_dim, k)
-    return (radii.unsqueeze(1) * dirs).contiguous()
-
-
-def fibquant_initial_codebook_k(k: int, block_size: int, ambient_dim: int) -> torch.Tensor:
-    """FibQuant radial-angular warm-start with an explicit codebook size.
-
-    Fractional-rate block VQ stores a fixed number of bits per block rather
-    than an integer number of bits per coordinate, so ``K`` is no longer always
-    ``2 ** (bits * block_size)``.  The geometric FibQuant initializer only
-    needs the number of centroids and the block dimension, making it a natural
-    warm-start for those rates too.
-    """
-    if block_size < 2:
-        raise ValueError("FibQuant initial codebook requires block_size >= 2")
-    dirs = _fibquant_directions(block_size, int(k))
-    radii = _fibquant_radii(block_size, ambient_dim, int(k))
-    return (radii.unsqueeze(1) * dirs).contiguous()
-
-
-def _validate_codebook_init(init: str) -> str:
-    if init not in _CODEBOOK_INITS:
-        raise ValueError(f"codebook_init must be one of {_CODEBOOK_INITS}, got {init!r}")
-    return init
-
-
-def _kmeans(
-    samples: torch.Tensor, k: int, iters: int, seed: int, init: "torch.Tensor | None" = None
-):
+def _kmeans(samples: torch.Tensor, k: int, iters: int, seed: int) -> tuple[torch.Tensor, float]:
     """Batched Lloyd's algorithm (K-means) for ``k`` centroids in R^m.
 
     Memory-efficient (``index_add_``-based centroid update, no ``O(N*K)``
@@ -294,19 +46,13 @@ def _kmeans(
     """
     n, m = samples.shape
     device = samples.device
-    if init is None:
-        gen = torch.Generator(device="cpu").manual_seed(seed)
-        perm = torch.randperm(n, generator=gen)
-        if k > n:
-            # Forgy needs a deterministic initial centroid for every codeword
-            # even when a bounded synthetic fit set is smaller than K.
-            perm = perm.repeat((k + n - 1) // n)
-        perm = perm[:k]
-        centroids = samples[perm].clone()
-    else:
-        centroids = init.to(device=device, dtype=samples.dtype).clone()
-        if tuple(centroids.shape) != (k, m):
-            raise ValueError(f"init shape must be {(k, m)}, got {tuple(centroids.shape)}")
+    gen = torch.Generator(device="cpu").manual_seed(seed)
+    perm = torch.randperm(n, generator=gen)
+    if k > n:
+        # Forgy needs a deterministic initial centroid for every codeword even
+        # when a bounded synthetic fit set is smaller than K.
+        perm = perm.repeat((k + n - 1) // n)
+    centroids = samples[perm[:k]].clone()
     sq = samples.pow(2).sum(dim=1, keepdim=True)  # (n, 1), reused every iter
     for _ in range(iters):
         csq = centroids.pow(2).sum(dim=1)  # (k,)
@@ -354,7 +100,6 @@ def _kmeans_best_of(
     iters: int,
     seed: int,
     restarts: int,
-    init: "torch.Tensor | None" = None,
 ) -> torch.Tensor:
     """Run :func:`_kmeans` from ``restarts`` seeded inits, keep the lowest-SSE fit.
 
@@ -365,33 +110,10 @@ def _kmeans_best_of(
     """
     best_centroids, best_sse = None, float("inf")
     for r in range(max(1, restarts)):
-        centroids, sse = _kmeans(
-            samples,
-            k,
-            iters,
-            seed + r * 7919,
-            init=init if r == 0 else None,
-        )
+        centroids, sse = _kmeans(samples, k, iters, seed + r * 7919)
         if sse < best_sse:
             best_centroids, best_sse = centroids, sse
     return best_centroids
-
-
-def _beta_block_samples(block_size: int, d: int, n_samples: int, seed: int) -> torch.Tensor:
-    """Exact samples of a ``block_size``-dim marginal of a random point on ``S^{d-1}``.
-
-    A uniformly random unit vector ``u`` in ``R^d`` has, for any fixed subset
-    of ``block_size`` coordinates, the exact joint law that TurboQuant's
-    scalar ``Beta((d-1)/2, (d-1)/2)`` marginal generalises to blocks (the two
-    coincide exactly at ``block_size=1``). Rescaling by ``sqrt(d)`` matches
-    the RMS-normalised convention used elsewhere in this package (so the
-    block codebook's units line up with :func:`rotation.lloyd_max_gaussian`
-    in the ``d -> inf`` limit).
-    """
-    gen = torch.Generator(device="cpu").manual_seed(seed)
-    g = torch.randn(n_samples, d, generator=gen, dtype=torch.float64)
-    u = g / g.norm(dim=-1, keepdim=True)
-    return (u[:, :block_size] * math.sqrt(d)).to(torch.float32)
 
 
 def _gaussian_block_samples(block_size: int, n_samples: int, seed: int) -> torch.Tensor:
@@ -428,7 +150,7 @@ def _load_codebook_manifest(path: str) -> dict:
         not isinstance(document, dict)
         or document.get("schema") != "hayatequant.shipped_gaussian_codebooks.v1"
         or not isinstance(document.get("artifacts"), dict)
-        or not isinstance(document.get("required_bundles"), dict)
+        or not isinstance(document.get("required_artifacts"), list)
     ):
         raise RuntimeError(f"unsupported HayateQuant codebook manifest schema: {path}")
     return document
@@ -456,7 +178,7 @@ def _validate_gaussian_artifact(
     expected: "dict | None",
     source: str,
 ) -> tuple[torch.Tensor, dict]:
-    """Strictly validate one tensor before it can enter an HQ payload."""
+    """Strictly validate one tensor before it can enter a HayateQuant payload."""
 
     try:
         tensor = torch.load(path, map_location="cpu", weights_only=True)
@@ -509,46 +231,19 @@ def _validate_gaussian_artifact(
     }
 
 
-@lru_cache(maxsize=64)
+@lru_cache(maxsize=5)
 def _gaussian_codebook_artifact_record(
     block_size: int,
     k: int,
-    override_dir: "str | None",
-) -> "tuple[torch.Tensor, dict] | None":
-    filename = f"gauss_b{int(block_size)}_k{int(k)}.pt"
-    if override_dir:
-        override_path = os.path.join(override_dir, filename)
-        if os.path.exists(override_path):
-            # Overrides are explicitly development-only. A local manifest is
-            # honored when supplied, but strict tensor validation is mandatory
-            # even for an intentionally unpinned exploratory directory.
-            override_manifest_path = os.path.join(override_dir, _CODEBOOK_MANIFEST_NAME)
-            expected = None
-            if os.path.isfile(override_manifest_path):
-                expected = _load_codebook_manifest(override_manifest_path)["artifacts"].get(
-                    filename
-                )
-                if expected is None:
-                    raise RuntimeError(
-                        f"development manifest does not pin override artifact {filename}"
-                    )
-            tensor, record = _validate_gaussian_artifact(
-                override_path,
-                block_size,
-                k,
-                expected=expected,
-                source="development_override",
-            )
-            record["override_dir"] = os.path.abspath(override_dir)
-            return tensor, record
+) -> tuple[torch.Tensor, dict]:
+    """Load one manifest-pinned codebook; no runtime override or fit exists."""
 
+    filename = f"gauss_b{int(block_size)}_k{int(k)}.pt"
     manifest_path, manifest = _load_shipped_codebook_manifest()
     expected = manifest["artifacts"].get(filename)
     shipped_path = os.path.join(_CODEBOOK_DIR, filename)
-    if expected is None:
-        if os.path.exists(shipped_path):
-            raise RuntimeError(f"shipped HayateQuant artifact is unpinned: {shipped_path}")
-        return None
+    if not isinstance(expected, dict):
+        raise RuntimeError(f"HayateQuant codebook is not manifest-pinned: {filename}")
     if not os.path.isfile(shipped_path):
         raise FileNotFoundError(f"manifest-pinned HayateQuant artifact is missing: {shipped_path}")
     tensor, record = _validate_gaussian_artifact(
@@ -564,213 +259,41 @@ def _gaussian_codebook_artifact_record(
     return tensor, record
 
 
-def _gaussian_codebook_artifact(block_size: int, k: int) -> "torch.Tensor | None":
-    """Load a strictly validated Gaussian artifact, or use an online fallback.
+def require_hayatequant_codebooks() -> dict:
+    """Validate and describe the complete canonical codebook set."""
 
-    The shipped path is always pinned by ``codebooks/manifest.json``. The
-    optional ``KVCOMP_CODEBOOK_DIR`` path is development-only and is exposed
-    by :func:`gaussian_codebook_artifact_provenance`.
-    """
-
-    record = _gaussian_codebook_artifact_record(
-        int(block_size), int(k), os.environ.get("KVCOMP_CODEBOOK_DIR")
-    )
-    return None if record is None else record[0]
-
-
-def _clear_gaussian_codebook_artifact_cache() -> None:
-    _gaussian_codebook_artifact_record.cache_clear()
-    _load_codebook_manifest.cache_clear()
-
-
-# Preserve the historical test/tool cache-clear surface.
-_gaussian_codebook_artifact.cache_clear = _clear_gaussian_codebook_artifact_cache
-
-
-def gaussian_codebook_artifact_provenance(block_size: int, k: int) -> dict:
-    """Return the resolved immutable/development/online source of one codebook."""
-
-    override = os.environ.get("KVCOMP_CODEBOOK_DIR")
-    record = _gaussian_codebook_artifact_record(int(block_size), int(k), override)
-    if record is None:
-        return {
-            "source": "online_fallback",
-            "block_size": int(block_size),
-            "k": int(k),
-            "development_override_dir": (
-                os.path.abspath(override) if override is not None else None
-            ),
-        }
-    return dict(record[1])
-
-
-def require_shipped_gaussian_codebook_bundle(bundle: str) -> dict:
-    """Validate a formal bundle and reject any development override."""
-
-    if os.environ.get("KVCOMP_CODEBOOK_DIR") is not None:
-        raise RuntimeError(
-            "canonical HQ/AdaptiveHQ forbids the development-only " "KVCOMP_CODEBOOK_DIR override"
-        )
     manifest_path, manifest = _load_shipped_codebook_manifest()
-    filenames = manifest["required_bundles"].get(str(bundle))
+    filenames = manifest["required_artifacts"]
     if not isinstance(filenames, list) or not filenames:
-        raise RuntimeError(f"unknown/empty HayateQuant codebook bundle {bundle!r}")
+        raise RuntimeError("HayateQuant required_artifacts must be a non-empty list")
+    if len(filenames) != len(set(filenames)):
+        raise RuntimeError("HayateQuant required_artifacts contains duplicates")
     artifacts = []
     for filename in filenames:
         expected = manifest["artifacts"].get(filename)
         if not isinstance(expected, dict):
-            raise RuntimeError(f"bundle {bundle!r} references unpinned artifact {filename!r}")
+            raise RuntimeError(f"required HayateQuant artifact is unpinned: {filename!r}")
         record = _gaussian_codebook_artifact_record(
-            int(expected["block_size"]), int(expected["k"]), None
+            int(expected["block_size"]), int(expected["k"])
         )
-        if record is None:
-            raise RuntimeError(f"bundle {bundle!r} could not resolve {filename!r}")
         artifacts.append(dict(record[1]))
     return {
         "required": True,
-        "bundle": str(bundle),
         "manifest_path": os.path.abspath(manifest_path),
         "manifest_sha256": _sha256_file(manifest_path),
-        "development_override_dir": None,
         "artifacts": artifacts,
     }
 
 
-@lru_cache(maxsize=32)
-def lloyd_vq_gaussian_block(
-    bits: int,
-    block_size: int,
-    iters: int = 25,
-    n_samples: int = 100_000,
-    seed: int = 0,
-    restarts: int = 4,
-    *,
-    init: str = "auto",
-    ambient_dim: "int | None" = None,
-) -> torch.Tensor:
-    """Data-free block-VQ codebook for i.i.d. ``N(0, 1)`` coordinates.
+@lru_cache(maxsize=5)
+def load_hayatequant_codebook(code_bits: int) -> torch.Tensor:
+    """Load the canonical two-coordinate codebook for one role width."""
 
-    Returns a ``(2**(bits*block_size), block_size)`` codebook fit by Lloyd's
-    algorithm (best of ``restarts`` seeded inits, see :func:`_kmeans_best_of`)
-    to synthetic Gaussian samples. ``block_size=1`` recovers
-    :func:`rotation.lloyd_max_gaussian` (up to Lloyd-iteration noise; both
-    converge to the same 1-D Lloyd-Max optimum).
-
-    When a manifest-pinned artifact exists for ``(block_size, K)`` it is
-    preferred over the online fit.  The manifest records whether it is an
-    exact serialization of the historical default fit or a higher-budget
-    offline fit.  Either form has zero runtime fitting cost and a bit-exact
-    content contract across machines. Callers passing non-default fit
-    hyperparameters keep the online fit.
-    """
-    init = _validate_codebook_init(init)
-    k = 1 << (bits * block_size)
-    default_fit = (iters, n_samples, seed, restarts) == (25, 100_000, 0, 4)
-    if default_fit and block_size > 1 and init != "fibquant":
-        art = _gaussian_codebook_artifact(block_size, k)
-        if art is not None:
-            return art
-    n_samples = min(n_samples, max(20_000, 2_000_000_000 // max(k, 1)))
-    samples = _gaussian_block_samples(block_size, n_samples, seed)
-    warm = None
-    if block_size > 1 and init in ("auto", "fibquant"):
-        warm = fibquant_initial_codebook(bits, block_size, ambient_dim or max(128, block_size + 3))
-    return _kmeans_best_of(samples, k, iters, seed, restarts, init=warm)
-
-
-@lru_cache(maxsize=32)
-def lloyd_vq_gaussian_codebook(
-    code_bits: int,
-    block_size: int,
-    iters: int = 25,
-    n_samples: int = 100_000,
-    seed: int = 0,
-    restarts: int = 4,
-    *,
-    init: str = "auto",
-    ambient_dim: "int | None" = None,
-) -> torch.Tensor:
-    """Data-free Gaussian block-VQ codebook with explicit block code bits.
-
-    Unlike :func:`lloyd_vq_gaussian_block`, this function decouples the number
-    of stored bits per block from ``bits_per_coordinate * block_size``.  The
-    achieved rate is therefore ``code_bits / block_size`` bits per coordinate,
-    which gives fixed-length, random-access fractional rates such as 1.25,
-    1.5, 1.75, 2.5, and 3.5 bits/dim without entropy coding.
-    """
-    init = _validate_codebook_init(init)
-    if code_bits < 1:
-        raise ValueError(f"code_bits must be positive, got {code_bits}")
-    k = 1 << int(code_bits)
-    default_fit = (iters, n_samples, seed, restarts) == (25, 100_000, 0, 4)
-    if default_fit and block_size > 1 and init != "fibquant":
-        art = _gaussian_codebook_artifact(block_size, k)
-        if art is not None:
-            return art
-    n_samples = min(n_samples, max(20_000, 2_000_000_000 // max(k, 1)))
-    samples = _gaussian_block_samples(block_size, n_samples, seed)
-    warm = None
-    if block_size > 1 and init in ("auto", "fibquant"):
-        warm = fibquant_initial_codebook_k(k, block_size, ambient_dim or max(128, block_size + 3))
-    return _kmeans_best_of(samples, k, iters, seed, restarts, init=warm)
-
-
-@lru_cache(maxsize=32)
-def lloyd_vq_beta_block(
-    bits: int,
-    block_size: int,
-    d: int,
-    iters: int = 25,
-    n_samples: int = 100_000,
-    seed: int = 0,
-    restarts: int = 4,
-    *,
-    init: str = "auto",
-) -> torch.Tensor:
-    """Data-free block-VQ codebook for the exact finite-``d`` Beta/Dirichlet law.
-
-    Returns a ``(2**(bits*block_size), block_size)`` codebook fit by Lloyd's
-    algorithm (best of ``restarts`` seeded inits) to exact samples of a
-    ``block_size``-dim marginal of a random point on ``S^{d-1}`` (rescaled by
-    ``sqrt(d)``). ``block_size=1`` recovers :func:`rotation.lloyd_max_beta`.
-    """
-    init = _validate_codebook_init(init)
-    k = 1 << (bits * block_size)
-    n_samples = min(n_samples, max(20_000, 2_000_000_000 // max(k, 1)))
-    samples = _beta_block_samples(block_size, d, n_samples, seed)
-    warm = (
-        fibquant_initial_codebook(bits, block_size, d)
-        if block_size > 1 and init in ("auto", "fibquant")
-        else None
-    )
-    return _kmeans_best_of(samples, k, iters, seed, restarts, init=warm)
-
-
-@lru_cache(maxsize=32)
-def lloyd_vq_beta_codebook(
-    code_bits: int,
-    block_size: int,
-    d: int,
-    iters: int = 25,
-    n_samples: int = 100_000,
-    seed: int = 0,
-    restarts: int = 4,
-    *,
-    init: str = "auto",
-) -> torch.Tensor:
-    """Finite-d Beta/Dirichlet block-VQ codebook with explicit block bits."""
-    init = _validate_codebook_init(init)
-    if code_bits < 1:
-        raise ValueError(f"code_bits must be positive, got {code_bits}")
-    k = 1 << int(code_bits)
-    n_samples = min(n_samples, max(20_000, 2_000_000_000 // max(k, 1)))
-    samples = _beta_block_samples(block_size, d, n_samples, seed)
-    warm = (
-        fibquant_initial_codebook_k(k, block_size, d)
-        if block_size > 1 and init in ("auto", "fibquant")
-        else None
-    )
-    return _kmeans_best_of(samples, k, iters, seed, restarts, init=warm)
+    if isinstance(code_bits, bool) or not isinstance(code_bits, int):
+        raise ValueError("HayateQuant code_bits must be an integer")
+    if code_bits not in {2, 4, 6, 8, 10}:
+        raise ValueError("HayateQuant code_bits must be one of 2, 4, 6, 8, or 10")
+    return _gaussian_codebook_artifact_record(2, 1 << code_bits)[0]
 
 
 # Above this many (rows * codewords) products, chunk the nearest-codeword
@@ -797,10 +320,10 @@ def quantize_to_vq_codebook(z: torch.Tensor, cb: torch.Tensor) -> torch.Tensor:
 
     ``block_size == 1`` (every "block" is a single scalar) is dispatched to
     :func:`onecomp.kvcomp.codec.rotation.quantize_to_codebook`'s ``O(N log K)``
-    sorted-boundary ``searchsorted`` -- the same algorithm TurboQuant/HALO's
+    sorted-boundary ``searchsorted`` -- the same algorithm TurboQuant's
     own scalar quantizer uses -- instead of the general ``O(N*K)`` GEMM +
     argmax below, so HayateQuant's ``block_size=1`` fallback really is
-    exactly as fast as TurboQuant/HALO while retaining the same scalar
+    exactly as fast as TurboQuant while retaining the same scalar
     assignments. For ``block_size > 1`` (genuine vector
     quantization, no 1-D ordering exists), the GEMM nearest-neighbour search
     is run in row-chunks bounded by :data:`_MAX_SCORE_ELEMENTS` so encode
@@ -820,7 +343,7 @@ def quantize_to_vq_codebook(z: torch.Tensor, cb: torch.Tensor) -> torch.Tensor:
         # centroid order), so the permutation is the identity for every
         # codebook this codec actually builds; skipping the full-N
         # ``order[codes]`` gather then makes this path exactly the raw
-        # TurboQuant/HALO searchsorted (measured ~3x faster at real block
+        # TurboQuant searchsorted (measured ~3x faster at real block
         # counts). The K-element equality check is a negligible sync.
         if torch.equal(sorted_cb, cb1):
             codes = quantize_to_codebook(flat.squeeze(-1), cb1)
@@ -1097,13 +620,13 @@ def quantize_via_lut(
         and scoring_csq.dtype == torch.float16
         and lut.dtype in (torch.int16, torch.int32)
         and b == 2
-        and int(lut.shape[-1]) == 4
+        and int(lut.shape[-1]) == 2
         and not torch.compiler.is_compiling()
     ):
-        from .triton_step import HAS_TRITON, quantize_lut_canonical_t4_triton
+        from .triton_step import HAS_TRITON, quantize_lut_canonical_t2_triton
 
         if HAS_TRITON:
-            return quantize_lut_canonical_t4_triton(
+            return quantize_lut_canonical_t2_triton(
                 z,
                 lut,
                 bins,
@@ -1120,7 +643,7 @@ def quantize_via_lut(
     if cands.shape[-1] == 1:
         return cands.squeeze(-1)
     if scoring_cb is not None:
-        # Canonical exact HQ scores a half-precision query against the cached
+        # Canonical exact HayateQuant scores a half-precision query against the cached
         # half-precision codebook and subtracts the cached half-precision
         # squared norm.  Restricting that same score to the cell candidates
         # removes a subtle implementation mismatch in the former LUT path:

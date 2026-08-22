@@ -1,9 +1,0 @@
-# Frozen immediately after all six 69346 tasks failed during metadata JSON
-# serialization and before any recovery action. These .pt files are complete,
-# finite, exact-shape tensors and must not be overwritten or refit.
-e789c4b7b7966dc3ddf55e0d1ab76f71c3b3a09e698f06a32abb588bc6ba5d3d  artifacts/gauss_b2_k128.pt
-91a05e6a2c38b911df954b25ce62950d2715c348d87e8224abcab54ec4c3c6e8  artifacts/gauss_b2_k32.pt
-3591ff90806677bcc00c50ddd44a761f11d8b845dbea1a408ce7034d6ca2d2ed  artifacts/gauss_b2_k512.pt
-3bf6f9d612eb610d94cb95eafeb1a08e1baca2383465ed5193ab0c6184832fbc  artifacts/gauss_b2_k8.pt
-88b4b969a5c29ca70fd194bb412de72624169e3a1b76ba91b7afce8000e23cb3  artifacts/gauss_b4_k1024.pt
-1d46776f034453ce3d80c9a4e0404322973130cd7a2561ae552a0194af9d01bd  artifacts/gauss_b4_k64.pt

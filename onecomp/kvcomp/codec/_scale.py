@@ -1,8 +1,7 @@
 """Role-asymmetric (attention-aligned) dequantization scale.
 
-Used by the rotated-codebook KV codecs in this package. HayateQuant exposes
-matched scalar controls for TurboQuant/HALO equations, but those codecs remain
-independent baselines. For a rotated, per-vector-normalised vector ``x`` and
+Used by HayateQuant's rotated-codebook path. For a rotated,
+per-vector-normalised vector ``x`` and
 its current reconstructed **direction** ``chat`` (the concatenation of
 per-coordinate Lloyd-Max centroids for a scalar codec, or of block-VQ
 codewords for HayateQuant -- either way, a single ``(..., m)`` tensor with

@@ -91,18 +91,23 @@ class PMKVQCache(GradedQuantCache):
         lam = self._key_scale.get(layer_idx)
         if lam is None:
             return super()._grade_layer(keys, values, layer_idx)
-        kbits, vbits = self.token_bits(keys.shape[2], keys.device, layer_idx)
+        total = keys.shape[2]
+        requested_k, requested_v = self.token_bits(total, keys.device, layer_idx)
+        previous_k, previous_v = self._previous_bits(layer_idx, total, keys.device)
+        kbits, kwork = self._lowering_work_bits(requested_k, previous_k)
+        vbits, vwork = self._lowering_work_bits(requested_v, previous_v)
         lam = lam.to(keys.device, keys.dtype)  # (n_kv_heads, head_dim)
         inv = (1.0 / lam.clamp_min(1e-6)).view(1, lam.shape[0], 1, lam.shape[1])
         scl = lam.view(1, lam.shape[0], 1, lam.shape[1])
-        kq = scl.float() * fake_quant_tokens(keys.float() * inv.float(), kbits)
-        vq = fake_quant_tokens(values, vbits)
+        kq = scl.float() * fake_quant_tokens(keys.float() * inv.float(), kwork)
+        vq = fake_quant_tokens(values, vwork)
+        self._record_token_bits(layer_idx, kbits, vbits)
         batch_heads = keys.shape[0] * keys.shape[1]
         per = batch_heads * keys.shape[-1]
         bits = int(
             kbits.sum() * per
             + vbits.sum() * per
-            + self._meta_bits(kbits, batch_heads)
-            + self._meta_bits(vbits, batch_heads)
+            + self._meta_bits_for_role(kbits, batch_heads, "k")
+            + self._meta_bits_for_role(vbits, batch_heads, "v")
         )
         return kq, vq, bits
