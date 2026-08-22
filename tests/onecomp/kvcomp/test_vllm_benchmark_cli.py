@@ -199,9 +199,12 @@ def test_runtime_environment_is_confined_to_result_directory(tmp_path: Path, mon
         "CUDA_CACHE_PATH",
         "TMPDIR",
         "VLLM_PLUGINS",
+        "VLLM_WORKER_MULTIPROC_METHOD",
+        "VLLM_USE_DEEP_GEMM",
     )
     for variable in variables:
         monkeypatch.delenv(variable, raising=False)
+    monkeypatch.setenv("PATH", "/usr/bin")
     output = tmp_path / "speed" / "hayatequant-r3.json"
 
     root = benchmark._configure_runtime_environment(output)
@@ -209,7 +212,12 @@ def test_runtime_environment_is_confined_to_result_directory(tmp_path: Path, mon
     assert root == (output.parent / "runtime" / output.stem).resolve()
     assert root.is_dir()
     assert benchmark.os.environ["VLLM_PLUGINS"] == "kvcomp"
-    for variable in variables[:-2]:
+    assert benchmark.os.environ["VLLM_WORKER_MULTIPROC_METHOD"] == "spawn"
+    assert benchmark.os.environ["VLLM_USE_DEEP_GEMM"] == "0"
+    assert benchmark.os.environ["PATH"].split(benchmark.os.pathsep)[0] == str(
+        Path(benchmark.sys.executable).absolute().parent
+    )
+    for variable in variables[:-4]:
         assert Path(benchmark.os.environ[variable]).is_relative_to(root)
         assert Path(benchmark.os.environ[variable]).is_dir()
     runtime_tmp = Path(benchmark.os.environ["TMPDIR"])
@@ -263,6 +271,7 @@ def test_existing_result_is_reused_only_for_an_identical_invocation(tmp_path: Pa
         "compilation_mode": "vllm_compile",
         "cuda_graph_mode": "vllm_default",
         "request_metrics_enabled": True,
+        "vllm_deep_gemm_enabled": False,
         "model_config_sha256": benchmark._sha256(args.model / "config.json"),
         "model_checkpoint_fingerprint": None,
         "code_revision": None,

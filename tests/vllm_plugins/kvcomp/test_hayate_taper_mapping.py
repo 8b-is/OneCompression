@@ -251,6 +251,36 @@ def test_turboquant_rate2_maps_to_a_real_custom_packed_backend(monkeypatch):
     assert preset is not None and preset.custom_backend
 
 
+@pytest.mark.parametrize(
+    "noncanonical_mode",
+    ["deployment", "vllm", "1", "true", "yes", "on", "NATIVE"],
+)
+def test_turboquant_runtime_mode_has_no_boolean_or_naming_aliases(monkeypatch, noncanonical_mode):
+    monkeypatch.setenv("KVCOMP_VLLM_TURBOQUANT_MODE", noncanonical_mode)
+    plan = plan_from_kv_config(
+        _config(codec={"name": "turboquant", "bits": 3, "rotation_mode": "hadamard"})
+    )
+
+    assert plan.needs_custom_backend and not plan.native_supported
+
+
+def test_turboquant_runtime_mode_is_not_a_serialized_codec_field(monkeypatch):
+    monkeypatch.setenv("KVCOMP_VLLM_TURBOQUANT_MODE", "native")
+    plan = plan_from_kv_config(
+        _config(
+            codec={
+                "name": "turboquant",
+                "bits": 3,
+                "rotation_mode": "hadamard",
+                "vllm_mode": "native",
+            }
+        )
+    )
+
+    assert plan.needs_custom_backend and not plan.native_supported
+    assert any("not a serialized codec field" in note for note in plan.notes)
+
+
 def test_turboquant_rate2_helper_installs_the_plugin_backend(monkeypatch):
     calls = []
     import vllm_plugins.kvcomp.turboquant2_native as turboquant2_native

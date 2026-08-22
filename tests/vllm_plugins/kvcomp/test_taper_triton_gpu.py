@@ -26,8 +26,12 @@ def test_fused_token_quantizer_matches_reference_on_strided_cache(widths):
     torch.manual_seed(11)
     key = torch.randn(3, 4, 2, 32, device="cuda", dtype=torch.float16)
     value = torch.randn_like(key)
-    kv_cache = _kv_cache(key.clone(), value.clone())
-    key_cache, _ = TaperKVImpl._split_kv_cache(kv_cache)
+    # Construct the interleaved layout explicitly. vLLM 0.20 uses K/V axis 0,
+    # whose unbound tensors are contiguous, while vLLM 0.24 uses axis 1. This
+    # regression specifically targets write-through on a strided cache view and
+    # must therefore not inherit the installed vLLM version's preferred axis.
+    kv_cache = torch.stack((key.clone(), value.clone()), dim=1)
+    key_cache = kv_cache[:, 0]
     assert not key_cache.is_contiguous()
     source = key_cache.clone()
     slots = torch.tensor([0, 5, 11], device="cuda", dtype=torch.long)
@@ -43,7 +47,7 @@ def test_fused_token_quantizer_matches_reference_on_strided_cache(widths):
 
     TaperKVImpl._lower_tokens(key_cache, ledger, slots, requested)
     torch.cuda.synchronize()
-    actual_key, actual_value = TaperKVImpl._split_kv_cache(kv_cache)
+    actual_key, actual_value = kv_cache[:, 0], kv_cache[:, 1]
 
     torch.testing.assert_close(actual_key, expected, rtol=0, atol=2e-3)
     assert torch.equal(actual_value, value)

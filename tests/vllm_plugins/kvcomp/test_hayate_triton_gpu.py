@@ -375,7 +375,7 @@ def test_packed_store_decode_and_attention_match_public_hayatequant(rate):
         vcb,
         recipe,
         head_dim**-0.5,
-        max_num_kv_splits=1,
+        max_num_kv_splits=32,
     )
     rotated_native = triton_hayatequant_decode_attention(
         query,
@@ -388,7 +388,7 @@ def test_packed_store_decode_and_attention_match_public_hayatequant(rate):
         vcb,
         recipe,
         head_dim**-0.5,
-        max_num_kv_splits=1,
+        max_num_kv_splits=32,
         output_in_rotated_basis=True,
     )
     assert rotated_native.dtype == dtype

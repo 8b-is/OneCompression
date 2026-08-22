@@ -38,9 +38,9 @@ HayateQuant has one public method name, `hayatequant`, and three adopted rates:
 
 | average rate | key code bits / 2-vector | value code bits / 2-vector |
 |---:|---:|---:|
-| 2 | 5 | 3 |
-| 3 | 7 | 5 |
-| 4 | 9 | 7 |
+| 2 | 6 | 2 |
+| 3 | 8 | 4 |
+| 4 | 10 | 6 |
 
 The recipe uses shipped Gaussian codebooks, rate-selected orthogonal rotation,
 NC key scaling, iterative least-squares value scaling, exact assignment for
@@ -69,8 +69,9 @@ The Hugging Face cache reports exact payload and affine-metadata ledgers. The
 current vLLM backend vectorizes regrading on GPU but retains model-dtype physical
 pages; its evidence therefore calls itself a semantic backend, not a packed
 memory implementation. Prefix caching is disabled because shared pages cannot
-carry request-relative ages safely. Eager execution is also required because
-CUDA-graph replay would bypass the Python precision-ledger cadence.
+carry request-relative ages safely. Token TaperKV uses fixed-shape,
+sequence-length-aligned GPU updates and supports CUDA-graph replay. Block
+TaperKV's whole-page cadence requires eager execution.
 
 ## vLLM mapping contract
 

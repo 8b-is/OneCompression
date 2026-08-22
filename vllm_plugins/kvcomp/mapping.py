@@ -51,12 +51,10 @@ def _integer_list(config: dict, name: str) -> list[int]:
     return [strict_integer(value, f"{name} entry", minimum=0) for value in values]
 
 
-def _turboquant_native_requested(codec: dict) -> bool:
-    raw = codec.get("vllm_mode") or os.environ.get("KVCOMP_VLLM_TURBOQUANT_MODE")
-    if raw is None:
-        return False
-    mode = str(raw).strip().lower().replace("-", "_")
-    return mode in {"native", "deployment", "vllm", "1", "true", "yes", "on"}
+def _turboquant_native_requested() -> bool:
+    """Return whether the one canonical vLLM deployment mode was requested."""
+
+    return os.environ.get("KVCOMP_VLLM_TURBOQUANT_MODE") == "native"
 
 
 @dataclass
@@ -328,7 +326,13 @@ def _plan_from_kv_config(
     elif name == "hayatequant":
         return _hayatequant_plan(codec, plan, requested_kv_cache_dtype)
     elif name == "turboquant":
-        if not _turboquant_native_requested(codec):
+        if "vllm_mode" in codec:
+            plan.needs_custom_backend = True
+            plan.notes.append(
+                "TurboQuant vllm_mode is not a serialized codec field. Set "
+                "KVCOMP_VLLM_TURBOQUANT_MODE=native at runtime instead."
+            )
+        elif not _turboquant_native_requested():
             plan.needs_custom_backend = True
             plan.notes.append(
                 "OneComp TurboQuant and vLLM's deployment preset are not "

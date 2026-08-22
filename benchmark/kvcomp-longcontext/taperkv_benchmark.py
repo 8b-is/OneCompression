@@ -94,7 +94,9 @@ def run(args: argparse.Namespace) -> dict:
     results = {}
     for method in args.methods:
         policy = _policy(method)
-        kv_config = None if policy is None else KVCompressionConfig(policy=policy)
+        kv_config = (
+            None if policy is None else KVCompressionConfig(policy=policy, residual_window=0)
+        )
 
         def cache_factory(config=kv_config):
             return build_compressed_cache(model, config) if config is not None else None

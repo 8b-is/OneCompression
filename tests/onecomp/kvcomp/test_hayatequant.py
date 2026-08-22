@@ -40,6 +40,15 @@ def test_public_identity_and_constructor_are_canonical_only():
             HayateQuantCodec(**obsolete)
 
 
+def test_default_operating_point_is_the_three_bit_speed_quality_recipe():
+    assert HayateQuantCodec().bits == 3
+    assert HayateQuantCodec().get_kv_config() == {
+        "name": "hayatequant",
+        "bits": 3,
+        "skip_layers": [],
+    }
+
+
 @pytest.mark.parametrize("rate", [True, 1, 2.5, 5, "3"])
 def test_noncanonical_rates_fail_closed(rate):
     with pytest.raises(ValueError):

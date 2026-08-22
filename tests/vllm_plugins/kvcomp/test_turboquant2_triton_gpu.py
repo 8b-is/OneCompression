@@ -112,7 +112,7 @@ def test_turboquant2_packed_store_dequant_and_attention_match_scalar_reference()
         rotation,
         centroids,
         head_dim**-0.5,
-        max_num_kv_splits=1,
+        max_num_kv_splits=32,
     )
     groups = query_heads // kv_heads
     expanded_key = reference_key.repeat_interleave(groups, dim=1)

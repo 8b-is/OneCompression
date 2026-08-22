@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 import shutil
 from statistics import median
+import sys
 import tempfile
 import time
 
@@ -295,11 +296,30 @@ def _configure_runtime_environment(output: Path) -> Path:
     for variable, path in locations.items():
         path.mkdir(parents=True, exist_ok=True)
         os.environ[variable] = str(path)
+    # Calling a virtual environment's Python by absolute path does not add its
+    # sibling console scripts to PATH.  vLLM/FlashInfer launches its installed
+    # ``ninja`` executable by name during JIT compilation.
+    interpreter_bin = str(Path(sys.executable).absolute().parent)
+    path_entries = [
+        entry
+        for entry in os.environ.get("PATH", "").split(os.pathsep)
+        if entry and entry != interpreter_bin
+    ]
+    os.environ["PATH"] = os.pathsep.join([interpreter_bin, *path_entries])
     os.environ["TMPDIR"] = str(_runtime_tmpdir(output))
     # The project can expose unrelated vLLM plugins.  Loading only kvcomp
     # prevents their optional version-specific dependencies from affecting a
     # KV-cache benchmark, and the spawned engine inherits this selection.
     os.environ["VLLM_PLUGINS"] = "kvcomp"
+    # Importing a local compression stack can initialize CUDA before vLLM
+    # creates its engine process.  Linux's default ``fork`` context cannot
+    # safely inherit that CUDA runtime, so select the supported clean process
+    # start explicitly and before importing vLLM.
+    os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
+    # This benchmark compares KV-cache kernels under the same dense-model
+    # execution path.  Disable optional FP8/MoE DeepGEMM so a Blackwell host
+    # without that separate extension does not fail during unrelated warmup.
+    os.environ["VLLM_USE_DEEP_GEMM"] = "0"
     return runtime_root
 
 
@@ -386,6 +406,7 @@ def run(args: argparse.Namespace) -> dict:
             "compilation_mode": compilation_mode,
             "cuda_graph_mode": cuda_graph_mode,
             "request_metrics_enabled": True,
+            "vllm_deep_gemm_enabled": False,
             "model_config_sha256": model_config_sha256,
             "model_checkpoint_fingerprint": model_checkpoint_fingerprint,
             "code_revision": code_revision,
@@ -527,6 +548,7 @@ def run(args: argparse.Namespace) -> dict:
         "compilation_mode": compilation_mode,
         "cuda_graph_mode": cuda_graph_mode,
         "request_metrics_enabled": True,
+        "vllm_deep_gemm_enabled": False,
         "compression_layer_contract": layer_contract,
         "compressed_layer_indices": (
             list(range(expected_layer_count)) if args.method != "fullkv" else []

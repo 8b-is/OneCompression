@@ -598,16 +598,11 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
             )
         n, hq, d = query.shape
         qloc = attn_metadata.query_start_loc
-        qsl = (
-            attn_metadata.query_start_loc_cpu.tolist()
-            if attn_metadata.query_start_loc_cpu is not None
-            else qloc.tolist()
-        )
-        slens = (
-            attn_metadata.seq_lens_cpu.tolist()
-            if attn_metadata.seq_lens_cpu is not None
-            else attn_metadata.seq_lens.tolist()
-        )
+        # TurboQuantMetadata owns only the device tensors in vLLM's public
+        # backend contract. Convert each vector once, matching the upstream
+        # continuation-prefill implementation.
+        qsl = qloc.tolist()
+        slens = attn_metadata.seq_lens.tolist()
         # Equality of only the two maxima is insufficient for a mixed batch:
         # a long fresh prompt can hide a shorter continuation request. Check
         # every CPU-resident request length before ignoring the packed cache.
@@ -680,17 +675,6 @@ class HayateQuantNativeImpl(TurboQuantAttentionImpl):
                     is_prefill=False,
                     num_decodes=qlen,
                     num_decode_tokens=qlen,
-                    query_start_loc_cpu=torch.arange(
-                        qlen + 1,
-                        dtype=qloc.dtype,
-                        device="cpu",
-                    ),
-                    seq_lens_cpu=torch.arange(
-                        cached + 1,
-                        seqlen + 1,
-                        dtype=attn_metadata.seq_lens.dtype,
-                        device="cpu",
-                    ),
                 )
                 out = self._decode_attention(qseq, kv_cache, meta, Pi, centroids, PiT, layer)
             else:

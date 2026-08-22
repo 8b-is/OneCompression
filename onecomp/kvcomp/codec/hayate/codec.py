@@ -221,7 +221,7 @@ class HayateQuantCodec(KVCodec):
 
     def __init__(
         self,
-        bits: int = 4,
+        bits: int = 3,
         *,
         calibration=None,
         skip_layers=None,

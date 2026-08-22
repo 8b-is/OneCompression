@@ -72,7 +72,7 @@ from onecomp.kvcomp import KVCompressionConfig, TaperKVPolicy, kv_compressed_gen
 from transformers import AutoModelForCausalLM
 
 model = AutoModelForCausalLM.from_pretrained("...", device_map="cuda")
-kv_cfg = KVCompressionConfig(policy=TaperKVPolicy())
+kv_cfg = KVCompressionConfig(policy=TaperKVPolicy(), residual_window=0)
 out = kv_compressed_generate(model, kv_cfg, input_ids=ids, max_new_tokens=512)
 ```
 
