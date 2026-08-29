@@ -26,11 +26,14 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--observations", type=int, default=48)
     parser.add_argument("--body-chars", type=int, default=8000)
     parser.add_argument("--context-chars", type=int, default=24_000)
+    parser.add_argument("--keep-recent", type=int, default=0)
     parser.add_argument("--seed", type=int, default=20260829)
     args = parser.parse_args(argv)
     for name in ("observations", "body_chars", "context_chars"):
         if getattr(args, name) <= 0:
             parser.error(f"--{name.replace('_', '-')} must be positive")
+    if args.keep_recent < 0:
+        parser.error("--keep-recent must be non-negative")
     output_dir = args.output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     result = run_benchmark(
@@ -38,6 +41,7 @@ def main(argv: list[str] | None = None) -> None:
         observations=args.observations,
         body_chars=args.body_chars,
         context_chars=args.context_chars,
+        keep_recent=args.keep_recent,
         seed=args.seed,
     )
     result_path = output_dir / "benchmark-results.json"
@@ -55,6 +59,7 @@ def run_benchmark(
     body_chars: int,
     context_chars: int,
     seed: int,
+    keep_recent: int = 0,
 ) -> dict[str, Any]:
     archive_path = output_dir / "archive.sqlite3"
     if archive_path.exists():
@@ -64,7 +69,7 @@ def run_benchmark(
     config = CompactionConfig(
         profile="formal-v1",
         archive_path=archive_path,
-        keep_recent=2,
+        keep_recent=keep_recent,
         result_max_chars=500,
         summary_max_chars=min(12_000, context_chars // 2),
         max_recall_units=1024,
@@ -153,6 +158,24 @@ def run_benchmark(
             marker = f"VERIFY-{seed}-{runner.archive.get_metadata(obs_id).sequence:04d}"
             needles_exact += marker in reconstructed
 
+        first_record_id = next(iter(originals))
+        first_metadata = runner.archive.get_metadata(first_record_id)
+        total_service_chunks = max(1, (first_metadata.char_count + 1023) // 1024)
+        chunk_recall_latencies_ms: list[float] = []
+        service_pieces: list[str] = []
+        sequential_started = time.perf_counter_ns()
+        for index in range(total_service_chunks):
+            started = time.perf_counter_ns()
+            chunk = runner.service.recall_text_chunk(first_record_id, index, max_units=1024)
+            chunk_recall_latencies_ms.append((time.perf_counter_ns() - started) / 1e6)
+            service_pieces.append(chunk.text)
+        sequential_chunk_ms = (time.perf_counter_ns() - sequential_started) / 1e6
+
+        search_marker = f"VERIFY-{seed}-{observations - 1:04d}"
+        search_started = time.perf_counter_ns()
+        search_exact = runner.archive.contains_value(search_marker)
+        search_latency_ms = (time.perf_counter_ns() - search_started) / 1e6
+
         for obs_id in list(originals)[: min(4, observations)]:
             runner.handle_action(f"_recall_chunk §{obs_id} 0", [])
 
@@ -173,6 +196,7 @@ def run_benchmark(
             "observations": observations,
             "body_chars_target": body_chars,
             "context_chars": context_chars,
+            "keep_recent": keep_recent,
             "public_generated_data": True,
         },
         "metrics": {
@@ -194,6 +218,15 @@ def run_benchmark(
             "compaction_and_dispatch_ms": compaction_ms,
             "reconstruction_latency_ms_p50": statistics.median(reconstruction_latencies_ms),
             "reconstruction_latency_ms_p95": _percentile(reconstruction_latencies_ms, 0.95),
+            "chunk_recall_latency_ms_p50": statistics.median(chunk_recall_latencies_ms),
+            "chunk_recall_latency_ms_p95": _percentile(chunk_recall_latencies_ms, 0.95),
+            "sequential_chunk_reconstruction_ms": sequential_chunk_ms,
+            "sequential_chunk_reconstruction_exact": (
+                "".join(service_pieces) == originals[first_record_id]
+            ),
+            "indexed_body_search_exact": search_exact,
+            "indexed_body_search_latency_ms": search_latency_ms,
+            "body_search_index_enabled": runner.archive.body_search_index_enabled,
         },
         "artifacts": {
             "run_report": str(output_dir / "run-report.json"),

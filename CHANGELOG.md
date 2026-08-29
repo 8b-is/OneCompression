@@ -22,10 +22,10 @@
   per-request negotiation, structured content, output schemas, TTL/cache
   metadata, and opaque pagination cursors; initialized legacy clients remain
   supported through automatic routing.
-- Updated PostToolUse adapters for current host contracts, explicitly separated
-  Codex archival feedback from true output replacement, migrated hook storage to
-  the formal archive, generated an OpenCode plugin, and moved the optional
-  OpenHands condenser to the formal runner.
+- Updated PostToolUse adapters for current host contracts, including Codex
+  completed-output replacement with an explicit archival-only compatibility
+  mode, migrated hook storage to the formal archive, generated an OpenCode
+  plugin, and moved the optional OpenHands condenser to the formal runner.
 - Added the `onecomp-arc` operational CLI (`init`, agent-safe `run`, `guide`,
   `doctor`, `status`, `record`, `catalog`, bounded `recall`, redacted `export`,
   `migrate`, and overwrite-safe plugin generation). The command boundary
@@ -47,6 +47,21 @@
 - Restricted setuptools package discovery to `onecomp*` and `vllm_plugins*` so
   generated build trees, examples, benchmarks, and validation scripts cannot be
   recursively bundled into release wheels.
+- Hardened formal compaction after scale review: failed ARC-looking actions now
+  consume the per-response allowance, provider content blocks share one budget
+  projection, catalog responses no longer carry null observation tags, and
+  empty host commands remain archivable.
+- Made summary-cap construction linear, added hashed sparse-block SQLite
+  range/chunk reads without body duplication, batched recall telemetry and
+  legacy migration commits, streamed CLI
+  exports and oversized fail-open output, and removed redundant provider copies
+  and archive re-reads.
+- Added `_catalog find`, host-authoritative formal token budgeting, exact-filtered
+  FTS5 trigram progress search with a portable literal fallback, configurable
+  SQLite durability, and path-redacted analyzer reports.
+- Made hook recall sandbox-safe by opening committed archives read-only and
+  addressing the recall entry point through the hook's own Python environment
+  instead of relying on the agent shell's `PATH`.
 
 ## [v1.1.1] 2026-05-21
 

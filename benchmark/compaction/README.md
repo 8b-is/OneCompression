@@ -10,6 +10,7 @@ the same boundaries used by a host integration:
 - final provider-request budget enforcement,
 - complete catalog discovery,
 - exact chunk reconstruction and checksum verification,
+- sequential chunk/range service latency and indexed literal-search accuracy,
 - compaction ratio and operation latency.
 
 Run from the repository root:
@@ -24,9 +25,25 @@ The output directory contains `benchmark-results.json`, a body-free
 bodies remain only in the private SQLite archive and are never copied to the
 reports or figures.
 
-Use `--observations`, `--body-chars`, `--context-chars`, and `--seed` to scale
-the run. Compare only reports with identical corpus parameters and OneComp
-versions.
+Use `--observations`, `--body-chars`, `--context-chars`, `--keep-recent`, and
+`--seed` to scale the run. The default `--keep-recent 0` makes even a single
+observation larger than the provider envelope compactable. Set it to a positive
+number when measuring a host policy that preserves recent turns verbatim; the
+context limit must then fit those turns. Compare only reports with identical
+corpus parameters and OneComp versions.
+
+For a scale-oriented CPU run that stresses linear summary construction,
+partial recall, and catalog/search growth:
+
+```bash
+python benchmark/compaction/run_benchmark.py \
+  --output-dir results/compaction/scale \
+  --observations 8 --body-chars 1600000 --context-chars 32000
+```
+
+The report includes full sequential chunk reconstruction time and exactness,
+so repeating this command with increasing `--body-chars` exposes super-linear
+partial-recall regressions rather than measuring only the first few chunks.
 
 ## Coding-agent qualification
 

@@ -34,10 +34,12 @@ _CONFIG_FIELDS = {
     "recalls_per_step",
     "max_archive_bytes",
     "verify_archive_reads",
+    "durability",
     "context_window",
     "completion_reserve",
     "serialization_margin",
 }
+_LEGACY_CONFIG_FIELDS = _CONFIG_FIELDS - {"durability"}
 _STATUS_FIELDS = {"profile", "step", "archive", "telemetry_events"}
 _ARCHIVE_STATUS_FIELDS = {
     "path",
@@ -59,6 +61,9 @@ _EVENT_FIELDS = {
     "before_chars",
     "after_chars",
     "enforced_limit",
+    "before_tokens",
+    "after_tokens",
+    "enforced_token_limit",
     "action_kind",
     "exact",
 }
@@ -110,7 +115,9 @@ def build_run_report(
     status = _safe_status(runner.status())
     observations: list[dict[str, Any]] = []
     if runner.archive is not None:
-        for row in runner.archive.to_serializable(include_bodies=False):
+        if runner.archive.n_records > _MAX_REPORT_ROWS:
+            raise ValueError(f"run report observations must not exceed {_MAX_REPORT_ROWS}")
+        for row in runner.archive.iter_serializable(include_bodies=False):
             observations.append(
                 {
                     "sequence": row["sequence"],
@@ -130,9 +137,12 @@ def build_run_report(
                     "body_redacted": True,
                 }
             )
+    event_snapshot = runner.events
+    if len(event_snapshot) > _MAX_REPORT_ROWS:
+        raise ValueError(f"run report events must not exceed {_MAX_REPORT_ROWS}")
     events = [
         {key: value for key, value in event.items() if key in _EVENT_FIELDS}
-        for event in runner.events
+        for event in event_snapshot
     ]
     metrics = _metrics(observations, events)
     return {
@@ -213,6 +223,12 @@ def validate_run_report(value: Mapping[str, Any]) -> dict[str, Any]:
     config = normalized.get("config")
     if not isinstance(config, Mapping):
         raise ValueError("run report config must be an object")
+    # ``durability`` was added additively to the v1 report. Keep reports made
+    # by earlier OneComp builds readable and normalize them to the safest mode.
+    if set(config) == _LEGACY_CONFIG_FIELDS:
+        config = dict(config)
+        config["durability"] = "full"
+        normalized["config"] = config
     _reject_unknown(config, _CONFIG_FIELDS, "run report config")
     if set(config) != _CONFIG_FIELDS:
         raise ValueError(
@@ -233,6 +249,8 @@ def validate_run_report(value: Mapping[str, Any]) -> dict[str, Any]:
     _require_integer("config.max_recall_units", config.get("max_recall_units"), minimum=1)
     if not isinstance(config.get("verify_archive_reads"), bool):
         raise ValueError("run report config.verify_archive_reads must be a boolean")
+    if config.get("durability") not in {"full", "normal"}:
+        raise ValueError("run report config.durability must be 'full' or 'normal'")
     context_window = config.get("context_window")
     if context_window is not None:
         _require_integer("config.context_window", context_window, minimum=1)
@@ -379,6 +397,9 @@ def _validate_event(event: Mapping[str, Any], index: int) -> None:
         "before_chars",
         "after_chars",
         "enforced_limit",
+        "before_tokens",
+        "after_tokens",
+        "enforced_token_limit",
     ):
         if name in event:
             _require_integer(f"{label}.{name}", event[name], minimum=0)
@@ -453,6 +474,7 @@ def _safe_config(runner: CompactionRunner) -> dict[str, Any]:
             "recalls_per_step",
             "max_archive_bytes",
             "verify_archive_reads",
+            "durability",
             "context_window",
             "completion_reserve",
             "serialization_margin",
@@ -463,8 +485,10 @@ def _safe_config(runner: CompactionRunner) -> dict[str, Any]:
 def _safe_status(status: Mapping[str, Any]) -> dict[str, Any]:
     normalized = dict(status)
     archive = dict(normalized.get("archive", {}))
-    if isinstance(archive.get("path"), Path):
-        archive["path"] = str(archive["path"])
+    # Reports are routinely shared as benchmark evidence. The archive path can
+    # disclose usernames, mount layouts, and project names without helping the
+    # renderer, so status keeps the field shape but redacts its value.
+    archive["path"] = None
     normalized["archive"] = archive
     return normalized
 

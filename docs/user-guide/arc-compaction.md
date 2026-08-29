@@ -27,6 +27,9 @@ with CompactionRunner(config) as compactor:
     )
     messages.append(compactor.make_observation_message(record))
     messages[:] = compactor.enforce_char_budget(messages, 24_000)
+
+    # Use the host tokenizer when a character envelope is not authoritative.
+    messages[:] = compactor.enforce_token_budget(messages, 6_000, count_message_tokens)
 ```
 
 `source_key` is the host's tool-call or event identifier. A retry with the same
@@ -43,6 +46,7 @@ The model-facing grammar is deliberately strict:
 
 ```text
 _catalog [start|cursor] [limit]
+_catalog find <command-or-tag>
 _recall_meta §<id>
 _recall §<id>
 _recall_chunk §<id> <index>
@@ -64,6 +68,16 @@ Previews inside citations are explicitly non-authoritative. Copy exact values
 only from a successful recall. `citation_head_chars` and
 `citation_tail_chars` independently bound the two previews; short bodies are
 shown once rather than duplicated where those windows overlap.
+
+Formal archives maintain an exact-filtered SQLite trigram index when the local
+SQLite build provides FTS5. Progress checks and body-substring lookups use the
+index for literals of at least three characters and retain a literal scan
+fallback, so acceleration does not change exact match semantics.
+
+Exact range and default character-chunk recalls use a sparse block index of
+UTF-8 byte offsets and per-block hashes. The canonical body remains stored once;
+only overlapping blocks are read and verified. Archives created before this
+index are verified and backfilled transparently on first partial recall.
 
 ## Guard the final provider request
 
@@ -113,18 +127,30 @@ onecomp-arc --config .onecomp/compaction/config.json doctor
 ```
 
 Exact full/chunk/range bodies are written directly to stdout for lossless shell
-redirection. Metadata is the safe default. `export` redacts bodies unless
-`--include-bodies` is explicitly supplied.
+redirection. Metadata is the safe default. `export` redacts bodies and
+free-form host extras unless
+`--include-bodies` is explicitly supplied. File exports and legacy migrations
+stream bounded batches instead of materializing every archived body at once.
 
 `run` executes an argv list without a shell. It preserves the child exit status
 and combines stdout/stderr in execution order. Long UTF-8 output becomes a
 bounded citation only after its archive transaction commits. Archive failure,
 non-UTF-8 output, or output above `--max-output-bytes` fails open and returns the
-original bytes. Use `onecomp-arc guide --host codex` to print concise project
+original bytes. Interactive terminals stream command progress to stderr while
+keeping stdout reserved for the final citation. Use `--tee` to enable this in
+CI, or `--no-tee` to keep stderr quiet. After `--max-output-bytes` is crossed,
+the original stream is forwarded immediately without growing the temporary
+capture. Use `onecomp-arc guide --host codex` to print concise project
 instructions for a coding agent. `--config` is accepted before or after the
 subcommand. Configuration and redacted export files use private, atomic writes;
 an existing destination is not overwritten unless the corresponding force
 option is explicit.
+
+`init --durability full` is the default and fsyncs body transactions. Select
+`--durability normal` only when higher ingestion throughput is worth relaxing
+power-loss durability; SQLite transaction and process-crash recovery remain.
+Recall counters are telemetry rather than recovery data and are flushed in a
+batch at status, report, export, and clean close boundaries.
 
 To migrate the earlier JSONL format without changing old citations:
 
@@ -159,26 +185,31 @@ host payload into a text-only shape that the host cannot apply.
 
 Set `ONECOMP_ARC_HOOK_ROOT` to a dedicated private directory. A tool result is
 replaced only after its SQLite transaction commits. The generated citation
-contains a bounded `onecomp-arc-recall` command. Use
+contains a bounded `onecomp-arc-recall` command addressed through the same
+Python environment as the hook, so it does not depend on the agent shell's
+`PATH`. Recall opens the committed archive read-only and therefore also works
+when the agent sandbox can read, but cannot mutate, the hook cache. Recall
+telemetry is intentionally not persisted at this read-only boundary. Use
 `--max-archive-bytes BYTES` when the hook process itself must enforce a per-session
 UTF-8 body quota.
 
-### Codex command boundary
+### Codex hook and command boundary
 
-The current Codex `PostToolUse` contract can add context or stop a turn, but it
-cannot replace native tool output. OneComp therefore does not advertise that
-hook as compaction. For verbose coding commands, use the standalone boundary so
-the full result never enters the transcript:
+The current Codex `PostToolUse` contract replaces a completed tool result with
+the hook `reason` when `decision` is `block`. OneComp exposes this behavior as
+`--codex-result-mode replace`, the default. The original result commits before
+the bounded citation is returned. The standalone boundary remains useful for
+older host versions and commands outside the hook contract:
 
 ```bash
 onecomp-arc --config .onecomp/compaction/config.json run -- pytest -q
 onecomp-arc --config .onecomp/compaction/config.json run -- rg pattern src tests
 ```
 
-The optional Codex hook mode stores long results and adds a body-free archival
-reference, but does not reduce the original prompt. `context` is the safe
-default; `stop` and `block` are explicit control-flow modes, not replacement
-contracts.
+`context` is an explicit archival-only compatibility mode that retains native
+output. `block` aliases `replace` at the current wire layer, while `stop` uses
+the universal continuation contract. Validate host upgrades against the
+checked-in contract test before relying on replacement.
 
 ### OpenCode
 
@@ -244,6 +275,7 @@ python benchmark/compaction/run_benchmark.py \
 - append-only occurrence identity with fixed-width IDs,
 - idempotent host-event retries and conflict detection,
 - transactional body/ID commit and crash-safe SQLite WAL persistence,
+- indexed literal progress checks with exact post-filtering and a portable fallback,
 - exact full, range, text-chunk, and token-ID reconstruction,
 - complete body-free catalog pagination,
 - bounded model-facing recall responses,

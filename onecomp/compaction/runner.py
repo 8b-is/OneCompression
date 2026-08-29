@@ -11,7 +11,7 @@ import threading
 import time
 from typing import Any, Callable, Optional
 
-from .compactor import SUMMARY_HEADER, compact_messages_arc
+from .compactor import compact_messages_arc
 from .config import CompactionConfig
 from .engine import ArcEngine, ArcEngineConfig, RecallOutcome, sanitize_messages
 from .formal import (
@@ -19,6 +19,7 @@ from .formal import (
     ArcCoreService,
     BudgetExceeded,
     CatalogAction,
+    InvalidAction,
     InvocationBudgetGuard,
     OccurrenceIdConfig,
     SQLiteObservationArchive,
@@ -28,7 +29,7 @@ from .formal import (
 )
 from .formal.protocol import RecallMetadataAction
 from .protocol import normalise_cmd_signature
-from .adapters.messages import protected_prefix_count
+from .adapters.messages import protected_prefix_count, recent_turn_start, total_text_chars
 
 
 class CompactionRunner:
@@ -76,6 +77,7 @@ class CompactionRunner:
                     self.config.citation_tail_chars,
                 ),
                 verify_on_read=self.config.verify_archive_reads,
+                durability=self.config.durability,
             )
             self.service = ArcCoreService(
                 self.archive,
@@ -193,18 +195,7 @@ class CompactionRunner:
         if self._engine is not None:
             return self._engine.compact(messages)
         assert self.archive is not None
-        compacted = compact_messages_arc(
-            messages,
-            obs_store=self.archive,
-            keep_recent=self.config.keep_recent,
-            action_regex=self.config.action_regex,
-            observation_regex=self.config.observation_regex,
-            thought_max_chars=self.config.thought_max_chars,
-            result_max_chars=self.config.result_max_chars,
-            citation_head_chars=self.config.citation_head_chars,
-            citation_tail_chars=self.config.citation_tail_chars,
-            summary_max_chars=self.config.summary_max_chars,
-        )
+        compacted = self._compact_formal(messages)
         if compacted is not messages:
             self._event(
                 "compaction",
@@ -231,29 +222,22 @@ class CompactionRunner:
         assert self.archive is not None
 
         def compact_with_cap(cap: int) -> list[dict[str, Any]]:
-            return compact_messages_arc(
-                messages,
-                obs_store=self.archive,
-                keep_recent=self.config.keep_recent,
-                action_regex=self.config.action_regex,
-                observation_regex=self.config.observation_regex,
-                thought_max_chars=self.config.thought_max_chars,
-                result_max_chars=self.config.result_max_chars,
-                citation_head_chars=self.config.citation_head_chars,
-                citation_tail_chars=self.config.citation_tail_chars,
-                summary_max_chars=cap,
-            )
+            return self._compact_formal(messages, summary_max_chars=cap)
 
-        minimum = compact_with_cap(1)
-        minimum_chars = _message_chars(minimum)
-        if minimum is messages or minimum_chars > max_chars:
+        prefix_count = protected_prefix_count(messages)
+        body = messages[prefix_count:]
+        tail_start = recent_turn_start(body, self.config.keep_recent)
+        if tail_start <= 0:
+            raise BudgetExceeded(
+                "message history has no compactable turns and exceeds the character envelope"
+            )
+        fixed_chars = _message_chars([*messages[:prefix_count], *body[tail_start:]])
+        if fixed_chars + 1 > max_chars:
             raise BudgetExceeded(
                 "protected and recent message content exceeds the character envelope: "
-                f"minimum={minimum_chars}, limit={max_chars}"
+                f"minimum={fixed_chars + 1}, limit={max_chars}"
             )
-        summary_index = _summary_index(minimum, protected_prefix_count(messages))
-        fixed_chars = minimum_chars - len(str(minimum[summary_index].get("content", "")))
-        summary_cap = max(1, max_chars - fixed_chars)
+        summary_cap = max_chars - fixed_chars
         if self.config.summary_max_chars:
             summary_cap = min(summary_cap, self.config.summary_max_chars)
         compacted = compact_with_cap(summary_cap)
@@ -273,6 +257,116 @@ class CompactionRunner:
         )
         return compacted
 
+    def enforce_token_budget(
+        self,
+        messages: list[dict[str, Any]],
+        max_tokens: int,
+        count_tokens: Callable[[list[dict[str, Any]]], int],
+    ) -> list[dict[str, Any]]:
+        """Compact against a host-authoritative token counter and fail closed.
+
+        The counter receives the exact provider-facing message projection with
+        OneComp-private fields removed. A binary search retains a detailed
+        summary that satisfies the declared token envelope.
+        """
+        self._require_open()
+        if not isinstance(messages, list):
+            raise TypeError("messages must be a list")
+        if not isinstance(max_tokens, int) or isinstance(max_tokens, bool) or max_tokens <= 0:
+            raise ValueError("max_tokens must be a positive integer")
+        if not callable(count_tokens):
+            raise TypeError("count_tokens must be callable")
+        if self._engine is not None:
+            candidate = self._engine.enforce_token_budget(messages, max_tokens, count_tokens)
+            after_tokens = count_tokens(sanitize_messages(candidate))
+            if (
+                not isinstance(after_tokens, int)
+                or isinstance(after_tokens, bool)
+                or after_tokens < 0
+            ):
+                raise TypeError("count_tokens must return a non-negative integer")
+            if after_tokens > max_tokens:
+                raise BudgetExceeded(
+                    "experimental compaction could not satisfy the token envelope: "
+                    f"after={after_tokens}, limit={max_tokens}"
+                )
+            return candidate
+        assert self.archive is not None
+
+        def measured(candidate: list[dict[str, Any]]) -> int:
+            value = count_tokens(sanitize_messages(candidate))
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise TypeError("count_tokens must return a non-negative integer")
+            return value
+
+        before_tokens = measured(messages)
+        if before_tokens <= max_tokens:
+            return messages
+
+        def compact_with_cap(cap: int) -> list[dict[str, Any]]:
+            return self._compact_formal(messages, summary_max_chars=cap)
+
+        minimum = compact_with_cap(1)
+        if minimum is messages:
+            raise BudgetExceeded(
+                "message history has no compactable turns and exceeds the token envelope"
+            )
+        minimum_tokens = measured(minimum)
+        if minimum_tokens > max_tokens:
+            raise BudgetExceeded(
+                "protected and recent message content exceeds the token envelope: "
+                f"minimum={minimum_tokens}, limit={max_tokens}"
+            )
+
+        best = minimum
+        best_tokens = minimum_tokens
+        low = 2
+        high = self.config.summary_max_chars or max(2, _message_chars(messages))
+        while low <= high:
+            middle = (low + high) // 2
+            candidate = compact_with_cap(middle)
+            candidate_tokens = measured(candidate)
+            if candidate_tokens <= max_tokens:
+                best = candidate
+                best_tokens = candidate_tokens
+                low = middle + 1
+            else:
+                high = middle - 1
+
+        self._event(
+            "compaction",
+            before_messages=len(messages),
+            after_messages=len(best),
+            before_chars=_message_chars(messages),
+            after_chars=_message_chars(best),
+            before_tokens=before_tokens,
+            after_tokens=best_tokens,
+            enforced_token_limit=max_tokens,
+        )
+        return best
+
+    def _compact_formal(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        summary_max_chars: Optional[int] = None,
+    ) -> list[dict[str, Any]]:
+        assert self.archive is not None
+        return compact_messages_arc(
+            messages,
+            obs_store=self.archive,
+            keep_recent=self.config.keep_recent,
+            action_regex=self.config.action_regex,
+            observation_regex=self.config.observation_regex,
+            thought_max_chars=self.config.thought_max_chars,
+            result_max_chars=self.config.result_max_chars,
+            citation_head_chars=self.config.citation_head_chars,
+            citation_tail_chars=self.config.citation_tail_chars,
+            summary_max_chars=(
+                self.config.summary_max_chars if summary_max_chars is None else summary_max_chars
+            ),
+        )
+
     def handle_action(
         self,
         action: str,
@@ -289,15 +383,17 @@ class CompactionRunner:
             return None
         with self._lock:
             if self._actions_in_step >= self.config.recalls_per_step:
-                raise ValueError("formal ARC action allowance exceeded for this model response")
-            parsed = parse_action(action)
-            response = self.service.execute_action(action, recall_step=self._step)
+                raise InvalidAction("formal ARC action allowance exceeded for this model response")
+            # Charge every ARC-looking attempt before parsing or archive work.
+            # A malformed or unknown-id loop must not consume unbounded host
+            # resources within one model response.
             self._actions_in_step += 1
+            parsed = parse_action(action)
+            response = self.service.execute(parsed, recall_step=self._step)
         if messages is not None:
             message = {
                 "role": "user",
                 "content": response.body,
-                "_obs_id": response.obs_id,
                 "_is_recall": not isinstance(parsed, CatalogAction),
                 "_arc_response": {
                     "kind": response.kind,
@@ -305,6 +401,8 @@ class CompactionRunner:
                     **response.metadata,
                 },
             }
+            if response.obs_id is not None:
+                message["_obs_id"] = response.obs_id
             if isinstance(parsed, RecallMetadataAction):
                 message["_is_recall_meta"] = True
             messages.append(message)
@@ -399,19 +497,7 @@ class CompactionRunner:
 
 
 def _message_chars(messages: list[dict[str, Any]]) -> int:
-    return sum(len(str(message.get("content", ""))) for message in messages)
-
-
-def _summary_index(messages: list[dict[str, Any]], expected_index: int) -> int:
-    if 0 <= expected_index < len(messages):
-        # A hard cap smaller than SUMMARY_HEADER intentionally truncates the
-        # header itself. The compactor's structural insertion point remains
-        # authoritative in that case.
-        return expected_index
-    for index, message in enumerate(messages):
-        if str(message.get("content", "")).startswith(SUMMARY_HEADER):
-            return index
-    raise BudgetExceeded("formal compaction did not produce a summary message")
+    return total_text_chars(messages)
 
 
 __all__ = ["CompactionRunner", "sanitize_messages"]

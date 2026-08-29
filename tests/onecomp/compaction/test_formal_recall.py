@@ -99,6 +99,7 @@ def test_token_chunks_preserve_the_original_token_sequence():
 def test_strict_action_grammar_includes_discovery_metadata_chunk_and_range():
     obs_id = "0123abcd"
     assert parse_action("_catalog") == CatalogAction()
+    assert parse_action("_catalog find shard 17") == CatalogAction(query="shard 17")
     assert parse_action("_catalog start 10") == CatalogAction(limit=10)
     assert parse_action("_catalog 19 5") == CatalogAction(19, 5)
     assert parse_action(f"_recall §{obs_id}") == RecallFullAction(obs_id)
@@ -110,6 +111,7 @@ def test_strict_action_grammar_includes_discovery_metadata_chunk_and_range():
         f"_recall §{obs_id} # comment",
         f"_recall_range §{obs_id} 20:10",
         "_catalog start 501",
+        "_catalog find trailing ",
         "_recall §NOTHEX",
     ):
         with pytest.raises(InvalidAction):
@@ -166,3 +168,13 @@ def test_range_and_chunk_operations_are_individually_bounded(tmp_path):
         assert service.recall_text_chunk(record.obs_id, 1).text == "89abcdef"
         with pytest.raises(InvalidAction):
             service.recall_text_chunk(record.obs_id, 2)
+
+
+def test_catalog_find_filters_model_facing_discovery(tmp_path):
+    with SQLiteObservationArchive(tmp_path / "formal.db") as archive:
+        service = ArcCoreService(archive, max_recall_units=4096)
+        wanted = service.record("inspect target.py", "body")
+        service.record("inspect unrelated.py", "body")
+        response = service.execute_action("_catalog find target.py")
+        assert wanted.obs_id in response.body
+        assert "unrelated.py" not in response.body

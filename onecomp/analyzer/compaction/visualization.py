@@ -49,7 +49,10 @@ def visualize_run(
 
     import matplotlib.pyplot as plt  # pylint: disable=import-outside-toplevel
     from matplotlib.patches import FancyBboxPatch  # pylint: disable=import-outside-toplevel
-    from matplotlib.ticker import MaxNLocator  # pylint: disable=import-outside-toplevel
+    from matplotlib.ticker import (  # pylint: disable=import-outside-toplevel
+        FuncFormatter,
+        MaxNLocator,
+    )
 
     metrics = report["metrics"]
     events = report["events"]
@@ -90,8 +93,18 @@ def visualize_run(
         # Keep one GridSpec column empty between the two upper panels. Long
         # observation IDs live on the left of the right panel and must never
         # collide with the context legend or axis annotations.
-        _context_panel(figure.add_subplot(grid[1, :6]), events, MaxNLocator)
-        _observation_panel(figure.add_subplot(grid[1, 7:]), observations)
+        number_formatter = FuncFormatter(lambda value, _position: _compact_axis_number(value))
+        _context_panel(
+            figure.add_subplot(grid[1, :6]),
+            events,
+            MaxNLocator,
+            number_formatter,
+        )
+        _observation_panel(
+            figure.add_subplot(grid[1, 7:]),
+            observations,
+            number_formatter,
+        )
         _timeline_panel(figure.add_subplot(grid[2, :6]), events)
         _operations_panel(figure.add_subplot(grid[2, 6:9]), events)
         _integrity_panel(figure.add_subplot(grid[2, 9:]), metrics, FancyBboxPatch)
@@ -193,7 +206,12 @@ def _kpis(figure, slot, metrics: Mapping[str, Any], patch_class) -> None:
         axis.text(x + 0.025, 0.17, detail, transform=axis.transAxes, color=_MUTED, fontsize=8)
 
 
-def _context_panel(axis, events: list[Mapping[str, Any]], locator_class) -> None:
+def _context_panel(
+    axis,
+    events: list[Mapping[str, Any]],
+    locator_class: Any,
+    number_formatter: Any,
+) -> None:
     rows = [event for event in events if event.get("kind") == "compaction"]
     _panel(axis, "Context trajectory", "Model-visible text before and after each rewrite")
     if not rows:
@@ -207,6 +225,7 @@ def _context_panel(axis, events: list[Mapping[str, Any]], locator_class) -> None
     axis.plot(x, after, color=_CYAN, marker="o", linewidth=2.4, label="After")
     axis.set_xlabel("Compaction event")
     axis.set_ylabel("Model-visible characters")
+    axis.yaxis.set_major_formatter(number_formatter)
     if len(x) == 1:
         axis.set_xlim(0.5, 1.5)
         axis.set_xticks([1])
@@ -224,7 +243,11 @@ def _context_panel(axis, events: list[Mapping[str, Any]], locator_class) -> None
     )
 
 
-def _observation_panel(axis, rows: list[Mapping[str, Any]]) -> None:
+def _observation_panel(
+    axis,
+    rows: list[Mapping[str, Any]],
+    number_formatter: Any,
+) -> None:
     _panel(axis, "Archived observations", "Largest exact bodies; labels contain metadata only")
     if not rows:
         _empty(axis, "No archived observation")
@@ -239,6 +262,7 @@ def _observation_panel(axis, rows: list[Mapping[str, Any]]) -> None:
         bars, labels=[_compact_number(value) for value in values], padding=5, color=_MUTED
     )
     axis.set_xlabel("Exact archived characters")
+    axis.xaxis.set_major_formatter(number_formatter)
     axis.grid(axis="x")
     axis.margins(x=0.18)
 
@@ -338,8 +362,30 @@ def _integrity_panel(axis, metrics: Mapping[str, Any], patch_class) -> None:
 
 
 def _panel(axis, title: str, subtitle: str) -> None:
-    axis.set_title(title, loc="left")
-    axis.text(0, 1.015, subtitle, transform=axis.transAxes, va="bottom", color=_MUTED, fontsize=8)
+    # Draw panel headings explicitly so Matplotlib's scientific-offset text
+    # cannot occupy the same top-left slot as the subtitle.
+    axis.set_title("")
+    axis.text(
+        0,
+        1.14,
+        title,
+        transform=axis.transAxes,
+        va="bottom",
+        color=_TEXT,
+        fontsize=11,
+        fontweight="bold",
+        clip_on=False,
+    )
+    axis.text(
+        0,
+        1.07,
+        subtitle,
+        transform=axis.transAxes,
+        va="bottom",
+        color=_MUTED,
+        fontsize=8,
+        clip_on=False,
+    )
     for spine in axis.spines.values():
         spine.set_color(_CARD_EDGE)
         spine.set_linewidth(0.9)
@@ -370,6 +416,17 @@ def _compact_number(value: int) -> str:
             return f"{number:.0f}" if not suffix else f"{number:.1f}{suffix}"
         number /= 1000
     return str(value)
+
+
+def _compact_axis_number(value: float) -> str:
+    """Render ticks without a detached scientific-offset annotation."""
+    magnitude = abs(value)
+    for threshold, suffix in ((1e9, "B"), (1e6, "M"), (1e3, "K")):
+        if magnitude >= threshold:
+            scaled = value / threshold
+            precision = 0 if abs(scaled - round(scaled)) < 1e-9 else 1
+            return f"{scaled:.{precision}f}{suffix}"
+    return f"{value:g}"
 
 
 def _format_limit(value: Any) -> str:

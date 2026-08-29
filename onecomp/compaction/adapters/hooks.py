@@ -1,10 +1,9 @@
 """ARC PostToolUse hook adapters for supported agent host contracts.
 
 The command entry point reads one hook event from stdin, stores a long tool
-response in a per-session WAL. Claude Code and OpenCode can replace the
-model-visible result with a bounded citation. Codex can add an archival
-reference but cannot replace native tool output through its current hook
-contract; use the standalone command wrapper for actual Codex prompt reduction.
+response in a per-session WAL. Claude Code, Codex, and OpenCode can replace the
+model-visible result with a bounded citation. The standalone command wrapper
+remains available for older hosts and command classes without replacement.
 A paired recall entry point prints the exact stored response on demand.
 
 These adapters operate at tool-result ingestion time.  They do not pretend
@@ -49,7 +48,7 @@ def process_post_tool_use(
     platform: Literal["claude", "codex", "opencode"],
     result_max_chars: int = 500,
     hook_root: Optional[Path | str] = None,
-    codex_result_mode: CodexResultMode = "context",
+    codex_result_mode: CodexResultMode = "replace",
     max_recall_units: int = 4096,
     max_archive_bytes: int = 0,
 ) -> dict[str, Any]:
@@ -61,8 +60,8 @@ def process_post_tool_use(
     """
     if platform not in {"claude", "codex", "opencode"}:
         raise ValueError("platform must be 'claude', 'codex', or 'opencode'")
-    if codex_result_mode not in {"context", "stop", "block"}:
-        raise ValueError("codex_result_mode must be 'context', 'stop', or 'block'")
+    if codex_result_mode not in {"replace", "context", "stop", "block"}:
+        raise ValueError("codex_result_mode must be 'replace', 'context', 'stop', or 'block'")
     if not isinstance(payload, dict):
         raise ValueError("hook payload must be an object")
     if not isinstance(result_max_chars, int) or isinstance(result_max_chars, bool):
@@ -125,12 +124,17 @@ def process_post_tool_use(
                 "tool_use_id": str(payload.get("tool_use_id", "")),
             },
         )
+        assert runner.archive is not None
+        # The citation can be consumed by a sandbox that is unable to lock or
+        # mutate the hook-owned WAL. Publish the committed row to the main
+        # database before returning that citation.
+        runner.archive.checkpoint(truncate=True)
     finally:
         runner.close()
 
     citation = format_citation(record)
     recall_command = (
-        "onecomp-arc-recall --session-id " f"{shlex.quote(session_id)} --obs-id {record.obs_id}"
+        f"{_recall_launcher()} --session-id " f"{shlex.quote(session_id)} --obs-id {record.obs_id}"
     )
     citation += (
         "\n<host_recovery>Tool completed. For exact bounded recovery run "
@@ -145,9 +149,19 @@ def process_post_tool_use(
     return {"replacement": citation}
 
 
+def _recall_launcher() -> str:
+    """Address recall through the hook's installation, independent of PATH."""
+    entry_point = Path(sys.executable).with_name("onecomp-arc-recall")
+    if entry_point.is_file():
+        return shlex.quote(str(entry_point))
+    return f"{shlex.quote(sys.executable)} -m " "onecomp.compaction.adapters.hooks recall"
+
+
 def _command_signature(tool_name: str, tool_input: Any) -> str:
     if isinstance(tool_input, dict) and isinstance(tool_input.get("command"), str):
-        return tool_input["command"]
+        command = tool_input["command"].strip()
+        if command:
+            return command
     return f"{tool_name}({_lossless_json_text(tool_input)})"
 
 
@@ -220,9 +234,9 @@ def hook_main(argv: Optional[list[str]] = None) -> None:
     )
     parser.add_argument(
         "--codex-result-mode",
-        choices=("context", "stop", "block"),
-        default="context",
-        help="Codex archival feedback mode; hooks cannot replace native tool output",
+        choices=("replace", "context", "stop", "block"),
+        default="replace",
+        help="Codex result handling mode (default: replace verbose output)",
     )
     args = parser.parse_args(argv)
     try:
@@ -260,7 +274,10 @@ def recall_main(argv: Optional[list[str]] = None) -> None:
     if not archive_path.is_file():
         parser.error(f"session archive does not exist: {archive_path}")
     try:
-        with SQLiteObservationArchive(archive_path) as archive:
+        # Agent sandboxes commonly allow the hook process to write its cache
+        # while tool commands can only read it. Exact recovery needs no schema
+        # mutation or telemetry fsync, so open the committed archive read-only.
+        with SQLiteObservationArchive(archive_path, read_only=True) as archive:
             service = ArcCoreService(archive, max_recall_units=args.max_recall_units)
             if args.chunk_index is not None:
                 body = service.recall_text_chunk(args.obs_id, args.chunk_index).text

@@ -5,12 +5,16 @@ from pathlib import Path
 import pytest
 
 from onecomp.compaction import (
+    BudgetExceeded,
     CompactionConfig,
     CompactionRunner,
     InvalidAction,
     RecallRequiresChunking,
     sanitize_messages,
 )
+from onecomp.compaction.formal import UnknownObservation
+from onecomp.compaction.runner import _message_chars
+from onecomp.compaction.adapters.messages import total_text_chars
 
 
 def test_config_is_side_effect_free_serializable_and_has_explicit_profiles(tmp_path):
@@ -151,3 +155,79 @@ def test_experimental_profile_remains_available_without_formal_semantics(tmp_pat
         second = runner.record_observation(command="cmd", content="same")
         assert first.obs_id == second.obs_id
         assert runner.profile == "experimental-v1"
+
+
+def test_formal_action_allowance_charges_failed_attempts_and_catalog_has_no_null_tag(tmp_path):
+    config = CompactionConfig.persistent(tmp_path / "run", recalls_per_step=2)
+    with CompactionRunner(config) as runner:
+        runner.begin_step()
+        runner.record_observation(command="cmd", content="body")
+        with pytest.raises(UnknownObservation):
+            runner.handle_action(f"_recall §{'0' * 32}")
+        with pytest.raises(InvalidAction):
+            runner.handle_action("_recall missing-section-sign")
+        with pytest.raises(InvalidAction, match="allowance exceeded"):
+            runner.handle_action(f"_recall §{'1' * 32}")
+
+        runner.begin_step()
+        messages = []
+        runner.handle_action("_catalog", messages)
+        assert "_obs_id" not in messages[0]
+        assert messages[0]["_is_recall"] is False
+
+
+def test_runner_budget_uses_the_same_provider_text_projection_for_content_blocks():
+    messages = [
+        {"role": "user", "content": [{"type": "text", "text": "hello"}]},
+        {
+            "role": "user",
+            "content": [{"type": "tool_result", "content": "x" * 5000}],
+        },
+    ]
+    assert _message_chars(messages) == total_text_chars(messages) == 5005
+
+
+def test_formal_token_budget_uses_host_counter_and_fails_closed(tmp_path):
+    config = CompactionConfig.persistent(
+        tmp_path / "run",
+        keep_recent=1,
+        result_max_chars=40,
+        summary_max_chars=1200,
+    )
+    with CompactionRunner(config) as runner:
+        messages = [
+            {"role": "system", "content": "system"},
+            {"role": "user", "content": "task"},
+        ]
+        for index in range(8):
+            record = runner.record_observation(
+                command=f"tool-{index}",
+                content="x" * 1000,
+                source_key=f"call-{index}",
+            )
+            messages.extend(
+                [
+                    {"role": "assistant", "content": f"tool-{index}"},
+                    runner.make_observation_message(record),
+                ]
+            )
+
+        def count_tokens(candidate):
+            return sum((len(str(message.get("content", ""))) + 3) // 4 for message in candidate)
+
+        compacted = runner.enforce_token_budget(messages, 500, count_tokens)
+        assert count_tokens(sanitize_messages(compacted)) <= 500
+        assert runner.events[-1]["enforced_token_limit"] == 500
+        with pytest.raises(BudgetExceeded, match="token envelope"):
+            runner.enforce_token_budget(messages, 1, count_tokens)
+
+
+def test_runner_token_budget_fails_closed_for_experimental_compatibility_profile():
+    with CompactionRunner(CompactionConfig(profile="experimental-v1")) as runner:
+        messages = [
+            {"role": "system", "content": "system"},
+            {"role": "user", "content": "task"},
+        ]
+
+        with pytest.raises(BudgetExceeded, match="experimental compaction"):
+            runner.enforce_token_budget(messages, 1, lambda _messages: 2)

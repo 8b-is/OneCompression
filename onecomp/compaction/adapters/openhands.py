@@ -59,7 +59,9 @@ from .messages import message_role, message_text
 _RUNTIMES: weakref.WeakValueDictionary[str, "OpenHandsArcCondenser"] = (
     weakref.WeakValueDictionary()
 )
-_RECALLED_ID_RE = re.compile(r'obs_id="§([0-9a-fA-F]{4,128})"')
+_RECALLED_ID_RE = re.compile(
+    r'<(?:recalled(?:_meta)?|observation_ref)\b[^>]*\b(?:obs_id|id)="§' + r'([0-9a-fA-F]{4,128})"'
+)
 _TEXT_RECALL_HINT_RE = re.compile(
     r"\[to recall full output: issue `_recall §([0-9a-fA-F]{4,128})` "
     r"as your ONLY action — no output follows\]"
@@ -203,33 +205,26 @@ class OpenHandsArcCondenser(RollingCondenser):
         with self._lock:
             assert self._engine.archive is not None
             store = self._engine.archive
-            ids = store.known_ids()
-            if query:
-                needle = query.casefold()
-                ids = [
-                    obs_id
-                    for obs_id in ids
-                    if needle in store.get_metadata(obs_id).cmd_signature.casefold()
-                ]
-            selected = list(reversed(ids))[cursor : cursor + limit]
-            observations = []
-            for obs_id in selected:
-                record = store.get_metadata(obs_id)
-                observations.append(
-                    {
-                        "obs_id": record.obs_id,
-                        "cmd_signature": record.cmd_signature[:200],
-                        "returncode": record.returncode,
-                        "line_count": record.line_count,
-                        "char_count": record.char_count,
-                    }
-                )
-            next_cursor = cursor + len(selected)
+            page = store.recent_catalog_page(
+                before_sequence=(None if cursor == 0 else cursor),
+                limit=limit,
+                query=query,
+            )
+            observations = [
+                {
+                    "obs_id": record.obs_id,
+                    "cmd_signature": record.cmd_signature[:200],
+                    "returncode": record.returncode,
+                    "line_count": record.line_count,
+                    "char_count": record.char_count,
+                }
+                for record in page.items
+            ]
             return json.dumps(
                 {
                     "observations": observations,
-                    "next_cursor": next_cursor if next_cursor < len(ids) else None,
-                    "total": len(ids),
+                    "next_cursor": page.next_cursor,
+                    "total": store.catalog_count(query=query),
                 },
                 ensure_ascii=False,
             )

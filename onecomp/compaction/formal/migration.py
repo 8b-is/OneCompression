@@ -8,11 +8,16 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Iterator, Mapping, Optional, Protocol
 
 from .archive import SQLiteObservationArchive
 from .errors import LegacyMigrationError
 from .models import MigrationReport
+
+
+class _Digest(Protocol):
+    def update(self, value: bytes) -> object:
+        """Consume another byte block."""
 
 
 def migrate_experimental_wal(
@@ -37,75 +42,104 @@ def migrate_experimental_wal(
     if not source_path.is_file():
         raise FileNotFoundError(f"experimental WAL not found: {source_path}")
 
-    raw = source_path.read_bytes()
-    source_digest = hashlib.sha256(raw).hexdigest()
-    rows: list[tuple[int, dict[str, Any]]] = []
+    source_digest = _file_sha256(source_path)
     errors: list[str] = []
     skipped = 0
-    for line_number, raw_line in enumerate(raw.splitlines(), 1):
-        if not raw_line.strip():
-            continue
-        try:
-            text = raw_line.decode("utf-8")
-            value = json.loads(text)
-            row = _validate_legacy_row(value)
-        except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
-            message = f"line {line_number}: {exc}"
-            if strict:
-                raise LegacyMigrationError(message) from exc
-            errors.append(message)
-            skipped += 1
-            continue
-        rows.append((line_number, row))
+    if strict or dry_run:
+        valid_rows = 0
+        aliases: set[str] = set()
+        for line_number, row, error in _iter_legacy_rows(source_path):
+            if error is not None:
+                if strict:
+                    raise LegacyMigrationError(error)
+                errors.append(error)
+                skipped += 1
+                continue
+            assert row is not None
+            valid_rows += 1
+            if row.get("obs_id"):
+                aliases.add(str(row["obs_id"]).lower())
+        if dry_run:
+            return MigrationReport(
+                source=str(source_path),
+                destination=archive.path,
+                loaded=valid_rows,
+                skipped=skipped,
+                aliases_registered=len(aliases),
+                errors=tuple(errors),
+            )
 
-    if dry_run:
-        aliases = len({str(row["obs_id"]).lower() for _, row in rows if row.get("obs_id")})
+    if dry_run:  # pragma: no cover - handled by the scan above
         return MigrationReport(
             source=str(source_path),
             destination=archive.path,
-            loaded=len(rows),
+            loaded=0,
             skipped=skipped,
-            aliases_registered=aliases,
+            aliases_registered=0,
             errors=tuple(errors),
         )
 
     loaded = 0
     aliases_registered = 0
     seen_aliases: set[str] = set()
-    for line_number, row in rows:
-        source_key = f"legacy-jsonl:{source_digest}:{line_number}"
-        try:
-            record = archive.append(
-                row["cmd_signature"],
-                row["full_content"],
-                source_key=source_key,
-                returncode=row["returncode"],
-                created_step=row["created_step"],
-                extra={
-                    **row["extra"],
-                    "migration": {
-                        "format": "experimental-jsonl-v1",
-                        "source_sha256": source_digest,
-                        "line": line_number,
-                    },
-                },
-            )
-            loaded += 1
-            legacy_id = row.get("obs_id")
-            if legacy_id:
-                alias = str(legacy_id).lower()
-                if alias not in seen_aliases:
-                    archive.register_alias(alias, record.obs_id)
-                    seen_aliases.add(alias)
+    imported_digest = hashlib.sha256()
+    # One outer transaction keeps strict imports atomic and avoids one durable
+    # SQLite commit per line. The source is streamed, so memory stays bounded by
+    # one legacy row plus one archived occurrence.
+    with archive.batch():
+        for line_number, row, parse_error in _iter_legacy_rows(
+            source_path,
+            digest=imported_digest,
+        ):
+            if parse_error is not None:
+                if strict:
+                    raise LegacyMigrationError(parse_error)
+                errors.append(parse_error)
+                skipped += 1
+                continue
+            assert row is not None
+            source_key = f"legacy-jsonl:{source_digest}:{line_number}"
+            try:
+                registered_alias: Optional[str] = None
+                # A nested savepoint makes lenient recovery truly row-local:
+                # an alias conflict or late SQLite error cannot leave a body,
+                # sequence advance, or derived index from the rejected row.
+                with archive.batch():
+                    record = archive.append(
+                        row["cmd_signature"],
+                        row["full_content"],
+                        source_key=source_key,
+                        returncode=row["returncode"],
+                        created_step=row["created_step"],
+                        extra={
+                            **row["extra"],
+                            "migration": {
+                                "format": "experimental-jsonl-v1",
+                                "source_sha256": source_digest,
+                                "line": line_number,
+                            },
+                        },
+                    )
+                    legacy_id = row.get("obs_id")
+                    if legacy_id:
+                        alias = str(legacy_id).lower()
+                        if alias not in seen_aliases:
+                            archive.register_alias(alias, record.obs_id)
+                            registered_alias = alias
+                loaded += 1
+                if registered_alias is not None:
+                    seen_aliases.add(registered_alias)
                     aliases_registered += 1
-        # Lenient migration is an explicit file-boundary recovery mode: one
-        # malformed or conflicting row must not prevent later independent rows.
-        except Exception as exc:  # pylint: disable=broad-exception-caught
-            message = f"line {line_number}: {type(exc).__name__}: {exc}"
-            if strict:
-                raise LegacyMigrationError(message) from exc
-            errors.append(message)
-            skipped += 1
+            # Lenient migration is an explicit file-boundary recovery mode: one
+            # malformed or conflicting row must not prevent later independent rows.
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                message = f"line {line_number}: {type(exc).__name__}: {exc}"
+                if strict:
+                    raise LegacyMigrationError(message) from exc
+                errors.append(message)
+                skipped += 1
+        if imported_digest.hexdigest() != source_digest:
+            raise LegacyMigrationError("experimental WAL changed while migration was running")
 
     return MigrationReport(
         source=str(source_path),
@@ -115,6 +149,34 @@ def migrate_experimental_wal(
         aliases_registered=aliases_registered,
         errors=tuple(errors),
     )
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _iter_legacy_rows(
+    path: Path,
+    *,
+    digest: Optional[_Digest] = None,
+) -> Iterator[tuple[int, Optional[dict[str, Any]], Optional[str]]]:
+    with path.open("rb") as source:
+        for line_number, raw_line in enumerate(source, 1):
+            if digest is not None:
+                digest.update(raw_line)
+            if not raw_line.strip():
+                continue
+            try:
+                value = json.loads(raw_line.decode("utf-8"))
+                row = _validate_legacy_row(value)
+            except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
+                yield line_number, None, f"line {line_number}: {exc}"
+            else:
+                yield line_number, row, None
 
 
 def _validate_legacy_row(value: object) -> dict[str, Any]:

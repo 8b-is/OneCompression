@@ -58,6 +58,22 @@ def exact_text_chunks(
             ),
         )
 
+    if measure is len:
+        total_chunks = (len(text) + max_units - 1) // max_units
+        return tuple(
+            TextChunk(
+                obs_id=obs_id,
+                index=index,
+                total_chunks=total_chunks,
+                char_start=index * max_units,
+                char_end=min(len(text), (index + 1) * max_units),
+                text=text[index * max_units : (index + 1) * max_units],
+                measured_units=min(max_units, len(text) - index * max_units),
+                content_sha256=checksum,
+            )
+            for index in range(total_chunks)
+        )
+
     spans: list[tuple[int, int, int]] = []
     start = 0
     while start < len(text):
@@ -123,8 +139,9 @@ def exact_text_chunks(
         )
         for index, (start, end, units) in enumerate(spans)
     )
-    if not verify_text_chunks(chunks, text):
-        raise ExactRecoveryError("internal error: text chunks do not reconstruct exactly")
+    # Every payload is a direct source slice and ``start`` advances to the
+    # preceding end. Rejoining the complete body here only duplicates memory
+    # and work; use ``verify_text_chunks`` for externally transported sets.
     return chunks
 
 

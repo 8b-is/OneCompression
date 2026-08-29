@@ -44,7 +44,8 @@ def test_claude_preserves_known_tool_shape_and_fails_open_for_unknown_shape():
 
 
 def test_codex_preferred_and_compatibility_contracts():
-    assert codex_output("citation") == {
+    assert codex_output("citation") == {"decision": "block", "reason": "citation"}
+    assert codex_output("citation", mode="context") == {
         "hookSpecificOutput": {
             "hookEventName": "PostToolUse",
             "additionalContext": "citation",
@@ -55,6 +56,10 @@ def test_codex_preferred_and_compatibility_contracts():
         "stopReason": "citation",
     }
     assert codex_output("citation", mode="block") == {
+        "decision": "block",
+        "reason": "citation",
+    }
+    assert codex_output("citation", mode="replace") == {
         "decision": "block",
         "reason": "citation",
     }

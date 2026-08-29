@@ -68,9 +68,14 @@ class GuardedProviderAdapter:
                 # items. Mutate the owned list only after successful compaction.
                 source[:] = prepared
                 prepared = source
+        # Copy the request exactly once. The previous implementation deep-copied
+        # the complete message payload and then immediately discarded that copy,
+        # doubling peak memory for image blocks and long tool observations.
         outbound = deepcopy(request)
         outbound[self.message_field] = (
-            sanitize_messages(prepared) if self.sanitize else deepcopy(prepared)
+            sanitize_messages(outbound[self.message_field])
+            if self.sanitize
+            else outbound[self.message_field]
         )
         return outbound
 

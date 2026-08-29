@@ -1,5 +1,7 @@
 """Integration checks against the optional, real OpenHands SDK classes."""
 
+import json
+
 import pytest
 
 pytest.importorskip("openhands.sdk")
@@ -62,12 +64,30 @@ def test_openhands_index_maps_an_old_command_to_its_recall_id():
     wanted = condenser.engine.record_observation(
         command="inspect src/special_target.py", content="wanted"
     )
-    condenser.engine.record_observation(
-        command="inspect logs/other.log", content="other"
-    )
+    condenser.engine.record_observation(command="inspect logs/other.log", content="other")
     tool = OpenHandsArcListTool.create(runtime_id=condenser.runtime_id)[0]
     observation = tool(OpenHandsArcListAction(query="SPECIAL_target"))
     assert observation.is_error is False
     assert wanted.obs_id in observation.text
     assert "logs/other.log" not in observation.text
+    condenser.close()
+
+
+def test_openhands_index_is_newest_first_and_uses_stable_sequence_cursor():
+    condenser = OpenHandsArcCondenser(max_size=8)
+    records = [
+        condenser.engine.record_observation(command=f"inspect {index}", content=str(index))
+        for index in range(5)
+    ]
+    first = json.loads(condenser.list_observations(limit=2))
+    second = json.loads(condenser.list_observations(cursor=first["next_cursor"], limit=2))
+
+    assert [row["obs_id"] for row in first["observations"]] == [
+        records[4].obs_id,
+        records[3].obs_id,
+    ]
+    assert [row["obs_id"] for row in second["observations"]] == [
+        records[2].obs_id,
+        records[1].obs_id,
+    ]
     condenser.close()

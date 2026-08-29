@@ -13,6 +13,7 @@ from typing import Any, Literal, Optional
 from .compactor import DEFAULT_ACTION_REGEX, DEFAULT_OBSERVATION_REGEX
 
 CompactionProfile = Literal["formal-v1", "experimental-v1"]
+CompactionDurability = Literal["full", "normal"]
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,7 @@ class CompactionConfig:
     max_occurrences: int = 1 << 48
     fingerprint_bits: int = 64
     verify_archive_reads: bool = True
+    durability: CompactionDurability = "full"
     action_regex: str = DEFAULT_ACTION_REGEX
     observation_regex: str = DEFAULT_OBSERVATION_REGEX
     context_window: Optional[int] = None
@@ -79,6 +81,8 @@ class CompactionConfig:
             raise ValueError("fingerprint_bits must be a multiple of 8 between 16 and 256")
         if not isinstance(self.verify_archive_reads, bool):
             raise TypeError("verify_archive_reads must be a boolean")
+        if self.durability not in ("full", "normal"):
+            raise ValueError("durability must be 'full' or 'normal'")
         for name, pattern in (
             ("action_regex", self.action_regex),
             ("observation_regex", self.observation_regex),

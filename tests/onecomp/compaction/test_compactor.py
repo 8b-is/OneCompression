@@ -185,6 +185,28 @@ def test_arc_summary_budget_is_a_strict_total_cap_at_scale():
     assert "older handle(s) could not fit" in summary
 
 
+def test_summary_budget_assembles_only_the_final_linear_size_candidate(monkeypatch):
+    from onecomp.compaction import compactor  # pylint: disable=import-outside-toplevel
+
+    calls = 0
+    original = compactor._assemble_summary
+
+    def counted(parts, *, collapsed, omitted_ids=0):
+        nonlocal calls
+        calls += 1
+        return original(parts, collapsed=collapsed, omitted_ids=omitted_ids)
+
+    monkeypatch.setattr(compactor, "_assemble_summary", counted)
+    entries = [
+        {"full": f"entry-{index}-" + "x" * 40, "obs_ids": [f"{index:016x}"]}
+        for index in range(20_000)
+    ]
+    summary, collapsed = compactor._apply_summary_budget(entries, 800_000)
+    assert collapsed
+    assert len(summary) <= 800_000
+    assert calls == 1
+
+
 def test_tiny_summary_budget_counts_only_omitted_observation_handles():
     store = ObsStore()
     rec = store.put(cmd_signature="cat data", full_content="z" * 2000)

@@ -59,12 +59,26 @@ def test_report_is_body_free_and_roundtrips(tmp_path):
         assert report["privacy"]["observation_bodies_included"] is False
         assert report["metrics"]["observations"] == 6
         assert report["metrics"]["checksum_coverage"] == 6
+        assert report["status"]["archive"]["path"] is None
         path = save_run_report(report, tmp_path / "run.json")
         assert load_run_report(path)["run_name"] == "formal evidence"
         assert path.stat().st_mode & 0o077 == 0
         assert not list(tmp_path.glob(".run.json.*.tmp"))
     finally:
         runner.close()
+
+
+def test_report_validator_accepts_legacy_v1_config_without_durability():
+    runner = _run()
+    try:
+        report = build_run_report(runner)
+    finally:
+        runner.close()
+    report["config"].pop("durability")
+
+    normalized = validate_run_report(report)
+
+    assert normalized["config"]["durability"] == "full"
 
 
 def test_report_validator_rejects_body_fields_and_malformed_privacy():

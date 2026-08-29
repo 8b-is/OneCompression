@@ -106,7 +106,7 @@ bookkeeping cannot delete a message already owned by an external client.
 |------|-----------------------|-----------------|-----------------|
 | OpenHands SDK | `OpenHandsArcCondenser` emits native `Condensation` events | Paired `arc_recall` and `arc_list_observations` tools share the same store | Import the optional adapter before constructing the agent; use a SQLite archive for process-resume durability. |
 | Claude Code | `PostToolUse.updatedToolOutput` via `onecomp-arc-hook` | `onecomp-arc-recall` command in each citation | Replacement must match each built-in tool's output schema; the supplied adapter supports text/content-block outputs and Bash's structured output. |
-| Codex CLI/IDE | `onecomp-arc run -- COMMAND` keeps verbose command output out of the transcript | `onecomp-arc recall` from each citation | PostToolUse can add an archival reference but cannot replace native tool output; it is not counted as compaction. |
+| Codex CLI/IDE | PostToolUse `replace` mode or `onecomp-arc run -- COMMAND` | `onecomp-arc recall` from each citation | Current PostToolUse block feedback replaces completed output; `context` remains archival-only. |
 | OpenCode | Generated plugin mutates `output.output` in `tool.execute.after` | `onecomp-arc-recall` command in each citation | Generate the plugin with `onecomp-arc plugin`; validate it against the installed host version. |
 | Custom provider host | `GuardedProviderAdapter` replaces the owned list and guards dispatch | Call `CompactionRunner.handle_action` | The host must supply its authoritative final-request counter, including tools and multimodal overhead. |
 | MCP only | No | `compaction_recall` | MCP gives the model tools/context; it does not grant the server mutation access to the host's old transcript. |
@@ -226,19 +226,17 @@ stored JSON/text response when its middle is needed. Add additional matchers onl
 after validating that the replacement has the same output shape as that tool; unknown
 structured shapes deliberately pass through unchanged.
 
-## Codex command boundary and archival hook
+## Codex replacement hook and command boundary
 
-Codex currently has no supported native-tool `updatedToolOutput` field. Use the
-standalone wrapper for actual prompt reduction:
+Current Codex replaces a completed tool result with PostToolUse block feedback.
+OneComp's default `replace` mode uses this contract after the archive commit.
+The standalone wrapper remains a version-independent alternative:
 
 ```bash
 onecomp-arc --config .onecomp/compaction/config.json run -- pytest -q
 ```
 
-The optional PostToolUse integration below archives a long result and adds its
-citation through `additionalContext`. The original native tool result remains in
-Codex history, so this mode improves recovery/auditability but does not claim a
-smaller prompt. A minimal hook entry is:
+A minimal hook entry is:
 
 ```json
 {
@@ -258,10 +256,12 @@ smaller prompt. A minimal hook entry is:
 }
 ```
 
-The default `--codex-result-mode context` continues normally. `stop` and `block`
-are explicit control-flow compatibility modes and still do not replace the
-completed result. The MCP server can be registered with Codex for explicit
-store/recall tools, but MCP alone cannot rewrite Codex's prior private transcript.
+The default `--codex-result-mode replace` returns `decision: block` with the
+citation as `reason`; the host uses that reason as the model-visible tool
+output. `context` deliberately keeps the original and adds archival context.
+`block` is a compatibility alias for `replace`. The MCP server can be registered
+for explicit store/recall tools, but MCP alone cannot rewrite prior private
+transcript entries.
 
 ## Registering with Cursor
 

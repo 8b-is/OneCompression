@@ -17,14 +17,14 @@ standalone coding command
   -> citation only, or fail-open original bytes
 
 host transcript
-  -> CompactionRunner.enforce_char_budget
+  -> CompactionRunner.enforce_char_budget / enforce_token_budget
   -> actual host-list replacement
   -> provider serialization
   -> InvocationBudgetGuard
   -> provider call
 
 model action
-  -> strict parser
+  -> strict parser + per-response attempt allowance
   -> catalog / metadata / full / chunk / range service
   -> bounded exact response
 ```
@@ -52,6 +52,25 @@ adjacent character ranges constructed under the same counter. Token chunks
 retain the codec's original token IDs, rather than relying on decode/re-encode
 equivalence.
 
+Character ranges use fixed character blocks with sparse UTF-8 byte offsets and
+per-block hashes. Incremental SQLite BLOB reads fetch and verify only overlapping
+blocks without storing a second body copy. Existing archives are fully verified
+and backfilled on first range access; damaged acceleration metadata is rebuilt
+only after canonical verification. Default character chunks derive spans
+arithmetically; custom counters cache body-free spans. Recall telemetry updates
+are buffered and flushed transactionally, avoiding one fsync per chunk without
+weakening the body commit guarantee.
+
+Hook recovery commands open committed archives in SQLite read-only mode. This
+keeps exact recall available inside agent sandboxes that cannot chmod, migrate,
+or write telemetry in the hook-owned cache. Writable library and host-runner
+paths retain batched recall telemetry and transparent sparse-index backfill.
+
+Summary-cap accounting tracks lengths as integers and assembles only the final
+candidate, making it linear in trajectory size. Formal token enforcement uses
+the host's authoritative counter over sanitized provider messages and fails
+closed when the immutable prefix plus live tail cannot fit.
+
 The provider guard counts the final request object immediately before calling
 the provider. Audit counters distinguish checked, dispatched, and rejected
 requests. A host cannot claim complete budget coverage from `check()` calls
@@ -72,11 +91,11 @@ Telemetry stores IDs, counts, return codes, operation kinds, and sizes. It does
 not store body text. Analyzer reports additionally exclude free-form `extra`
 metadata because host payloads may place sensitive data there.
 
-Host guarantees are capability-specific. Claude Code and OpenCode expose a
-native output-replacement boundary, and OpenHands exposes native condensation.
-Codex PostToolUse currently exposes context/control feedback but not native tool
-replacement; its supported compaction path is the standalone command boundary.
-MCP storage alone never implies ownership of a client's private transcript.
+Host guarantees are capability-specific. Claude Code and OpenCode expose
+output-replacement boundaries, current Codex replaces completed output through
+PostToolUse block feedback, and OpenHands exposes native condensation. The
+standalone command boundary remains the version-independent fallback. MCP
+storage alone never implies ownership of a client's private transcript.
 
 Encryption, retention, and secure deletion are infrastructure policies rather
 than implicit archive behavior. This keeps the core dependency-free and avoids

@@ -11,6 +11,7 @@ Copyright 2025-2026 Fujitsu Ltd.
 from __future__ import annotations
 
 from contextlib import contextmanager
+from dataclasses import replace
 import hashlib
 import hmac
 import json
@@ -19,8 +20,9 @@ from pathlib import Path
 import sqlite3
 import threading
 import time
-from typing import Any, Iterator, Mapping, Optional
+from typing import Any, Iterator, Literal, Mapping, Optional
 
+from .blocks import SQLiteBodyBlockIndex, build_body_layout
 from .errors import (
     AmbiguousObservation,
     ArchiveCapacityExceeded,
@@ -52,7 +54,15 @@ class SQLiteObservationArchive:
             quota. The value is persisted and cannot silently change.
         preview_chars: Head and tail characters exposed in bounded citations.
         verify_on_read: Recompute SHA-256 and the occurrence fingerprint for
-            every body read.
+            full-body reads. Range reads verify only the fixed body blocks they
+            return against hashes committed with the occurrence.
+        read_only: Open an existing archive without chmod, schema updates,
+            telemetry writes, or partial-index backfills. This supports recall
+            commands running inside a host sandbox that can read but not write
+            the hook-owned archive.
+        durability: ``"full"`` fsyncs each body transaction. ``"normal"``
+            trades power-loss durability for higher write throughput while
+            retaining SQLite transactional and process-crash recovery.
     """
 
     def __init__(
@@ -64,6 +74,8 @@ class SQLiteObservationArchive:
         max_archive_bytes: int = 0,
         preview_chars: int = 200,
         verify_on_read: bool = True,
+        read_only: bool = False,
+        durability: Literal["full", "normal"] = "full",
     ) -> None:
         if not isinstance(timeout_seconds, (int, float)) or timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
@@ -75,29 +87,74 @@ class SQLiteObservationArchive:
                 raise ValueError(f"{name} must be a non-negative integer")
         if not isinstance(verify_on_read, bool):
             raise ValueError("verify_on_read must be a boolean")
+        if not isinstance(read_only, bool):
+            raise ValueError("read_only must be a boolean")
+        if durability not in {"full", "normal"}:
+            raise ValueError("durability must be 'full' or 'normal'")
 
         self.path = str(path)
         self.preview_chars = preview_chars
         self.verify_on_read = verify_on_read
+        self.read_only = read_only
+        self.durability = durability
         self._lock = threading.RLock()
+        self._transaction_depth = 0
+        self._pending_recalls: dict[str, tuple[int, int]] = {}
+        self._data_version = 0
+        self.body_search_index_enabled = False
         self._closed = False
-        self._prepare_path()
+        if read_only:
+            if self.path == ":memory:":
+                raise ValueError("read_only archives require an existing file path")
+            path = Path(self.path).expanduser().resolve()
+            if not path.is_file():
+                raise FileNotFoundError(f"archive does not exist: {path}")
+            self.path = str(path)
+            # ``immutable=1`` prevents SQLite from taking write locks or
+            # opening mutable WAL shared memory in a restricted agent
+            # sandbox. Hook writers checkpoint before publishing a citation,
+            # so every cited occurrence is already present in the main file.
+            connection_path = path.as_uri() + "?mode=ro&immutable=1"
+        else:
+            self._prepare_path()
+            connection_path = self.path
         self._conn = sqlite3.connect(
-            self.path,
+            connection_path,
             timeout=float(timeout_seconds),
             isolation_level=None,
             check_same_thread=False,
+            uri=read_only,
         )
         self._conn.row_factory = sqlite3.Row
+        self._block_index = SQLiteBodyBlockIndex(self._conn, verify=verify_on_read)
         try:
             self._conn.execute("PRAGMA foreign_keys = ON")
             self._conn.execute(f"PRAGMA busy_timeout = {int(timeout_seconds * 1000)}")
-            if self.path != ":memory:":
-                self._conn.execute("PRAGMA journal_mode = WAL")
-                self._conn.execute("PRAGMA synchronous = FULL")
-            self.id_config, self.max_archive_bytes = self._initialize(id_config, max_archive_bytes)
+            if read_only:
+                self._conn.execute("PRAGMA query_only = ON")
+                self.id_config, self.max_archive_bytes = self._load_existing_configuration(
+                    id_config,
+                    max_archive_bytes,
+                    repair_missing=False,
+                )
+                self.body_search_index_enabled = self._body_search_index_available()
+            else:
+                if self.path != ":memory:":
+                    self._conn.execute("PRAGMA journal_mode = WAL")
+                    self._conn.execute(f"PRAGMA synchronous = {durability.upper()}")
+                self.id_config, self.max_archive_bytes = self._initialize(
+                    id_config, max_archive_bytes
+                )
+                self._secure_file()
             self.id_factory = OccurrenceIdFactory(self.id_config)
-            self._secure_file()
+            self._data_version = self._current_data_version()
+        except sqlite3.OperationalError as exc:
+            self._conn.close()
+            if read_only:
+                raise ArchiveConfigurationMismatch(
+                    "read-only archive is missing or has an incompatible schema"
+                ) from exc
+            raise
         except BaseException:
             self._conn.close()
             raise
@@ -110,9 +167,9 @@ class SQLiteObservationArchive:
         path = path.resolve()
         try:
             descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
-        except FileExistsError:
+        except FileExistsError as exc:
             if not path.is_file():
-                raise ValueError(f"archive path is not a regular file: {path}")
+                raise ValueError(f"archive path is not a regular file: {path}") from exc
         else:
             os.close(descriptor)
         os.chmod(path, 0o600)
@@ -137,7 +194,24 @@ class SQLiteObservationArchive:
     @contextmanager
     def _transaction(self) -> Iterator[None]:
         self._require_open()
+        self._require_writable()
+        if self._transaction_depth:
+            savepoint = f"arc_nested_{self._transaction_depth}"
+            self._conn.execute(f"SAVEPOINT {savepoint}")
+            self._transaction_depth += 1
+            try:
+                yield
+            except BaseException:
+                self._conn.execute(f"ROLLBACK TO {savepoint}")
+                self._conn.execute(f"RELEASE {savepoint}")
+                raise
+            else:
+                self._conn.execute(f"RELEASE {savepoint}")
+            finally:
+                self._transaction_depth -= 1
+            return
         self._conn.execute("BEGIN IMMEDIATE")
+        self._transaction_depth = 1
         try:
             yield
         except BaseException:
@@ -145,6 +219,28 @@ class SQLiteObservationArchive:
             raise
         else:
             self._conn.execute("COMMIT")
+        finally:
+            self._transaction_depth = 0
+
+    @contextmanager
+    def batch(self) -> Iterator["SQLiteObservationArchive"]:
+        """Commit multiple archive operations in one atomic transaction."""
+        with self._lock, self._transaction():
+            yield self
+
+    @contextmanager
+    def _read_snapshot(self) -> Iterator[None]:
+        """Hold one SQLite snapshot across cache validation and range read."""
+        if self._transaction_depth:
+            yield
+            return
+        self._conn.execute("BEGIN")
+        try:
+            yield
+        except BaseException:
+            self._conn.execute("ROLLBACK")
+            raise
+        self._conn.execute("COMMIT")
 
     def _initialize(
         self,
@@ -194,6 +290,8 @@ class SQLiteObservationArchive:
                 "CREATE INDEX IF NOT EXISTS idx_observations_created "
                 "ON observations(created_ns, sequence)"
             )
+            self._block_index.initialize()
+            self._initialize_body_search_index()
 
             existing = self._meta_get("id_config")
             if existing is None:
@@ -205,32 +303,104 @@ class SQLiteObservationArchive:
                 self._meta_set("max_archive_bytes", str(requested_quota))
                 return config, requested_quota
 
-            version = int(self._meta_get("schema_version") or "0")
-            if version != _SCHEMA_VERSION:
-                raise ArchiveConfigurationMismatch(
-                    f"unsupported formal archive schema version {version}"
+            return self._load_existing_configuration(
+                requested_id,
+                requested_quota,
+                repair_missing=True,
+            )
+
+    def _load_existing_configuration(
+        self,
+        requested_id: OccurrenceIdConfig | None,
+        requested_quota: int,
+        *,
+        repair_missing: bool,
+    ) -> tuple[OccurrenceIdConfig, int]:
+        existing = self._meta_get("id_config")
+        if existing is None:
+            raise ArchiveConfigurationMismatch("formal archive identity metadata is missing")
+        version = int(self._meta_get("schema_version") or "0")
+        if version != _SCHEMA_VERSION:
+            raise ArchiveConfigurationMismatch(
+                f"unsupported formal archive schema version {version}"
+            )
+        config = OccurrenceIdConfig.from_dict(json.loads(existing))
+        if requested_id is not None and requested_id != config:
+            raise ArchiveConfigurationMismatch(
+                "existing archive ID configuration differs from the request"
+            )
+        quota = int(self._meta_get("max_archive_bytes") or "0")
+        if requested_quota not in (0, quota) and requested_quota != quota:
+            raise ArchiveConfigurationMismatch(
+                "existing archive byte quota differs from the request"
+            )
+        if self._meta_get("next_sequence") is None:
+            if not repair_missing:
+                raise ArchiveConfigurationMismatch("formal archive sequence metadata is missing")
+            row = self._conn.execute(
+                "SELECT COALESCE(MAX(sequence), -1) + 1 AS value FROM observations"
+            ).fetchone()
+            self._meta_set("next_sequence", str(int(row["value"])))
+        if self._meta_get("body_bytes") is None:
+            if not repair_missing:
+                raise ArchiveConfigurationMismatch("formal archive size metadata is missing")
+            row = self._conn.execute(
+                "SELECT COALESCE(SUM(byte_count), 0) AS value FROM observations"
+            ).fetchone()
+            self._meta_set("body_bytes", str(int(row["value"])))
+        return config, quota
+
+    def _body_search_index_available(self) -> bool:
+        row = self._conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' " "AND name = 'observation_body_fts'"
+        ).fetchone()
+        return row is not None
+
+    def _initialize_body_search_index(self) -> None:
+        """Enable an exact-filtered trigram index when SQLite provides FTS5."""
+        self._conn.execute("SAVEPOINT arc_body_search_setup")
+        try:
+            self._conn.execute(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS observation_body_fts USING fts5("
+                "full_content, content='observations', content_rowid='sequence', "
+                "tokenize='trigram')"
+            )
+            self._conn.execute(
+                "CREATE TRIGGER IF NOT EXISTS observation_body_fts_insert "
+                "AFTER INSERT ON observations BEGIN "
+                "INSERT INTO observation_body_fts(rowid, full_content) "
+                "VALUES (new.sequence, new.full_content); END"
+            )
+            self._conn.execute(
+                "CREATE TRIGGER IF NOT EXISTS observation_body_fts_delete "
+                "AFTER DELETE ON observations BEGIN "
+                "INSERT INTO observation_body_fts(observation_body_fts, rowid, full_content) "
+                "VALUES ('delete', old.sequence, old.full_content); END"
+            )
+            self._conn.execute(
+                "CREATE TRIGGER IF NOT EXISTS observation_body_fts_update "
+                "AFTER UPDATE OF full_content ON observations BEGIN "
+                "INSERT INTO observation_body_fts(observation_body_fts, rowid, full_content) "
+                "VALUES ('delete', old.sequence, old.full_content); "
+                "INSERT INTO observation_body_fts(rowid, full_content) "
+                "VALUES (new.sequence, new.full_content); END"
+            )
+            if self._meta_get("body_search_index") != "trigram-v1":
+                self._conn.execute(
+                    "INSERT INTO observation_body_fts(observation_body_fts) VALUES ('rebuild')"
                 )
-            config = OccurrenceIdConfig.from_dict(json.loads(existing))
-            if requested_id is not None and requested_id != config:
-                raise ArchiveConfigurationMismatch(
-                    "existing archive ID configuration differs from the request"
-                )
-            quota = int(self._meta_get("max_archive_bytes") or "0")
-            if requested_quota not in (0, quota) and requested_quota != quota:
-                raise ArchiveConfigurationMismatch(
-                    "existing archive byte quota differs from the request"
-                )
-            if self._meta_get("next_sequence") is None:
-                row = self._conn.execute(
-                    "SELECT COALESCE(MAX(sequence), -1) + 1 AS value FROM observations"
-                ).fetchone()
-                self._meta_set("next_sequence", str(int(row["value"])))
-            if self._meta_get("body_bytes") is None:
-                row = self._conn.execute(
-                    "SELECT COALESCE(SUM(byte_count), 0) AS value FROM observations"
-                ).fetchone()
-                self._meta_set("body_bytes", str(int(row["value"])))
-            return config, quota
+                self._meta_set("body_search_index", "trigram-v1")
+        except sqlite3.OperationalError:
+            # Some minimal Python/SQLite builds omit FTS5 or its trigram
+            # tokenizer. Roll back partial optional objects so they cannot
+            # interfere with later core inserts. Literal ``instr`` remains a
+            # correct fallback.
+            self._conn.execute("ROLLBACK TO arc_body_search_setup")
+            self._conn.execute("RELEASE arc_body_search_setup")
+            self.body_search_index_enabled = False
+        else:
+            self._conn.execute("RELEASE arc_body_search_setup")
+            self.body_search_index_enabled = True
 
     def _meta_get(self, key: str) -> Optional[str]:
         row = self._conn.execute("SELECT value FROM arc_meta WHERE key = ?", (key,)).fetchone()
@@ -256,6 +426,7 @@ class SQLiteObservationArchive:
         created_ns: int | None = None,
     ) -> ObservationRecord:
         """Atomically commit one occurrence and return its canonical record."""
+        self._require_writable()
         _validate_occurrence(
             cmd_signature,
             full_content,
@@ -272,9 +443,9 @@ class SQLiteObservationArchive:
         if metadata_bytes > _MAX_METADATA_BYTES:
             raise ValueError(f"extra and tags must fit within {_MAX_METADATA_BYTES} UTF-8 bytes")
         created_ns = time.time_ns() if created_ns is None else created_ns
-        encoded = full_content.encode("utf-8")
-        checksum = hashlib.sha256(encoded).hexdigest()
-        byte_count = len(encoded)
+        body_layout = build_body_layout(full_content)
+        checksum = body_layout.content_sha256
+        byte_count = body_layout.byte_count
         char_count = len(full_content)
         line_count = (
             0
@@ -345,9 +516,33 @@ class SQLiteObservationArchive:
                 "body_bytes",
                 str(int(self._meta_get("body_bytes") or "0") + byte_count),
             )
+            self._block_index.write(sequence, checksum, body_layout.blocks)
+            record = ObservationRecord(
+                sequence=sequence,
+                obs_id=obs_id,
+                source_key=source_key,
+                cmd_signature=cmd_signature,
+                full_content=full_content,
+                returncode=returncode,
+                created_step=created_step,
+                extra=payload,
+                created_ns=created_ns,
+                content_sha256=checksum,
+                char_count=char_count,
+                line_count=line_count,
+                byte_count=byte_count,
+                tags=tag_tuple,
+                head=full_content[: self.preview_chars],
+                tail=(
+                    full_content[-self.preview_chars :]
+                    if self.preview_chars and len(full_content) > self.preview_chars
+                    else ""
+                ),
+            )
 
-        self._secure_file()
-        return self.get(obs_id)
+        # The object was built from the values committed above, so selecting
+        # and hashing the potentially large body again would add no assurance.
+        return record
 
     def put(
         self,
@@ -374,6 +569,7 @@ class SQLiteObservationArchive:
 
     def register_alias(self, alias: str, obs_id: str) -> None:
         """Register a legacy citation without changing the canonical ID."""
+        self._require_writable()
         if not isinstance(alias, str) or not alias or len(alias) > 128:
             raise ValueError("alias must be a non-empty string up to 128 characters")
         alias = alias.lower()
@@ -396,6 +592,7 @@ class SQLiteObservationArchive:
         multi-tenant control planes so a user cannot resume another tenant's
         otherwise guessable WAL path.
         """
+        self._require_writable()
         if not isinstance(owner, str) or not owner or len(owner) > 1024:
             raise ValueError("owner must be a non-empty string up to 1024 characters")
         digest = hashlib.sha256(owner.encode("utf-8")).hexdigest()
@@ -476,6 +673,14 @@ class SQLiteObservationArchive:
         return str(rows[0]["obs_id"])
 
     def read_range(self, obs_id: str, start: int, end: int) -> str:
+        """Read an exact character range without repeatedly loading the body.
+
+        Fixed character blocks map to byte offsets in the canonical SQLite
+        value. Only overlapping blocks are read and verified, so sequential
+        chunk recovery is linear in returned data rather than body size.
+        Existing archives without block metadata are fully verified and
+        backfilled on their first range access.
+        """
         if (
             not isinstance(start, int)
             or isinstance(start, bool)
@@ -485,10 +690,53 @@ class SQLiteObservationArchive:
             or end < start
         ):
             raise ValueError("range must satisfy 0 <= start <= end")
-        content = self.get(obs_id).full_content
-        if end > len(content):
-            raise ValueError("range end exceeds observation length")
-        return content[start:end]
+        canonical = self._canonical_id(obs_id)
+        fallback_record: ObservationRecord | None = None
+        with self._lock, self._read_snapshot():
+            self._refresh_verification_cache()
+            metadata = self._conn.execute(
+                "SELECT sequence, char_count, byte_count, content_sha256 "
+                "FROM observations WHERE obs_id = ?",
+                (canonical,),
+            ).fetchone()
+            if metadata is None:  # pragma: no cover - canonical lookup guards this
+                raise UnknownObservation(f"unknown observation id: §{obs_id}")
+            if end > int(metadata["char_count"]):
+                raise ValueError("range end exceeds observation length")
+            if start == end:
+                return ""
+            try:
+                indexed = self._block_index.read(canonical, metadata, start, end)
+            except ArchiveIntegrityError:
+                # Block metadata is a rebuildable accelerator, not the source
+                # of truth. A full canonical verification below distinguishes
+                # index damage from body corruption before replacing it.
+                indexed = None
+            if indexed is not None:
+                return indexed
+            row = self._conn.execute(
+                "SELECT * FROM observations WHERE obs_id = ?", (canonical,)
+            ).fetchone()
+            if row is None:  # pragma: no cover - metadata lookup guards this
+                raise UnknownObservation(f"unknown observation id: §{obs_id}")
+            fallback_record = self._verified_record_from_row(row)
+            result = fallback_record.full_content[start:end]
+        assert fallback_record is not None
+        if self.read_only:
+            return result
+        layout = build_body_layout(fallback_record.full_content)
+        with self._lock, self._transaction():
+            current = self._conn.execute(
+                "SELECT content_sha256 FROM observations WHERE sequence = ?",
+                (fallback_record.sequence,),
+            ).fetchone()
+            if current is not None and str(current["content_sha256"]) == layout.content_sha256:
+                self._block_index.write(
+                    fallback_record.sequence,
+                    layout.content_sha256,
+                    layout.blocks,
+                )
+        return result
 
     def catalog_page(
         self,
@@ -540,6 +788,54 @@ class SQLiteObservationArchive:
         )
         with self._lock:
             rows = self._conn.execute(sql, params).fetchall()
+        has_more = len(rows) > limit
+        items = tuple(self._metadata_from_row(row) for row in rows[:limit])
+        return CatalogPage(
+            items=items,
+            next_cursor=items[-1].sequence if has_more and items else None,
+            has_more=has_more,
+        )
+
+    def recent_catalog_page(
+        self,
+        *,
+        before_sequence: int | None = None,
+        limit: int = 50,
+        query: str = "",
+    ) -> CatalogPage:
+        """Return a newest-first body-free page with a stable sequence cursor."""
+        if before_sequence is not None and (
+            not isinstance(before_sequence, int)
+            or isinstance(before_sequence, bool)
+            or before_sequence < 0
+        ):
+            raise ValueError("before_sequence must be None or a non-negative integer")
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 500:
+            raise ValueError("limit must be an integer between 1 and 500")
+        if not isinstance(query, str):
+            raise TypeError("query must be a string")
+        conditions: list[str] = []
+        params: list[object] = []
+        if before_sequence is not None:
+            conditions.append("sequence < ?")
+            params.append(before_sequence)
+        if query:
+            conditions.append(
+                "(instr(lower(cmd_signature), lower(?)) > 0 "
+                "OR instr(lower(obs_id), lower(?)) > 0 "
+                "OR instr(lower(tags_json), lower(?)) > 0)"
+            )
+            params.extend([query, query, query])
+        where = " WHERE " + " AND ".join(conditions) if conditions else ""
+        params.append(limit + 1)
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT sequence, obs_id, source_key, cmd_signature, returncode, "
+                "created_step, tags_json, created_ns, content_sha256, char_count, "
+                f"line_count, byte_count FROM observations{where} "
+                "ORDER BY sequence DESC LIMIT ?",
+                params,
+            ).fetchall()
         has_more = len(rows) > limit
         items = tuple(self._metadata_from_row(row) for row in rows[:limit])
         return CatalogPage(
@@ -605,14 +901,10 @@ class SQLiteObservationArchive:
         if not value:
             return False
         with self._lock:
-            row = self._conn.execute(
-                "SELECT * FROM observations WHERE instr(full_content, ?) > 0 "
-                "ORDER BY sequence DESC LIMIT 1",
-                (value,),
-            ).fetchone()
-        if row is None:
+            row = self._find_containing_rows(value, limit=1)[0:1]
+        if not row:
             return False
-        self._verified_record_from_row(row)
+        self._verified_record_from_row(row[0])
         return True
 
     def contains_value_with_prefix(self, prefix: str, value: str) -> bool:
@@ -629,27 +921,64 @@ class SQLiteObservationArchive:
         if not isinstance(limit, int) or isinstance(limit, bool) or limit <= 0:
             raise ValueError("limit must be a positive integer")
         with self._lock:
-            rows = self._conn.execute(
-                "SELECT * FROM observations WHERE instr(full_content, ?) > 0 "
-                "ORDER BY sequence DESC LIMIT ?",
-                (value, limit),
-            ).fetchall()
+            rows = self._find_containing_rows(value, limit=limit)
         return [self._verified_record_from_row(row) for row in rows]
+
+    def _find_containing_rows(self, value: str, *, limit: int) -> list[sqlite3.Row]:
+        if self.body_search_index_enabled and len(value) >= 3:
+            phrase = '"' + value.replace('"', '""') + '"'
+            try:
+                return self._conn.execute(
+                    "SELECT observations.* FROM observation_body_fts "
+                    "JOIN observations ON observations.sequence = observation_body_fts.rowid "
+                    "WHERE observation_body_fts MATCH ? "
+                    "AND instr(observations.full_content, ?) > 0 "
+                    "ORDER BY observations.sequence DESC LIMIT ?",
+                    (phrase, value, limit),
+                ).fetchall()
+            except sqlite3.OperationalError:
+                # Control characters or a vendor tokenizer difference must not
+                # turn an exact progress check into a false negative.
+                pass
+        return self._conn.execute(
+            "SELECT * FROM observations WHERE instr(full_content, ?) > 0 "
+            "ORDER BY sequence DESC LIMIT ?",
+            (value, limit),
+        ).fetchall()
 
     def record_recall(self, obs_id: str, step: int) -> None:
         _validate_optional_int("step", step)
         canonical = self._canonical_id(obs_id)
-        with self._lock, self._transaction():
-            self._conn.execute(
-                "UPDATE observations SET last_recalled = ?, n_recalls = n_recalls + 1 "
-                "WHERE obs_id = ?",
-                (step, canonical),
-            )
+        if self.read_only:
+            return
+        with self._lock:
+            prior_step, prior_count = self._pending_recalls.get(canonical, (0, 0))
+            self._pending_recalls[canonical] = (max(step, prior_step), prior_count + 1)
+
+    def flush_recall_metrics(self) -> None:
+        """Persist buffered recall telemetry without weakening body durability."""
+        if self.read_only:
+            return
+        with self._lock:
+            if not self._pending_recalls:
+                return
+            pending = dict(self._pending_recalls)
+            with self._transaction():
+                for obs_id, (last_step, count) in pending.items():
+                    self._conn.execute(
+                        "UPDATE observations SET last_recalled = MAX(last_recalled, ?), "
+                        "n_recalls = n_recalls + ? WHERE obs_id = ?",
+                        (last_step, count, obs_id),
+                    )
+            for obs_id, value in pending.items():
+                if self._pending_recalls.get(obs_id) == value:
+                    self._pending_recalls.pop(obs_id, None)
 
     def verify_integrity(self, obs_id: str) -> bool:
         return self._verify_record(self.get(obs_id))
 
     def stats(self) -> ArchiveStats:
+        self.flush_recall_metrics()
         with self._lock:
             row = self._conn.execute(
                 "SELECT COUNT(*) AS observations, COALESCE(SUM(byte_count), 0) AS bytes, "
@@ -679,41 +1008,119 @@ class SQLiteObservationArchive:
             ).fetchone()
         return int(row["value"])
 
-    def to_serializable(self, *, include_bodies: bool = True) -> list[dict[str, Any]]:
+    def iter_serializable(
+        self,
+        *,
+        include_bodies: bool = True,
+        batch_size: int = 500,
+    ) -> Iterator[dict[str, Any]]:
+        """Yield a bounded-memory, high-watermark view in sequence order."""
+        if (
+            not isinstance(batch_size, int)
+            or isinstance(batch_size, bool)
+            or not 1 <= batch_size <= 10_000
+        ):
+            raise ValueError("batch_size must be an integer between 1 and 10000")
+        self.flush_recall_metrics()
         fields = (
             "*"
             if include_bodies
             else (
                 "sequence, obs_id, source_key, cmd_signature, returncode, created_step, "
-                "extra_json, tags_json, created_ns, content_sha256, char_count, "
+                "tags_json, created_ns, content_sha256, char_count, "
                 "line_count, byte_count, last_recalled, n_recalls"
             )
         )
+        cursor = -1
         with self._lock:
-            rows = self._conn.execute(
-                f"SELECT {fields} FROM observations ORDER BY sequence"
-            ).fetchall()
-        output: list[dict[str, Any]] = []
-        for row in rows:
-            if include_bodies:
-                self._verified_record_from_row(row)
-            item = dict(row)
-            item["extra"] = json.loads(item.pop("extra_json"))
-            item["tags"] = json.loads(item.pop("tags_json"))
-            if not include_bodies:
-                item["body_redacted"] = True
-            output.append(item)
-        return output
+            row = self._conn.execute(
+                "SELECT COALESCE(MAX(sequence), -1) AS value FROM observations"
+            ).fetchone()
+            high_watermark = int(row["value"])
+        while True:
+            with self._lock:
+                rows = self._conn.execute(
+                    f"SELECT {fields} FROM observations "
+                    "WHERE sequence > ? AND sequence <= ? "
+                    "ORDER BY sequence LIMIT ?",
+                    (cursor, high_watermark, batch_size),
+                ).fetchall()
+            if not rows:
+                return
+            for row in rows:
+                if include_bodies:
+                    self._verified_record_from_row(row)
+                item = dict(row)
+                item["tags"] = json.loads(item.pop("tags_json"))
+                if include_bodies:
+                    item["extra"] = json.loads(item.pop("extra_json"))
+                else:
+                    item["body_redacted"] = True
+                    item["extra_redacted"] = True
+                yield item
+            cursor = int(rows[-1]["sequence"])
+
+    def to_serializable(self, *, include_bodies: bool = True) -> list[dict[str, Any]]:
+        """Return a JSON-friendly snapshot, loading all selected rows in memory."""
+        return list(self.iter_serializable(include_bodies=include_bodies))
+
+    def verify_all(self, *, batch_size: int = 500) -> int:
+        """Verify every body in bounded batches and return the checked count."""
+        checked = 0
+        for _row in self.iter_serializable(include_bodies=True, batch_size=batch_size):
+            checked += 1
+        return checked
+
+    def checkpoint(self, *, truncate: bool = False) -> None:
+        """Checkpoint committed WAL frames before publishing an external reader.
+
+        A successful full checkpoint makes the current archive snapshot
+        available to lock-free immutable readers. ``truncate=True`` also
+        releases WAL storage. A busy result fails closed because publishing a
+        citation before its occurrence reaches the main file would make
+        sandboxed recall race-dependent.
+        """
+        self._require_open()
+        self._require_writable()
+        if self.path == ":memory:":
+            return
+        mode = "TRUNCATE" if truncate else "FULL"
+        with self._lock:
+            self.flush_recall_metrics()
+            row = self._conn.execute(f"PRAGMA wal_checkpoint({mode})").fetchone()
+            if row is None or int(row[0]) != 0:
+                raise ArchiveConfigurationMismatch(
+                    "archive checkpoint remained busy; external recall was not published"
+                )
+            self._secure_file()
 
     def close(self) -> None:
         with self._lock:
             if not self._closed:
+                if not self.read_only:
+                    self.flush_recall_metrics()
                 self._conn.close()
+                self._block_index.clear_cache()
+                self._pending_recalls.clear()
                 self._closed = True
 
     def _require_open(self) -> None:
         if self._closed:
             raise RuntimeError("formal archive is closed")
+
+    def _require_writable(self) -> None:
+        if self.read_only:
+            raise RuntimeError("formal archive is read-only")
+
+    def _current_data_version(self) -> int:
+        row = self._conn.execute("PRAGMA data_version").fetchone()
+        return int(row[0])
+
+    def _refresh_verification_cache(self) -> None:
+        version = self._current_data_version()
+        if version != self._data_version:
+            self._block_index.clear_cache()
+            self._data_version = version
 
     def _verify_record(self, record: ObservationRecord) -> bool:
         digest = hashlib.sha256(record.full_content.encode("utf-8")).hexdigest()
@@ -740,6 +1147,14 @@ class SQLiteObservationArchive:
         record = self._record_from_row(row)
         if self.verify_on_read and not self._verify_record(record):
             raise ArchiveIntegrityError(f"integrity verification failed for §{record.obs_id}")
+        pending = self._pending_recalls.get(record.obs_id)
+        if pending is not None:
+            last_step, count = pending
+            record = replace(
+                record,
+                last_recalled=max(record.last_recalled, last_step),
+                n_recalls=record.n_recalls + count,
+            )
         return record
 
     def _record_from_row(self, row: sqlite3.Row) -> ObservationRecord:

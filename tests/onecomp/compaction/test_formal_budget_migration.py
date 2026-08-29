@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from pathlib import Path
 
 import pytest
 
@@ -94,7 +95,7 @@ def test_guard_rejects_before_async_dispatch():
     assert invoked == ["12345678"]
 
 
-def test_legacy_migration_preserves_old_citations_and_is_resumable(tmp_path):
+def test_legacy_migration_preserves_old_citations_and_is_resumable(tmp_path, monkeypatch):
     wal = tmp_path / "experimental.jsonl"
     entries = [
         {
@@ -115,6 +116,11 @@ def test_legacy_migration_preserves_old_citations_and_is_resumable(tmp_path):
         },
     ]
     wal.write_text("\n".join(json.dumps(entry) for entry in entries) + "\n")
+    monkeypatch.setattr(
+        Path,
+        "read_bytes",
+        lambda _self: pytest.fail("migration must stream instead of read_bytes"),
+    )
     with SQLiteObservationArchive(tmp_path / "formal.db") as archive:
         report = migrate_experimental_wal(wal, archive)
         assert report.loaded == 2
@@ -127,6 +133,21 @@ def test_legacy_migration_preserves_old_citations_and_is_resumable(tmp_path):
         repeated = migrate_experimental_wal(wal, archive)
         assert repeated.loaded == 2
         assert archive.count == 2
+
+
+def test_migration_rolls_back_if_source_changes_between_validation_and_import(
+    tmp_path, monkeypatch
+):
+    from onecomp.compaction.formal import migration  # pylint: disable=import-outside-toplevel
+
+    wal = tmp_path / "changing.jsonl"
+    wal.write_text(json.dumps({"cmd_signature": "cmd", "full_content": "body"}) + "\n")
+    monkeypatch.setattr(migration, "_file_sha256", lambda _path: "0" * 64)
+
+    with SQLiteObservationArchive(tmp_path / "formal.db") as archive:
+        with pytest.raises(LegacyMigrationError, match="changed while migration"):
+            migrate_experimental_wal(wal, archive)
+        assert archive.n_records == 0
 
 
 def test_migration_strict_mode_validates_before_writing(tmp_path):
@@ -150,3 +171,28 @@ def test_migration_strict_mode_validates_before_writing(tmp_path):
         assert report.loaded == 1
         assert report.skipped == 1
         assert archive.get("deadbeef").full_content == "body"
+
+
+def test_lenient_migration_rolls_back_an_alias_conflict_row(tmp_path):
+    wal = tmp_path / "alias-conflict.jsonl"
+    wal.write_text(
+        json.dumps(
+            {
+                "obs_id": "deadbeef",
+                "cmd_signature": "rejected",
+                "full_content": "must not survive",
+            }
+        )
+        + "\n"
+    )
+    with SQLiteObservationArchive(tmp_path / "formal.db") as archive:
+        existing = archive.append("existing", "trusted")
+        archive.register_alias("deadbeef", existing.obs_id)
+
+        report = migrate_experimental_wal(wal, archive, strict=False)
+
+        assert report.loaded == 0
+        assert report.skipped == 1
+        assert archive.known_ids() == [existing.obs_id]
+        accepted = archive.append("after", "next")
+        assert accepted.sequence == 1

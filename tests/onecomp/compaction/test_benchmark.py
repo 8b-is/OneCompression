@@ -30,7 +30,12 @@ def test_small_benchmark_proves_exact_recovery_and_writes_visuals(tmp_path):
     assert metrics["catalog_completeness_rate"] == 1.0
     assert metrics["retry_idempotent"] is True
     assert metrics["provider_guard_coverage"] == 1.0
+    assert metrics["indexed_body_search_exact"] is True
+    assert metrics["chunk_recall_latency_ms_p95"] >= 0
+    assert metrics["sequential_chunk_reconstruction_exact"] is True
+    assert metrics["sequential_chunk_reconstruction_ms"] >= 0
     assert metrics["compression_ratio"] < 1.0
+    assert result["corpus"]["keep_recent"] == 0
     report_text = (tmp_path / "run-report.json").read_text(encoding="utf-8")
     assert "VERIFY-17" not in report_text
     assert all(Path(path).is_file() for path in result["artifacts"]["dashboards"])

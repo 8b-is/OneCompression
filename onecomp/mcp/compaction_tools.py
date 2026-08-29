@@ -131,8 +131,9 @@ def compaction_start_session(
             before LRU eviction (0 = no eviction).
         recall_max_chars: Window cap on a single full recall
             (0 = lossless).
-        wal_path: Optional server-side write-ahead log for crash-safe
-            observation persistence.
+        wal_path: Optional server-side archive. ``formal-v1`` uses durable
+            SQLite transactions; ``experimental-v1`` provides process-crash
+            recovery without per-record power-loss durability.
         resume_wal: Restore observations already present in ``wal_path``
             before accepting new records.
         max_archive_bytes: Exact UTF-8 body quota for ``formal-v1``; ``0``

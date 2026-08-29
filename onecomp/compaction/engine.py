@@ -147,8 +147,9 @@ class ArcEngineConfig:
             messages during compaction.
         observation_regex: Regex extracting observation bodies from
             untagged user messages during compaction.
-        wal_path: Optional write-ahead log for crash-safe store
-            persistence (see :class:`~onecomp.compaction.store.ObsStore`).
+        wal_path: Optional compatibility write-ahead log for process-crash
+            recovery, without per-record power-loss durability (see
+            :class:`~onecomp.compaction.store.ObsStore`).
     """
 
     keep_recent: int = 1

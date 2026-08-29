@@ -7,10 +7,12 @@ from dataclasses import asdict
 import json
 import os
 from pathlib import Path
+import queue
 import shlex
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from typing import Any, Optional
 
@@ -58,6 +60,12 @@ def _parser() -> argparse.ArgumentParser:
     init.add_argument("--max-recall-units", type=int, default=4096)
     init.add_argument("--summary-max-chars", type=int, default=24_000)
     init.add_argument("--result-max-chars", type=int, default=500)
+    init.add_argument(
+        "--durability",
+        choices=("full", "normal"),
+        default="full",
+        help="SQLite durability policy (default: full)",
+    )
     init.set_defaults(handler=_init)
 
     run = subparsers.add_parser(
@@ -75,6 +83,12 @@ def _parser() -> argparse.ArgumentParser:
         type=int,
         default=64 * 1024 * 1024,
         help="fail open above this captured size (default: 64 MiB)",
+    )
+    run.add_argument(
+        "--tee",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="stream command progress to stderr (default: enabled on an interactive stderr)",
     )
     run.add_argument("--tag", action="append", default=[])
     run.add_argument("argv", nargs=argparse.REMAINDER, metavar="-- COMMAND [ARG ...]")
@@ -158,6 +172,7 @@ def _init(args: argparse.Namespace) -> dict[str, Any]:
         max_recall_units=args.max_recall_units,
         summary_max_chars=args.summary_max_chars,
         result_max_chars=args.result_max_chars,
+        durability=args.durability,
     )
     with CompactionRunner(config):
         pass
@@ -191,35 +206,23 @@ def _run(args: argparse.Namespace) -> None:
     if args.max_output_bytes <= 0:
         raise ValueError("--max-output-bytes must be a positive integer")
 
-    timed_out = False
     with tempfile.TemporaryFile(mode="w+b") as capture:
-        try:
-            completed = subprocess.run(  # noqa: S603
-                command,
-                stdout=capture,
-                stderr=subprocess.STDOUT,
-                check=False,
-                timeout=args.timeout,
-            )
-            returncode = completed.returncode
-        except subprocess.TimeoutExpired:
-            returncode = 124
-            timed_out = True
+        returncode, timed_out, oversized = _capture_command(
+            command,
+            capture,
+            timeout=args.timeout,
+            tee=sys.stderr.isatty() if args.tee is None else args.tee,
+            max_output_bytes=args.max_output_bytes,
+        )
         capture.flush()
-        size = capture.tell()
+        if timed_out:
+            print(f"onecomp-arc: command timed out after {args.timeout:g}s", file=sys.stderr)
+        if oversized:
+            _finish_command(returncode)
+            return
         capture.seek(0)
         raw = capture.read()
 
-    if timed_out:
-        print(f"onecomp-arc: command timed out after {args.timeout:g}s", file=sys.stderr)
-    if size > args.max_output_bytes:
-        print(
-            "onecomp-arc: output exceeded --max-output-bytes; preserving full output",
-            file=sys.stderr,
-        )
-        _write_raw(raw)
-        _finish_command(returncode)
-        return
     try:
         content = raw.decode("utf-8", errors="strict")
     except UnicodeDecodeError:
@@ -272,8 +275,8 @@ def _guide(args: argparse.Namespace) -> None:
     config_path = args.config.expanduser().resolve()
     executable = f"onecomp-arc --config {shlex.quote(str(config_path))} run -- COMMAND [ARG ...]"
     host_note = (
-        "Codex PostToolUse hooks cannot replace native tool output, so use this wrapper "
-        "before verbose output enters the transcript."
+        "Current Codex PostToolUse hooks can replace completed output with an ARC citation. "
+        "This wrapper remains a version-independent command boundary."
         if args.host == "codex"
         else "Use this wrapper at the command-execution boundary."
     )
@@ -296,15 +299,13 @@ def _doctor(args: argparse.Namespace) -> dict[str, Any]:
     config = _load_config(args.config)
     with CompactionRunner(config) as runner:
         assert runner.archive is not None
-        ids = runner.archive.known_ids()
-        for obs_id in ids:
-            runner.archive.get(obs_id)
+        verified = runner.archive.verify_all()
         private_config = _permission_bits(args.config) in (None, 0o600)
         private_archive = _permission_bits(Path(runner.archive.path)) in (None, 0o600)
         return {
             "ok": private_config and private_archive,
             "profile": runner.profile,
-            "verified_observations": len(ids),
+            "verified_observations": verified,
             "config_private": private_config,
             "archive_private": private_archive,
             "status": runner.status(),
@@ -382,22 +383,28 @@ def _recall(args: argparse.Namespace) -> Optional[dict[str, Any]]:
 def _export(args: argparse.Namespace) -> dict[str, Any]:
     with CompactionRunner(_load_config(args.config)) as runner:
         assert runner.archive is not None
-        rows = runner.archive.to_serializable(include_bodies=args.include_bodies)
-    payload = {
-        "schema": "onecomp-compaction-export-v1",
-        "bodies_included": args.include_bodies,
-        "observations": rows,
-    }
-    if args.output is None:
-        return payload
-    destination = args.output.expanduser().resolve()
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    _atomic_write_text(
-        destination,
-        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        overwrite=True,
-    )
-    return {"output": str(destination), "observations": len(rows)}
+        if args.output is None:
+            rows = runner.archive.to_serializable(include_bodies=args.include_bodies)
+            return {
+                "schema": "onecomp-compaction-export-v1",
+                "bodies_included": args.include_bodies,
+                "observations": rows,
+            }
+        destination = args.output.expanduser().resolve()
+        config_path = args.config.expanduser().resolve()
+        archive_path = Path(runner.archive.path).resolve()
+        archive_artifacts = {
+            Path(str(archive_path) + suffix) for suffix in ("", "-wal", "-shm", "-journal")
+        }
+        if destination == config_path or destination in archive_artifacts:
+            raise ValueError("export output must not overwrite the config or archive")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        count = _atomic_write_export(
+            destination,
+            runner.archive.iter_serializable(include_bodies=args.include_bodies),
+            include_bodies=args.include_bodies,
+        )
+        return {"output": str(destination), "observations": count}
 
 
 def _migrate(args: argparse.Namespace) -> dict[str, Any]:
@@ -501,6 +508,52 @@ def _atomic_write_text(destination: Path, payload: str, *, overwrite: bool) -> N
         temporary.unlink(missing_ok=True)
 
 
+def _atomic_write_export(
+    destination: Path,
+    rows: Any,
+    *,
+    include_bodies: bool,
+) -> int:
+    """Stream a private JSON export and atomically publish it."""
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent
+    )
+    temporary = Path(temporary_name)
+    count = 0
+    try:
+        os.chmod(temporary, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            descriptor = -1
+            stream.write("{\n")
+            stream.write(
+                f'  "bodies_included": {str(include_bodies).lower()},\n' '  "observations": [\n'
+            )
+            for row in rows:
+                if count:
+                    stream.write(",\n")
+                rendered = json.dumps(row, ensure_ascii=False, indent=2, sort_keys=True)
+                stream.write("\n".join("    " + line for line in rendered.splitlines()))
+                count += 1
+            stream.write('\n  ],\n  "schema": "onecomp-compaction-export-v1"\n}\n')
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, destination)
+        try:
+            directory_descriptor = os.open(destination.parent, os.O_RDONLY)
+        except OSError:
+            directory_descriptor = -1
+        if directory_descriptor >= 0:
+            try:
+                os.fsync(directory_descriptor)
+            finally:
+                os.close(directory_descriptor)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        temporary.unlink(missing_ok=True)
+    return count
+
+
 def _normalize_config_option(arguments: list[str]) -> list[str]:
     """Accept ``--config`` before or after a subcommand without ambiguity."""
     normalized = list(arguments)
@@ -521,6 +574,123 @@ def _write_raw(value: bytes) -> None:
     stream = getattr(sys.stdout, "buffer", None)
     if stream is None:
         sys.stdout.write(value.decode("utf-8", errors="replace"))
+    else:
+        stream.write(value)
+        stream.flush()
+
+
+def _copy_raw(source: Any) -> None:
+    stream = getattr(sys.stdout, "buffer", None)
+    while True:
+        chunk = source.read(1024 * 1024)
+        if not chunk:
+            break
+        if stream is None:
+            sys.stdout.write(chunk.decode("utf-8", errors="replace"))
+        else:
+            stream.write(chunk)
+    if stream is not None:
+        stream.flush()
+
+
+def _capture_command(
+    command: list[str],
+    capture: Any,
+    *,
+    timeout: Optional[float],
+    tee: bool,
+    max_output_bytes: int,
+) -> tuple[int, bool, bool]:
+    """Capture a merged child stream, optionally teeing, with a hard timeout.
+
+    Once the capture limit is crossed, the complete prefix is forwarded to
+    stdout and subsequent bytes stream there directly. This preserves exact
+    fail-open output without growing either memory or the temporary file.
+    """
+    process = subprocess.Popen(  # noqa: S603
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        bufsize=0,
+    )
+    assert process.stdout is not None
+    blocks: queue.Queue[bytes | None] = queue.Queue(maxsize=8)
+    read_errors: list[BaseException] = []
+
+    def read_output() -> None:
+        try:
+            while True:
+                block = process.stdout.read(64 * 1024)
+                if not block:
+                    break
+                blocks.put(block)
+        except BaseException as exc:  # pragma: no cover - OS pipe failure
+            read_errors.append(exc)
+        finally:
+            blocks.put(None)
+
+    reader = threading.Thread(target=read_output, name="onecomp-arc-output", daemon=True)
+    reader.start()
+    deadline = None if timeout is None else time.monotonic() + timeout
+    timed_out = False
+    oversized = False
+    output_closed = False
+    captured_bytes = 0
+    try:
+        while True:
+            if output_closed and process.poll() is not None:
+                break
+            wait = 0.1
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    if process.poll() is None:
+                        process.kill()
+                        timed_out = True
+                    deadline = None
+                else:
+                    wait = min(wait, remaining)
+            try:
+                block = blocks.get(timeout=wait)
+            except queue.Empty:
+                continue
+            if block is None:
+                output_closed = True
+                continue
+            if tee:
+                _write_stderr_raw(block)
+            captured_bytes += len(block)
+            if oversized:
+                _write_raw(block)
+                continue
+            capture.write(block)
+            if captured_bytes > max_output_bytes:
+                print(
+                    "onecomp-arc: output exceeded --max-output-bytes; preserving full output",
+                    file=sys.stderr,
+                )
+                capture.flush()
+                capture.seek(0)
+                _copy_raw(capture)
+                oversized = True
+    except BaseException:
+        if process.poll() is None:
+            process.kill()
+        raise
+    finally:
+        process.wait()
+        reader.join(timeout=1)
+        process.stdout.close()
+    if read_errors:
+        raise OSError(f"failed to read command output: {read_errors[0]}") from read_errors[0]
+    return (124 if timed_out else int(process.returncode), timed_out, oversized)
+
+
+def _write_stderr_raw(value: bytes) -> None:
+    stream = getattr(sys.stderr, "buffer", None)
+    if stream is None:
+        sys.stderr.write(value.decode("utf-8", errors="replace"))
+        sys.stderr.flush()
     else:
         stream.write(value)
         stream.flush()

@@ -20,6 +20,7 @@ from .models import (
 )
 from .protocol import (
     CatalogAction,
+    RecallAction,
     RecallChunkAction,
     RecallFullAction,
     RecallMetadataAction,
@@ -54,6 +55,7 @@ class ArcCoreService:
         self.archive = archive
         self.max_recall_units = max_recall_units
         self.measure = measure
+        self._chunk_spans: dict[tuple[str, str, int], tuple[tuple[int, int, int], ...]] = {}
 
     def record(
         self,
@@ -162,11 +164,56 @@ class ArcCoreService:
         """Return one exact chunk and reject an invalid or stale index."""
         if not isinstance(index, int) or isinstance(index, bool) or index < 0:
             raise ValueError("chunk index must be a non-negative integer")
-        chunks = self.text_chunks(obs_id, max_units=max_units)
-        if index >= len(chunks):
-            raise InvalidAction(f"chunk index {index} is outside [0, {len(chunks) - 1}]")
-        self._record_recall(obs_id, recall_step)
-        return chunks[index]
+        limit = self._effective_limit(max_units)
+        metadata = self.archive.get_metadata(obs_id)
+
+        if self.measure is len:
+            total = max(1, (metadata.char_count + limit - 1) // limit)
+            if index >= total:
+                raise InvalidAction(f"chunk index {index} is outside [0, {total - 1}]")
+            start = index * limit
+            end = min(metadata.char_count, start + limit)
+            text = self.archive.read_range(metadata.obs_id, start, end)
+            chunk = TextChunk(
+                obs_id=metadata.obs_id,
+                index=index,
+                total_chunks=total,
+                char_start=start,
+                char_end=end,
+                text=text,
+                measured_units=len(text),
+                content_sha256=metadata.content_sha256,
+            )
+        else:
+            cache_key = (metadata.obs_id, metadata.content_sha256, limit)
+            spans = self._chunk_spans.get(cache_key)
+            if spans is None:
+                chunks = self.text_chunks(metadata.obs_id, max_units=limit)
+                spans = tuple(
+                    (chunk.char_start, chunk.char_end, chunk.measured_units) for chunk in chunks
+                )
+                if len(self._chunk_spans) >= 128:
+                    self._chunk_spans.pop(next(iter(self._chunk_spans)))
+                self._chunk_spans[cache_key] = spans
+                if index >= len(chunks):
+                    raise InvalidAction(f"chunk index {index} is outside [0, {len(chunks) - 1}]")
+                chunk = chunks[index]
+            else:
+                if index >= len(spans):
+                    raise InvalidAction(f"chunk index {index} is outside [0, {len(spans) - 1}]")
+                start, end, units = spans[index]
+                chunk = TextChunk(
+                    obs_id=metadata.obs_id,
+                    index=index,
+                    total_chunks=len(spans),
+                    char_start=start,
+                    char_end=end,
+                    text=self.archive.read_range(metadata.obs_id, start, end),
+                    measured_units=units,
+                    content_sha256=metadata.content_sha256,
+                )
+        self._record_recall(metadata.obs_id, recall_step)
+        return chunk
 
     def token_id_chunks(
         self,
@@ -191,7 +238,15 @@ class ArcCoreService:
         recall_step: Optional[int] = None,
     ) -> ActionResponse:
         """Execute the strict grammar while keeping exact bytes out of markup."""
-        action = parse_action(action_text)
+        return self.execute(parse_action(action_text), recall_step=recall_step)
+
+    def execute(
+        self,
+        action: RecallAction,
+        *,
+        recall_step: Optional[int] = None,
+    ) -> ActionResponse:
+        """Execute one already parsed action without repeating grammar work."""
         if isinstance(action, RecallFullAction):
             body = self.recall_full(action.obs_id, recall_step=recall_step)
             metadata = self.metadata(action.obs_id)
@@ -255,6 +310,7 @@ class ArcCoreService:
             page = self.catalog(
                 after_sequence=action.after_sequence,
                 limit=action.limit,
+                query=action.query,
             )
             page, body = self._fit_catalog(page)
             return ActionResponse(

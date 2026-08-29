@@ -23,6 +23,7 @@ _RANGE_RE = re.compile(
 _CATALOG_RE = re.compile(
     r"^_catalog(?:\s+(?P<cursor>0|[1-9][0-9]*|start)(?:\s+(?P<limit>[1-9][0-9]*))?)?$"
 )
+_CATALOG_FIND_RE = re.compile(r"^_catalog\s+find\s+(?P<query>\S(?:[^\r\n]{0,198}\S)?)$")
 _ACTION_INTENT_RE = re.compile(r"^_(?:recall(?:_meta|_chunk|_range)?|catalog)\b")
 
 
@@ -63,6 +64,7 @@ class CatalogAction:
 
     after_sequence: Optional[int] = None
     limit: int = 50
+    query: str = ""
 
 
 RecallAction = Union[
@@ -94,6 +96,9 @@ def parse_action(text: str) -> RecallAction:
         if end < start:
             raise InvalidAction("recall range must satisfy start <= end")
         return RecallRangeAction(match.group("obs_id"), start, end)
+    match = _CATALOG_FIND_RE.fullmatch(text)
+    if match:
+        return CatalogAction(query=match.group("query"))
     match = _CATALOG_RE.fullmatch(text)
     if match:
         cursor_text = match.group("cursor")
@@ -107,6 +112,7 @@ def parse_action(text: str) -> RecallAction:
         )
     raise InvalidAction(
         "expected exactly one of: _catalog [start|cursor] [limit], "
+        "_catalog find <command-or-tag>, "
         "_recall_meta §id, _recall §id, _recall_chunk §id index, or "
         "_recall_range §id start:end"
     )
@@ -147,8 +153,9 @@ def format_citation(
         f'sha256="{record.content_sha256}">\n'
         f"<command>{_bounded_escape(record.cmd_signature, 160)}</command>{preview}\n"
         "<recovery>Use _recall only when the complete item fits. Otherwise use "
-        "_recall_chunk or _recall_range. Use _catalog to rediscover every "
-        "occurrence. Preview text is not the archived body.</recovery>\n"
+        "_recall_chunk or _recall_range. Use _catalog [find <query>] to "
+        "rediscover occurrences. "
+        "Preview text is not the archived body.</recovery>\n"
         "</observation_ref>"
     )
 
@@ -190,7 +197,8 @@ SYSTEM_PROMPT_FORMAL_RECALL = """\
 ## Addressable recall
 
 Large tool results may appear as `§<id>` citations. The archive preserves each
-occurrence exactly. Use `_catalog` to enumerate citations, `_recall_meta §<id>`
+occurrence exactly. Use `_catalog` to enumerate citations, `_catalog find <query>`
+to search command metadata, `_recall_meta §<id>`
 for metadata, `_recall §<id>` only for a bounded full result,
 `_recall_chunk §<id> <index>` for deterministic exact chunks, or
 `_recall_range §<id> <start>:<end>` for a half-open character range. Emit a

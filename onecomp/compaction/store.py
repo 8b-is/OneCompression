@@ -21,10 +21,11 @@ what the LLM *sees* in its working context is managed by the caller
 even an evicted recall can be re-issued cheaply.
 
 *Write-ahead log (WAL).*  Pass ``wal_path`` to :meth:`__init__` to
-enable crash-safe persistence.  Each new record is appended as a JSON
+enable process-crash recovery. Each new record is appended as a JSON
 line after it is inserted into the in-memory dict; :meth:`from_wal`
 reconstructs a store from a previously written WAL (e.g. to resume an
-interrupted agent run).
+interrupted agent run). The compatibility WAL flushes Python buffers but
+does not ``fsync`` every record, so it does not claim power-loss durability.
 
 Ported from ARC (Addressable Recall for Compaction), Apache-2.0.
 

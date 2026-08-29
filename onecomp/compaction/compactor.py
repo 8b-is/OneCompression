@@ -252,64 +252,104 @@ def _apply_summary_budget(entries: list[dict], summary_max_chars: int) -> tuple[
     omitted explicitly; their records remain in the lossless store and are
     discoverable through a host/MCP observation-list operation.
     """
-    full_parts = [entry["full"] for entry in entries if entry["full"]]
+    entries = [entry for entry in entries if entry.get("full")]
+    full_parts = [entry["full"] for entry in entries]
     if summary_max_chars <= 0:
         return _assemble_summary(full_parts, collapsed=False), False
 
-    unbounded = _assemble_summary(full_parts, collapsed=False)
-    if len(unbounded) <= summary_max_chars:
-        return unbounded, False
+    def rendered_length(
+        parts_chars: int,
+        parts_count: int,
+        *,
+        omitted_ids: int = 0,
+    ) -> int:
+        header_length = len(SUMMARY_HEADER) + 1 + len(_ELISION_NOTE)
+        if omitted_ids:
+            header_length += len(
+                f" {omitted_ids} older handle(s) could not fit; use the host's "
+                "bounded observation-list operation to rediscover them."
+            )
+        if not parts_count:
+            return header_length
+        return header_length + 2 + parts_chars + len(_SUMMARY_SEP) * (parts_count - 1)
+
+    unbounded_length = len(SUMMARY_HEADER)
+    if full_parts:
+        unbounded_length += (
+            2 + sum(map(len, full_parts)) + len(_SUMMARY_SEP) * (len(full_parts) - 1)
+        )
+    if unbounded_length <= summary_max_chars:
+        return _assemble_summary(full_parts, collapsed=False), False
 
     # Pick a contiguous rich suffix.  Accounting uses the final collapsed
     # header so adding the elision note can never push the result over cap.
     rich_start = len(entries)
-    rich_suffix: list[str] = []
+    rich_chars = 0
+    rich_count = 0
     for index in range(len(entries) - 1, -1, -1):
-        candidate = (
-            [entries[index]["full"], *rich_suffix] if entries[index]["full"] else rich_suffix
-        )
-        if len(_assemble_summary(candidate, collapsed=True)) <= summary_max_chars:
-            rich_suffix = candidate
+        candidate_chars = rich_chars + len(entries[index]["full"])
+        if rendered_length(candidate_chars, rich_count + 1) <= summary_max_chars:
+            rich_chars = candidate_chars
+            rich_count += 1
             rich_start = index
         else:
             break
 
-    while True:
-        demoted_ids: list[str] = []
-        seen: set[str] = set()
-        for entry in entries[:rich_start]:
-            for obs_id in entry.get("obs_ids", []):
-                obs_id = obs_id.lower()
-                if obs_id not in seen:
-                    seen.add(obs_id)
-                    demoted_ids.append(obs_id)
+    demoted_ids: list[str] = []
+    seen: set[str] = set()
 
+    def demote(entry: dict) -> None:
+        for obs_id in entry.get("obs_ids", []):
+            canonical = obs_id.lower()
+            if canonical not in seen:
+                seen.add(canonical)
+                demoted_ids.append(canonical)
+
+    for entry in entries[:rich_start]:
+        demote(entry)
+
+    while True:
         # The hard per-line ceiling is applied before the exact budget pass.
         omitted = max(0, len(demoted_ids) - _MAX_COLLAPSED_IDS)
         shown_ids = demoted_ids[-_MAX_COLLAPSED_IDS:]
-        rich_suffix = [entry["full"] for entry in entries[rich_start:]]
 
         # First admit as many recent handles as the exact cap permits.
         while shown_ids:
             collapsed_line = _collapsed_id_line(shown_ids)
-            rendered = _assemble_summary(
-                [collapsed_line, *rich_suffix], collapsed=True, omitted_ids=omitted
-            )
-            if len(rendered) <= summary_max_chars:
-                return rendered, True
+            if (
+                rendered_length(
+                    len(collapsed_line) + rich_chars,
+                    rich_count + 1,
+                    omitted_ids=omitted,
+                )
+                <= summary_max_chars
+            ):
+                rich_suffix = [entry["full"] for entry in entries[rich_start:]]
+                return (
+                    _assemble_summary(
+                        [collapsed_line, *rich_suffix],
+                        collapsed=True,
+                        omitted_ids=omitted,
+                    ),
+                    True,
+                )
             shown_ids.pop(0)
             omitted += 1
 
-        collapsed_line = _collapsed_id_line(shown_ids)
-        parts = ([collapsed_line] if collapsed_line else []) + rich_suffix
-        rendered = _assemble_summary(parts, collapsed=True, omitted_ids=omitted)
-        if len(rendered) <= summary_max_chars:
-            return rendered, True
+        if rendered_length(rich_chars, rich_count, omitted_ids=omitted) <= summary_max_chars:
+            rich_suffix = [entry["full"] for entry in entries[rich_start:]]
+            return (
+                _assemble_summary(rich_suffix, collapsed=True, omitted_ids=omitted),
+                True,
+            )
         if rich_start < len(entries):
             # Extremely small caps or an oversized most-recent short result:
             # demote another rich entry and recompute its exact observation-id
             # contribution.  Assistant text has no handle and must not inflate
             # the omitted-handle count.
+            demote(entries[rich_start])
+            rich_chars -= len(entries[rich_start]["full"])
+            rich_count -= 1
             rich_start += 1
             continue
         # A pathological cap smaller than the summary header cannot preserve

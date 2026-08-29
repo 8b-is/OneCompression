@@ -97,3 +97,24 @@ def test_async_dispatch_uses_the_same_guard():
             assert adapter.audit().dispatched_requests == 1
 
     asyncio.run(scenario())
+
+
+def test_prepare_request_deepcopies_large_payload_only_once(monkeypatch):
+    import copy
+    from onecomp.compaction.adapters import provider
+
+    calls = 0
+
+    def counted(value):
+        nonlocal calls
+        calls += 1
+        return copy.deepcopy(value)
+
+    monkeypatch.setattr(provider, "deepcopy", counted)
+    with _runner() as runner:
+        adapter = GuardedProviderAdapter(runner, _count)
+        source = {"messages": [{"role": "user", "content": [{"type": "text", "text": "payload"}]}]}
+        outbound = adapter.prepare_request(source)
+        assert calls == 1
+        outbound["messages"][0]["content"][0]["text"] = "changed"
+        assert source["messages"][0]["content"][0]["text"] == "payload"

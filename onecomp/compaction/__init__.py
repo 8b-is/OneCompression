@@ -51,7 +51,7 @@ from .compactor import (
     compact_messages_arc,
     compact_messages_max,
 )
-from .config import CompactionConfig, CompactionProfile
+from .config import CompactionConfig, CompactionDurability, CompactionProfile
 from .engine import (
     PRIVATE_MESSAGE_KEYS,
     ArcEngine,
@@ -87,6 +87,7 @@ __all__ = [
     "ArcEngine",
     "ArcEngineConfig",
     "CompactionConfig",
+    "CompactionDurability",
     "CompactionProfile",
     "CompactionRunner",
     "BudgetExceeded",

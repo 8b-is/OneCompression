@@ -58,11 +58,31 @@ def test_init_record_catalog_recall_export_and_doctor(tmp_path):
     assert payload["bodies_included"] is False
     assert "full_content" not in payload["observations"][0]
     assert payload["observations"][0]["body_redacted"] is True
+    assert "extra" not in payload["observations"][0]
+    assert payload["observations"][0]["extra_redacted"] is True
     export_path = tmp_path / "private-export.json"
     written = _run(config, "export", "--output", str(export_path))
     assert written.returncode == 0, written.stderr
     assert export_path.stat().st_mode & 0o777 == 0o600
     assert not list(tmp_path.glob(".private-export.json.*.tmp"))
+    bodies_path = tmp_path / "private-bodies.json"
+    bodies = _run(
+        config,
+        "export",
+        "--include-bodies",
+        "--output",
+        str(bodies_path),
+    )
+    assert bodies.returncode == 0, bodies.stderr
+    body_payload = json.loads(bodies_path.read_text(encoding="utf-8"))
+    assert body_payload["observations"][0]["full_content"] == "EXACT-NEEDLE\nresult"
+    archive_path = config.parent / "archive.sqlite3"
+    refused = _run(config, "export", "--output", str(archive_path))
+    assert refused.returncode == 2
+    assert "must not overwrite" in refused.stderr
+    refused_sidecar = _run(config, "export", "--output", str(archive_path) + "-wal")
+    assert refused_sidecar.returncode == 2
+    assert "must not overwrite" in refused_sidecar.stderr
 
     doctor = _run(config, "doctor")
     report = json.loads(doctor.stdout)
@@ -109,7 +129,7 @@ def test_init_refuses_overwrite_and_plugin_generation(tmp_path):
 
     guide = _run(config, "guide", "--host", "codex")
     assert guide.returncode == 0
-    assert "cannot replace native tool output" in guide.stdout
+    assert "can replace completed output" in guide.stdout
     assert "onecomp-arc --config" in guide.stdout
 
 
@@ -184,6 +204,65 @@ def test_run_preserves_failure_status_and_fails_open_on_archive_quota(tmp_path):
     assert result.stdout == "FAIL-" + "z" * 100 + "\n"
     assert "archival failed, preserving full output" in result.stderr
     assert json.loads(_run(config, "status").stdout)["archive"]["observations"] == 0
+
+
+def test_run_tee_streams_progress_to_stderr_but_keeps_citation_on_stdout(tmp_path):
+    config = tmp_path / "arc" / "config.json"
+    assert _run(config, "init", "--result-max-chars", "8").returncode == 0
+
+    result = _run(
+        config,
+        "run",
+        "--tee",
+        "--",
+        sys.executable,
+        "-c",
+        "print('LIVE-' + 'x' * 200)",
+    )
+
+    assert result.returncode == 0
+    assert "LIVE-" in result.stderr
+    assert "<observation_ref" in result.stdout
+
+
+def test_run_output_ceiling_streams_exact_fail_open_bytes(tmp_path):
+    config = tmp_path / "arc" / "config.json"
+    assert _run(config, "init", "--result-max-chars", "8").returncode == 0
+
+    result = _run(
+        config,
+        "run",
+        "--max-output-bytes",
+        "32",
+        "--",
+        sys.executable,
+        "-c",
+        "print('0123456789' * 20)",
+    )
+
+    assert result.returncode == 0
+    assert result.stdout == "0123456789" * 20 + "\n"
+    assert "exceeded --max-output-bytes" in result.stderr
+    assert json.loads(_run(config, "status").stdout)["archive"]["observations"] == 0
+
+
+def test_run_timeout_interrupts_a_silent_child(tmp_path):
+    config = tmp_path / "arc" / "config.json"
+    assert _run(config, "init").returncode == 0
+
+    result = _run(
+        config,
+        "run",
+        "--timeout",
+        "0.2",
+        "--",
+        sys.executable,
+        "-c",
+        "import time; time.sleep(30)",
+    )
+
+    assert result.returncode == 124
+    assert "timed out after 0.2s" in result.stderr
 
 
 def test_config_option_is_accepted_after_subcommand_but_not_stolen_from_child(tmp_path):

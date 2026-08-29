@@ -177,6 +177,43 @@ def test_catalog_is_complete_body_free_filtered_and_cursor_stable(tmp_path):
         assert archive.catalog_count(query="command 3") == 1
         assert archive.recent_ids(2) == [records[-2].obs_id, records[-1].obs_id]
 
+        first_recent = archive.recent_catalog_page(limit=3)
+        second_recent = archive.recent_catalog_page(
+            before_sequence=first_recent.next_cursor,
+            limit=3,
+        )
+        assert [item.obs_id for item in first_recent.items] == [
+            records[index].obs_id for index in (6, 5, 4)
+        ]
+        assert [item.obs_id for item in second_recent.items] == [
+            records[index].obs_id for index in (3, 2, 1)
+        ]
+
+
+def test_body_search_is_literal_exact_and_tracks_new_appends(tmp_path):
+    with SQLiteObservationArchive(tmp_path / "formal.db") as archive:
+        archive.append("first", 'prefix Exact-Needle "quoted" suffix')
+        assert archive.contains_value('Exact-Needle "quoted"')
+        assert not archive.contains_value("exact-needle")
+
+        latest = archive.append("second", "late-search-marker")
+
+        assert [row.obs_id for row in archive.find_records_containing("search-marker")] == [
+            latest.obs_id
+        ]
+
+
+def test_serializable_iterator_excludes_appends_past_its_high_watermark(tmp_path):
+    with SQLiteObservationArchive(tmp_path / "formal.db") as archive:
+        first = archive.append("first", "first body")
+        second = archive.append("second", "second body")
+        snapshot = archive.iter_serializable(include_bodies=False, batch_size=1)
+        assert next(snapshot)["obs_id"] == first.obs_id
+
+        archive.append("late", "late body")
+
+        assert [row["obs_id"] for row in snapshot] == [second.obs_id]
+
 
 def test_multiple_connections_allocate_each_occurrence_once(tmp_path):
     path = tmp_path / "concurrent.db"
@@ -202,6 +239,48 @@ def test_multiple_connections_allocate_each_occurrence_once(tmp_path):
         assert [
             archive.id_factory.sequence_from_id(obs_id) for obs_id in archive.known_ids()
         ] == list(range(72))
+
+
+def test_nested_batch_rollback_is_local_when_caller_recovers(tmp_path):
+    with SQLiteObservationArchive(tmp_path / "formal.db") as archive:
+        with archive.batch():
+            with pytest.raises(RuntimeError, match="reject row"):
+                with archive.batch():
+                    archive.append("rejected", "must roll back")
+                    raise RuntimeError("reject row")
+            accepted = archive.append("accepted", "committed")
+
+        assert accepted.sequence == 0
+        assert archive.known_ids() == [accepted.obs_id]
+
+
+def test_read_only_archive_recalls_without_chmod_or_writes(tmp_path, monkeypatch):
+    path = tmp_path / "formal.db"
+    body = "prefix\n" + "日本語" * 10_000 + "\nsuffix"
+    with SQLiteObservationArchive(path) as archive:
+        record = archive.append("cat large.log", body)
+        archive.checkpoint(truncate=True)
+
+    original_connect = sqlite3.connect
+    connection_targets = []
+
+    def capture_connect(target, *args, **kwargs):
+        connection_targets.append(str(target))
+        return original_connect(target, *args, **kwargs)
+
+    def reject_chmod(*_args, **_kwargs):
+        raise OSError(30, "read-only file system")
+
+    monkeypatch.setattr("onecomp.compaction.formal.archive.sqlite3.connect", capture_connect)
+    monkeypatch.setattr("onecomp.compaction.formal.archive.os.chmod", reject_chmod)
+    with SQLiteObservationArchive(path, read_only=True) as archive:
+        assert archive.get(record.obs_id).full_content == body
+        assert archive.read_range(record.obs_id, 16_000, 17_000) == body[16_000:17_000]
+        archive.record_recall(record.obs_id, 3)
+        assert archive.get(record.obs_id).n_recalls == 0
+        with pytest.raises(RuntimeError, match="read-only"):
+            archive.append("rejected", "body")
+    assert connection_targets[-1].endswith("?mode=ro&immutable=1")
 
 
 def test_read_verification_detects_body_tampering(tmp_path):
@@ -243,6 +322,92 @@ def test_every_body_returning_read_detects_tampering(tmp_path):
         with pytest.raises(ArchiveIntegrityError):
             archive.to_serializable(include_bodies=True)
         assert "full_content" not in archive.to_serializable(include_bodies=False)[0]
+
+
+def test_range_reads_use_verified_substrings_and_invalidate_on_external_commit(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "formal.db"
+    with SQLiteObservationArchive(path) as archive:
+        record = archive.append("cmd", "0123456789" * 1000)
+        verified_reads = 0
+        original = archive._verified_record_from_row
+
+        def count_verified(row):
+            nonlocal verified_reads
+            verified_reads += 1
+            return original(row)
+
+        monkeypatch.setattr(archive, "_verified_record_from_row", count_verified)
+        assert archive.read_range(record.obs_id, 100, 110) == "0123456789"
+        assert archive.read_range(record.obs_id, 200, 210) == "0123456789"
+        assert verified_reads == 0, "a freshly committed body is already verified"
+
+        connection = sqlite3.connect(path)
+        connection.execute(
+            "UPDATE observations SET full_content = ? WHERE obs_id = ?",
+            ("tampered" * 1000, record.obs_id),
+        )
+        connection.commit()
+        connection.close()
+        with pytest.raises(ArchiveIntegrityError):
+            archive.read_range(record.obs_id, 0, 8)
+
+
+def test_range_reads_are_exact_across_utf8_block_boundaries(tmp_path):
+    text = "a" * 16_380 + "é😊漢字" + "z" * 20_000
+    with SQLiteObservationArchive(tmp_path / "formal.db") as archive:
+        record = archive.append("unicode", text)
+
+        assert archive.read_range(record.obs_id, 16_378, 16_390) == text[16_378:16_390]
+        assert archive.read_range(record.obs_id, 20_000, 20_010) == text[20_000:20_010]
+
+
+def test_existing_archive_range_index_is_backfilled_after_full_verification(tmp_path):
+    path = tmp_path / "formal.db"
+    with SQLiteObservationArchive(path) as archive:
+        record = archive.append("legacy-layout", "0123456789" * 10_000)
+    connection = sqlite3.connect(path)
+    connection.execute("DELETE FROM observation_body_blocks")
+    connection.execute("DELETE FROM observation_body_block_meta")
+    connection.commit()
+    connection.close()
+
+    with SQLiteObservationArchive(path) as archive:
+        assert archive.read_range(record.obs_id, 50_000, 50_010) == "0123456789"
+        count = archive._conn.execute(
+            "SELECT COUNT(*) FROM observation_body_blocks WHERE sequence = ?",
+            (record.sequence,),
+        ).fetchone()[0]
+        assert count > 1
+
+
+def test_append_returns_committed_record_without_reselecting_body(tmp_path, monkeypatch):
+    with SQLiteObservationArchive(tmp_path / "formal.db") as archive:
+        monkeypatch.setattr(
+            archive,
+            "get",
+            lambda _obs_id: pytest.fail("append must not reload the committed body"),
+        )
+        record = archive.append("cmd", "large" * 1000)
+        assert record.sequence == 0
+        assert record.char_count == 5000
+
+
+def test_recall_metrics_are_buffered_but_visible_and_flushed(tmp_path):
+    path = tmp_path / "formal.db"
+    with SQLiteObservationArchive(path) as archive:
+        record = archive.append("cmd", "body")
+        archive.record_recall(record.obs_id, 3)
+        archive.record_recall(record.obs_id, 5)
+        visible = archive.get(record.obs_id)
+        assert visible.n_recalls == 2
+        assert visible.last_recalled == 5
+        assert archive.stats().recall_count == 2
+    with SQLiteObservationArchive(path) as reopened:
+        persisted = reopened.get(record.obs_id)
+        assert persisted.n_recalls == 2
+        assert persisted.last_recalled == 5
 
 
 def test_archive_permissions_do_not_depend_on_process_umask(tmp_path):
