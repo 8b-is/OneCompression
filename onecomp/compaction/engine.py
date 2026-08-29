@@ -79,7 +79,13 @@ logger = logging.getLogger(__name__)
 #: Message keys private to the compaction machinery.  Strip them with
 #: :func:`sanitize_messages` before calling an LLM API that rejects
 #: unknown fields.
-PRIVATE_MESSAGE_KEYS = ("_obs_id", "_is_recall", "_is_recall_meta", "_is_evicted")
+PRIVATE_MESSAGE_KEYS = (
+    "_obs_id",
+    "_is_recall",
+    "_is_recall_meta",
+    "_is_evicted",
+    "_arc_response",
+)
 
 
 class RecallError(Exception):

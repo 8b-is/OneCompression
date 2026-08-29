@@ -51,6 +51,7 @@ from .adapters.messages import (
     protected_prefix_count,
     recent_turn_start,
 )
+from .formal.protocol import format_citation as format_formal_citation
 from .protocol import format_citation
 from .store import ObsStore
 
@@ -84,7 +85,7 @@ _ELISION_NOTE = (
     "recall-able; bodies remain lossless in the ARC store."
 )
 
-_OBS_ID_IN_TEXT_RE = re.compile(r"\u00a7([0-9a-fA-F]{4,40})")
+_OBS_ID_IN_TEXT_RE = re.compile(r"\u00a7([0-9a-fA-F]{4,128})")
 
 
 def _compact_assistant(
@@ -431,6 +432,12 @@ def compact_messages_arc(
             assert rec is not None
             if rec.char_count <= result_max_chars:
                 full = f"\u00a7{rec.obs_id} result: {rec.full_content}"
+            elif hasattr(rec, "content_sha256") and hasattr(rec, "sequence"):
+                full = format_formal_citation(
+                    rec,
+                    head_chars=citation_head_chars,
+                    tail_chars=citation_tail_chars,
+                )
             else:
                 full = format_citation(
                     obs_id=rec.obs_id,

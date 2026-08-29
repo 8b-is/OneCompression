@@ -1,5 +1,53 @@
 # Change log
 
+## Unreleased
+
+### Formal agent context compaction
+
+- Added the production `onecomp.compaction` `formal-v1` profile with
+  occurrence-addressed fixed-width IDs, exactly-once host event keys,
+  transactional SQLite WAL persistence, integrity verification, stable
+  body-free catalog pagination, and explicit migration from the experimental
+  JSONL format.
+- Added bounded exact full, metadata, deterministic text-chunk, character-range,
+  and token-ID recovery. Oversized full recalls fail closed and direct callers,
+  host hooks, OpenHands, and MCP can use chunk/range recovery.
+- Added `CompactionConfig` and `CompactionRunner` as standalone top-level APIs,
+  plus `GuardedProviderAdapter` for real host transcript replacement and an
+  auditable final provider-request budget check.
+- Hardened MCP sessions with random hashed tokens, tenant binding, TTL/capacity
+  controls, and operation leases. Persistent formal archives retain only a
+  hashed tenant binding and reject simultaneous sessions or cross-tenant
+  resume. Added a stateless MCP `2026-07-28` profile with discovery,
+  per-request negotiation, structured content, output schemas, TTL/cache
+  metadata, and opaque pagination cursors; initialized legacy clients remain
+  supported through automatic routing.
+- Updated PostToolUse adapters for current host contracts, explicitly separated
+  Codex archival feedback from true output replacement, migrated hook storage to
+  the formal archive, generated an OpenCode plugin, and moved the optional
+  OpenHands condenser to the formal runner.
+- Added the `onecomp-arc` operational CLI (`init`, agent-safe `run`, `guide`,
+  `doctor`, `status`, `record`, `catalog`, bounded `recall`, redacted `export`,
+  `migrate`, and overwrite-safe plugin generation). The command boundary
+  preserves child status and fails open when durable archival is unavailable.
+- Added body-free single-run reports and professional white-base PNG/SVG
+  dashboards under `onecomp.analyzer.compaction`, plus a deterministic public
+  CPU benchmark in `benchmark/compaction`.
+- Made analyzer report writes atomic and strengthened report validation against
+  malformed numeric, identity, privacy, and high-cardinality rendering inputs.
+- Made formal body reads checksum-verifying, created SQLite archives with a
+  private mode before opening them, and made CLI report/config and generated
+  plugin writes atomic. Citation head/tail previews now honor independent
+  limits without duplicated overlap.
+- Added formal fault-injection, concurrency, restart, Unicode reconstruction,
+  host-wire, provider-boundary, concurrent multi-agent MCP, CLI, benchmark,
+  privacy, and visualization regression tests.
+- Added an `openhands` installation extra and a native-SDK integration contract
+  test for immutable views, condensation application, and exact chunk recall.
+- Restricted setuptools package discovery to `onecomp*` and `vllm_plugins*` so
+  generated build trees, examples, benchmarks, and validation scripts cannot be
+  recursively bundled into release wheels.
+
 ## [v1.1.1] 2026-05-21
 
 ### New Feature: Quantization progress logging

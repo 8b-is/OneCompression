@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=64"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,15 +7,15 @@ name = "onecomp"
 dynamic = ["version"]
 description = "Python package for LLM compression"
 readme = "README.md"
-license = {file = "LICENSE"}
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     {name = "Keiji Kimura"},
 ]
 requires-python = ">=3.12, <3.14"
-keywords = ["llm", "quantization", "compression", "post-training-quantization", "gptq"]
+keywords = ["llm", "quantization", "compression", "post-training-quantization", "gptq", "context-compaction", "ai-agents"]
 classifiers = [
     "Development Status :: 4 - Beta",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -50,6 +50,7 @@ onecomp = "onecomp.cli:main"
 onecomp-mcp = "onecomp.mcp.__main__:main"
 onecomp-arc-hook = "onecomp.compaction.adapters.hooks:hook_main"
 onecomp-arc-recall = "onecomp.compaction.adapters.hooks:recall_main"
+onecomp-arc = "onecomp.compaction.cli:main"
 
 [project.optional-dependencies]
 cpu = ["torch", "torchvision"]
@@ -67,6 +68,9 @@ dev = [
 ]
 visualize = [
     "matplotlib>=3.10.8",
+]
+openhands = [
+    "openhands-sdk>=1.36,<2",
 ]
 hydra = [
     "hydra-core",
@@ -177,6 +181,7 @@ line-length = 99
 version = {attr = "onecomp.__version__.__version__"}
 
 [tool.setuptools.packages.find]
+include = ["onecomp*", "vllm_plugins*"]
 exclude = ["tests", "tests.*"]
 
 [tool.setuptools.package-data]

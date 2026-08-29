@@ -82,6 +82,17 @@ To enable visualization features (matplotlib), install with the `visualize` extr
 pip install onecomp[visualize]
 ```
 
+To use the native OpenHands compaction condenser and its paired recall tools,
+install the optional SDK integration:
+
+```bash
+pip install onecomp[openhands]
+```
+
+The standalone compaction core, CLI, hooks, and compaction-only MCP server do
+not require this extra. It is needed only when importing
+`onecomp.compaction.adapters.openhands` inside an OpenHands agent process.
+
 ## For Developers (uv -- recommended)
 
 [`uv`](https://docs.astral.sh/uv/getting-started/installation/) is a fast Python package and project manager written in Rust.
@@ -102,6 +113,7 @@ Replace `cu128` with the appropriate CUDA variant for your system: `cpu`, `cu118
 
 Adding `--extra dev` installs development tools (black, pytest, pylint).
 Adding `--extra visualize` installs matplotlib for visualization features.
+Adding `--extra openhands` installs the optional native condenser integration.
 
 To use vLLM for serving quantized models, add `--extra vllm` together with `--extra cu130`:
 

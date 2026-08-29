@@ -33,6 +33,9 @@ Copyright 2025-2026 Fujitsu Ltd.
 Author: Yuma Ichikawa
 """
 
+# Public stateful adapters are provided through PEP 562 ``__getattr__`` below.
+# pylint: disable=undefined-all-variable
+
 from __future__ import annotations
 
 import re
@@ -51,7 +54,10 @@ from .messages import (
 #: purpose; framework adapters should prefer their host's typed
 #: exception when one exists.
 _CONTEXT_OVERFLOW_RE = re.compile(
-    r"context.length|context.window|input.tokens|prompt.too.long|maximum.context|max_tokens.*exceed",
+    (
+        r"context.length|context.window|input.tokens|prompt.too.long|"
+        r"maximum.context|max_tokens.*exceed"
+    ),
     re.IGNORECASE,
 )
 
@@ -70,6 +76,7 @@ def matches_context_overflow(error_message: str) -> bool:
 
 __all__ = [
     "content_to_text",
+    "GuardedProviderAdapter",
     "matches_context_overflow",
     "message_role",
     "message_text",
@@ -77,3 +84,12 @@ __all__ = [
     "recent_turn_start",
     "total_text_chars",
 ]
+
+
+def __getattr__(name: str):
+    """Load stateful adapters lazily to keep message helpers cycle-free."""
+    if name == "GuardedProviderAdapter":
+        from .provider import GuardedProviderAdapter
+
+        return GuardedProviderAdapter
+    raise AttributeError(name)

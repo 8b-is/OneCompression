@@ -21,6 +21,7 @@ python -c "import hydra; print(hydra.__version__)"
 
 | Directory | Description |
 |---|---|
+| [compaction/](compaction/) | Formal context-compaction effectiveness, exact recovery, provider guard, and visualization |
 | [llama3-8b-gptq/](llama3-8b-gptq/) | Llama-3-8B GPTQ (4bit/3bit × gs128/per-channel) |
 | [llama3-8b-jointq/](llama3-8b-jointq/) | Llama-3-8B JointQ (4bit/3bit × gs128/per-channel) |
 | [llama3-8b-qep-gptq/](llama3-8b-qep-gptq/) | Llama-3-8B QEP+GPTQ (4bit/3bit × gs128/per-channel) |

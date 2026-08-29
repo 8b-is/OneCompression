@@ -36,6 +36,32 @@ def test_sessions_are_isolated():
     assert ct.compaction_session_stats(sid_b)["n_observations"] == 0
 
 
+def test_authenticated_session_rejects_missing_token_and_cross_tenant_access():
+    started = ct.compaction_start_session(
+        tenant_id="team-a",
+        require_session_token=True,
+    )
+    session_id = started["session_id"]
+    token = started["session_token"]
+    assert started["auth_required"] is True
+    with pytest.raises(ValueError, match="Unknown session_id"):
+        ct.compaction_session_stats(session_id, tenant_id="team-a")
+    with pytest.raises(ValueError, match="Unknown session_id"):
+        ct.compaction_session_stats(
+            session_id,
+            session_token=token,
+            tenant_id="team-b",
+        )
+    assert (
+        ct.compaction_session_stats(
+            session_id,
+            session_token=token,
+            tenant_id="team-a",
+        )["n_observations"]
+        == 0
+    )
+
+
 def test_close_session_frees_and_unknown_id_raises():
     sid = _start()
     assert ct.compaction_close_session(sid) == {"closed": sid}
@@ -90,6 +116,203 @@ def test_resume_wal_restores_observations_without_duplicate_rows(tmp_path, monke
 def test_resume_wal_requires_a_path():
     with pytest.raises(ValueError, match="requires wal_path"):
         ct.compaction_start_session(resume_wal=True)
+
+
+def test_formal_profile_is_occurrence_addressed_bounded_and_resumable(tmp_path, monkeypatch):
+    monkeypatch.setenv("ONECOMP_MCP_WAL_ROOT", str(tmp_path))
+    started = ct.compaction_start_session(
+        profile="formal-v1",
+        wal_path="formal.sqlite3",
+        max_recall_units=16,
+        recall_per_step=10,
+        require_session_token=True,
+    )
+    session_id = started["session_id"]
+    token = started["session_token"]
+    auth = {"session_token": token}
+    first = ct.compaction_record_observation(
+        session_id,
+        command="same",
+        content="same body",
+        source_key="call-1",
+        **auth,
+    )
+    second = ct.compaction_record_observation(
+        session_id,
+        command="same",
+        content="same body",
+        source_key="call-2",
+        **auth,
+    )
+    retry = ct.compaction_record_observation(
+        session_id,
+        command="same",
+        content="same body",
+        source_key="call-1",
+        **auth,
+    )
+    assert first["obs_id"] != second["obs_id"]
+    assert retry["obs_id"] == first["obs_id"]
+
+    huge = ct.compaction_record_observation(
+        session_id,
+        command="huge",
+        content="0123456789abcdef-MIDDLE-0123456789abcdef",
+        source_key="call-huge",
+        **auth,
+    )
+    full = ct.compaction_recall(session_id, huge["obs_id"], **auth)
+    assert full["found"] is False
+    assert "chunk or range" in full["error"]
+    chunk = ct.compaction_handle_action(
+        session_id,
+        f"_recall_chunk §{huge['obs_id']} 1",
+        **auth,
+    )
+    assert chunk["handled"] is True
+    assert chunk["exact"] is True
+    assert chunk["content"] == "-MIDDLE-01234567"
+    assert ct.compaction_session_stats(session_id, **auth)["profile"] == "formal-v1"
+    ct.compaction_close_session(session_id, **auth)
+
+    resumed = ct.compaction_start_session(
+        profile="formal-v1",
+        wal_path="formal.sqlite3",
+        resume_wal=True,
+        max_recall_units=64,
+        require_session_token=True,
+    )
+    resumed_auth = {"session_token": resumed["session_token"]}
+    recalled = ct.compaction_recall(
+        resumed["session_id"],
+        first["obs_id"],
+        **resumed_auth,
+    )
+    assert recalled["found"] is True
+    assert recalled["content"] == "same body"
+
+
+def test_formal_wal_has_one_active_session_and_persistent_tenant_binding(tmp_path, monkeypatch):
+    monkeypatch.setenv("ONECOMP_MCP_WAL_ROOT", str(tmp_path))
+    first = ct.compaction_start_session(
+        profile="formal-v1",
+        wal_path="owned.sqlite3",
+        tenant_id="team-a",
+        require_session_token=True,
+    )
+    with pytest.raises(ValueError, match="already active"):
+        ct.compaction_start_session(
+            profile="formal-v1",
+            wal_path="owned.sqlite3",
+            resume_wal=True,
+            tenant_id="team-a",
+        )
+    ct.compaction_close_session(
+        first["session_id"],
+        session_token=first["session_token"],
+        tenant_id="team-a",
+    )
+
+    with pytest.raises(ct.FormalArcError, match="different owner"):
+        ct.compaction_start_session(
+            profile="formal-v1",
+            wal_path="owned.sqlite3",
+            resume_wal=True,
+            tenant_id="team-b",
+        )
+
+    resumed = ct.compaction_start_session(
+        profile="formal-v1",
+        wal_path="owned.sqlite3",
+        resume_wal=True,
+        tenant_id="team-a",
+        require_session_token=True,
+    )
+    ct.compaction_close_session(
+        resumed["session_id"],
+        session_token=resumed["session_token"],
+        tenant_id="team-a",
+    )
+
+
+def test_formal_tool_builder_forces_profile_and_session_auth():
+    tools = {
+        tool.name: tool
+        for tool in build_compaction_tools(profile="formal-v1", require_session_token=True)
+    }
+    started = tools["compaction_start_session"].handler()
+    assert started["profile"] == "formal-v1"
+    assert started["auth_required"] is True
+    assert "session_token" in tools["compaction_recall"].input_schema["required"]
+    assert all(tool.output_schema is not None for tool in tools.values())
+
+
+def test_formal_mcp_native_chunk_and_range_recall():
+    started = ct.compaction_start_session(
+        profile="formal-v1",
+        max_recall_units=8,
+        recall_per_step=10,
+    )
+    obs_id = ct.compaction_record_observation(
+        started["session_id"],
+        command="read",
+        content="0123456789abcdef",
+        source_key="chunk-call",
+    )["obs_id"]
+    chunk = ct.compaction_recall(
+        started["session_id"],
+        obs_id,
+        recall_kind="chunk",
+        chunk_index=1,
+    )
+    exact_range = ct.compaction_recall(
+        started["session_id"],
+        obs_id,
+        recall_kind="range",
+        range_start=3,
+        range_end=7,
+    )
+    assert chunk["found"] is True and chunk["content"] == "89abcdef"
+    assert exact_range["content"] == "3456"
+
+
+def test_formal_mcp_exposes_and_enforces_archive_quota():
+    started = ct.compaction_start_session(
+        profile="formal-v1",
+        max_archive_bytes=5,
+    )
+    ct.compaction_record_observation(
+        started["session_id"],
+        command="first",
+        content="12345",
+    )
+    with pytest.raises(ct.FormalArcError, match="quota exceeded"):
+        ct.compaction_record_observation(
+            started["session_id"],
+            command="second",
+            content="6",
+        )
+
+
+def test_formal_observation_list_uses_stable_body_free_cursor():
+    started = ct.compaction_start_session(profile="formal-v1")
+    ids = [
+        ct.compaction_record_observation(
+            started["session_id"],
+            command=f"formal-{index}",
+            content="private-" + str(index),
+            source_key=f"formal-list-{index}",
+        )["obs_id"]
+        for index in range(5)
+    ]
+    first = ct.compaction_list_observations(started["session_id"], limit=2)
+    second = ct.compaction_list_observations(
+        started["session_id"], cursor=first["next_cursor"], limit=2
+    )
+    assert [row["obs_id"] for row in first["observations"]] == ids[:2]
+    assert [row["obs_id"] for row in second["observations"]] == ids[2:4]
+    assert "private" not in repr(first)
+    assert first["total"] == 5
 
 
 def test_record_flags_long_observations():
@@ -155,13 +378,9 @@ def test_compact_messages_with_char_budget():
         {"role": "user", "content": "task"},
     ]
     for i in range(6):
-        rec = ct.compaction_record_observation(
-            sid, command=f"cat p{i}", content=f"c{i} " * 800
-        )
+        rec = ct.compaction_record_observation(sid, command=f"cat p{i}", content=f"c{i} " * 800)
         messages.append({"role": "assistant", "content": f"```bash\ncat p{i}\n```"})
-        messages.append(
-            {"role": "user", "content": f"c{i} " * 800, "_obs_id": rec["obs_id"]}
-        )
+        messages.append({"role": "user", "content": f"c{i} " * 800, "_obs_id": rec["obs_id"]})
     out = ct.compaction_compact_messages(sid, messages, max_chars=6000)
     assert out["total_chars"] <= 6000
 
@@ -218,10 +437,7 @@ def test_verify_value_guard():
         sid, command="cat log2", content="noise\ntrace-key: TR-REAL42\nnoise"
     )
     assert ct.compaction_verify_value(sid, "TR-REAL42")["seen"] is True
-    assert (
-        ct.compaction_verify_value(sid, "TR-REAL42", prefix="trace-key: ")["seen"]
-        is True
-    )
+    assert ct.compaction_verify_value(sid, "TR-REAL42", prefix="trace-key: ")["seen"] is True
     missing = ct.compaction_verify_value(sid, "TR-GUESSED", prefix="trace-key: ")
     assert missing["seen"] is False
     assert missing["candidate_obs_ids"]
@@ -230,9 +446,7 @@ def test_verify_value_guard():
 
 def test_recall_budget_enforced_across_calls_and_reset_by_step_boundary():
     sid = ct.compaction_start_session(recall_per_step=1)["session_id"]
-    obs_id = ct.compaction_record_observation(sid, command="cat x", content="z" * 900)[
-        "obs_id"
-    ]
+    obs_id = ct.compaction_record_observation(sid, command="cat x", content="z" * 900)["obs_id"]
 
     # 1st recall within budget; 2nd (no step boundary in between) exceeds it.
     assert ct.compaction_recall(sid, obs_id)["found"] is True
@@ -250,15 +464,9 @@ def test_recall_budget_enforced_across_calls_and_reset_by_step_boundary():
 
 
 def test_mcp_recall_reports_external_eviction_instructions():
-    sid = ct.compaction_start_session(recall_per_step=10, recall_budget_chars=1500)[
-        "session_id"
-    ]
-    first = ct.compaction_record_observation(sid, command="one", content="A" * 1000)[
-        "obs_id"
-    ]
-    second = ct.compaction_record_observation(sid, command="two", content="B" * 1000)[
-        "obs_id"
-    ]
+    sid = ct.compaction_start_session(recall_per_step=10, recall_budget_chars=1500)["session_id"]
+    first = ct.compaction_record_observation(sid, command="one", content="A" * 1000)["obs_id"]
+    second = ct.compaction_record_observation(sid, command="two", content="B" * 1000)["obs_id"]
     assert ct.compaction_recall(sid, first)["evicted_obs_ids"] == []
     recalled = ct.compaction_recall(sid, second)
     assert recalled["evicted_obs_ids"] == [first]
@@ -280,9 +488,7 @@ def test_observation_index_filters_by_command_path():
     wanted = ct.compaction_record_observation(
         sid, command="inspect src/special_target.py", content="wanted"
     )
-    ct.compaction_record_observation(
-        sid, command="inspect logs/other.log", content="other"
-    )
+    ct.compaction_record_observation(sid, command="inspect logs/other.log", content="other")
     page = ct.compaction_list_observations(sid, query="SPECIAL_target")
     assert page["total"] == 1
     assert page["observations"][0]["obs_id"] == wanted["obs_id"]

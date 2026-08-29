@@ -62,14 +62,24 @@ class ToolDefinition:
     description: str
     input_schema: Dict[str, Any]
     handler: Callable[..., Any] = field(repr=False, default=None)
+    output_schema: Optional[Dict[str, Any]] = None
+    title: Optional[str] = None
+    annotations: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Return the ``tools/list`` entry for this tool."""
-        return {
+        value = {
             "name": self.name,
             "description": self.description,
             "inputSchema": self.input_schema,
         }
+        if self.output_schema is not None:
+            value["outputSchema"] = self.output_schema
+        if self.title is not None:
+            value["title"] = self.title
+        if self.annotations is not None:
+            value["annotations"] = self.annotations
+        return value
 
 
 class MCPServer:

@@ -34,13 +34,16 @@ Full documentation: **[https://FujitsuResearch.github.io/OneCompression/](https:
 
 ### Agent Context Compaction
 
-`onecomp.compaction` implements ARC (Addressable Recall for Compaction): long
-tool observations are stored losslessly and replaced in the model-visible
-history by bounded citations that can be recalled by stable observation ID.
-The `onecomp-mcp` stdio server exposes the same session-based operations to
-MCP-capable hosts. OneComp also provides an OpenHands condenser and PostToolUse
-adapters for Claude Code and Codex. See the [ARC compaction guide](docs/user-guide/arc-compaction.md)
-and [MCP server guide](docs/user-guide/mcp-server.md).
+`onecomp.compaction` provides a production `formal-v1` profile: every tool
+occurrence commits transactionally to a private SQLite archive, receives a
+fixed-width ID, and can be recovered exactly through bounded full, chunk, or
+range recall. `CompactionRunner` works standalone; authenticated MCP sessions,
+provider-boundary guards, an OpenHands condenser, Claude Code output replacement,
+a generated OpenCode plugin, and a Codex-safe standalone command boundary
+integrate it with agent hosts. Single-run reports and dashboards never include
+observation bodies. See the
+[compaction guide](docs/user-guide/arc-compaction.md) and
+[MCP guide](docs/user-guide/mcp-server.md).
 
 ## Installation
 
@@ -128,6 +131,12 @@ TaperKV long-context correctness grid is in
 [`benchmark/kvcomp-longcontext`](benchmark/kvcomp-longcontext/README.md).
 Both require caller-selected model and output roots; generated results and
 Slurm logs are intentionally not versioned.
+
+The deterministic CPU-only formal compaction benchmark is in
+[`benchmark/compaction`](benchmark/compaction/README.md). It measures real host
+history replacement, final provider-budget coverage, catalog completeness,
+exact reconstruction, checksums, latency, and generates a body-free run
+dashboard.
 
 ## License
 

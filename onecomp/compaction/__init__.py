@@ -51,6 +51,7 @@ from .compactor import (
     compact_messages_arc,
     compact_messages_max,
 )
+from .config import CompactionConfig, CompactionProfile
 from .engine import (
     PRIVATE_MESSAGE_KEYS,
     ArcEngine,
@@ -74,10 +75,24 @@ from .protocol import (
     suggest_closest_obs_id,
 )
 from .store import ObsRecord, ObsStore
+from .runner import CompactionRunner
+from .formal import (
+    BudgetExceeded,
+    FormalArcError,
+    InvalidAction,
+    RecallRequiresChunking,
+)
 
 __all__ = [
     "ArcEngine",
     "ArcEngineConfig",
+    "CompactionConfig",
+    "CompactionProfile",
+    "CompactionRunner",
+    "BudgetExceeded",
+    "FormalArcError",
+    "InvalidAction",
+    "RecallRequiresChunking",
     "DEFAULT_ACTION_REGEX",
     "DEFAULT_OBSERVATION_REGEX",
     "ObsRecord",

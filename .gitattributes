@@ -2,3 +2,10 @@
 # SHA256SUMS manifests are part of the reproducibility record.  Raw CSV/log
 # whitespace is therefore data, not a source-formatting error.
 papers/hayatequant_paper/experiments/results/** -whitespace
+
+# Historical compaction sources use CRLF. Treat its carriage return as part of
+# the line ending so whitespace checks still catch actual trailing spaces.
+onecomp/compaction/*.py whitespace=cr-at-eol
+onecomp/compaction/adapters/*.py whitespace=cr-at-eol
+onecomp/mcp/compaction_tools.py whitespace=cr-at-eol
+tests/onecomp/mcp/test_compaction_tools.py whitespace=cr-at-eol

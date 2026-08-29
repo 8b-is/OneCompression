@@ -554,7 +554,11 @@ def vllm_engine_args(model_dir: str, kv_cache_precision: str = "auto") -> Dict[s
     }
 
 
-def build_tools() -> List[ToolDefinition]:
+def build_tools(
+    *,
+    require_session_token: bool = False,
+    compaction_profile: str = "experimental-v1",
+) -> List[ToolDefinition]:
     """Return the :class:`ToolDefinition` list served by the MCP server."""
     return [
         ToolDefinition(
@@ -716,5 +720,8 @@ def build_tools() -> List[ToolDefinition]:
             },
             handler=vllm_engine_args,
         ),
-        *build_compaction_tools(),
+        *build_compaction_tools(
+            require_session_token=require_session_token,
+            profile=compaction_profile,
+        ),
     ]

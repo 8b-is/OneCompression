@@ -48,19 +48,20 @@ try:
     from pydantic import Field, PrivateAttr, model_validator
 except ImportError as exc:  # pragma: no cover - exercised only without the optional SDK
     raise ImportError(
-        "onecomp.compaction.adapters.openhands requires the optional "
-        "'openhands-sdk' package"
+        "onecomp.compaction.adapters.openhands requires the optional 'openhands-sdk' package"
     ) from exc
 
-from ..engine import ArcEngine, ArcEngineConfig, RecallError
+from ..config import CompactionConfig
+from ..formal import FormalArcError
+from ..runner import CompactionRunner
 from .messages import message_role, message_text
 
 _RUNTIMES: weakref.WeakValueDictionary[str, "OpenHandsArcCondenser"] = (
     weakref.WeakValueDictionary()
 )
-_RECALLED_ID_RE = re.compile(r'obs_id="§([0-9a-fA-F]{4,40})"')
+_RECALLED_ID_RE = re.compile(r'obs_id="§([0-9a-fA-F]{4,128})"')
 _TEXT_RECALL_HINT_RE = re.compile(
-    r"\[to recall full output: issue `_recall §([0-9a-fA-F]{4,40})` "
+    r"\[to recall full output: issue `_recall §([0-9a-fA-F]{4,128})` "
     r"as your ONLY action — no output follows\]"
 )
 
@@ -84,7 +85,7 @@ class OpenHandsArcCondenser(RollingCondenser):
     recall_max_chars: int = Field(default=0, ge=0)
     wal_path: Optional[str] = None
 
-    _engine: ArcEngine = PrivateAttr()
+    _engine: CompactionRunner = PrivateAttr()
     _lock: threading.RLock = PrivateAttr(default_factory=threading.RLock)
 
     @model_validator(mode="after")
@@ -94,28 +95,21 @@ class OpenHandsArcCondenser(RollingCondenser):
         return self
 
     def model_post_init(self, __context: object) -> None:
-        config = ArcEngineConfig(
+        del __context
+        config = CompactionConfig(
+            profile="formal-v1",
+            archive_path=self.wal_path,
             keep_recent=0,
             result_max_chars=self.result_max_chars,
             summary_max_chars=self.summary_max_chars,
-            recall_per_step=self.recall_per_step,
-            # OpenHands owns event eviction through Condensation.  The core LRU
-            # cannot mutate that private history, so do not maintain a phantom
-            # external-recall budget here; max_tokens and recall_max_chars are
-            # the authoritative context guards.
-            recall_budget_chars=0,
-            recall_max_chars=self.recall_max_chars,
-            wal_path=self.wal_path,
+            recalls_per_step=self.recall_per_step,
+            max_recall_units=self.recall_max_chars or 4096,
         )
-        self._engine = (
-            ArcEngine.from_wal(self.wal_path, config)
-            if self.wal_path is not None
-            else ArcEngine(config)
-        )
+        self._engine = CompactionRunner(config)
         _RUNTIMES[self.runtime_id] = self
 
     @property
-    def engine(self) -> ArcEngine:
+    def engine(self) -> CompactionRunner:
         """The shared engine, useful for telemetry and integration tests."""
         return self._engine
 
@@ -149,14 +143,10 @@ class OpenHandsArcCondenser(RollingCondenser):
             return CondensationRequirement.SOFT
         return None
 
-    def get_condensation(
-        self, view: View, agent_llm: Optional[LLM] = None
-    ) -> Condensation:
+    def get_condensation(self, view: View, agent_llm: Optional[LLM] = None) -> Condensation:
         forgotten, offset = self._get_forgotten_events(view, agent_llm)
         if not forgotten:
-            raise NoCondensationAvailableException(
-                "ARC found no manipulation-safe events"
-            )
+            raise NoCondensationAvailableException("ARC found no manipulation-safe events")
         if len(forgotten) < len(view) * self.minimum_progress:
             raise NoCondensationAvailableException(
                 "ARC condensation would make less than minimum_progress"
@@ -166,60 +156,74 @@ class OpenHandsArcCondenser(RollingCondenser):
     def hard_context_reset(
         self, view: View, agent_llm: Optional[LLM] = None  # noqa: ARG002
     ) -> Optional[Condensation]:
+        del agent_llm
         if not view.events:
             return None
         return self._build_condensation(view, view.events, 0)
 
-    def recall(self, obs_id: str, recall_kind: Literal["full", "meta"] = "full") -> str:
+    def recall(
+        self,
+        obs_id: str,
+        recall_kind: Literal["full", "meta", "chunk", "range"] = "full",
+        *,
+        chunk_index: Optional[int] = None,
+        range_start: Optional[int] = None,
+        range_end: Optional[int] = None,
+    ) -> str:
         """Serve one recall for :class:`OpenHandsArcRecallTool`."""
-        if recall_kind not in {"full", "meta"}:
-            raise ValueError("recall_kind must be 'full' or 'meta'")
-        verb = "_recall" if recall_kind == "full" else "_recall_meta"
+        if recall_kind == "full":
+            action = f"_recall §{obs_id}"
+        elif recall_kind == "meta":
+            action = f"_recall_meta §{obs_id}"
+        elif recall_kind == "chunk":
+            if chunk_index is None:
+                raise ValueError("chunk recall requires chunk_index")
+            action = f"_recall_chunk §{obs_id} {chunk_index}"
+        elif recall_kind == "range":
+            if range_start is None or range_end is None:
+                raise ValueError("range recall requires range_start and range_end")
+            action = f"_recall_range §{obs_id} {range_start}:{range_end}"
+        else:
+            raise ValueError("unsupported recall_kind")
         scratch: list[dict] = []
         with self._lock:
-            outcome = self._engine.handle_action(f"{verb} §{obs_id}", scratch)
+            outcome = self._engine.handle_action(action, scratch)
         if outcome is None:  # pragma: no cover - constructed command is always a recall
-            raise RecallError("ARC recall was not handled")
-        return str(outcome.message["content"])
+            raise ValueError("ARC recall was not handled")
+        return outcome.body
 
-    def list_observations(
-        self, query: str = "", cursor: int = 0, limit: int = 20
-    ) -> str:
+    def list_observations(self, query: str = "", cursor: int = 0, limit: int = 20) -> str:
         """Return a bounded command/id index for handles absent from summary."""
         if not isinstance(query, str):
             raise ValueError("query must be a string")
         if not isinstance(cursor, int) or isinstance(cursor, bool) or cursor < 0:
             raise ValueError("cursor must be a non-negative integer")
-        if (
-            not isinstance(limit, int)
-            or isinstance(limit, bool)
-            or not 1 <= limit <= 100
-        ):
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100:
             raise ValueError("limit must be an integer between 1 and 100")
         with self._lock:
-            ids = self._engine.store.known_ids()
+            assert self._engine.archive is not None
+            store = self._engine.archive
+            ids = store.known_ids()
             if query:
                 needle = query.casefold()
                 ids = [
                     obs_id
                     for obs_id in ids
-                    if (record := self._engine.store.get(obs_id)) is not None
-                    and needle in record.cmd_signature.casefold()
+                    if needle in store.get_metadata(obs_id).cmd_signature.casefold()
                 ]
             selected = list(reversed(ids))[cursor : cursor + limit]
             observations = []
             for obs_id in selected:
-                record = self._engine.store.get(obs_id)
-                if record is not None:
-                    observations.append(
-                        {
-                            "obs_id": record.obs_id,
-                            "cmd_signature": record.cmd_signature[:200],
-                            "returncode": record.returncode,
-                            "line_count": record.line_count,
-                            "char_count": record.char_count,
-                        }
-                    )
+                record = store.get_metadata(obs_id)
+                observations.append(
+                    {
+                        "obs_id": record.obs_id,
+                        "cmd_signature": record.cmd_signature[:200],
+                        "returncode": record.returncode,
+                        "line_count": record.line_count,
+                        "char_count": record.char_count,
+                    }
+                )
             next_cursor = cursor + len(selected)
             return json.dumps(
                 {
@@ -230,9 +234,7 @@ class OpenHandsArcCondenser(RollingCondenser):
                 ensure_ascii=False,
             )
 
-    def _get_forgotten_events(
-        self, view: View, agent_llm: Optional[LLM]
-    ) -> tuple[Sequence, int]:
+    def _get_forgotten_events(self, view: View, agent_llm: Optional[LLM]) -> tuple[Sequence, int]:
         suffix_lengths: list[int] = []
         if view.unhandled_condensation_request:
             suffix_lengths.append(len(view) // 2 - self.keep_first - 1)
@@ -278,9 +280,7 @@ class OpenHandsArcCondenser(RollingCondenser):
                 "ARC could not convert any forgotten event to an LLM message"
             )
 
-        compacted = self._engine.compact(
-            messages, summary_max_chars=self.summary_max_chars
-        )
+        compacted = self._engine.compact(messages)
         summary = compacted[2]["content"] if len(compacted) > 2 else ""
         summary = _TEXT_RECALL_HINT_RE.sub(
             lambda match: (
@@ -289,10 +289,15 @@ class OpenHandsArcCondenser(RollingCondenser):
             ),
             summary,
         )
+        summary = summary.replace(
+            "Use _recall only when the complete item fits. Otherwise use "
+            "_recall_chunk or _recall_range. Use _catalog to rediscover every "
+            "occurrence.",
+            "Call arc_recall with full only when the item fits; otherwise use "
+            "chunk or range. Call arc_list_observations to rediscover every occurrence.",
+        )
         digest = hashlib.sha1(
-            "\x1f".join(
-                str(getattr(event, "id", "")) for event in forgotten_events
-            ).encode()
+            "\x1f".join(str(getattr(event, "id", "")) for event in forgotten_events).encode()
         ).hexdigest()[:16]
         return Condensation(
             forgotten_event_ids={str(event.id) for event in forgotten_events},
@@ -320,16 +325,29 @@ class OpenHandsArcCondenser(RollingCondenser):
 
         if role == "tool":
             recalled = _RECALLED_ID_RE.search(text)
-            if recalled and self._engine.store.has(recalled.group(1)):
+            assert self._engine.archive is not None
+            if recalled and self._engine.archive.has(recalled.group(1)):
                 payload["_obs_id"] = recalled.group(1).lower()
                 return payload
             parent = by_id.get(str(getattr(event, "action_id", "")))
+            parent_action = getattr(parent, "action", parent)
+            if isinstance(parent_action, OpenHandsArcRecallAction) and self._engine.archive.has(
+                parent_action.obs_id
+            ):
+                # A recalled body is already archived under its original ID.
+                # Reusing that handle prevents recursive duplicate observations
+                # each time a native recall result is later condensed.
+                payload["_obs_id"] = parent_action.obs_id.lower()
+                return payload
             command = _event_command(parent) or str(getattr(event, "tool_name", "tool"))
             observation = getattr(event, "observation", None)
             returncode = 1 if bool(getattr(observation, "is_error", False)) else 0
             record = self._engine.record_observation(
                 command=command,
                 content=text,
+                source_key=(
+                    f"openhands:{getattr(event, 'id', '')}" if getattr(event, "id", None) else None
+                ),
                 returncode=returncode,
                 extra={
                     "openhands_event_id": str(getattr(event, "id", "")),
@@ -355,7 +373,10 @@ def _event_command(event: object) -> str:
 
 class OpenHandsArcRecallAction(Action):
     obs_id: str = Field(description="ARC observation id, without the section sign")
-    recall_kind: Literal["full", "meta"] = "full"
+    recall_kind: Literal["full", "meta", "chunk", "range"] = "full"
+    chunk_index: Optional[int] = Field(default=None, ge=0)
+    range_start: Optional[int] = Field(default=None, ge=0)
+    range_end: Optional[int] = Field(default=None, ge=0)
 
 
 class OpenHandsArcRecallObservation(Observation):
@@ -368,9 +389,8 @@ class _OpenHandsArcRecallExecutor(
     def __init__(self, runtime_id: str):
         self.runtime_id = runtime_id
 
-    def __call__(
-        self, action: OpenHandsArcRecallAction, conversation=None
-    ):  # noqa: ARG002
+    def __call__(self, action: OpenHandsArcRecallAction, conversation=None):  # noqa: ARG002
+        del conversation
         runtime = _RUNTIMES.get(self.runtime_id)
         if runtime is None:
             return OpenHandsArcRecallObservation.from_text(
@@ -378,8 +398,14 @@ class _OpenHandsArcRecallExecutor(
                 is_error=True,
             )
         try:
-            content = runtime.recall(action.obs_id, action.recall_kind)
-        except (RecallError, ValueError) as exc:
+            content = runtime.recall(
+                action.obs_id,
+                action.recall_kind,
+                chunk_index=action.chunk_index,
+                range_start=action.range_start,
+                range_end=action.range_end,
+            )
+        except (FormalArcError, ValueError) as exc:
             return OpenHandsArcRecallObservation.from_text(str(exc), is_error=True)
         return OpenHandsArcRecallObservation.from_text(content)
 
@@ -393,11 +419,10 @@ class OpenHandsArcRecallTool(
 
     @classmethod
     def create(cls, conv_state=None, **params):  # noqa: ARG003
+        del conv_state
         runtime_id = params.pop("runtime_id", None)
         if params:
-            raise ValueError(
-                f"Unsupported OpenHandsArcRecallTool params: {sorted(params)}"
-            )
+            raise ValueError(f"Unsupported OpenHandsArcRecallTool params: {sorted(params)}")
         if not isinstance(runtime_id, str) or not runtime_id:
             raise ValueError("OpenHandsArcRecallTool requires runtime_id")
         return [
@@ -433,15 +458,12 @@ class OpenHandsArcListObservation(Observation):
     pass
 
 
-class _OpenHandsArcListExecutor(
-    ToolExecutor[OpenHandsArcListAction, OpenHandsArcListObservation]
-):
+class _OpenHandsArcListExecutor(ToolExecutor[OpenHandsArcListAction, OpenHandsArcListObservation]):
     def __init__(self, runtime_id: str):
         self.runtime_id = runtime_id
 
-    def __call__(
-        self, action: OpenHandsArcListAction, conversation=None
-    ):  # noqa: ARG002
+    def __call__(self, action: OpenHandsArcListAction, conversation=None):  # noqa: ARG002
+        del conversation
         runtime = _RUNTIMES.get(self.runtime_id)
         if runtime is None:
             return OpenHandsArcListObservation.from_text(
@@ -449,28 +471,23 @@ class _OpenHandsArcListExecutor(
                 is_error=True,
             )
         try:
-            content = runtime.list_observations(
-                action.query, action.cursor, action.limit
-            )
+            content = runtime.list_observations(action.query, action.cursor, action.limit)
         except ValueError as exc:
             return OpenHandsArcListObservation.from_text(str(exc), is_error=True)
         return OpenHandsArcListObservation.from_text(content)
 
 
-class OpenHandsArcListTool(
-    ToolDefinition[OpenHandsArcListAction, OpenHandsArcListObservation]
-):
+class OpenHandsArcListTool(ToolDefinition[OpenHandsArcListAction, OpenHandsArcListObservation]):
     """Bounded command/id index sharing the matching condenser's store."""
 
     name: ClassVar[str] = "arc_list_observations"
 
     @classmethod
     def create(cls, conv_state=None, **params):  # noqa: ARG003
+        del conv_state
         runtime_id = params.pop("runtime_id", None)
         if params:
-            raise ValueError(
-                f"Unsupported OpenHandsArcListTool params: {sorted(params)}"
-            )
+            raise ValueError(f"Unsupported OpenHandsArcListTool params: {sorted(params)}")
         if not isinstance(runtime_id, str) or not runtime_id:
             raise ValueError("OpenHandsArcListTool requires runtime_id")
         return [

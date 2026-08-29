@@ -1,7 +1,9 @@
 """PostToolUse replacement contracts for Claude Code and Codex."""
 
-from onecomp.compaction.adapters.hooks import process_post_tool_use
-from onecomp.compaction.store import ObsStore
+import pytest
+
+from onecomp.compaction.adapters.hooks import process_post_tool_use, recall_main
+from onecomp.compaction.formal import SQLiteObservationArchive
 
 
 def test_claude_bash_hook_replaces_long_output_with_schema_compatible_citation(tmp_path):
@@ -23,12 +25,12 @@ def test_claude_bash_hook_replaces_long_output_with_schema_compatible_citation(t
     assert set(replacement) == set(payload["tool_response"])
     assert "CLAUDE-NEEDLE" in replacement["stdout"]
     assert len(replacement["stdout"]) < 1200
-    wal = next(tmp_path.glob("*.wal"))
-    restored = ObsStore.from_wal(wal)
-    assert "CLAUDE-NEEDLE" in restored.to_serializable()[0]["full_content"]
+    archive_path = next(tmp_path.glob("*.sqlite3"))
+    with SQLiteObservationArchive(archive_path) as restored:
+        assert "CLAUDE-NEEDLE" in restored.get(restored.known_ids()[0]).full_content
 
 
-def test_codex_hook_uses_documented_feedback_replacement_and_is_idempotent(tmp_path):
+def test_codex_hook_uses_documented_archival_context_and_is_idempotent(tmp_path):
     payload = {
         "session_id": "codex-session",
         "turn_id": "turn-1",
@@ -40,11 +42,12 @@ def test_codex_hook_uses_documented_feedback_replacement_and_is_idempotent(tmp_p
     }
     first = process_post_tool_use(payload, platform="codex", hook_root=tmp_path)
     second = process_post_tool_use(payload, platform="codex", hook_root=tmp_path)
-    assert first["decision"] == "block"
-    assert "tool completed" in first["reason"]
-    assert "onecomp-arc-recall" in first["reason"]
-    assert second["reason"] == first["reason"]
-    assert ObsStore.from_wal(next(tmp_path.glob("*.wal"))).n_records == 1
+    context = first["hookSpecificOutput"]["additionalContext"]
+    assert "Tool completed" in context
+    assert "onecomp-arc-recall" in context
+    assert second == first
+    with SQLiteObservationArchive(next(tmp_path.glob("*.sqlite3"))) as archive:
+        assert archive.n_records == 1
 
 
 def test_hook_passes_through_short_and_recall_outputs(tmp_path):
@@ -61,4 +64,32 @@ def test_hook_passes_through_short_and_recall_outputs(tmp_path):
         "tool_response": "z" * 5000,
     }
     assert process_post_tool_use(recall, platform="codex", hook_root=tmp_path) == {}
-    assert not list(tmp_path.glob("*.wal"))
+    assert not list(tmp_path.glob("*.sqlite3"))
+
+
+def test_hook_does_not_change_existing_root_permissions(tmp_path):
+    root = tmp_path / "shared"
+    root.mkdir()
+    root.chmod(0o755)
+    payload = {
+        "session_id": "permission-session",
+        "tool_name": "Bash",
+        "tool_input": {"command": "cat large.log"},
+        "tool_response": "x" * 5000,
+        "tool_use_id": "permission-call",
+    }
+
+    process_post_tool_use(payload, platform="codex", hook_root=root)
+
+    assert root.stat().st_mode & 0o777 == 0o755
+
+
+def test_recall_cli_does_not_create_an_archive_for_an_unknown_session(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setenv("ONECOMP_ARC_HOOK_ROOT", str(tmp_path))
+    with pytest.raises(SystemExit) as raised:
+        recall_main(["--session-id", "missing", "--obs-id", "deadbeef"])
+    assert raised.value.code == 2
+    assert "does not exist" in capsys.readouterr().err
+    assert not list(tmp_path.glob("*.sqlite3"))

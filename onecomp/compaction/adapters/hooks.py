@@ -1,9 +1,11 @@
-"""ARC PostToolUse hook adapters for Claude Code and Codex.
+"""ARC PostToolUse hook adapters for supported agent host contracts.
 
 The command entry point reads one hook event from stdin, stores a long tool
-response in a per-session WAL, and emits the platform-specific JSON that
-replaces the model-visible result with a bounded citation.  A paired recall
-entry point prints the exact stored response on demand.
+response in a per-session WAL. Claude Code and OpenCode can replace the
+model-visible result with a bounded citation. Codex can add an archival
+reference but cannot replace native tool output through its current hook
+contract; use the standalone command wrapper for actual Codex prompt reduction.
+A paired recall entry point prints the exact stored response on demand.
 
 These adapters operate at tool-result ingestion time.  They do not pretend
 that merely exposing the OneComp MCP server can rewrite a host application's
@@ -22,35 +24,63 @@ import sys
 from pathlib import Path
 from typing import Any, Literal, Optional
 
-from ..engine import ArcEngine, ArcEngineConfig
-from ..protocol import format_citation
-from ..store import ObsStore
+from ..config import CompactionConfig
+from ..formal import (
+    ArcCoreService,
+    FormalArcError,
+    RecallRequiresChunking,
+    SQLiteObservationArchive,
+    format_citation,
+)
+from ..runner import CompactionRunner
+from .claude_code import (
+    post_tool_use_output as claude_post_tool_use_output,
+    replace_tool_output as replace_claude_tool_output,
+)
+from .codex import CodexResultMode, post_tool_use_output as codex_post_tool_use_output
 
-_OBS_ID_RE = re.compile(r"^[0-9a-fA-F]{4,40}$")
+_OBS_ID_RE = re.compile(r"^[0-9a-fA-F]{4,128}$")
 _RECALL_COMMANDS = ("onecomp-arc-recall", "onecomp.compaction.adapters.hooks recall")
 
 
 def process_post_tool_use(
     payload: dict[str, Any],
     *,
-    platform: Literal["claude", "codex"],
+    platform: Literal["claude", "codex", "opencode"],
     result_max_chars: int = 500,
     hook_root: Optional[Path | str] = None,
+    codex_result_mode: CodexResultMode = "context",
+    max_recall_units: int = 4096,
+    max_archive_bytes: int = 0,
 ) -> dict[str, Any]:
-    """Store and replace one platform PostToolUse response.
+    """Store one PostToolUse response and apply the host's supported contract.
 
     Returns an empty object when the response is short, unsupported, or is the
     paired recall command itself.  Hook callers can therefore configure a broad
     matcher while small ordinary results pass through unchanged.
     """
-    if platform not in {"claude", "codex"}:
-        raise ValueError("platform must be 'claude' or 'codex'")
+    if platform not in {"claude", "codex", "opencode"}:
+        raise ValueError("platform must be 'claude', 'codex', or 'opencode'")
+    if codex_result_mode not in {"context", "stop", "block"}:
+        raise ValueError("codex_result_mode must be 'context', 'stop', or 'block'")
     if not isinstance(payload, dict):
         raise ValueError("hook payload must be an object")
     if not isinstance(result_max_chars, int) or isinstance(result_max_chars, bool):
         raise ValueError("result_max_chars must be a non-negative integer")
     if result_max_chars < 0:
         raise ValueError("result_max_chars must be a non-negative integer")
+    if (
+        not isinstance(max_recall_units, int)
+        or isinstance(max_recall_units, bool)
+        or max_recall_units <= 0
+    ):
+        raise ValueError("max_recall_units must be a positive integer")
+    if (
+        not isinstance(max_archive_bytes, int)
+        or isinstance(max_archive_bytes, bool)
+        or max_archive_bytes < 0
+    ):
+        raise ValueError("max_archive_bytes must be a non-negative integer")
 
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
@@ -67,24 +97,27 @@ def process_post_tool_use(
     content = _lossless_json_text(response)
     if len(content) <= result_max_chars:
         return {}
+    # Claude accepts only replacement values whose original wire shape is
+    # known.  Decide that before committing so an unsupported third-party
+    # result cannot leave an unreachable archive occurrence behind.
+    if platform == "claude" and replace_claude_tool_output(response, "probe") is None:
+        return {}
 
-    wal_path = _wal_path(session_id, hook_root)
-    wal_path.touch(mode=0o600, exist_ok=True)
-    try:
-        wal_path.chmod(0o600)
-    except OSError:
-        pass
-    engine = ArcEngine.from_wal(
-        str(wal_path),
-        ArcEngineConfig(
+    archive_path = _archive_path(session_id, hook_root)
+    runner = CompactionRunner(
+        CompactionConfig(
+            profile="formal-v1",
+            archive_path=archive_path,
             result_max_chars=result_max_chars,
-            wal_path=str(wal_path),
-        ),
+            max_recall_units=max_recall_units,
+            max_archive_bytes=max_archive_bytes,
+        )
     )
     try:
-        record = engine.record_observation(
+        record = runner.record_observation(
             command=command,
             content=content,
+            source_key=_source_key(payload, platform),
             returncode=_returncode(response),
             extra={
                 "platform": platform,
@@ -93,46 +126,23 @@ def process_post_tool_use(
             },
         )
     finally:
-        engine.close()
-    try:
-        wal_path.chmod(0o600)
-    except OSError:
-        pass
+        runner.close()
 
-    citation = format_citation(
-        obs_id=record.obs_id,
-        cmd_signature=record.cmd_signature,
-        returncode=record.returncode,
-        line_count=record.line_count,
-        char_count=record.char_count,
-        head=record.head,
-        tail=record.tail,
-    )
+    citation = format_citation(record)
     recall_command = (
         "onecomp-arc-recall --session-id " f"{shlex.quote(session_id)} --obs-id {record.obs_id}"
     )
-    citation = re.sub(
-        r"\[to recall full output:.*?no output follows\]",
-        f"[tool completed; to recall exact output, run `{recall_command}`]",
-        citation,
-        flags=re.DOTALL,
+    citation += (
+        "\n<host_recovery>Tool completed. For exact bounded recovery run "
+        f"`{recall_command}`. Add --chunk-index or --range for oversized "
+        "observations.</host_recovery>"
     )
 
     if platform == "codex":
-        # Codex currently has no updatedToolOutput field.  Its documented
-        # PostToolUse block feedback replaces the completed tool result while
-        # retaining the tool's side effects.
-        return {"decision": "block", "reason": citation}
-
-    replacement = _claude_replacement(response, citation)
-    if replacement is None:
-        return {}
-    return {
-        "hookSpecificOutput": {
-            "hookEventName": "PostToolUse",
-            "updatedToolOutput": replacement,
-        }
-    }
+        return codex_post_tool_use_output(citation, mode=codex_result_mode)
+    if platform == "claude":
+        return claude_post_tool_use_output(response, citation)
+    return {"replacement": citation}
 
 
 def _command_signature(tool_name: str, tool_input: Any) -> str:
@@ -159,19 +169,17 @@ def _returncode(response: Any) -> int:
     return 0
 
 
-def _claude_replacement(response: Any, citation: str) -> Any:
-    if isinstance(response, str):
-        return citation
-    if isinstance(response, list):
-        return [{"type": "text", "text": citation}]
-    if isinstance(response, dict) and isinstance(response.get("stdout"), str):
-        replacement = dict(response)
-        replacement["stdout"] = citation
-        if isinstance(replacement.get("stderr"), str):
-            replacement["stderr"] = ""
-        return replacement
-    # Built-in Claude tools require exact output schemas.  Unknown object
-    # shapes fail open instead of risking that Claude ignores the replacement.
+def _source_key(payload: dict[str, Any], platform: str) -> Optional[str]:
+    """Use a host occurrence identity only when the host supplied one.
+
+    Content-derived keys incorrectly merge two distinct executions that happen
+    to have equal inputs and outputs. Without a stable host event identifier,
+    preserving each occurrence is safer than pretending retries are detectable.
+    """
+    for key in ("tool_use_id", "call_id", "tool_call_id"):
+        value = payload.get(key)
+        if isinstance(value, str) and value:
+            return f"{platform}:{payload['session_id']}:{value}"
     return None
 
 
@@ -184,52 +192,109 @@ def _hook_root(root: Optional[Path | str] = None) -> Path:
             str(Path.home() / ".cache" / "onecomp" / "arc-hooks"),
         )
     ).expanduser()
+    root_existed = resolved.exists()
     resolved.mkdir(parents=True, exist_ok=True)
-    try:
-        resolved.chmod(0o700)
-    except OSError:
-        pass
+    if not root_existed:
+        try:
+            resolved.chmod(0o700)
+        except OSError:
+            pass
     return resolved.resolve()
 
 
-def _wal_path(session_id: str, root: Optional[Path | str] = None) -> Path:
+def _archive_path(session_id: str, root: Optional[Path | str] = None) -> Path:
     digest = hashlib.sha256(session_id.encode("utf-8", errors="replace")).hexdigest()[:32]
-    return _hook_root(root) / f"{digest}.wal"
+    return _hook_root(root) / f"{digest}.sqlite3"
 
 
-def hook_main() -> None:
+def hook_main(argv: Optional[list[str]] = None) -> None:
     parser = argparse.ArgumentParser(description="ARC PostToolUse hook")
-    parser.add_argument("--platform", choices=("claude", "codex"), required=True)
+    parser.add_argument("--platform", choices=("claude", "codex", "opencode"), required=True)
     parser.add_argument("--result-max-chars", type=int, default=500)
-    args = parser.parse_args()
+    parser.add_argument("--max-recall-units", type=int, default=4096)
+    parser.add_argument(
+        "--max-archive-bytes",
+        type=int,
+        default=0,
+        help="exact UTF-8 body quota for each session archive (0 = deployment policy)",
+    )
+    parser.add_argument(
+        "--codex-result-mode",
+        choices=("context", "stop", "block"),
+        default="context",
+        help="Codex archival feedback mode; hooks cannot replace native tool output",
+    )
+    args = parser.parse_args(argv)
     try:
         payload = json.load(sys.stdin)
         result = process_post_tool_use(
             payload,
             platform=args.platform,
             result_max_chars=args.result_max_chars,
+            max_recall_units=args.max_recall_units,
+            max_archive_bytes=args.max_archive_bytes,
+            codex_result_mode=args.codex_result_mode,
         )
-    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+    except Exception as exc:  # pylint: disable=broad-exception-caught
         # Hook failure is intentionally fail-open: never hide a tool result if
-        # persistence or payload parsing failed.
+        # persistence, serialization, or payload parsing failed.  This broad
+        # catch belongs only at the host process boundary; the library APIs
+        # retain their precise exceptions.
         print(f"onecomp ARC hook skipped: {exc}", file=sys.stderr)
         result = {}
     print(json.dumps(result, ensure_ascii=False))
 
 
-def recall_main() -> None:
+def recall_main(argv: Optional[list[str]] = None) -> None:
     parser = argparse.ArgumentParser(description="Recall one ARC hook observation")
     parser.add_argument("--session-id", required=True)
     parser.add_argument("--obs-id", required=True)
-    args = parser.parse_args()
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--chunk-index", type=int)
+    mode.add_argument("--range", dest="char_range")
+    parser.add_argument("--max-recall-units", type=int, default=4096)
+    args = parser.parse_args(argv)
     if not _OBS_ID_RE.fullmatch(args.obs_id):
-        parser.error("--obs-id must be 4-40 hexadecimal characters")
-    store = ObsStore.from_wal(_wal_path(args.session_id))
-    record = store.get(args.obs_id)
-    if record is None:
-        print(f"Unknown ARC observation id: §{args.obs_id}", file=sys.stderr)
-        raise SystemExit(2)
-    sys.stdout.write(record.full_content)
+        parser.error("--obs-id must be 4-128 hexadecimal characters")
+    archive_path = _archive_path(args.session_id)
+    if not archive_path.is_file():
+        parser.error(f"session archive does not exist: {archive_path}")
+    try:
+        with SQLiteObservationArchive(archive_path) as archive:
+            service = ArcCoreService(archive, max_recall_units=args.max_recall_units)
+            if args.chunk_index is not None:
+                body = service.recall_text_chunk(args.obs_id, args.chunk_index).text
+            elif args.char_range is not None:
+                try:
+                    start_text, end_text = args.char_range.split(":", 1)
+                    start, end = int(start_text), int(end_text)
+                except (ValueError, TypeError):
+                    parser.error("--range must be START:END")
+                body = service.recall_range(args.obs_id, start, end)
+            else:
+                body = service.recall_full(args.obs_id)
+    except RecallRequiresChunking as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(3) from exc
+    except (FormalArcError, OSError, ValueError) as exc:
+        parser.exit(2, f"onecomp-arc-recall: {type(exc).__name__}: {exc}\n")
+    sys.stdout.write(body)
 
 
-__all__ = ["hook_main", "process_post_tool_use", "recall_main"]
+def main(argv: Optional[list[str]] = None) -> None:
+    """Module entry point used by generated host plugins."""
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if not arguments or arguments[0] not in {"hook", "recall"}:
+        raise SystemExit("usage: python -m onecomp.compaction.adapters.hooks {hook|recall} ...")
+    command, remainder = arguments[0], arguments[1:]
+    if command == "hook":
+        hook_main(remainder)
+    else:
+        recall_main(remainder)
+
+
+if __name__ == "__main__":
+    main()
+
+
+__all__ = ["hook_main", "main", "process_post_tool_use", "recall_main"]

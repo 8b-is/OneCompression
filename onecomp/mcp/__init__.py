@@ -1,20 +1,38 @@
-"""MCP (Model Context Protocol) server and autonomous compression agent.
+"""MCP servers and autonomous compression tools with lazy public imports."""
 
-Exposes OneComp's memory estimation, recipe recommendation,
-quantisation, and evaluation as MCP tools over the stdio transport,
-plus a goal-driven agent that searches for the best compression recipe.
+# Public objects are resolved through PEP 562 ``__getattr__`` without loading
+# model dependencies on the compaction-only path.
+# pylint: disable=undefined-all-variable
 
-Classes:
-    MCPServer: Newline-delimited JSON-RPC 2.0 server (stdio transport).
-    ToolDefinition: Tool metadata and handler.
-    AutoCompressConfig: Goal definition for the compression search.
-    AutoCompressionAgent: Goal-driven recipe search loop.
+from __future__ import annotations
 
-Copyright 2025-2026 Fujitsu Ltd.
+from importlib import import_module
+from typing import Any
 
-Author: Yuma Ichikawa
-"""
+_LAZY_ATTRS = {
+    "MCPServer": (".protocol", "MCPServer"),
+    "ToolDefinition": (".protocol", "ToolDefinition"),
+    "ModernMCPServer": (".modern_protocol", "ModernMCPServer"),
+    "CompatibleMCPServer": (".modern_protocol", "CompatibleMCPServer"),
+    "AutoCompressConfig": (".agent", "AutoCompressConfig"),
+    "AutoCompressionAgent": (".agent", "AutoCompressionAgent"),
+    "AutoCompressResult": (".agent", "AutoCompressResult"),
+    "TrialResult": (".agent", "TrialResult"),
+    "build_tools": (".tools", "build_tools"),
+}
 
-from .protocol import MCPServer, ToolDefinition
-from .agent import AutoCompressConfig, AutoCompressionAgent, AutoCompressResult, TrialResult
-from .tools import build_tools
+__all__ = list(_LAZY_ATTRS)
+
+
+def __getattr__(name: str) -> Any:
+    target = _LAZY_ATTRS.get(name)
+    if target is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module = import_module(target[0], __name__)
+    value = getattr(module, target[1])
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(__all__))

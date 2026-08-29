@@ -5,8 +5,9 @@ AI assistants such as Cursor and Claude Desktop can use OneComp directly: estima
 memory a model needs, get a quantization recipe for a VRAM budget, run the quantization, and
 evaluate the result — all through tool calls.
 
-The server is implemented with the Python standard library only (no extra dependencies) and
-speaks newline-delimited JSON-RPC 2.0 over stdio.
+The protocol and formal-compaction server paths use the Python standard
+library and speak newline-delimited JSON-RPC 2.0 over stdio. The full model
+tool suite uses the corresponding OneComp model dependencies.
 
 ## Starting the server
 
@@ -17,6 +18,11 @@ onecomp-mcp
 # or
 python -m onecomp.mcp
 ```
+
+For a dependency-free context-compaction control plane, run
+`onecomp-mcp --compaction-only --wal-root /private/onecomp-wal`. This mode does not import torch,
+transformers, model code, or accelerator packages. `onecomp-mcp --help` is
+also safe in that minimal environment.
 
 The server reads requests from stdin and writes responses to stdout, one JSON message per line.
 It is normally launched automatically by the MCP client (Cursor, Claude Desktop, etc.).
@@ -49,8 +55,8 @@ For the short cross-platform setup and measured results, see the
 The server also exposes [`onecomp.compaction`](../algorithms/overview.md) — ARC
 (Addressable Recall for Compaction) — as session-based tools, so MCP-capable agent
 platforms (e.g. OpenHands) can manage an agent's context window without importing
-OneComp.  Each session is an independent `ArcEngine`, so one server process can serve
-many concurrent agents.
+OneComp. Each default server session is an authenticated `formal-v1`
+`CompactionRunner`, so one server process can safely serve many tenant-bound agents.
 
 | Tool | Description |
 |------|-------------|
@@ -60,7 +66,7 @@ many concurrent agents.
 | `compaction_record_observation` | Store an executed action's output verbatim; returns the stable `obs_id`. Also marks a step boundary. |
 | `compaction_compact_messages` | Compact a message buffer: long observations tagged with `_obs_id` become bounded, recall-able citations. `max_chars > 0` shrinks until the buffer fits. |
 | `compaction_handle_action` | Intercept a raw LLM action; serves `_recall §<id>` / `_recall_meta §<id>` from the store, passes anything else through. |
-| `compaction_recall` | MCP-native recall by `obs_id` (`full` body or bounded `meta` preview), for platforms whose LLM calls tools directly. |
+| `compaction_recall` | MCP-native recovery by `obs_id`: bounded `meta`, `full`, deterministic `chunk`, or exact character `range`. |
 | `compaction_list_observations` | Bounded, paginated handle/metadata index with optional command/path search; does not return stored bodies. |
 | `compaction_verify_value` | Anti-confabulation guard: check that a value the agent wants to submit appeared verbatim in some observation. |
 | `compaction_session_stats` | Session telemetry: observations, compactions, recalls, evictions. |
@@ -69,7 +75,15 @@ The intended flow: the platform appends the prompt snippet to the system prompt,
 calls `compaction_record_observation` after every execution, passes LLM actions
 through `compaction_handle_action`, and calls `compaction_compact_messages`
 when (or before) the history exceeds the model's context window.  All compaction
-tools are pure Python — no GPU, network, or model loading.
+tools are pure Python — no GPU, network, or model loading. The CLI server
+requires the random session token returned by `compaction_start_session`;
+`--allow-unauthenticated-sessions` is an explicit compatibility escape hatch.
+For persistent formal sessions, set `max_archive_bytes` on
+`compaction_start_session` to an exact UTF-8 body quota. A value of `0` leaves
+storage quota policy to the deployment. One persistent archive can belong to
+only one live session in a server process. Close that session before resuming
+the archive. Its tenant identity is stored as a SHA-256 binding, not plaintext;
+a later session from another tenant is rejected even after process restart.
 
 There are two integration levels. Any MCP host, including OpenHands, can discover
 and call the session, record, recall, verification, and telemetry tools directly.
@@ -82,33 +96,41 @@ lossless store/recall service rather than an automatic OpenHands condenser.
 Do not have the model send its full conversation to
 `compaction_compact_messages`: that duplicates the very prompt cost ARC is meant to
 remove. The host/condenser should call it before constructing the provider request.
-Likewise, `evicted_obs_ids` returned by an MCP recall is an instruction to the host to
-replace those earlier recalled bodies; server-side LRU bookkeeping cannot delete a
-message already owned by an external client.
+In the compatibility profile, `evicted_obs_ids` returned by an MCP recall is an
+instruction to the host to replace those earlier recalled bodies; server-side
+bookkeeping cannot delete a message already owned by an external client.
 
 ### Integration support matrix
 
 | Host | Automatic replacement | Lossless recall | Important limit |
 |------|-----------------------|-----------------|-----------------|
-| OpenHands SDK | `OpenHandsArcCondenser` emits native `Condensation` events | Paired `arc_recall` and `arc_list_observations` tools share the same store | Import the optional adapter before constructing the agent; use a WAL for process-resume durability. |
+| OpenHands SDK | `OpenHandsArcCondenser` emits native `Condensation` events | Paired `arc_recall` and `arc_list_observations` tools share the same store | Import the optional adapter before constructing the agent; use a SQLite archive for process-resume durability. |
 | Claude Code | `PostToolUse.updatedToolOutput` via `onecomp-arc-hook` | `onecomp-arc-recall` command in each citation | Replacement must match each built-in tool's output schema; the supplied adapter supports text/content-block outputs and Bash's structured output. |
-| Codex CLI/IDE | PostToolUse feedback replacement via `onecomp-arc-hook` | `onecomp-arc-recall` command in each citation | Current Codex hooks cover simple Bash, `apply_patch`, and MCP calls incompletely; this is not whole-history replacement. |
-| Custom OpenAI Responses/Chat host | Call `ArcEngine.compact` or `enforce_token_budget` before the request | Call `ArcEngine.handle_action`/store lookup | The host must own the input item list and provide its authoritative token counter for exact token budgets. |
+| Codex CLI/IDE | `onecomp-arc run -- COMMAND` keeps verbose command output out of the transcript | `onecomp-arc recall` from each citation | PostToolUse can add an archival reference but cannot replace native tool output; it is not counted as compaction. |
+| OpenCode | Generated plugin mutates `output.output` in `tool.execute.after` | `onecomp-arc-recall` command in each citation | Generate the plugin with `onecomp-arc plugin`; validate it against the installed host version. |
+| Custom provider host | `GuardedProviderAdapter` replaces the owned list and guards dispatch | Call `CompactionRunner.handle_action` | The host must supply its authoritative final-request counter, including tools and multimodal overhead. |
 | MCP only | No | `compaction_recall` | MCP gives the model tools/context; it does not grant the server mutation access to the host's old transcript. |
 
-If a session enables `wal_path`, the path is restricted to
-`ONECOMP_MCP_WAL_ROOT` (the server's working directory by default). Set that
-environment variable to a dedicated persistence directory before starting the
-server; relative WAL paths are resolved beneath it. This prevents an
+If a session enables `wal_path`, the formal profile treats it as a SQLite
+archive path. The path is restricted to
+`ONECOMP_MCP_WAL_ROOT` (the server's working directory by default). Prefer the
+equivalent `--wal-root` option when launching the server; relative WAL paths are
+resolved beneath it. This prevents an
 LLM-controlled tool argument from appending to unrelated server files.
 Set `resume_wal=true` together with the same `wal_path` when starting a
-replacement session to restore the persisted observations.
+replacement session to restore the persisted observations. Experimental JSONL
+archives should be migrated with `onecomp-arc migrate`. Resume with the same
+`tenant_id` that first bound the formal archive.
 
 ## Native OpenHands condenser
 
 The optional adapter targets the current OpenHands SDK condenser API. It records
 forgotten `ObservationEvent` bodies, returns a native `Condensation`, and registers a
 recall tool backed by the same in-process engine:
+
+```bash
+pip install onecomp[openhands]
+```
 
 ```python
 from openhands.sdk import Agent, Tool
@@ -119,7 +141,7 @@ condenser = OpenHandsArcCondenser(
     max_tokens=100_000,
     summary_max_chars=24_000,
     recall_max_chars=20_000,
-    wal_path="/secure/onecomp-wal/openhands-agent.jsonl",
+    wal_path="/secure/onecomp-archive/openhands-agent.sqlite3",
 )
 
 agent = Agent(
@@ -204,12 +226,19 @@ stored JSON/text response when its middle is needed. Add additional matchers onl
 after validating that the replacement has the same output shape as that tool; unknown
 structured shapes deliberately pass through unchanged.
 
-## Codex PostToolUse adapter
+## Codex command boundary and archival hook
 
-Codex currently has no supported `updatedToolOutput` field. Its documented
-PostToolUse `decision: "block"` feedback path instead replaces a completed supported
-tool result with the hook's feedback while retaining the command's side effects. A
-minimal `~/.codex/hooks.json` entry is:
+Codex currently has no supported native-tool `updatedToolOutput` field. Use the
+standalone wrapper for actual prompt reduction:
+
+```bash
+onecomp-arc --config .onecomp/compaction/config.json run -- pytest -q
+```
+
+The optional PostToolUse integration below archives a long result and adds its
+citation through `additionalContext`. The original native tool result remains in
+Codex history, so this mode improves recovery/auditability but does not claim a
+smaller prompt. A minimal hook entry is:
 
 ```json
 {
@@ -229,10 +258,9 @@ minimal `~/.codex/hooks.json` entry is:
 }
 ```
 
-This reduces covered tool outputs at ingestion, but is intentionally not advertised
-as complete Codex context replacement: current hooks do not intercept every
-`unified_exec`, web, image, or other tool result, and Pre/PostCompact cannot supply a
-replacement summary. The MCP server can still be registered with Codex for explicit
+The default `--codex-result-mode context` continues normally. `stop` and `block`
+are explicit control-flow compatibility modes and still do not replace the
+completed result. The MCP server can be registered with Codex for explicit
 store/recall tools, but MCP alone cannot rewrite Codex's prior private transcript.
 
 ## Registering with Cursor
@@ -366,7 +394,11 @@ newlines (newlines inside strings are JSON-escaped, so any argument content is s
 Responses are flushed after every message.  Logging uses the `logging` module, which writes to
 stderr — stdout carries protocol messages only.
 
-Supported methods:
+The default `--protocol auto` server routes initialized legacy requests and
+stateless modern requests independently. Modern requests use protocol version
+`2026-07-28`, `server/discover`, per-request protocol metadata, structured tool
+content, opaque pagination cursors, and explicit `resultType`. Supported legacy
+methods are:
 
 | Method | Behaviour |
 |--------|-----------|
