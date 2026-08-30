@@ -82,11 +82,11 @@ def process_post_tool_use(
         raise ValueError("max_archive_bytes must be a non-negative integer")
 
     session_id = payload.get("session_id")
-    if not isinstance(session_id, str) or not session_id:
-        raise ValueError("hook payload requires a non-empty session_id")
+    if not isinstance(session_id, str) or not session_id or len(session_id) > 4096:
+        raise ValueError("hook payload requires a session_id up to 4096 characters")
     tool_name = payload.get("tool_name")
-    if not isinstance(tool_name, str) or not tool_name:
-        raise ValueError("hook payload requires a non-empty tool_name")
+    if not isinstance(tool_name, str) or not tool_name or len(tool_name) > 1024:
+        raise ValueError("hook payload requires a tool_name up to 1024 characters")
     tool_input = payload.get("tool_input", {})
     command = _command_signature(tool_name, tool_input)
     if any(marker in command for marker in _RECALL_COMMANDS):
@@ -121,7 +121,7 @@ def process_post_tool_use(
             extra={
                 "platform": platform,
                 "tool_name": tool_name,
-                "tool_use_id": str(payload.get("tool_use_id", "")),
+                "tool_use_id": str(payload.get("tool_use_id", ""))[:1024],
             },
         )
         assert runner.archive is not None
@@ -154,24 +154,42 @@ def _recall_launcher() -> str:
     entry_point = Path(sys.executable).with_name("onecomp-arc-recall")
     if entry_point.is_file():
         return shlex.quote(str(entry_point))
-    return f"{shlex.quote(sys.executable)} -m " "onecomp.compaction.adapters.hooks recall"
+    return f"{shlex.quote(sys.executable)} -m onecomp.compaction.adapters.hooks recall"
 
 
 def _command_signature(tool_name: str, tool_input: Any) -> str:
     if isinstance(tool_input, dict) and isinstance(tool_input.get("command"), str):
         command = tool_input["command"].strip()
         if command:
-            return command
-    return f"{tool_name}({_lossless_json_text(tool_input)})"
+            return _bounded_signature(command)
+    return _bounded_signature(f"{tool_name}({_lossless_json_text(tool_input)})")
+
+
+def _bounded_signature(value: str) -> str:
+    if len(value) <= 16_384:
+        _utf8_bytes("command signature", value)
+        return value
+    digest = hashlib.sha256(_utf8_bytes("command signature", value)).hexdigest()
+    suffix = f"… [sha256={digest}]"
+    return value[: 16_384 - len(suffix)] + suffix
 
 
 def _lossless_json_text(value: Any) -> str:
     if isinstance(value, str):
+        _utf8_bytes("hook string value", value)
         return value
     try:
-        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    except (TypeError, ValueError):
-        return str(value)
+        text = json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        _utf8_bytes("hook JSON value", text)
+        return text
+    except (TypeError, ValueError, UnicodeEncodeError) as exc:
+        raise ValueError("hook values must be JSON-serializable without NaN") from exc
 
 
 def _returncode(response: Any) -> int:
@@ -193,7 +211,9 @@ def _source_key(payload: dict[str, Any], platform: str) -> Optional[str]:
     for key in ("tool_use_id", "call_id", "tool_call_id"):
         value = payload.get(key)
         if isinstance(value, str) and value:
-            return f"{platform}:{payload['session_id']}:{value}"
+            identity = f"{platform}\x1f{payload['session_id']}\x1f{value}"
+            digest = hashlib.sha256(_utf8_bytes("hook occurrence identity", identity)).hexdigest()
+            return f"hook:{platform}:{digest}"
     return None
 
 
@@ -217,8 +237,15 @@ def _hook_root(root: Optional[Path | str] = None) -> Path:
 
 
 def _archive_path(session_id: str, root: Optional[Path | str] = None) -> Path:
-    digest = hashlib.sha256(session_id.encode("utf-8", errors="replace")).hexdigest()[:32]
+    digest = hashlib.sha256(_utf8_bytes("session_id", session_id)).hexdigest()[:32]
     return _hook_root(root) / f"{digest}.sqlite3"
+
+
+def _utf8_bytes(name: str, value: str) -> bytes:
+    try:
+        return value.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise ValueError(f"{name} must contain valid Unicode") from exc
 
 
 def hook_main(argv: Optional[list[str]] = None) -> None:

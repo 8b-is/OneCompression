@@ -145,6 +145,16 @@ def compaction_start_session(
     """
     if not isinstance(resume_wal, bool):
         raise ValueError("resume_wal must be a boolean")
+    if not isinstance(tenant_id, str) or not tenant_id or len(tenant_id) > 256:
+        raise ValueError("tenant_id must be a non-empty string up to 256 characters")
+    if (
+        not isinstance(ttl_seconds, int)
+        or isinstance(ttl_seconds, bool)
+        or not 1 <= ttl_seconds <= 7 * 24 * 3600
+    ):
+        raise ValueError("ttl_seconds must be an integer between 1 and 604800")
+    if not isinstance(require_session_token, bool):
+        raise TypeError("require_session_token must be a boolean")
     if profile not in ("experimental-v1", "formal-v1"):
         raise ValueError("profile must be 'experimental-v1' or 'formal-v1'")
     if profile != "formal-v1" and max_archive_bytes != 0:
@@ -152,47 +162,52 @@ def compaction_start_session(
     resolved_wal_path = _resolve_wal_path(wal_path)
     if resume_wal and resolved_wal_path is None:
         raise ValueError("resume_wal=true requires wal_path")
+    if resume_wal and resolved_wal_path is not None and not Path(resolved_wal_path).is_file():
+        raise FileNotFoundError(f"compaction archive does not exist: {resolved_wal_path}")
+    if (
+        profile == "formal-v1"
+        and resolved_wal_path is not None
+        and Path(resolved_wal_path).exists()
+        and not resume_wal
+    ):
+        raise ValueError("formal archive already exists; set resume_wal=true or choose a new path")
+    if profile == "formal-v1":
+        session_config = CompactionConfig(
+            profile="formal-v1",
+            archive_path=resolved_wal_path,
+            keep_recent=keep_recent,
+            result_max_chars=result_max_chars,
+            summary_max_chars=summary_max_chars,
+            max_recall_units=max_recall_units,
+            max_archive_bytes=max_archive_bytes,
+            recalls_per_step=recall_per_step,
+        )
+    else:
+        session_config = ArcEngineConfig(
+            keep_recent=keep_recent,
+            result_max_chars=result_max_chars,
+            summary_max_chars=summary_max_chars,
+            recall_per_step=recall_per_step,
+            recall_budget_chars=recall_budget_chars,
+            recall_max_chars=recall_max_chars,
+            wal_path=resolved_wal_path,
+        )
     archive_lease = reserve_archive(resolved_wal_path)
     engine: Any = None
     try:
         if profile == "formal-v1":
-            if (
-                resolved_wal_path is not None
-                and Path(resolved_wal_path).exists()
-                and not resume_wal
-            ):
-                raise ValueError(
-                    "formal archive already exists; set resume_wal=true or choose a new path"
-                )
-            config = CompactionConfig(
-                profile="formal-v1",
-                archive_path=resolved_wal_path,
-                keep_recent=keep_recent,
-                result_max_chars=result_max_chars,
-                summary_max_chars=summary_max_chars,
-                max_recall_units=max_recall_units,
-                max_archive_bytes=max_archive_bytes,
-                recalls_per_step=recall_per_step,
-            )
-            engine = ManagedCompactionRunner(config)
+            assert isinstance(session_config, CompactionConfig)
+            engine = ManagedCompactionRunner(session_config)
             engine.attach_archive_lease(archive_lease)
             if resolved_wal_path is not None:
                 assert engine.archive is not None
                 engine.archive.bind_owner(tenant_id)
         else:
-            legacy_config = ArcEngineConfig(
-                keep_recent=keep_recent,
-                result_max_chars=result_max_chars,
-                summary_max_chars=summary_max_chars,
-                recall_per_step=recall_per_step,
-                recall_budget_chars=recall_budget_chars,
-                recall_max_chars=recall_max_chars,
-                wal_path=resolved_wal_path,
-            )
+            assert isinstance(session_config, ArcEngineConfig)
             engine = (
-                ManagedArcEngine.from_wal(resolved_wal_path, legacy_config)
+                ManagedArcEngine.from_wal(resolved_wal_path, session_config)
                 if resume_wal and resolved_wal_path is not None
-                else ManagedArcEngine(legacy_config)
+                else ManagedArcEngine(session_config)
             )
             engine.attach_archive_lease(archive_lease)
         handle = _REGISTRY.create(
@@ -277,10 +292,14 @@ def compaction_record_observation(
         advance_step: Advance/reset the ARC response-step counter before
             recording.  Defaults to true for backward compatibility.
     """
-    if not isinstance(command, str):
-        raise ValueError("command must be a string")
-    if not isinstance(content, str):
-        raise ValueError("content must be a string")
+    if not isinstance(command, str) or not command or len(command) > 16_384:
+        raise ValueError("command must be a non-empty string up to 16384 characters")
+    if not isinstance(content, str) or len(content) > 67_108_864:
+        raise ValueError("content must be a string up to 67108864 characters")
+    if source_key is not None and (
+        not isinstance(source_key, str) or not source_key or len(source_key) > 1024
+    ):
+        raise ValueError("source_key must be null or a non-empty string up to 1024 characters")
     if not isinstance(returncode, int) or isinstance(returncode, bool):
         raise ValueError("returncode must be an integer")
     if not isinstance(advance_step, bool):
@@ -355,7 +374,11 @@ def compaction_compact_messages(
     # The JSON schema is not enforced by the server; validate the shape
     # here (system boundary) so a malformed client payload gets a clear
     # error instead of an AttributeError from deep inside the compactor.
-    if not isinstance(messages, list) or not all(isinstance(m, dict) for m in messages):
+    if (
+        not isinstance(messages, list)
+        or len(messages) > 100_000
+        or not all(isinstance(m, dict) for m in messages)
+    ):
         raise ValueError("messages must be a list of objects ({role, content, ...})")
     for index, message in enumerate(messages):
         role = message.get("role")
@@ -409,8 +432,8 @@ def compaction_handle_action(
         user-role observation) on success, or with ``error`` (feed back
         to the LLM) when the recall could not be served.
     """
-    if not isinstance(action, str):
-        raise ValueError("action must be a string")
+    if not isinstance(action, str) or len(action) > 512:
+        raise ValueError("action must be a string up to 512 characters")
     with _lease_engine(session_id, session_token, tenant_id) as engine:
         scratch: List[Dict[str, Any]] = []
         try:
@@ -470,8 +493,8 @@ def compaction_recall(
             field on every dynamically generated tool-call model —
             crash if a tool parameter is literally named ``kind``.)
     """
-    if not isinstance(obs_id, str) or not obs_id:
-        raise ValueError("obs_id must be a non-empty string")
+    if not isinstance(obs_id, str) or not 4 <= len(obs_id) <= 128:
+        raise ValueError("obs_id must be a string between 4 and 128 characters")
     if recall_kind not in ("full", "meta", "chunk", "range"):
         raise ValueError(
             'recall_kind must be "full", "meta", "chunk", or "range", ' f"got {recall_kind!r}"
@@ -533,8 +556,8 @@ def compaction_list_observations(
         raise ValueError("cursor must be a non-negative integer")
     if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100:
         raise ValueError("limit must be an integer between 1 and 100")
-    if query is not None and not isinstance(query, str):
-        raise ValueError("query must be a string or null")
+    if query is not None and (not isinstance(query, str) or len(query) > 200):
+        raise ValueError("query must be a string up to 200 characters or null")
     with _lease_engine(session_id, session_token, tenant_id) as engine:
         store = _store(engine)
         if isinstance(engine, CompactionRunner):
@@ -600,6 +623,8 @@ def compaction_verify_value(
     prefix: Optional[str] = None,
     session_token: Optional[str] = None,
     tenant_id: str = "default",
+    match_mode: str = "substring",
+    obs_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Anti-confabulation guard: did ``value`` appear in any observation?
 
@@ -615,22 +640,46 @@ def compaction_verify_value(
         prefix: Optional literal prefix that must immediately precede
             the value in the observation (e.g. ``"trace-key: "``),
             eliminating false-passes on coincidental substrings.
+        match_mode: ``"substring"`` for backward compatibility or
+            ``"exact_line"`` to reject partial-line coincidences.
+        obs_id: Optionally restrict verification to one recalled occurrence.
 
     Returns:
         ``seen`` plus, when False, the most recent ``candidate_obs_ids``
         the agent could recall to find the correct value.
     """
-    if not isinstance(value, str) or not value:
-        raise ValueError("value must be a non-empty string")
-    if prefix is not None and not isinstance(prefix, str):
-        raise ValueError("prefix must be a string or null")
+    if not isinstance(value, str) or not value or len(value) > 1_048_576:
+        raise ValueError("value must be a non-empty string up to 1048576 characters")
+    if prefix is not None and (not isinstance(prefix, str) or len(prefix) > 1_048_576):
+        raise ValueError("prefix must be a string up to 1048576 characters or null")
+    if match_mode not in {"substring", "exact_line"}:
+        raise ValueError("match_mode must be 'substring' or 'exact_line'")
+    if obs_id is not None and (not isinstance(obs_id, str) or not 4 <= len(obs_id) <= 128):
+        raise ValueError("obs_id must be a string between 4 and 128 characters or null")
+    phrase = (prefix or "") + value
+    if match_mode == "exact_line" and ("\n" in phrase or "\r" in phrase):
+        raise ValueError("exact_line verification requires a single-line prefix and value")
     with _lease_engine(session_id, session_token, tenant_id) as engine:
         store = _store(engine)
-        if prefix:
+        if obs_id is not None:
+            record = store.get(obs_id)
+            if record is None:
+                raise ValueError(f"unknown observation id: §{obs_id}")
+            if match_mode == "exact_line":
+                seen = phrase in record.full_content.splitlines()
+            else:
+                seen = phrase in record.full_content
+        elif match_mode == "exact_line":
+            seen = store.contains_exact_line(phrase)
+        elif prefix:
             seen = store.contains_value_with_prefix(prefix, value)
         else:
             seen = store.contains_value(value)
-        out: Dict[str, Any] = {"seen": seen}
+        out: Dict[str, Any] = {
+            "seen": seen,
+            "match_mode": match_mode,
+            "obs_id": obs_id,
+        }
         if not seen:
             recent = (
                 store.recent_ids(5)
@@ -642,6 +691,7 @@ def compaction_verify_value(
                 f"The value {value!r} does not appear verbatim in any of the "
                 f"{store.n_records} stored observations"
                 + (f" (checked for the exact phrase {prefix!r} + value)" if prefix else "")
+                + (f" within §{obs_id}" if obs_id else "")
                 + ". Do not guess — recall the observation that contains the "
                 "answer and copy it exactly."
             )
@@ -688,6 +738,7 @@ def compaction_session_stats(
 
 _MESSAGES_SCHEMA = {
     "type": "array",
+    "maxItems": 100000,
     "description": (
         "Provider message/item list. Supports role/content messages, OpenAI Responses "
         "items, Anthropic content blocks, and optional _obs_id tags."
@@ -698,10 +749,14 @@ _MESSAGES_SCHEMA = {
 _SESSION_AUTH_PROPERTIES = {
     "session_token": {
         "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
         "description": "Opaque secret returned by compaction_start_session.",
     },
     "tenant_id": {
         "type": "string",
+        "minLength": 1,
+        "maxLength": 256,
         "default": "default",
         "description": "Tenant binding selected when the session was created.",
     },
@@ -792,6 +847,8 @@ _COMPACTION_OUTPUT_SCHEMAS: Dict[str, Dict[str, Any]] = {
         "required": ["seen"],
         "properties": {
             "seen": {"type": "boolean"},
+            "match_mode": {"type": "string"},
+            "obs_id": {"type": ["string", "null"]},
             "candidate_obs_ids": {"type": "array", "items": {"type": "string"}},
             "hint": {"type": "string"},
         },
@@ -823,8 +880,8 @@ def _session_required(require_session_token: bool, *names: str) -> list[str]:
 
 def build_compaction_tools(
     *,
-    require_session_token: bool = False,
-    profile: str = "experimental-v1",
+    require_session_token: bool = True,
+    profile: str = "formal-v1",
 ) -> List[ToolDefinition]:
     """Return the ARC compaction :class:`ToolDefinition` list."""
     if not isinstance(require_session_token, bool):
@@ -860,7 +917,7 @@ def build_compaction_tools(
                     "recall_per_step": {"type": "integer", "default": 2},
                     "recall_budget_chars": {"type": "integer", "default": 200000},
                     "recall_max_chars": {"type": "integer", "default": 0},
-                    "wal_path": {"type": "string"},
+                    "wal_path": {"type": "string", "maxLength": 4096},
                     "resume_wal": {"type": "boolean", "default": False},
                     "max_recall_units": {
                         "type": "integer",
@@ -893,7 +950,7 @@ def build_compaction_tools(
             input_schema={
                 "type": "object",
                 "properties": {
-                    "session_id": {"type": "string"},
+                    "session_id": {"type": "string", "minLength": 12, "maxLength": 12},
                     **_SESSION_AUTH_PROPERTIES,
                 },
                 "required": _session_required(require_session_token),
@@ -910,7 +967,7 @@ def build_compaction_tools(
             input_schema={
                 "type": "object",
                 "properties": {
-                    "session_id": {"type": "string"},
+                    "session_id": {"type": "string", "minLength": 12, "maxLength": 12},
                     **_SESSION_AUTH_PROPERTIES,
                 },
                 "required": _session_required(require_session_token),
@@ -927,13 +984,15 @@ def build_compaction_tools(
             input_schema={
                 "type": "object",
                 "properties": {
-                    "session_id": {"type": "string"},
-                    "command": {"type": "string"},
-                    "content": {"type": "string"},
+                    "session_id": {"type": "string", "minLength": 12, "maxLength": 12},
+                    "command": {"type": "string", "minLength": 1, "maxLength": 16384},
+                    "content": {"type": "string", "maxLength": 67108864},
                     "returncode": {"type": "integer", "default": 0},
                     "advance_step": {"type": "boolean", "default": True},
                     "source_key": {
                         "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1024,
                         "description": "Unique host tool-call/event identifier.",
                     },
                     **_SESSION_AUTH_PROPERTIES,
@@ -953,7 +1012,7 @@ def build_compaction_tools(
             input_schema={
                 "type": "object",
                 "properties": {
-                    "session_id": {"type": "string"},
+                    "session_id": {"type": "string", "minLength": 12, "maxLength": 12},
                     "messages": _MESSAGES_SCHEMA,
                     "max_chars": {"type": "integer", "default": 0},
                     **_SESSION_AUTH_PROPERTIES,
@@ -974,8 +1033,8 @@ def build_compaction_tools(
             input_schema={
                 "type": "object",
                 "properties": {
-                    "session_id": {"type": "string"},
-                    "action": {"type": "string"},
+                    "session_id": {"type": "string", "minLength": 12, "maxLength": 12},
+                    "action": {"type": "string", "maxLength": 512},
                     **_SESSION_AUTH_PROPERTIES,
                 },
                 "required": _session_required(require_session_token, "action"),
@@ -994,8 +1053,8 @@ def build_compaction_tools(
             input_schema={
                 "type": "object",
                 "properties": {
-                    "session_id": {"type": "string"},
-                    "obs_id": {"type": "string"},
+                    "session_id": {"type": "string", "minLength": 12, "maxLength": 12},
+                    "obs_id": {"type": "string", "minLength": 4, "maxLength": 128},
                     "recall_kind": {
                         "type": "string",
                         "enum": ["full", "meta", "chunk", "range"],
@@ -1020,7 +1079,7 @@ def build_compaction_tools(
             input_schema={
                 "type": "object",
                 "properties": {
-                    "session_id": {"type": "string"},
+                    "session_id": {"type": "string", "minLength": 12, "maxLength": 12},
                     "cursor": {"type": "integer", "minimum": 0, "default": 0},
                     "limit": {
                         "type": "integer",
@@ -1030,6 +1089,7 @@ def build_compaction_tools(
                     },
                     "query": {
                         "type": "string",
+                        "maxLength": 200,
                         "description": (
                             "Optional case-insensitive substring of the original "
                             "command/path used to find a bare or omitted handle."
@@ -1048,14 +1108,21 @@ def build_compaction_tools(
                 "about to submit appeared verbatim in some stored "
                 "observation. Returns seen=false with candidate obs_ids to "
                 "recall when it did not. Optionally require a literal "
-                "prefix (e.g. 'trace-key: ') to precede the value."
+                "prefix (e.g. 'trace-key: ') to precede the value, use an "
+                "exact-line match, or bind the claim to one observation ID."
             ),
             input_schema={
                 "type": "object",
                 "properties": {
-                    "session_id": {"type": "string"},
-                    "value": {"type": "string"},
-                    "prefix": {"type": "string"},
+                    "session_id": {"type": "string", "minLength": 12, "maxLength": 12},
+                    "value": {"type": "string", "maxLength": 1048576},
+                    "prefix": {"type": "string", "maxLength": 1048576},
+                    "match_mode": {
+                        "type": "string",
+                        "enum": ["substring", "exact_line"],
+                        "default": "substring",
+                    },
+                    "obs_id": {"type": "string", "minLength": 4, "maxLength": 128},
                     **_SESSION_AUTH_PROPERTIES,
                 },
                 "required": _session_required(require_session_token, "value"),
@@ -1071,7 +1138,7 @@ def build_compaction_tools(
             input_schema={
                 "type": "object",
                 "properties": {
-                    "session_id": {"type": "string"},
+                    "session_id": {"type": "string", "minLength": 12, "maxLength": 12},
                     **_SESSION_AUTH_PROPERTIES,
                 },
                 "required": _session_required(require_session_token),

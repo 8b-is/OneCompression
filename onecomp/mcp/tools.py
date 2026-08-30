@@ -556,8 +556,8 @@ def vllm_engine_args(model_dir: str, kv_cache_precision: str = "auto") -> Dict[s
 
 def build_tools(
     *,
-    require_session_token: bool = False,
-    compaction_profile: str = "experimental-v1",
+    require_session_token: bool = True,
+    compaction_profile: str = "formal-v1",
 ) -> List[ToolDefinition]:
     """Return the :class:`ToolDefinition` list served by the MCP server."""
     return [

@@ -99,6 +99,8 @@ class InvocationBudgetGuard:
         self._lock = threading.Lock()
         self._checked_requests = 0
         self._dispatched_requests = 0
+        self._dispatch_successes = 0
+        self._dispatch_failures = 0
         self._rejected_requests = 0
         self._last_checked_units: int | None = None
 
@@ -130,38 +132,70 @@ class InvocationBudgetGuard:
         self,
         provider_request: Any,
         invoke: Callable[[Any], ResultT],
+        *,
+        on_checked: Callable[[], None] | None = None,
     ) -> ResultT:
         """Check and synchronously invoke using the same request object."""
         if not callable(invoke):
             raise TypeError("invoke must be callable")
         if inspect.iscoroutinefunction(invoke):
             raise TypeError("invoke is asynchronous; use dispatch_async")
+        if on_checked is not None and not callable(on_checked):
+            raise TypeError("on_checked must be callable or None")
         self.check(provider_request)
+        if on_checked is not None:
+            on_checked()
         with self._lock:
             self._dispatched_requests += 1
-        result = invoke(provider_request)
-        if inspect.isawaitable(result):
-            close = getattr(result, "close", None)
-            if callable(close):
-                close()
-            raise TypeError("invoke returned an awaitable; use dispatch_async")
+        try:
+            result = invoke(provider_request)
+            if inspect.isawaitable(result):
+                close = getattr(result, "close", None)
+                if callable(close):
+                    close()
+                raise TypeError("invoke returned an awaitable; use dispatch_async")
+        # Provider cancellation and interrupts are failed dispatch attempts too.
+        except BaseException:
+            self._record_dispatch_outcome(succeeded=False)
+            raise
+        self._record_dispatch_outcome(succeeded=True)
         return result
 
     async def dispatch_async(
         self,
         provider_request: Any,
         invoke: Callable[[Any], Awaitable[ResultT]],
+        *,
+        on_checked: Callable[[], None] | None = None,
     ) -> ResultT:
         """Check and asynchronously invoke using the same request object."""
         if not callable(invoke):
             raise TypeError("invoke must be callable")
+        if on_checked is not None and not callable(on_checked):
+            raise TypeError("on_checked must be callable or None")
         self.check(provider_request)
+        if on_checked is not None:
+            on_checked()
         with self._lock:
             self._dispatched_requests += 1
-        result = invoke(provider_request)
-        if not inspect.isawaitable(result):
-            raise TypeError("invoke must return an awaitable")
-        return await result
+        try:
+            result = invoke(provider_request)
+            if not inspect.isawaitable(result):
+                raise TypeError("invoke must return an awaitable")
+            response = await result
+        # Preserve cancellation while keeping attempt telemetry truthful.
+        except BaseException:
+            self._record_dispatch_outcome(succeeded=False)
+            raise
+        self._record_dispatch_outcome(succeeded=True)
+        return response
+
+    def _record_dispatch_outcome(self, *, succeeded: bool) -> None:
+        with self._lock:
+            if succeeded:
+                self._dispatch_successes += 1
+            else:
+                self._dispatch_failures += 1
 
     def audit(self) -> InvocationAudit:
         """Return immutable coverage counters for diagnostics and tests."""
@@ -171,6 +205,8 @@ class InvocationBudgetGuard:
                 dispatched_requests=self._dispatched_requests,
                 rejected_requests=self._rejected_requests,
                 last_checked_units=self._last_checked_units,
+                dispatch_successes=self._dispatch_successes,
+                dispatch_failures=self._dispatch_failures,
             )
 
     def with_margin(self, serialization_margin: int) -> "InvocationBudgetGuard":

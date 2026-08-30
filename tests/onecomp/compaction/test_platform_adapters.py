@@ -89,7 +89,8 @@ def test_hook_commits_before_replacement_and_retries_idempotently(tmp_path, plat
         assert archive.n_records == 1
         record = archive.get(archive.known_ids()[0])
         assert record.full_content == payload["tool_response"]
-        assert record.source_key == f"{platform}:{payload['session_id']}:call-1"
+        assert record.source_key.startswith(f"hook:{platform}:")
+        assert len(record.source_key) < 128
 
 
 def test_hook_keeps_identical_bodies_as_distinct_host_occurrences(tmp_path):

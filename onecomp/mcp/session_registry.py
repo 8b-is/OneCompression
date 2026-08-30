@@ -72,9 +72,9 @@ class SessionRegistry(Generic[ResourceT]):
         if not isinstance(require_token, bool):
             raise TypeError("require_token must be a boolean")
         raw_token = secrets.token_urlsafe(32)
+        self.cleanup_expired()
         now = time.monotonic()
         with self._lock:
-            self._close_expired_locked(now)
             if len(self.resources) >= self.max_sessions:
                 raise ValueError(
                     f"Session limit reached ({self.max_sessions}). Close an unused session."
@@ -150,9 +150,9 @@ class SessionRegistry(Generic[ResourceT]):
             resource = self.resources.get(session_id)
             self._authorize(metadata, session_token, tenant_id)
             assert metadata is not None and resource is not None
-            metadata.lock.acquire()
             del self._metadata[session_id]
             del self.resources[session_id]
+        metadata.lock.acquire()
         try:
             _close_resource(resource)
         finally:
@@ -161,13 +161,14 @@ class SessionRegistry(Generic[ResourceT]):
 
     def close_all(self) -> None:
         with self._lock:
-            session_ids = list(self.resources)
-        for session_id in session_ids:
-            self._close_unchecked(session_id)
+            detached = self._detach_all_locked()
+        self._close_detached(detached)
 
     def cleanup_expired(self) -> int:
         with self._lock:
-            return self._close_expired_locked(time.monotonic())
+            detached = self._detach_expired_locked(time.monotonic())
+        self._close_detached(detached)
+        return len(detached)
 
     def _acquire(
         self,
@@ -178,17 +179,24 @@ class SessionRegistry(Generic[ResourceT]):
     ) -> tuple[_SessionMetadata, ResourceT]:
         _validate_session_id(session_id)
         _validate_tenant(tenant_id)
-        now = time.monotonic()
+        self.cleanup_expired()
         with self._lock:
-            self._close_expired_locked(now)
             metadata = self._metadata.get(session_id)
             resource = self.resources.get(session_id)
             self._authorize(metadata, session_token, tenant_id)
             assert metadata is not None and resource is not None
-            metadata.lock.acquire()
+        metadata.lock.acquire()
+        with self._lock:
+            if (
+                self._metadata.get(session_id) is not metadata
+                or self.resources.get(session_id) is not resource
+            ):
+                metadata.lock.release()
+                raise ValueError("Unknown session_id or invalid session credentials")
+            now = time.monotonic()
             metadata.last_access_monotonic = now
             metadata.expires_monotonic = now + metadata.ttl_seconds
-        return metadata, resource
+            return metadata, resource
 
     @staticmethod
     def _authorize(
@@ -203,30 +211,48 @@ class SessionRegistry(Generic[ResourceT]):
         if not valid:
             raise ValueError("Unknown session_id or invalid session credentials")
 
-    def _close_expired_locked(self, now: float) -> int:
-        expired = [
+    def _detach_expired_locked(
+        self,
+        now: float,
+    ) -> list[tuple[_SessionMetadata, ResourceT]]:
+        expired_ids = [
             session_id
             for session_id, metadata in self._metadata.items()
             if now >= metadata.expires_monotonic
         ]
-        for session_id in expired:
-            self._close_unchecked_locked(session_id)
-        return len(expired)
+        return self._detach_locked(expired_ids)
 
-    def _close_unchecked(self, session_id: str) -> None:
-        with self._lock:
-            self._close_unchecked_locked(session_id)
+    def _detach_all_locked(self) -> list[tuple[_SessionMetadata, ResourceT]]:
+        return self._detach_locked(list(self._metadata))
 
-    def _close_unchecked_locked(self, session_id: str) -> None:
-        metadata = self._metadata.pop(session_id, None)
-        resource = self.resources.pop(session_id, None)
-        if metadata is None or resource is None:
-            return
-        metadata.lock.acquire()
-        try:
-            _close_resource(resource)
-        finally:
-            metadata.lock.release()
+    def _detach_locked(
+        self,
+        session_ids: list[str],
+    ) -> list[tuple[_SessionMetadata, ResourceT]]:
+        detached: list[tuple[_SessionMetadata, ResourceT]] = []
+        for session_id in session_ids:
+            metadata = self._metadata.pop(session_id, None)
+            resource = self.resources.pop(session_id, None)
+            if metadata is not None and resource is not None:
+                detached.append((metadata, resource))
+        return detached
+
+    @staticmethod
+    def _close_detached(detached: list[tuple[_SessionMetadata, ResourceT]]) -> None:
+        first_error: BaseException | None = None
+        for metadata, resource in detached:
+            metadata.lock.acquire()
+            try:
+                _close_resource(resource)
+            # Deliberately include cancellation and interrupts: every detached
+            # resource must receive close before the first failure is re-raised.
+            except BaseException as exc:  # pylint: disable=broad-exception-caught
+                if first_error is None:
+                    first_error = exc
+            finally:
+                metadata.lock.release()
+        if first_error is not None:
+            raise first_error
 
 
 def _hash_token(token: str) -> str:

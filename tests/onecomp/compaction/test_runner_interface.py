@@ -1,6 +1,7 @@
 """OneComp-style compaction configuration and runner tests."""
 
 from pathlib import Path
+import threading
 
 import pytest
 
@@ -12,9 +13,23 @@ from onecomp.compaction import (
     RecallRequiresChunking,
     sanitize_messages,
 )
+
+
 from onecomp.compaction.formal import UnknownObservation
 from onecomp.compaction.runner import _message_chars
 from onecomp.compaction.adapters.messages import total_text_chars
+
+
+@pytest.mark.parametrize(
+    "field,pattern",
+    [
+        ("action_regex", r"```bash.*```"),
+        ("observation_regex", r"(<output>)(.*)</output>"),
+    ],
+)
+def test_config_requires_one_extractor_capture_group(field, pattern):
+    with pytest.raises(ValueError, match="exactly one capture group"):
+        CompactionConfig(**{field: pattern})
 
 
 def test_config_is_side_effect_free_serializable_and_has_explicit_profiles(tmp_path):
@@ -85,6 +100,52 @@ def test_formal_runner_records_occurrences_compacts_and_recovers_exactly(tmp_pat
 
     archive_path = Path(config.archive_path)
     assert archive_path.is_file()
+
+
+def test_formal_runner_requires_explicit_trust_for_non_verbatim_rendering(tmp_path):
+    with CompactionRunner(CompactionConfig.persistent(tmp_path / "run")) as runner:
+        record = runner.record_observation(command="tool", content="canonical")
+        with pytest.raises(ValueError, match="complete archived body"):
+            runner.make_observation_message(record, rendered="display-only")
+        message = runner.make_observation_message(
+            record,
+            rendered="display-only",
+            trusted_rendering=True,
+        )
+
+    assert message["_obs_id"] == record.obs_id
+    assert message["_arc_rendered_kind"] == "trusted_custom"
+
+
+def test_runner_close_waits_for_an_active_operation(tmp_path, monkeypatch):
+    runner = CompactionRunner(CompactionConfig.persistent(tmp_path / "run"))
+    assert runner.service is not None
+    entered = threading.Event()
+    release = threading.Event()
+    original = runner.service.record
+
+    def delayed_record(*args, **kwargs):
+        entered.set()
+        assert release.wait(timeout=5)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(runner.service, "record", delayed_record)
+    recorded = []
+    worker = threading.Thread(
+        target=lambda: recorded.append(runner.record_observation(command="tool", content="body"))
+    )
+    closer = threading.Thread(target=runner.close)
+    worker.start()
+    assert entered.wait(timeout=5)
+    closer.start()
+    assert closer.is_alive()
+    release.set()
+    worker.join(timeout=5)
+    closer.join(timeout=5)
+
+    assert recorded[0].full_content == "body"
+    with pytest.raises(RuntimeError, match="closed"):
+        runner.status()
 
 
 def test_runner_hard_recall_limit_requires_chunking(tmp_path):

@@ -19,6 +19,9 @@ def test_generated_plugin_uses_occurrence_identity_and_mutable_output(tmp_path):
     assert "catch (error)" in source
     assert "resultMaxChars = 321" in source
     assert "maxArchiveBytes = 4096" in source
+    assert "hookTimeoutMs = 30_000" in source
+    assert 'typeof output.output !== "string"' in source
+    assert "Array.isArray(output.context)" in source
     destination = write_plugin(tmp_path / "plugin" / "onecomp.ts")
     assert destination.is_file()
     assert not list(destination.parent.glob("*.tmp"))

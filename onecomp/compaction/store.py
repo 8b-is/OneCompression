@@ -22,7 +22,7 @@ even an evicted recall can be re-issued cheaply.
 
 *Write-ahead log (WAL).*  Pass ``wal_path`` to :meth:`__init__` to
 enable process-crash recovery. Each new record is appended as a JSON
-line after it is inserted into the in-memory dict; :meth:`from_wal`
+line before it is published in the in-memory dict; :meth:`from_wal`
 reconstructs a store from a previously written WAL (e.g. to resume an
 interrupted agent run). The compatibility WAL flushes Python buffers but
 does not ``fsync`` every record, so it does not claim power-loss durability.
@@ -40,6 +40,7 @@ import hashlib
 import json
 import logging
 import os
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Optional
@@ -80,9 +81,7 @@ def _mint_obs_id(cmd_signature: str, full_content: str, *, hex_chars: int = 8) -
     longer prefix.
     """
     digest = hashlib.sha1(
-        cmd_signature.encode("utf-8", errors="replace")
-        + b"\x1f"
-        + full_content.encode("utf-8", errors="replace"),
+        cmd_signature.encode("utf-8") + b"\x1f" + full_content.encode("utf-8"),
     ).hexdigest()
     return digest[:hex_chars]
 
@@ -100,8 +99,8 @@ class ObsStore:
             ``obs_id`` (4-40).
         wal_path: Optional path to a write-ahead log file.  When set,
             every new record is appended as a newline-delimited JSON
-            line immediately after being inserted into the in-memory
-            dict.  Call :meth:`close` (or use the store as a context
+            line before being published in the in-memory dict. Call
+            :meth:`close` (or use the store as a context
             manager) when the agent exits cleanly, and pass the same
             path to :meth:`from_wal` to reconstruct the store on resume.
     """
@@ -119,6 +118,7 @@ class ObsStore:
         self._obs_id_hex_chars = obs_id_hex_chars
         self._records: dict[str, ObsRecord] = {}
         self._by_signature: dict[str, list[str]] = {}
+        self._lock = threading.RLock()
         self._wal: Optional[IO[str]] = None
         if wal_path is not None:
             self._open_wal(wal_path)
@@ -145,15 +145,18 @@ class ObsStore:
 
     @property
     def n_records(self) -> int:
-        return len(self._records)
+        """Number of compatibility records currently held in memory."""
+        with self._lock:
+            return len(self._records)
 
     @property
     def max_created_step(self) -> int:
         """Greatest persisted creation step, or zero for an empty store."""
-        return max((record.created_step for record in self._records.values()), default=0)
+        with self._lock:
+            return max((record.created_step for record in self._records.values()), default=0)
 
     def __len__(self) -> int:
-        return len(self._records)
+        return self.n_records
 
     def __contains__(self, obs_id: str) -> bool:
         return self.has(obs_id)
@@ -171,14 +174,15 @@ class ObsStore:
         unaffected; the store remains usable after closing (no further
         WAL appends will occur).
         """
-        if self._wal is not None:
-            try:
-                self._wal.flush()
-                self._wal.close()
-            except OSError as exc:
-                logger.warning("ObsStore.close: error closing WAL: %s", exc)
-            finally:
-                self._wal = None
+        with self._lock:
+            if self._wal is not None:
+                try:
+                    self._wal.flush()
+                    self._wal.close()
+                except OSError as exc:
+                    logger.warning("ObsStore.close: error closing WAL: %s", exc)
+                finally:
+                    self._wal = None
 
     @classmethod
     def from_wal(
@@ -187,6 +191,7 @@ class ObsStore:
         *,
         obs_id_hex_chars: int = 8,
         new_wal_path: Optional[Path | str] = None,
+        allow_missing: bool = False,
     ) -> "ObsStore":
         """Reconstruct a store by replaying a write-ahead log.
 
@@ -201,13 +206,19 @@ class ObsStore:
             new_wal_path: If set, the reconstructed store appends new
                 records to this path (may equal ``wal_path`` to continue
                 the same file).
+            allow_missing: Return an empty store when ``wal_path`` does not
+                exist. The default fails closed to catch a mistyped resume path.
         """
         # Replay with WAL writes disabled.  Opening ``new_wal_path`` before
         # replay duplicates every recovered row when it equals ``wal_path``.
         # Attach the append target only after all historical rows are loaded.
+        if not isinstance(allow_missing, bool):
+            raise TypeError("allow_missing must be a boolean")
         store = cls(obs_id_hex_chars=obs_id_hex_chars)
         wal_path = Path(wal_path)
         if not wal_path.exists():
+            if not allow_missing:
+                raise FileNotFoundError(f"ObsStore WAL does not exist: {wal_path}")
             logger.info("ObsStore.from_wal: %s does not exist; returning empty store", wal_path)
             if new_wal_path is not None:
                 store._open_wal(new_wal_path)
@@ -215,8 +226,18 @@ class ObsStore:
         loaded = skipped = 0
         # Stream the replay so a large lossless store is not duplicated in one
         # giant ``read_text`` allocation before records are reconstructed.
-        with wal_path.open("r", encoding="utf-8", errors="replace") as source:
-            for lineno, line in enumerate(source, 1):
+        with wal_path.open("rb") as source:
+            for lineno, raw_line in enumerate(source, 1):
+                try:
+                    line = raw_line.decode("utf-8")
+                except UnicodeDecodeError as exc:
+                    logger.warning(
+                        "ObsStore.from_wal: line %d is not UTF-8 (skipped): %s",
+                        lineno,
+                        exc,
+                    )
+                    skipped += 1
+                    continue
                 line = line.strip()
                 if not line:
                     continue
@@ -231,12 +252,15 @@ class ObsStore:
                     skipped += 1
                     continue
                 try:
-                    store.put(
+                    if not isinstance(entry, dict):
+                        raise TypeError("entry must be a JSON object")
+                    store._put_unlocked(
                         cmd_signature=entry["cmd_signature"],
                         full_content=entry["full_content"],
-                        returncode=int(entry.get("returncode", 0) or 0),
-                        created_step=int(entry.get("created_step", 0) or 0),
-                        extra=entry.get("extra") or {},
+                        returncode=entry.get("returncode", 0),
+                        created_step=entry.get("created_step", 0),
+                        extra=entry.get("extra", {}),
+                        expected_obs_id=entry.get("obs_id"),
                     )
                     loaded += 1
                 except (KeyError, TypeError, ValueError, AttributeError) as exc:
@@ -252,7 +276,8 @@ class ObsStore:
         return store
 
     def has(self, obs_id: str) -> bool:
-        return obs_id is not None and obs_id.lower() in self._records
+        with self._lock:
+            return obs_id is not None and obs_id.lower() in self._records
 
     def get(self, obs_id: str) -> Optional[ObsRecord]:
         """Look up by ``obs_id``, case-insensitively.
@@ -263,11 +288,13 @@ class ObsStore:
         """
         if obs_id is None:
             return None
-        return self._records.get(obs_id.lower())
+        with self._lock:
+            return self._records.get(obs_id.lower())
 
     def known_ids(self) -> list[str]:
         """Canonical obs_ids currently in the store, in insertion order."""
-        return list(self._records.keys())
+        with self._lock:
+            return list(self._records.keys())
 
     def contains_value(self, value: str) -> bool:
         """True if any stored observation contains ``value`` verbatim.
@@ -279,7 +306,8 @@ class ObsStore:
         """
         if not value:
             return False
-        return any(value in rec.full_content for rec in self._records.values())
+        with self._lock:
+            return any(value in rec.full_content for rec in self._records.values())
 
     def contains_value_with_prefix(self, prefix: str, value: str) -> bool:
         """True only if ``prefix + value`` appears verbatim in any observation.
@@ -291,19 +319,30 @@ class ObsStore:
         if not prefix or not value:
             return False
         phrase = prefix + value
-        return any(phrase in rec.full_content for rec in self._records.values())
+        with self._lock:
+            return any(phrase in rec.full_content for rec in self._records.values())
+
+    def contains_exact_line(self, value: str) -> bool:
+        """True only when ``value`` is one complete logical output line."""
+        if not isinstance(value, str):
+            raise TypeError("value must be a string")
+        if not value or "\n" in value or "\r" in value:
+            return False
+        with self._lock:
+            return any(value in rec.full_content.splitlines() for rec in self._records.values())
 
     def find_records_containing(self, value: str, limit: int = 5) -> list[ObsRecord]:
         """Up to ``limit`` records whose ``full_content`` contains ``value``."""
         if not value:
             return []
-        out: list[ObsRecord] = []
-        for rec in self._records.values():
-            if value in rec.full_content:
-                out.append(rec)
-                if len(out) >= limit:
-                    break
-        return out
+        with self._lock:
+            out: list[ObsRecord] = []
+            for rec in self._records.values():
+                if value in rec.full_content:
+                    out.append(rec)
+                    if len(out) >= limit:
+                        break
+            return out
 
     def find_by_signature(self, cmd_signature: str) -> list[ObsRecord]:
         """All records produced by an equivalent command signature.
@@ -312,7 +351,8 @@ class ObsStore:
         command whose signature already produced a stored observation,
         the caller can opt to recall instead of re-execute.
         """
-        return [self._records[oid] for oid in self._by_signature.get(cmd_signature, [])]
+        with self._lock:
+            return [self._records[oid] for oid in self._by_signature.get(cmd_signature, [])]
 
     def put(
         self,
@@ -325,6 +365,30 @@ class ObsStore:
         tail_chars: int = 200,
         extra: Optional[dict] = None,
     ) -> ObsRecord:
+        """Atomically insert or return one compatibility observation."""
+        with self._lock:
+            return self._put_unlocked(
+                cmd_signature=cmd_signature,
+                full_content=full_content,
+                returncode=returncode,
+                created_step=created_step,
+                head_chars=head_chars,
+                tail_chars=tail_chars,
+                extra=extra,
+            )
+
+    def _put_unlocked(
+        self,
+        *,
+        cmd_signature: str,
+        full_content: str,
+        returncode: int = 0,
+        created_step: int = 0,
+        head_chars: int = 200,
+        tail_chars: int = 200,
+        extra: Optional[dict] = None,
+        expected_obs_id: Optional[str] = None,
+    ) -> ObsRecord:
         """Insert (or return the existing record for) an observation.
 
         Idempotent on identical ``(cmd_signature, full_content)``.  On a
@@ -335,6 +399,14 @@ class ObsStore:
             raise ValueError("cmd_signature must be a string")
         if not isinstance(full_content, str):
             raise ValueError("full_content must be a string")
+        for name, value in (
+            ("cmd_signature", cmd_signature),
+            ("full_content", full_content),
+        ):
+            try:
+                value.encode("utf-8")
+            except UnicodeEncodeError as exc:
+                raise ValueError(f"{name} must contain valid Unicode") from exc
         if not isinstance(returncode, int) or isinstance(returncode, bool):
             raise ValueError("returncode must be an integer")
         if not isinstance(created_step, int) or isinstance(created_step, bool) or created_step < 0:
@@ -346,14 +418,23 @@ class ObsStore:
             if not isinstance(extra, dict):
                 raise ValueError("extra must be a JSON-serialisable object or None")
             try:
-                json.dumps(extra, ensure_ascii=False)
-            except (TypeError, ValueError) as exc:
+                json.dumps(extra, ensure_ascii=False, allow_nan=False).encode("utf-8")
+            except (TypeError, ValueError, UnicodeEncodeError) as exc:
                 raise ValueError("extra must be JSON-serialisable") from exc
+        if expected_obs_id is not None and (
+            not isinstance(expected_obs_id, str)
+            or not self._obs_id_hex_chars <= len(expected_obs_id) <= 40
+            or any(character not in "0123456789abcdefABCDEF" for character in expected_obs_id)
+        ):
+            raise ValueError("stored obs_id is not a valid compatibility identifier")
+        expected_obs_id = expected_obs_id.lower() if expected_obs_id is not None else None
 
         obs_id = _mint_obs_id(cmd_signature, full_content, hex_chars=self._obs_id_hex_chars)
         if obs_id in self._records:
             existing = self._records[obs_id]
             if existing.cmd_signature == cmd_signature and existing.full_content == full_content:
+                if expected_obs_id is not None and expected_obs_id != existing.obs_id:
+                    raise ValueError("stored obs_id does not match replayed observation")
                 return existing
             extended_len = self._obs_id_hex_chars
             while extended_len < 40:
@@ -370,12 +451,16 @@ class ObsStore:
                     existing.cmd_signature == cmd_signature
                     and existing.full_content == full_content
                 ):
+                    if expected_obs_id is not None and expected_obs_id != existing.obs_id:
+                        raise ValueError("stored obs_id does not match replayed observation")
                     return existing
             else:  # pragma: no cover - astronomically unlikely
                 raise RuntimeError("ObsStore: could not mint unique obs_id at 40 hex chars")
+        if expected_obs_id is not None and expected_obs_id != obs_id:
+            raise ValueError("stored obs_id does not match replayed observation")
 
         head = full_content[:head_chars]
-        tail = full_content[-tail_chars:] if len(full_content) > head_chars else ""
+        tail = full_content[-tail_chars:] if tail_chars and len(full_content) > head_chars else ""
         if full_content:
             line_count = full_content.count("\n") + (0 if full_content.endswith("\n") else 1)
         else:
@@ -392,16 +477,16 @@ class ObsStore:
             created_step=created_step,
             extra=dict(extra) if extra else {},
         )
+        self._wal_append(record)
         self._records[obs_id] = record
         self._by_signature.setdefault(cmd_signature, []).append(obs_id)
-        self._wal_append(record)
         return record
 
     def _wal_append(self, record: ObsRecord) -> None:
         """Append a single record to the WAL as one JSON line.
 
-        Called only for genuinely new records (not idempotent
-        re-stores).  A ``flush()`` is issued after every write so a
+        Called before publishing a genuinely new record to memory. A
+        ``flush()`` is issued after every write so a
         subsequent crash leaves all prior writes durable against Python
         crashes; ``fsync`` is deliberately omitted for throughput.
         """
@@ -415,32 +500,24 @@ class ObsStore:
             "created_step": record.created_step,
             "extra": record.extra,
         }
-        try:
-            self._wal.write(json.dumps(entry, ensure_ascii=False) + "\n")
-            self._wal.flush()
-        except OSError as exc:
-            logger.error(
-                "ObsStore._wal_append: failed to write WAL (obs_id=%s): %s — "
-                "in-memory store is intact but this record will be missing "
-                "from any WAL-based resume.",
-                record.obs_id,
-                exc,
-            )
+        self._wal.write(json.dumps(entry, ensure_ascii=False, allow_nan=False) + "\n")
+        self._wal.flush()
 
     def to_serializable(self) -> list[dict]:
         """JSON-friendly lossless snapshot (includes verbatim contents)."""
-        return [
-            {
-                "obs_id": r.obs_id,
-                "cmd_signature": r.cmd_signature,
-                "full_content": r.full_content,
-                "line_count": r.line_count,
-                "char_count": r.char_count,
-                "returncode": r.returncode,
-                "created_step": r.created_step,
-                "last_recalled": r.last_recalled,
-                "n_recalls": r.n_recalls,
-                "extra": r.extra,
-            }
-            for r in self._records.values()
-        ]
+        with self._lock:
+            return [
+                {
+                    "obs_id": record.obs_id,
+                    "cmd_signature": record.cmd_signature,
+                    "full_content": record.full_content,
+                    "line_count": record.line_count,
+                    "char_count": record.char_count,
+                    "returncode": record.returncode,
+                    "created_step": record.created_step,
+                    "last_recalled": record.last_recalled,
+                    "n_recalls": record.n_recalls,
+                    "extra": record.extra,
+                }
+                for record in self._records.values()
+            ]

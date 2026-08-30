@@ -81,7 +81,9 @@ def exact_text_chunks(
         one_units = _measure(measure, text[start:one_end])
         if one_units > max_units:
             raise ExactRecoveryError(
-                "one Unicode code point exceeds max_units; use token-ID chunks"
+                "one Unicode code point exceeds max_units under the configured counter; "
+                "text and range recall cannot satisfy this response envelope. Increase "
+                "the hard limit or use the host-level token-ID API with a reversible codec"
             )
 
         best_end = one_end

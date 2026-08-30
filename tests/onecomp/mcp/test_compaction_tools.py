@@ -1,7 +1,9 @@
 """Tests for onecomp.mcp.compaction_tools (ARC over MCP)."""
 
+import fcntl
 import io
 import json
+import os
 
 import pytest
 
@@ -116,6 +118,32 @@ def test_resume_wal_restores_observations_without_duplicate_rows(tmp_path, monke
 def test_resume_wal_requires_a_path():
     with pytest.raises(ValueError, match="requires wal_path"):
         ct.compaction_start_session(resume_wal=True)
+
+
+def test_formal_resume_requires_an_existing_archive_without_creating_one(tmp_path, monkeypatch):
+    monkeypatch.setenv("ONECOMP_MCP_WAL_ROOT", str(tmp_path))
+
+    with pytest.raises(FileNotFoundError, match="does not exist"):
+        ct.compaction_start_session(
+            profile="formal-v1",
+            wal_path="missing.sqlite3",
+            resume_wal=True,
+        )
+
+    assert not (tmp_path / "missing.sqlite3").exists()
+
+
+def test_session_identity_is_validated_before_archive_creation(tmp_path, monkeypatch):
+    monkeypatch.setenv("ONECOMP_MCP_WAL_ROOT", str(tmp_path))
+
+    with pytest.raises(ValueError, match="tenant_id"):
+        ct.compaction_start_session(
+            profile="formal-v1",
+            wal_path="must-not-exist.sqlite3",
+            tenant_id="x" * 257,
+        )
+
+    assert not (tmp_path / "must-not-exist.sqlite3").exists()
 
 
 def test_formal_profile_is_occurrence_addressed_bounded_and_resumable(tmp_path, monkeypatch):
@@ -235,6 +263,23 @@ def test_formal_wal_has_one_active_session_and_persistent_tenant_binding(tmp_pat
     )
 
 
+def test_persistent_session_rejects_archive_locked_by_another_process(tmp_path, monkeypatch):
+    monkeypatch.setenv("ONECOMP_MCP_WAL_ROOT", str(tmp_path))
+    lock_path = tmp_path / "external.sqlite3.onecomp.lock"
+    descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with pytest.raises(ValueError, match="another compaction process"):
+            ct.compaction_start_session(
+                profile="formal-v1",
+                wal_path="external.sqlite3",
+            )
+        assert not (tmp_path / "external.sqlite3").exists()
+    finally:
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        os.close(descriptor)
+
+
 def test_formal_tool_builder_forces_profile_and_session_auth():
     tools = {
         tool.name: tool
@@ -245,6 +290,24 @@ def test_formal_tool_builder_forces_profile_and_session_auth():
     assert started["auth_required"] is True
     assert "session_token" in tools["compaction_recall"].input_schema["required"]
     assert all(tool.output_schema is not None for tool in tools.values())
+
+
+def test_default_mcp_builder_is_formal_authenticated_and_bounded():
+    tools = {tool.name: tool for tool in build_compaction_tools()}
+    started = tools["compaction_start_session"].handler()
+    try:
+        assert started["profile"] == "formal-v1"
+        assert started["auth_required"] is True
+        recall_schema = tools["compaction_recall"].input_schema
+        assert "session_token" in recall_schema["required"]
+        assert recall_schema["properties"]["obs_id"]["maxLength"] == 128
+        list_schema = tools["compaction_list_observations"].input_schema
+        assert list_schema["properties"]["query"]["maxLength"] == 200
+    finally:
+        ct.compaction_close_session(
+            started["session_id"],
+            session_token=started["session_token"],
+        )
 
 
 def test_formal_mcp_native_chunk_and_range_recall():
@@ -433,7 +496,7 @@ def test_recall_kind_validation():
 
 def test_verify_value_guard():
     sid = _start()
-    ct.compaction_record_observation(
+    record = ct.compaction_record_observation(
         sid, command="cat log2", content="noise\ntrace-key: TR-REAL42\nnoise"
     )
     assert ct.compaction_verify_value(sid, "TR-REAL42")["seen"] is True
@@ -442,6 +505,19 @@ def test_verify_value_guard():
     assert missing["seen"] is False
     assert missing["candidate_obs_ids"]
     assert "Do not guess" in missing["hint"]
+    assert (
+        ct.compaction_verify_value(
+            sid,
+            "TR-REAL42",
+            prefix="trace-key: ",
+            match_mode="exact_line",
+            obs_id=record["obs_id"],
+        )["seen"]
+        is True
+    )
+    assert ct.compaction_verify_value(sid, "REAL", match_mode="exact_line")["seen"] is False
+    with pytest.raises(ValueError, match="match_mode"):
+        ct.compaction_verify_value(sid, "TR-REAL42", match_mode="regex")
 
 
 def test_recall_budget_enforced_across_calls_and_reset_by_step_boundary():
@@ -533,6 +609,7 @@ def test_end_to_end_over_jsonrpc_stdio():
 
     body = json.loads(responses[2]["result"]["content"][0]["text"])
     sid = body["session_id"]
+    token = body["session_token"]
 
     lines2 = [
         {
@@ -543,6 +620,7 @@ def test_end_to_end_over_jsonrpc_stdio():
                 "name": "compaction_record_observation",
                 "arguments": {
                     "session_id": sid,
+                    "session_token": token,
                     "command": "cat x",
                     "content": "NEEDLE=42\n" + "n\n" * 600,
                 },
@@ -560,7 +638,11 @@ def test_end_to_end_over_jsonrpc_stdio():
             "method": "tools/call",
             "params": {
                 "name": "compaction_recall",
-                "arguments": {"session_id": sid, "obs_id": rec["obs_id"]},
+                "arguments": {
+                    "session_id": sid,
+                    "session_token": token,
+                    "obs_id": rec["obs_id"],
+                },
             },
         },
     ]

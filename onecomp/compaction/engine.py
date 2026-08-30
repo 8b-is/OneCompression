@@ -88,6 +88,54 @@ PRIVATE_MESSAGE_KEYS = (
 )
 
 
+def build_observation_message(
+    record: object,
+    *,
+    rendered: Optional[str] = None,
+    role: str = "user",
+    trusted_rendering: bool = False,
+) -> dict:
+    """Build a tagged observation message without silently mislabelling a body.
+
+    A wrapper containing the complete archived body is safe by construction.
+    A different host rendering requires an explicit trust decision because the
+    compactor will later replace the visible text with a citation to ``record``.
+    The private rendering marker is stripped before provider dispatch.
+    """
+    full_content = getattr(record, "full_content", None)
+    obs_id = getattr(record, "obs_id", None)
+    if not isinstance(full_content, str) or not isinstance(obs_id, str) or not obs_id:
+        raise TypeError("record must expose string full_content and non-empty obs_id")
+    if not isinstance(role, str) or not role:
+        raise ValueError("role must be a non-empty string")
+    if not isinstance(trusted_rendering, bool):
+        raise TypeError("trusted_rendering must be a boolean")
+    if rendered is not None and not isinstance(rendered, str):
+        raise TypeError("rendered must be a string or None")
+    if rendered is None:
+        if trusted_rendering:
+            raise ValueError("trusted_rendering is only valid with a custom rendered value")
+        content = full_content
+        rendered_kind = "raw"
+    elif full_content in rendered:
+        content = rendered
+        rendered_kind = "verbatim_wrapper"
+    elif trusted_rendering:
+        content = rendered
+        rendered_kind = "trusted_custom"
+    else:
+        raise ValueError(
+            "rendered must contain the complete archived body; set "
+            "trusted_rendering=True only for an intentionally different host rendering"
+        )
+    return {
+        "role": role,
+        "content": content,
+        "_obs_id": obs_id,
+        "_arc_rendered_kind": rendered_kind,
+    }
+
+
 class RecallError(Exception):
     """A recall action could not be served (unknown id, malformed
     syntax, or per-step budget exhausted).
@@ -127,8 +175,8 @@ class ArcEngineConfig:
             the compaction summary.
         result_max_chars: Observations at most this long stay verbatim
             in the summary; longer ones become citations.
-        citation_head_chars: Head preview bytes per citation.
-        citation_tail_chars: Tail preview bytes per citation.
+        citation_head_chars: Head preview characters per citation.
+        citation_tail_chars: Tail preview characters per citation.
         summary_max_chars: Character cap on the compaction summary
             (``0`` = unbounded).  Bounds the compacted context to O(1)
             instead of O(n_observations) on long trajectories.
@@ -193,9 +241,11 @@ class ArcEngineConfig:
             if not isinstance(pattern, str):
                 raise ValueError(f"{name} must be a string")
             try:
-                re.compile(pattern)
+                compiled = re.compile(pattern)
             except re.error as exc:
                 raise ValueError(f"{name} is not a valid regular expression: {exc}") from exc
+            if compiled.groups != 1:
+                raise ValueError(f"{name} must contain exactly one capture group")
         if self.wal_path is not None:
             if not isinstance(self.wal_path, str):
                 raise ValueError("wal_path must be a string or None")
@@ -210,7 +260,15 @@ def sanitize_messages(messages: list[dict]) -> list[dict]:
     rejects fields other than ``role`` / ``content`` (the original list
     — including the tags the engine relies on — stays untouched).
     """
-    return [{k: v for k, v in msg.items() if k not in PRIVATE_MESSAGE_KEYS} for msg in messages]
+    return [
+        {
+            key: value
+            for key, value in message.items()
+            if key not in PRIVATE_MESSAGE_KEYS
+            and not (isinstance(key, str) and key.startswith("_arc_"))
+        }
+        for message in messages
+    ]
 
 
 class ArcEngine:
@@ -325,7 +383,12 @@ class ArcEngine:
         )
 
     def make_observation_message(
-        self, record: ObsRecord, *, rendered: Optional[str] = None, role: str = "user"
+        self,
+        record: ObsRecord,
+        *,
+        rendered: Optional[str] = None,
+        role: str = "user",
+        trusted_rendering: bool = False,
     ) -> dict:
         """Build the message dict for an observation, tagged with its id.
 
@@ -333,14 +396,17 @@ class ArcEngine:
             record: The store record from :meth:`record_observation`.
             rendered: The observation as the framework presents it to
                 the LLM (templated, wrapped, ...).  Defaults to the raw
-                stored content.
+                stored content. A wrapper must contain the complete body.
             role: Message role (default ``"user"``).
+            trusted_rendering: Allow an intentionally different host-visible
+                rendering. The archived body remains the recall source of truth.
         """
-        return {
-            "role": role,
-            "content": rendered if rendered is not None else record.full_content,
-            "_obs_id": record.obs_id,
-        }
+        return build_observation_message(
+            record,
+            rendered=rendered,
+            role=role,
+            trusted_rendering=trusted_rendering,
+        )
 
     def handle_action(self, action: str, messages: list[dict]) -> Optional[RecallOutcome]:
         """Intercept a recall action; return ``None`` for anything else.

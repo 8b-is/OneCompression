@@ -1,15 +1,19 @@
-"""Process-local leases for persistent MCP compaction archives.
+"""Process- and host-local leases for persistent MCP compaction archives.
 
 SQLite serializes writes, but two live agent sessions must not share one
 archive because their recall budgets and message histories are independent.
-This module owns that process-local exclusivity rule and releases a lease when
-the corresponding compaction resource closes.
+This module combines an in-process registry with a non-blocking OS file lock
+and releases both when the corresponding compaction resource closes.
 
 Copyright 2025-2026 Fujitsu Ltd.
 
 Author: Yuma Ichikawa
 """
 
+import errno
+import fcntl
+import os
+from pathlib import Path
 import threading
 from typing import Dict, Optional
 
@@ -20,10 +24,11 @@ _ACTIVE_ARCHIVES: Dict[str, "ArchiveLease"] = {}
 
 
 class ArchiveLease:
-    """One idempotently releasable in-process archive lease."""
+    """One idempotently releasable archive lease."""
 
-    def __init__(self, path: str) -> None:
+    def __init__(self, path: str, descriptor: int) -> None:
         self.path = path
+        self._descriptor = descriptor
         self._released = False
 
     def release(self) -> None:
@@ -33,6 +38,10 @@ class ArchiveLease:
                 return
             if _ACTIVE_ARCHIVES.get(self.path) is self:
                 del _ACTIVE_ARCHIVES[self.path]
+            try:
+                fcntl.flock(self._descriptor, fcntl.LOCK_UN)
+            finally:
+                os.close(self._descriptor)
             self._released = True
 
 
@@ -61,7 +70,7 @@ class ManagedArcEngine(_LeasedArchiveMixin, ArcEngine):
 
 
 def reserve_archive(path: Optional[str]) -> Optional[ArchiveLease]:
-    """Reserve ``path`` for one active MCP session in this process."""
+    """Reserve ``path`` for one active MCP session across local processes."""
     if path is None:
         return None
     with _ACTIVE_ARCHIVE_LOCK:
@@ -70,6 +79,23 @@ def reserve_archive(path: Optional[str]) -> Optional[ArchiveLease]:
                 "wal_path is already active in another compaction session; "
                 "close that session before resuming it"
             )
-        lease = ArchiveLease(path)
+        lock_path = Path(path + ".onecomp.lock")
+        lock_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        flags = os.O_CREAT | os.O_RDWR
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        descriptor = os.open(lock_path, flags, 0o600)
+        try:
+            os.fchmod(descriptor, 0o600)
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            os.close(descriptor)
+            if exc.errno in {errno.EACCES, errno.EAGAIN}:
+                raise ValueError(
+                    "wal_path is already active in another compaction process; "
+                    "close that session before resuming it"
+                ) from exc
+            raise
+        lease = ArchiveLease(path, descriptor)
         _ACTIVE_ARCHIVES[path] = lease
         return lease

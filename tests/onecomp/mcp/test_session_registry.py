@@ -104,3 +104,59 @@ def test_close_waits_for_active_lease():
     thread.join(timeout=1)
     assert close_finished.is_set()
     assert resource.closed
+
+
+def test_expiry_cleanup_does_not_hold_global_lock_while_waiting_for_a_lease(monkeypatch):
+    clock = [100.0]
+    monkeypatch.setattr(
+        "onecomp.mcp.session_registry.time.monotonic",
+        lambda: clock[0],
+    )
+    registry = SessionRegistry(max_sessions=2)
+    first = Resource()
+    handle = registry.create(first, ttl_seconds=5, require_token=False)
+    cleanup_finished = threading.Event()
+
+    with registry.lease(handle.session_id):
+        clock[0] = 106.0
+        cleanup = threading.Thread(
+            target=lambda: (registry.cleanup_expired(), cleanup_finished.set())
+        )
+        cleanup.start()
+        time.sleep(0.02)
+        assert not cleanup_finished.is_set()
+
+        second = Resource()
+        registry.create(second, ttl_seconds=5, require_token=False)
+        assert len(registry.resources) == 1
+
+    cleanup.join(timeout=1)
+    assert cleanup_finished.is_set()
+    assert first.closed
+
+
+def test_waiting_lease_refreshes_expiry_from_actual_acquisition_time(monkeypatch):
+    clock = [10.0]
+    monkeypatch.setattr(
+        "onecomp.mcp.session_registry.time.monotonic",
+        lambda: clock[0],
+    )
+    registry = SessionRegistry()
+    resource = Resource()
+    handle = registry.create(resource, ttl_seconds=5, require_token=False)
+    acquired = threading.Event()
+
+    def wait_for_resource():
+        with registry.lease(handle.session_id):
+            acquired.set()
+
+    with registry.lease(handle.session_id):
+        waiter = threading.Thread(target=wait_for_resource)
+        waiter.start()
+        time.sleep(0.02)
+        clock[0] = 100.0
+    waiter.join(timeout=1)
+    assert acquired.is_set()
+
+    clock[0] = 104.0
+    assert registry.cleanup_expired() == 0

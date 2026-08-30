@@ -34,7 +34,7 @@ from .errors import (
 from .ids import OccurrenceIdConfig, OccurrenceIdFactory
 from .models import ArchiveStats, CatalogPage, ObservationMetadata, ObservationRecord
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 _MAX_COMMAND_CHARS = 16_384
 _MAX_SOURCE_KEY_CHARS = 1_024
 _MAX_METADATA_BYTES = 65_536
@@ -126,6 +126,7 @@ class SQLiteObservationArchive:
             uri=read_only,
         )
         self._conn.row_factory = sqlite3.Row
+        self._conn.create_function("arc_casefold", 1, _sqlite_casefold, deterministic=True)
         self._block_index = SQLiteBodyBlockIndex(self._conn, verify=verify_on_read)
         try:
             self._conn.execute("PRAGMA foreign_keys = ON")
@@ -140,7 +141,13 @@ class SQLiteObservationArchive:
                 self.body_search_index_enabled = self._body_search_index_available()
             else:
                 if self.path != ":memory:":
-                    self._conn.execute("PRAGMA journal_mode = WAL")
+                    row = self._conn.execute("PRAGMA journal_mode = WAL").fetchone()
+                    actual_mode = "" if row is None else str(row[0]).casefold()
+                    if actual_mode != "wal":
+                        raise ArchiveConfigurationMismatch(
+                            "formal archive requires SQLite WAL journal mode; "
+                            f"storage returned {actual_mode or 'no mode'}"
+                        )
                     self._conn.execute(f"PRAGMA synchronous = {durability.upper()}")
                 self.id_config, self.max_archive_bytes = self._initialize(
                     id_config, max_archive_bytes
@@ -268,6 +275,7 @@ class SQLiteObservationArchive:
                     char_count INTEGER NOT NULL,
                     line_count INTEGER NOT NULL,
                     byte_count INTEGER NOT NULL,
+                    record_sha256 TEXT NOT NULL,
                     last_recalled INTEGER NOT NULL DEFAULT 0,
                     n_recalls INTEGER NOT NULL DEFAULT 0
                 )
@@ -319,12 +327,26 @@ class SQLiteObservationArchive:
         existing = self._meta_get("id_config")
         if existing is None:
             raise ArchiveConfigurationMismatch("formal archive identity metadata is missing")
+        config = OccurrenceIdConfig.from_dict(json.loads(existing))
         version = int(self._meta_get("schema_version") or "0")
+        if version == 1 and repair_missing:
+            self._upgrade_v1_integrity_metadata(config)
+            version = _SCHEMA_VERSION
         if version != _SCHEMA_VERSION:
             raise ArchiveConfigurationMismatch(
                 f"unsupported formal archive schema version {version}"
             )
-        config = OccurrenceIdConfig.from_dict(json.loads(existing))
+        columns = {
+            str(row["name"])
+            for row in self._conn.execute("PRAGMA table_info(observations)").fetchall()
+        }
+        if "record_sha256" not in columns:
+            raise ArchiveConfigurationMismatch("archive record integrity column is missing")
+        missing_digest = self._conn.execute(
+            "SELECT 1 FROM observations WHERE record_sha256 IS NULL LIMIT 1"
+        ).fetchone()
+        if missing_digest is not None:
+            raise ArchiveIntegrityError("archive record integrity metadata is incomplete")
         if requested_id is not None and requested_id != config:
             raise ArchiveConfigurationMismatch(
                 "existing archive ID configuration differs from the request"
@@ -334,26 +356,60 @@ class SQLiteObservationArchive:
             raise ArchiveConfigurationMismatch(
                 "existing archive byte quota differs from the request"
             )
-        if self._meta_get("next_sequence") is None:
-            if not repair_missing:
-                raise ArchiveConfigurationMismatch("formal archive sequence metadata is missing")
-            row = self._conn.execute(
-                "SELECT COALESCE(MAX(sequence), -1) + 1 AS value FROM observations"
-            ).fetchone()
-            self._meta_set("next_sequence", str(int(row["value"])))
-        if self._meta_get("body_bytes") is None:
-            if not repair_missing:
-                raise ArchiveConfigurationMismatch("formal archive size metadata is missing")
-            row = self._conn.execute(
-                "SELECT COALESCE(SUM(byte_count), 0) AS value FROM observations"
-            ).fetchone()
-            self._meta_set("body_bytes", str(int(row["value"])))
+        self._verify_archive_counters(repair_missing=repair_missing)
         return config, quota
 
-    def _body_search_index_available(self) -> bool:
+    def _upgrade_v1_integrity_metadata(self, config: OccurrenceIdConfig) -> None:
+        columns = {
+            str(row["name"])
+            for row in self._conn.execute("PRAGMA table_info(observations)").fetchall()
+        }
+        if "record_sha256" not in columns:
+            self._conn.execute("ALTER TABLE observations ADD COLUMN record_sha256 TEXT")
+        id_factory = OccurrenceIdFactory(config)
+        rows = self._conn.execute("SELECT * FROM observations ORDER BY sequence")
+        for row in rows:
+            _verify_v1_record(row, id_factory)
+            self._conn.execute(
+                "UPDATE observations SET record_sha256 = ? WHERE sequence = ?",
+                (_record_sha256_from_row(row), int(row["sequence"])),
+            )
+        self._meta_set("schema_version", str(_SCHEMA_VERSION))
+
+    def _verify_archive_counters(self, *, repair_missing: bool) -> None:
         row = self._conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' " "AND name = 'observation_body_fts'"
+            "SELECT COUNT(*) AS count, COALESCE(MAX(sequence), -1) + 1 AS next_sequence, "
+            "COALESCE(SUM(byte_count), 0) AS body_bytes FROM observations"
         ).fetchone()
+        actual_next = int(row["next_sequence"])
+        actual_bytes = int(row["body_bytes"])
+        if int(row["count"]) != actual_next:
+            raise ArchiveIntegrityError("formal archive occurrence sequence contains a gap")
+        for key, actual in (("next_sequence", actual_next), ("body_bytes", actual_bytes)):
+            stored = self._meta_get(key)
+            if stored is None:
+                if not repair_missing:
+                    raise ArchiveConfigurationMismatch(
+                        f"formal archive {key.replace('_', ' ')} metadata is missing"
+                    )
+                self._meta_set(key, str(actual))
+                continue
+            try:
+                parsed = int(stored)
+            except ValueError as exc:
+                raise ArchiveIntegrityError(
+                    f"formal archive {key.replace('_', ' ')} metadata is invalid"
+                ) from exc
+            if parsed != actual:
+                raise ArchiveIntegrityError(
+                    f"formal archive {key.replace('_', ' ')} metadata does not match records"
+                )
+
+    def _body_search_index_available(self) -> bool:
+        query = "SELECT 1 FROM sqlite_master " + (
+            "WHERE type = 'table' AND name = 'observation_body_fts'"
+        )
+        row = self._conn.execute(query).fetchone()
         return row is not None
 
     def _initialize_body_search_index(self) -> None:
@@ -486,13 +542,29 @@ class SQLiteObservationArchive:
                         f"used={used}, new={byte_count}, quota={self.max_archive_bytes}"
                     )
             obs_id = self.id_factory.mint(sequence, cmd_signature, full_content)
+            record_sha256 = _record_sha256(
+                sequence=sequence,
+                obs_id=obs_id,
+                source_key=source_key,
+                cmd_signature=cmd_signature,
+                returncode=returncode,
+                created_step=created_step,
+                extra_json=extra_json,
+                tags_json=tags_json,
+                created_ns=created_ns,
+                content_sha256=checksum,
+                char_count=char_count,
+                line_count=line_count,
+                byte_count=byte_count,
+            )
             self._conn.execute(
                 """
                 INSERT INTO observations(
                     sequence, obs_id, source_key, cmd_signature, full_content,
                     returncode, created_step, extra_json, tags_json, created_ns,
-                    content_sha256, char_count, line_count, byte_count
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    content_sha256, char_count, line_count, byte_count,
+                    record_sha256
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     sequence,
@@ -509,6 +581,7 @@ class SQLiteObservationArchive:
                     char_count,
                     line_count,
                     byte_count,
+                    record_sha256,
                 ),
             )
             self._meta_set("next_sequence", str(sequence + 1))
@@ -570,8 +643,12 @@ class SQLiteObservationArchive:
     def register_alias(self, alias: str, obs_id: str) -> None:
         """Register a legacy citation without changing the canonical ID."""
         self._require_writable()
-        if not isinstance(alias, str) or not alias or len(alias) > 128:
-            raise ValueError("alias must be a non-empty string up to 128 characters")
+        if (
+            not isinstance(alias, str)
+            or not 4 <= len(alias) <= 128
+            or any(character not in "0123456789abcdefABCDEF" for character in alias)
+        ):
+            raise ValueError("legacy alias must be 4-128 hexadecimal characters")
         alias = alias.lower()
         canonical = self._canonical_id(obs_id)
         with self._lock, self._transaction():
@@ -644,8 +721,9 @@ class SQLiteObservationArchive:
         with self._lock:
             row = self._conn.execute(
                 "SELECT sequence, obs_id, source_key, cmd_signature, returncode, "
-                "created_step, tags_json, created_ns, content_sha256, char_count, "
-                "line_count, byte_count FROM observations WHERE obs_id = ?",
+                "created_step, extra_json, tags_json, created_ns, content_sha256, "
+                "char_count, line_count, byte_count, record_sha256 "
+                "FROM observations WHERE obs_id = ?",
                 (canonical,),
             ).fetchone()
         if row is None:  # pragma: no cover - protected by canonical lookup
@@ -695,12 +773,15 @@ class SQLiteObservationArchive:
         with self._lock, self._read_snapshot():
             self._refresh_verification_cache()
             metadata = self._conn.execute(
-                "SELECT sequence, char_count, byte_count, content_sha256 "
+                "SELECT sequence, obs_id, source_key, cmd_signature, returncode, "
+                "created_step, extra_json, tags_json, created_ns, content_sha256, "
+                "char_count, line_count, byte_count, record_sha256 "
                 "FROM observations WHERE obs_id = ?",
                 (canonical,),
             ).fetchone()
             if metadata is None:  # pragma: no cover - canonical lookup guards this
                 raise UnknownObservation(f"unknown observation id: §{obs_id}")
+            self._verify_metadata_row(metadata)
             if end > int(metadata["char_count"]):
                 raise ValueError("range end exceeds observation length")
             if start == end:
@@ -760,9 +841,9 @@ class SQLiteObservationArchive:
         params: list[object] = [cursor]
         if query:
             conditions.append(
-                "(instr(lower(cmd_signature), lower(?)) > 0 "
-                "OR instr(lower(obs_id), lower(?)) > 0 "
-                "OR instr(lower(tags_json), lower(?)) > 0)"
+                "(instr(arc_casefold(cmd_signature), arc_casefold(?)) > 0 "
+                "OR instr(arc_casefold(obs_id), arc_casefold(?)) > 0 "
+                "OR instr(arc_casefold(tags_json), arc_casefold(?)) > 0)"
             )
             params.extend([query, query, query])
         if created_step is not None:
@@ -781,8 +862,8 @@ class SQLiteObservationArchive:
         params.append(limit + 1)
         sql = (
             "SELECT sequence, obs_id, source_key, cmd_signature, returncode, "
-            "created_step, tags_json, created_ns, content_sha256, char_count, "
-            "line_count, byte_count FROM observations WHERE "
+            "created_step, extra_json, tags_json, created_ns, content_sha256, "
+            "char_count, line_count, byte_count, record_sha256 FROM observations WHERE "
             + " AND ".join(conditions)
             + " ORDER BY sequence LIMIT ?"
         )
@@ -821,9 +902,9 @@ class SQLiteObservationArchive:
             params.append(before_sequence)
         if query:
             conditions.append(
-                "(instr(lower(cmd_signature), lower(?)) > 0 "
-                "OR instr(lower(obs_id), lower(?)) > 0 "
-                "OR instr(lower(tags_json), lower(?)) > 0)"
+                "(instr(arc_casefold(cmd_signature), arc_casefold(?)) > 0 "
+                "OR instr(arc_casefold(obs_id), arc_casefold(?)) > 0 "
+                "OR instr(arc_casefold(tags_json), arc_casefold(?)) > 0)"
             )
             params.extend([query, query, query])
         where = " WHERE " + " AND ".join(conditions) if conditions else ""
@@ -831,8 +912,8 @@ class SQLiteObservationArchive:
         with self._lock:
             rows = self._conn.execute(
                 "SELECT sequence, obs_id, source_key, cmd_signature, returncode, "
-                "created_step, tags_json, created_ns, content_sha256, char_count, "
-                f"line_count, byte_count FROM observations{where} "
+                "created_step, extra_json, tags_json, created_ns, content_sha256, "
+                f"char_count, line_count, byte_count, record_sha256 FROM observations{where} "
                 "ORDER BY sequence DESC LIMIT ?",
                 params,
             ).fetchall()
@@ -871,9 +952,9 @@ class SQLiteObservationArchive:
         if query:
             sql = (
                 "SELECT COUNT(*) AS value FROM observations WHERE "
-                "instr(lower(cmd_signature), lower(?)) > 0 "
-                "OR instr(lower(obs_id), lower(?)) > 0 "
-                "OR instr(lower(tags_json), lower(?)) > 0"
+                "instr(arc_casefold(cmd_signature), arc_casefold(?)) > 0 "
+                "OR instr(arc_casefold(obs_id), arc_casefold(?)) > 0 "
+                "OR instr(arc_casefold(tags_json), arc_casefold(?)) > 0"
             )
             params: tuple[object, ...] = (query, query, query)
         else:
@@ -911,6 +992,20 @@ class SQLiteObservationArchive:
         if not isinstance(prefix, str) or not isinstance(value, str):
             raise TypeError("prefix and value must be strings")
         return bool(prefix and value and self.contains_value(prefix + value))
+
+    def contains_exact_line(self, value: str) -> bool:
+        """Check a complete logical line, verifying every candidate record."""
+        if not isinstance(value, str):
+            raise TypeError("value must be a string")
+        if not value or "\n" in value or "\r" in value:
+            return False
+        with self._lock:
+            rows = self._find_containing_rows(value, limit=max(1, self.count))
+        for row in rows:
+            record = self._verified_record_from_row(row)
+            if value in record.full_content.splitlines():
+                return True
+        return False
 
     def find_records_containing(self, value: str, limit: int = 5) -> list[ObservationRecord]:
         """Return newest verified records containing a literal substring."""
@@ -1027,8 +1122,8 @@ class SQLiteObservationArchive:
             if include_bodies
             else (
                 "sequence, obs_id, source_key, cmd_signature, returncode, created_step, "
-                "tags_json, created_ns, content_sha256, char_count, "
-                "line_count, byte_count, last_recalled, n_recalls"
+                "extra_json, tags_json, created_ns, content_sha256, char_count, "
+                "line_count, byte_count, record_sha256, last_recalled, n_recalls"
             )
         )
         cursor = -1
@@ -1050,11 +1145,14 @@ class SQLiteObservationArchive:
             for row in rows:
                 if include_bodies:
                     self._verified_record_from_row(row)
+                else:
+                    self._verify_metadata_row(row)
                 item = dict(row)
                 item["tags"] = json.loads(item.pop("tags_json"))
                 if include_bodies:
                     item["extra"] = json.loads(item.pop("extra_json"))
                 else:
+                    item.pop("extra_json", None)
                     item["body_redacted"] = True
                     item["extra_redacted"] = True
                 yield item
@@ -1144,6 +1242,7 @@ class SQLiteObservationArchive:
         )
 
     def _verified_record_from_row(self, row: sqlite3.Row) -> ObservationRecord:
+        self._verify_metadata_row(row)
         record = self._record_from_row(row)
         if self.verify_on_read and not self._verify_record(record):
             raise ArchiveIntegrityError(f"integrity verification failed for §{record.obs_id}")
@@ -1183,8 +1282,20 @@ class SQLiteObservationArchive:
             n_recalls=int(row["n_recalls"]),
         )
 
-    @staticmethod
-    def _metadata_from_row(row: sqlite3.Row) -> ObservationMetadata:
+    def _verify_metadata_row(self, row: sqlite3.Row) -> None:
+        if not self.verify_on_read:
+            return
+        try:
+            stored = str(row["record_sha256"])
+        except (IndexError, KeyError) as exc:
+            raise ArchiveIntegrityError("archive record integrity metadata is missing") from exc
+        expected = _record_sha256_from_row(row)
+        if not hmac.compare_digest(stored, expected):
+            obs_id = str(row["obs_id"])
+            raise ArchiveIntegrityError(f"metadata integrity verification failed for §{obs_id}")
+
+    def _metadata_from_row(self, row: sqlite3.Row) -> ObservationMetadata:
+        self._verify_metadata_row(row)
         return ObservationMetadata(
             sequence=int(row["sequence"]),
             obs_id=str(row["obs_id"]),
@@ -1255,6 +1366,8 @@ def _validate_occurrence(
         )
     if not isinstance(full_content, str):
         raise TypeError("full_content must be a string")
+    _validate_unicode("cmd_signature", cmd_signature)
+    _validate_unicode("full_content", full_content)
     if source_key is not None and (
         not isinstance(source_key, str)
         or not source_key
@@ -1264,6 +1377,8 @@ def _validate_occurrence(
             f"source_key must be None or a non-empty string up to "
             f"{_MAX_SOURCE_KEY_CHARS} characters"
         )
+    if source_key is not None:
+        _validate_unicode("source_key", source_key)
     _validate_optional_int("returncode", returncode, non_negative=False)
     _validate_optional_int("created_step", created_step)
     if created_ns is not None:
@@ -1275,18 +1390,29 @@ def _validate_optional_int(name: str, value: object, *, non_negative: bool = Tru
         raise TypeError(f"{name} must be an integer")
     if non_negative and value < 0:
         raise ValueError(f"{name} must be non-negative")
+    if not -(1 << 63) <= value < (1 << 63):
+        raise ValueError(f"{name} must fit a signed 64-bit SQLite INTEGER")
+
+
+def _validate_unicode(name: str, value: str) -> None:
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise ValueError(f"{name} must contain valid Unicode") from exc
 
 
 def _json_object(name: str, value: Mapping[str, Any]) -> str:
     try:
-        return json.dumps(
+        encoded = json.dumps(
             dict(value),
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
             allow_nan=False,
         )
-    except (TypeError, ValueError) as exc:
+        encoded.encode("utf-8")
+        return encoded
+    except (TypeError, ValueError, UnicodeEncodeError) as exc:
         raise ValueError(f"{name} must be JSON-serializable") from exc
 
 
@@ -1296,6 +1422,8 @@ def _normalize_tags(tags: tuple[str, ...] | list[str]) -> tuple[str, ...]:
     ):
         raise ValueError(f"tags must be non-empty strings up to {_MAX_TAG_CHARS} characters")
     normalized = tuple(dict.fromkeys(tags))
+    for tag in normalized:
+        _validate_unicode("tag", tag)
     if len(normalized) > _MAX_TAGS:
         raise ValueError(f"at most {_MAX_TAGS} unique tags are allowed")
     return normalized
@@ -1316,6 +1444,91 @@ def _same_source_occurrence(
         and _json_object("extra", record.extra) == extra_json
         and record.tags == tags
     )
+
+
+def _record_sha256(
+    *,
+    sequence: int,
+    obs_id: str,
+    source_key: Optional[str],
+    cmd_signature: str,
+    returncode: int,
+    created_step: int,
+    extra_json: str,
+    tags_json: str,
+    created_ns: int,
+    content_sha256: str,
+    char_count: int,
+    line_count: int,
+    byte_count: int,
+) -> str:
+    payload = json.dumps(
+        [
+            sequence,
+            obs_id,
+            source_key,
+            cmd_signature,
+            returncode,
+            created_step,
+            extra_json,
+            tags_json,
+            created_ns,
+            content_sha256,
+            char_count,
+            line_count,
+            byte_count,
+        ],
+        ensure_ascii=False,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _record_sha256_from_row(row: sqlite3.Row) -> str:
+    return _record_sha256(
+        sequence=int(row["sequence"]),
+        obs_id=str(row["obs_id"]),
+        source_key=None if row["source_key"] is None else str(row["source_key"]),
+        cmd_signature=str(row["cmd_signature"]),
+        returncode=int(row["returncode"]),
+        created_step=int(row["created_step"]),
+        extra_json=str(row["extra_json"]),
+        tags_json=str(row["tags_json"]),
+        created_ns=int(row["created_ns"]),
+        content_sha256=str(row["content_sha256"]),
+        char_count=int(row["char_count"]),
+        line_count=int(row["line_count"]),
+        byte_count=int(row["byte_count"]),
+    )
+
+
+def _verify_v1_record(row: sqlite3.Row, id_factory: OccurrenceIdFactory) -> None:
+    """Validate legacy immutable fields before creating a v2 metadata digest."""
+    content = str(row["full_content"])
+    content_bytes = content.encode("utf-8")
+    expected_lines = (
+        0 if not content else content.count("\n") + (0 if content.endswith("\n") else 1)
+    )
+    obs_id = str(row["obs_id"])
+    try:
+        sequence_matches = id_factory.sequence_from_id(obs_id) == int(row["sequence"])
+    except ValueError:
+        sequence_matches = False
+    if not (
+        hmac.compare_digest(
+            str(row["content_sha256"]),
+            hashlib.sha256(content_bytes).hexdigest(),
+        )
+        and sequence_matches
+        and id_factory.verify(obs_id, str(row["cmd_signature"]), content)
+        and int(row["char_count"]) == len(content)
+        and int(row["byte_count"]) == len(content_bytes)
+        and int(row["line_count"]) == expected_lines
+    ):
+        raise ArchiveIntegrityError(f"v1 integrity verification failed for §{obs_id}")
+    _decode_extra(row["extra_json"])
+    _decode_tags(row["tags_json"])
 
 
 def _decode_extra(value: object) -> dict[str, Any]:
@@ -1346,3 +1559,7 @@ def _decode_tags(value: object) -> tuple[str, ...]:
 
 def _reject_json_constant(value: str) -> None:
     raise ValueError(f"non-standard JSON constant is not allowed: {value}")
+
+
+def _sqlite_casefold(value: object) -> str:
+    return str(value).casefold()

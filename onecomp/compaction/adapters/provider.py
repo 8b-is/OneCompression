@@ -56,6 +56,21 @@ class GuardedProviderAdapter:
         """Return an outbound copy while preserving the tagged source list."""
         if not isinstance(request, dict):
             raise TypeError("request must be a dictionary")
+        outbound, _source, _prepared = self._prepare_candidate(
+            request,
+            compact_to_chars=compact_to_chars,
+        )
+        return outbound
+
+    def _prepare_candidate(
+        self,
+        request: dict[str, Any],
+        *,
+        compact_to_chars: Optional[int],
+    ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+        """Build an isolated outbound request without committing source history."""
+        if not isinstance(request, dict):
+            raise TypeError("request must be a dictionary")
         source = request.get(self.message_field)
         if not isinstance(source, list) or not all(isinstance(item, dict) for item in source):
             raise ValueError(f"request[{self.message_field!r}] must be a list of objects")
@@ -63,21 +78,15 @@ class GuardedProviderAdapter:
             prepared = source
         else:
             prepared = self.runner.enforce_char_budget(source, compact_to_chars)
-            if prepared is not source:
-                # The host-visible transcript must actually forget the replaced
-                # items. Mutate the owned list only after successful compaction.
-                source[:] = prepared
-                prepared = source
-        # Copy the request exactly once. The previous implementation deep-copied
-        # the complete message payload and then immediately discarded that copy,
-        # doubling peak memory for image blocks and long tool observations.
-        outbound = deepcopy(request)
+        # Keep opaque request fields by reference and copy only the mutable
+        # transcript. This avoids duplicating unrelated image/tool-schema
+        # payloads while still isolating provider-side message mutation.
+        outbound = dict(request)
+        outbound_messages = deepcopy(prepared)
         outbound[self.message_field] = (
-            sanitize_messages(outbound[self.message_field])
-            if self.sanitize
-            else outbound[self.message_field]
+            sanitize_messages(outbound_messages) if self.sanitize else outbound_messages
         )
-        return outbound
+        return outbound, source, prepared
 
     def dispatch(
         self,
@@ -87,8 +96,14 @@ class GuardedProviderAdapter:
         compact_to_chars: Optional[int] = None,
     ) -> ResultT:
         """Prepare, count, and synchronously dispatch one final request."""
-        outbound = self.prepare_request(request, compact_to_chars=compact_to_chars)
-        return self.guard.dispatch(outbound, invoke)
+        outbound, source, prepared = self._prepare_candidate(
+            request,
+            compact_to_chars=compact_to_chars,
+        )
+        commit = (
+            (lambda: source.__setitem__(slice(None), prepared)) if prepared is not source else None
+        )
+        return self.guard.dispatch(outbound, invoke, on_checked=commit)
 
     async def dispatch_async(
         self,
@@ -98,8 +113,14 @@ class GuardedProviderAdapter:
         compact_to_chars: Optional[int] = None,
     ) -> ResultT:
         """Prepare, count, and asynchronously dispatch one final request."""
-        outbound = self.prepare_request(request, compact_to_chars=compact_to_chars)
-        return await self.guard.dispatch_async(outbound, invoke)
+        outbound, source, prepared = self._prepare_candidate(
+            request,
+            compact_to_chars=compact_to_chars,
+        )
+        commit = (
+            (lambda: source.__setitem__(slice(None), prepared)) if prepared is not source else None
+        )
+        return await self.guard.dispatch_async(outbound, invoke, on_checked=commit)
 
     def audit(self):
         """Return immutable provider-boundary coverage counters."""

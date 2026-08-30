@@ -1,5 +1,6 @@
 """Tests for onecomp.compaction.store."""
 
+import json
 import stat
 
 import pytest
@@ -146,8 +147,33 @@ def test_wal_resume_in_place_does_not_duplicate_replayed_rows(tmp_path):
 
 
 def test_from_wal_missing_file_returns_empty_store(tmp_path):
-    restored = ObsStore.from_wal(tmp_path / "never_written.wal")
+    with pytest.raises(FileNotFoundError):
+        ObsStore.from_wal(tmp_path / "never_written.wal")
+    restored = ObsStore.from_wal(tmp_path / "never_written.wal", allow_missing=True)
     assert restored.n_records == 0
+
+
+def test_wal_failure_does_not_publish_an_unrecoverable_memory_record():
+    class FailingWal:
+        def write(self, _value):
+            raise OSError("injected WAL failure")
+
+    store = ObsStore()
+    store._wal = FailingWal()
+    with pytest.raises(OSError, match="injected WAL failure"):
+        store.put(cmd_signature="cmd", full_content="body")
+    assert store.n_records == 0
+
+
+def test_zero_tail_preview_never_expands_to_the_complete_body():
+    record = ObsStore().put(
+        cmd_signature="cmd",
+        full_content="0123456789",
+        head_chars=3,
+        tail_chars=0,
+    )
+    assert record.head == "012"
+    assert record.tail == ""
 
 
 def test_obs_id_hex_chars_validation():
@@ -173,6 +199,38 @@ def test_collision_extended_id_remains_idempotent(monkeypatch):
     assert store.n_records == 2
 
 
+def test_wal_replay_rejects_coerced_types_mismatched_ids_and_invalid_utf8(tmp_path):
+    wal = tmp_path / "strict.jsonl"
+    valid = ObsStore().put(cmd_signature="valid", full_content="body")
+    rows = [
+        {
+            "obs_id": valid.obs_id,
+            "cmd_signature": "valid",
+            "full_content": "body",
+            "returncode": 0,
+            "created_step": 0,
+            "extra": {},
+        },
+        {
+            "obs_id": "deadbeef",
+            "cmd_signature": "wrong-id",
+            "full_content": "body",
+        },
+        {
+            "cmd_signature": "coerced",
+            "full_content": "body",
+            "returncode": "0",
+        },
+    ]
+    with wal.open("wb") as output:
+        for row in rows:
+            output.write((json.dumps(row) + "\n").encode())
+        output.write(b'{"cmd_signature":"bad-utf8","full_content":"\xff"}\n')
+
+    replayed = ObsStore.from_wal(wal)
+    assert replayed.known_ids() == [valid.obs_id]
+
+
 @pytest.mark.parametrize(
     "kwargs,match",
     [
@@ -180,6 +238,7 @@ def test_collision_extended_id_remains_idempotent(monkeypatch):
         ({"cmd_signature": "c", "full_content": None}, "full_content"),
         ({"cmd_signature": "c", "full_content": "x", "created_step": -1}, "created_step"),
         ({"cmd_signature": "c", "full_content": "x", "extra": {"bad": {1}}}, "JSON"),
+        ({"cmd_signature": "c", "full_content": "bad\ud800"}, "valid Unicode"),
     ],
 )
 def test_store_rejects_invalid_record_domains(kwargs, match):

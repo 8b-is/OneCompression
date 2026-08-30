@@ -82,6 +82,19 @@ def test_source_key_retry_compares_canonical_json_metadata(tmp_path):
             archive.append("cmd", "body", extra={"invalid": float("nan")})
 
 
+def test_returned_record_metadata_is_deeply_immutable(tmp_path):
+    source = {"nested": {"values": [1, 2]}}
+    with SQLiteObservationArchive(tmp_path / "formal.db") as archive:
+        record = archive.append("cmd", "body", extra=source)
+        source["nested"]["values"].append(3)
+
+        assert record.extra["nested"]["values"] == (1, 2)
+        with pytest.raises(TypeError, match="immutable"):
+            record.extra["new"] = "value"
+        with pytest.raises(TypeError, match="immutable"):
+            record.extra["nested"]["new"] = "value"
+
+
 def test_transaction_rolls_back_body_and_sequence_on_metadata_failure(tmp_path, monkeypatch):
     with SQLiteObservationArchive(tmp_path / "formal.db") as archive:
         original = archive._meta_set
@@ -140,6 +153,24 @@ def test_archive_owner_binding_is_persistent_and_body_free(tmp_path):
     with SQLiteObservationArchive(path) as archive:
         with pytest.raises(ArchiveConfigurationMismatch, match="different owner"):
             archive.bind_owner("tenant-b")
+
+
+def test_legacy_aliases_match_the_model_recall_grammar(tmp_path):
+    with SQLiteObservationArchive(tmp_path / "formal.db") as archive:
+        record = archive.append("cmd", "body")
+        archive.register_alias("DEADBEEF", record.obs_id)
+        assert archive.get("deadbeef").obs_id == record.obs_id
+        for invalid in ("name", "123", "g123", "x" * 129):
+            with pytest.raises(ValueError, match="hexadecimal"):
+                archive.register_alias(invalid, record.obs_id)
+
+
+def test_exact_line_verification_rejects_partial_matches(tmp_path):
+    with SQLiteObservationArchive(tmp_path / "formal.db") as archive:
+        archive.append("cmd", "prefix token suffix\r\nexact-token\n")
+        assert archive.contains_value("token")
+        assert not archive.contains_exact_line("token")
+        assert archive.contains_exact_line("exact-token")
 
 
 def test_catalog_is_complete_body_free_filtered_and_cursor_stable(tmp_path):
@@ -201,6 +232,14 @@ def test_body_search_is_literal_exact_and_tracks_new_appends(tmp_path):
         assert [row.obs_id for row in archive.find_records_containing("search-marker")] == [
             latest.obs_id
         ]
+
+
+def test_catalog_query_uses_unicode_casefolding(tmp_path):
+    with SQLiteObservationArchive(tmp_path / "unicode-search.db") as archive:
+        record = archive.append("Prüfe Straße", "body", tags=("ÜBERBLICK",))
+
+        assert archive.catalog_page(query="STRASSE").items[0].obs_id == record.obs_id
+        assert archive.catalog_count(query="überblick") == 1
 
 
 def test_serializable_iterator_excludes_appends_past_its_high_watermark(tmp_path):
@@ -298,6 +337,79 @@ def test_read_verification_detects_body_tampering(tmp_path):
     with SQLiteObservationArchive(path) as archive:
         with pytest.raises(ArchiveIntegrityError):
             archive.get(record.obs_id)
+
+
+def test_metadata_reads_detect_record_metadata_tampering(tmp_path):
+    path = tmp_path / "metadata-tamper.db"
+    with SQLiteObservationArchive(path) as archive:
+        record = archive.append("trusted command", "trusted body", tags=("trusted",))
+
+    raw = sqlite3.connect(path)
+    raw.execute(
+        "UPDATE observations SET cmd_signature = ? WHERE obs_id = ?",
+        ("tampered command", record.obs_id),
+    )
+    raw.commit()
+    raw.close()
+
+    with SQLiteObservationArchive(path) as archive:
+        with pytest.raises(ArchiveIntegrityError, match="metadata integrity"):
+            archive.get_metadata(record.obs_id)
+        with pytest.raises(ArchiveIntegrityError, match="metadata integrity"):
+            archive.catalog_page()
+
+
+@pytest.mark.parametrize("key,value", [("next_sequence", "99"), ("body_bytes", "0")])
+def test_reopen_rejects_mismatched_archive_counters(tmp_path, key, value):
+    path = tmp_path / f"counter-{key}.db"
+    with SQLiteObservationArchive(path) as archive:
+        archive.append("cmd", "non-empty body")
+
+    raw = sqlite3.connect(path)
+    raw.execute("UPDATE arc_meta SET value = ? WHERE key = ?", (value, key))
+    raw.commit()
+    raw.close()
+
+    with pytest.raises(ArchiveIntegrityError, match="does not match records"):
+        SQLiteObservationArchive(path)
+
+
+def test_v1_archive_is_verified_before_integrity_metadata_upgrade(tmp_path):
+    path = tmp_path / "legacy-v1.db"
+    with SQLiteObservationArchive(path) as archive:
+        record = archive.append("cmd", "trusted body")
+
+    raw = sqlite3.connect(path)
+    raw.execute("UPDATE arc_meta SET value = '1' WHERE key = 'schema_version'")
+    raw.execute("ALTER TABLE observations DROP COLUMN record_sha256")
+    raw.commit()
+    raw.close()
+
+    with SQLiteObservationArchive(path) as archive:
+        assert archive.get(record.obs_id).full_content == "trusted body"
+
+    raw = sqlite3.connect(path)
+    version = raw.execute("SELECT value FROM arc_meta WHERE key = 'schema_version'").fetchone()[0]
+    columns = {row[1] for row in raw.execute("PRAGMA table_info(observations)")}
+    raw.close()
+    assert version == "2"
+    assert "record_sha256" in columns
+
+
+def test_v1_upgrade_does_not_launder_existing_body_corruption(tmp_path):
+    path = tmp_path / "corrupt-v1.db"
+    with SQLiteObservationArchive(path) as archive:
+        archive.append("cmd", "trusted body")
+
+    raw = sqlite3.connect(path)
+    raw.execute("UPDATE arc_meta SET value = '1' WHERE key = 'schema_version'")
+    raw.execute("ALTER TABLE observations DROP COLUMN record_sha256")
+    raw.execute("UPDATE observations SET full_content = 'tampered body'")
+    raw.commit()
+    raw.close()
+
+    with pytest.raises(ArchiveIntegrityError, match="v1 integrity"):
+        SQLiteObservationArchive(path)
 
 
 def test_every_body_returning_read_detects_tampering(tmp_path):
@@ -487,3 +599,22 @@ def test_occurrence_metadata_has_explicit_denial_of_service_bounds():
             archive.append("cmd", "body", tags=[f"tag-{index}" for index in range(65)])
         with pytest.raises(ValueError, match="65536"):
             archive.append("cmd", "body", extra={"payload": "x" * 70_000})
+        with pytest.raises(ValueError, match="valid Unicode"):
+            archive.append("cmd", "bad\ud800")
+        with pytest.raises(ValueError, match="JSON-serializable"):
+            archive.append("cmd", "body", extra={"invalid": "bad\ud800"})
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("returncode", 1 << 63),
+        ("returncode", -(1 << 63) - 1),
+        ("created_step", 1 << 63),
+        ("created_ns", 1 << 63),
+    ],
+)
+def test_occurrence_integers_fail_with_domain_error_before_sqlite(field, value):
+    with SQLiteObservationArchive() as archive:
+        with pytest.raises(ValueError, match="signed 64-bit"):
+            archive.append("cmd", "body", **{field: value})

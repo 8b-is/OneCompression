@@ -18,6 +18,7 @@ from onecomp.compaction.formal import (
     SQLiteObservationArchive,
     exact_text_chunks,
     exact_token_id_chunks,
+    looks_like_action_intent,
     parse_action,
     reconstruct_token_chunks,
     verify_text_chunks,
@@ -116,6 +117,9 @@ def test_strict_action_grammar_includes_discovery_metadata_chunk_and_range():
     ):
         with pytest.raises(InvalidAction):
             parse_action(invalid)
+    assert looks_like_action_intent(f"  _RECALL §{obs_id}")
+    with pytest.raises(InvalidAction):
+        parse_action(f"  _RECALL §{obs_id}")
 
 
 def test_execute_action_keeps_exact_body_separate_and_catalog_bounded(tmp_path):

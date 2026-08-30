@@ -221,7 +221,10 @@ def test_token_budget_search_reaches_minimum_summary_for_extreme_ratio():
     minimum_tokens = count_tokens(sanitize_messages(minimum))
     trimmed = engine.enforce_token_budget(messages, minimum_tokens, count_tokens)
     assert count_tokens(sanitize_messages(trimmed)) <= minimum_tokens
-    assert engine.compaction_log[-1]["summary_max_chars"] == 1
+    # Tiny caps produce an empty summary rather than a malformed header
+    # prefix. Several adjacent cap values therefore have the same minimum.
+    assert engine.compaction_log[-1]["summary_max_chars"] <= 256
+    assert minimum[2]["content"] == ""
 
 
 def test_recall_window_body_honours_configured_body_cap():
@@ -266,6 +269,29 @@ def test_sanitize_messages_strips_private_keys():
     assert all(set(m) <= {"role", "content"} for m in clean)
     # Originals keep their tags.
     assert any(m.get("_obs_id") for m in messages)
+
+
+def test_observation_message_rejects_mismatched_rendering_without_explicit_trust():
+    engine = ArcEngine()
+    record = engine.record_observation(command="cat result", content="archived body")
+
+    raw = engine.make_observation_message(record)
+    wrapped = engine.make_observation_message(
+        record,
+        rendered="<output>archived body</output>",
+    )
+    with pytest.raises(ValueError, match="complete archived body"):
+        engine.make_observation_message(record, rendered="different visible body")
+    custom = engine.make_observation_message(
+        record,
+        rendered="structured host result",
+        trusted_rendering=True,
+    )
+
+    assert raw["_arc_rendered_kind"] == "raw"
+    assert wrapped["_arc_rendered_kind"] == "verbatim_wrapper"
+    assert custom["_arc_rendered_kind"] == "trusted_custom"
+    assert "_arc_rendered_kind" not in sanitize_messages([custom])[0]
 
 
 def test_snapshot_and_wal_resume(tmp_path):

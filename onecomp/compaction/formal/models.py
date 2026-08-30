@@ -9,6 +9,31 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping, Optional, Tuple
 
 
+class _FrozenDict(dict):
+    """JSON-compatible mapping that rejects mutation after construction."""
+
+    @staticmethod
+    def _immutable(*_args: Any, **_kwargs: Any) -> None:
+        raise TypeError("formal ARC metadata is immutable")
+
+    __delitem__ = _immutable
+    __ior__ = _immutable
+    __setitem__ = _immutable
+    clear = _immutable
+    pop = _immutable
+    popitem = _immutable
+    setdefault = _immutable
+    update = _immutable
+
+
+def _freeze_json(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return _FrozenDict({key: _freeze_json(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_json(item) for item in value)
+    return value
+
+
 @dataclass(frozen=True)
 class ObservationRecord:
     """One exact tool-result occurrence."""
@@ -31,6 +56,9 @@ class ObservationRecord:
     tail: str = ""
     last_recalled: int = 0
     n_recalls: int = 0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "extra", _freeze_json(self.extra))
 
     @property
     def command_signature(self) -> str:
@@ -107,6 +135,9 @@ class BudgetSnapshot:
     serialization_margin: int = 0
     labels: Mapping[str, int] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "labels", _freeze_json(self.labels))
+
     @property
     def input_capacity(self) -> int:
         return self.context_window - self.completion_reserve
@@ -146,6 +177,8 @@ class InvocationAudit:
     dispatched_requests: int
     rejected_requests: int
     last_checked_units: Optional[int]
+    dispatch_successes: int = 0
+    dispatch_failures: int = 0
 
 
 @dataclass(frozen=True)
@@ -169,3 +202,6 @@ class ActionResponse:
     obs_id: Optional[str] = None
     exact: bool = False
     metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "metadata", _freeze_json(self.metadata))

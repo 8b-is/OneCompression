@@ -62,6 +62,25 @@
 - Made hook recall sandbox-safe by opening committed archives read-only and
   addressing the recall entry point through the hook's own Python environment
   instead of relying on the agent shell's `PATH`.
+- Added provenance-checked compaction summaries, mixed human/tool block
+  preservation, explicit untrusted-tool envelopes, metadata-wide archive
+  digests with verified v1-to-v2 migration, stable growing-WAL migration IDs,
+  Unicode-casefolded catalog search, and two-phase provider/session boundaries.
+- Made MCP builders default to authenticated `formal-v1` sessions, bounded
+  model-controlled string schemas and handlers, and timeout/type-safe generated
+  host plugins. The direct legacy session function retains explicit
+  compatibility defaults for staged migration.
+- Added validated observation renderings, signed SQLite integer bounds, WAL
+  mode verification, and cross-process leases for persistent MCP archives.
+- Preserved structured summary entries across re-compaction, made formal
+  response metadata deeply immutable, tightened compatibility WAL replay, and
+  added exact-line and observation-bound MCP evidence checks.
+- Rejected malformed Unicode in hook and OpenHands identities and bodies
+  instead of silently replacing it while deriving archive or occurrence IDs.
+- Isolated standalone commands in a POSIX process group so timeout cleanup also
+  terminates descendants that retain the captured output pipe.
+- Synchronized the `openhands` optional dependency into `uv.lock`, making its
+  documented installation extra reproducible with locked environments.
 
 ## [v1.1.1] 2026-05-21
 

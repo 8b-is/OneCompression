@@ -26,6 +26,7 @@ def migrate_experimental_wal(
     *,
     strict: bool = True,
     dry_run: bool = False,
+    migration_id: Optional[str] = None,
 ) -> MigrationReport:
     """Import every valid JSONL row and preserve old citations as aliases.
 
@@ -33,6 +34,8 @@ def migrate_experimental_wal(
     that was collapsed before WAL creation cannot be reconstructed. Distinct
     WAL rows are nevertheless retained as distinct formal occurrences. A
     deterministic source key makes interrupted imports safely resumable.
+    ``migration_id`` supplies a stable source identity when a WAL may move or
+    grow; otherwise a digest of its canonical path is used.
     """
     if not isinstance(archive, SQLiteObservationArchive):
         raise TypeError("archive must be a SQLiteObservationArchive")
@@ -41,8 +44,21 @@ def migrate_experimental_wal(
     source_path = Path(source).expanduser().resolve()
     if not source_path.is_file():
         raise FileNotFoundError(f"experimental WAL not found: {source_path}")
+    if migration_id is not None and (
+        not isinstance(migration_id, str)
+        or not migration_id
+        or len(migration_id) > 128
+        or any(
+            character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
+            for character in migration_id
+        )
+    ):
+        raise ValueError("migration_id must use 1-128 ASCII letters, digits, '.', '_', or '-'")
 
     source_digest = _file_sha256(source_path)
+    source_identity = (
+        migration_id or hashlib.sha256(str(source_path).encode("utf-8")).hexdigest()[:32]
+    )
     errors: list[str] = []
     skipped = 0
     if strict or dry_run:
@@ -98,7 +114,7 @@ def migrate_experimental_wal(
                 skipped += 1
                 continue
             assert row is not None
-            source_key = f"legacy-jsonl:{source_digest}:{line_number}"
+            source_key = f"legacy-jsonl:{source_identity}:{line_number}"
             try:
                 registered_alias: Optional[str] = None
                 # A nested savepoint makes lenient recovery truly row-local:
@@ -115,8 +131,9 @@ def migrate_experimental_wal(
                             **row["extra"],
                             "migration": {
                                 "format": "experimental-jsonl-v1",
-                                "source_sha256": source_digest,
+                                "source_identity": source_identity,
                                 "line": line_number,
+                                "row_sha256": _row_sha256(row),
                             },
                         },
                     )
@@ -198,7 +215,14 @@ def _validate_legacy_row(value: object) -> dict[str, Any]:
     if not isinstance(extra, Mapping):
         raise TypeError("extra must be a JSON object")
     try:
-        normalized_extra = json.loads(json.dumps(dict(extra), ensure_ascii=False, sort_keys=True))
+        normalized_extra = json.loads(
+            json.dumps(
+                dict(extra),
+                ensure_ascii=False,
+                sort_keys=True,
+                allow_nan=False,
+            )
+        )
     except (TypeError, ValueError) as exc:
         raise ValueError("extra must be JSON-serializable") from exc
     legacy_id = value.get("obs_id")
@@ -216,3 +240,14 @@ def _validate_legacy_row(value: object) -> dict[str, Any]:
         "created_step": created_step,
         "extra": normalized_extra,
     }
+
+
+def _row_sha256(row: Mapping[str, Any]) -> str:
+    canonical = json.dumps(
+        dict(row),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()

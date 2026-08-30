@@ -1,10 +1,14 @@
 """End-to-end standalone CLI checks."""
 
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
 import sys
+import time
+
+import pytest
 
 
 def _run(config: Path, *arguments: str, input_text: str | None = None):
@@ -265,6 +269,33 @@ def test_run_timeout_interrupts_a_silent_child(tmp_path):
     assert "timed out after 0.2s" in result.stderr
 
 
+@pytest.mark.skipif(os.name != "posix", reason="process-group isolation is POSIX-specific")
+def test_run_timeout_terminates_a_grandchild_holding_the_output_pipe(tmp_path):
+    config = tmp_path / "arc" / "config.json"
+    assert _run(config, "init").returncode == 0
+    spawn = (
+        "import subprocess, sys; "
+        "subprocess.Popen([sys.executable, '-c', "
+        "'import time; time.sleep(30)'])"
+    )
+
+    started = time.monotonic()
+    result = _run(
+        config,
+        "run",
+        "--timeout",
+        "0.2",
+        "--",
+        sys.executable,
+        "-c",
+        spawn,
+    )
+
+    assert result.returncode == 124
+    assert time.monotonic() - started < 5
+    assert "timed out after 0.2s" in result.stderr
+
+
 def test_config_option_is_accepted_after_subcommand_but_not_stolen_from_child(tmp_path):
     config = tmp_path / "arc" / "config.json"
     assert _run(config, "init").returncode == 0
@@ -294,3 +325,19 @@ def test_config_option_is_accepted_after_subcommand_but_not_stolen_from_child(tm
     )
     assert child.returncode == 0, child.stderr
     assert "child-value" in child.stdout
+
+
+def test_migrate_uses_stable_identity_for_a_growing_wal(tmp_path):
+    config = tmp_path / "arc" / "config.json"
+    wal = tmp_path / "growing.jsonl"
+    wal.write_text(json.dumps({"cmd_signature": "first", "full_content": "one"}) + "\n")
+    assert _run(config, "init").returncode == 0
+
+    first = _run(config, "migrate", wal, "--migration-id", "stable-run")
+    assert first.returncode == 0, first.stderr
+    with wal.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps({"cmd_signature": "second", "full_content": "two"}) + "\n")
+    second = _run(config, "migrate", wal, "--migration-id", "stable-run")
+
+    assert second.returncode == 0, second.stderr
+    assert json.loads(_run(config, "status").stdout)["archive"]["observations"] == 2

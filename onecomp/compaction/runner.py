@@ -6,6 +6,7 @@ Copyright 2025-2026 Fujitsu Ltd.
 from __future__ import annotations
 
 from collections import deque
+from functools import wraps
 from pathlib import Path
 import threading
 import time
@@ -13,7 +14,13 @@ from typing import Any, Callable, Optional
 
 from .compactor import compact_messages_arc
 from .config import CompactionConfig
-from .engine import ArcEngine, ArcEngineConfig, RecallOutcome, sanitize_messages
+from .engine import (
+    ArcEngine,
+    ArcEngineConfig,
+    RecallOutcome,
+    build_observation_message,
+    sanitize_messages,
+)
 from .formal import (
     ActionResponse,
     ArcCoreService,
@@ -30,6 +37,19 @@ from .formal import (
 from .formal.protocol import RecallMetadataAction
 from .protocol import normalise_cmd_signature
 from .adapters.messages import protected_prefix_count, recent_turn_start, total_text_chars
+
+
+def _runner_operation(method: Callable[..., Any]) -> Callable[..., Any]:
+    """Serialize one public operation against runner shutdown."""
+
+    @wraps(method)
+    def locked(self: "CompactionRunner", *args: Any, **kwargs: Any) -> Any:
+        # The decorator is the class's common lifecycle boundary.
+        with self._lock:  # pylint: disable=protected-access
+            self._require_open()  # pylint: disable=protected-access
+            return method(self, *args, **kwargs)
+
+    return locked
 
 
 class CompactionRunner:
@@ -119,6 +139,7 @@ class CompactionRunner:
         with self._lock:
             return tuple(dict(event) for event in self._events)
 
+    @_runner_operation
     def begin_step(self) -> int:
         """Advance the model-response step and reset the action allowance."""
         self._require_open()
@@ -129,12 +150,14 @@ class CompactionRunner:
             self._actions_in_step = 0
             return self._step
 
+    @_runner_operation
     def system_prompt_snippet(self) -> str:
         self._require_open()
         if self._engine is not None:
             return self._engine.system_prompt_snippet()
         return SYSTEM_PROMPT_FORMAL_RECALL
 
+    @_runner_operation
     def record_observation(
         self,
         *,
@@ -179,14 +202,17 @@ class CompactionRunner:
         *,
         rendered: Optional[str] = None,
         role: str = "user",
+        trusted_rendering: bool = False,
     ) -> dict[str, Any]:
-        """Build an ARC-tagged message accepted by the pure compactor."""
-        return {
-            "role": role,
-            "content": record.full_content if rendered is None else rendered,
-            "_obs_id": record.obs_id,
-        }
+        """Build a validated ARC-tagged message accepted by the compactor."""
+        return build_observation_message(
+            record,
+            rendered=rendered,
+            role=role,
+            trusted_rendering=trusted_rendering,
+        )
 
+    @_runner_operation
     def compact(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Compact old turns while preserving every tagged body in the archive."""
         self._require_open()
@@ -206,6 +232,7 @@ class CompactionRunner:
             )
         return compacted
 
+    @_runner_operation
     def enforce_char_budget(
         self,
         messages: list[dict[str, Any]],
@@ -232,16 +259,26 @@ class CompactionRunner:
                 "message history has no compactable turns and exceeds the character envelope"
             )
         fixed_chars = _message_chars([*messages[:prefix_count], *body[tail_start:]])
-        if fixed_chars + 1 > max_chars:
+        if fixed_chars > max_chars:
             raise BudgetExceeded(
                 "protected and recent message content exceeds the character envelope: "
-                f"minimum={fixed_chars + 1}, limit={max_chars}"
+                f"minimum={fixed_chars}, limit={max_chars}"
             )
-        summary_cap = max_chars - fixed_chars
+        summary_cap = max(1, max_chars - fixed_chars)
         if self.config.summary_max_chars:
             summary_cap = min(summary_cap, self.config.summary_max_chars)
-        compacted = compact_with_cap(summary_cap)
-        after_chars = _message_chars(compacted)
+        compacted: list[dict[str, Any]] = []
+        after_chars = _message_chars(messages)
+        # Mid-history developer/system updates retain their role outside the
+        # summary. Recompute the cap from the actual candidate so those fixed
+        # messages cannot make an otherwise feasible envelope fail.
+        for _attempt in range(4):
+            compacted = compact_with_cap(summary_cap)
+            after_chars = _message_chars(compacted)
+            if after_chars <= max_chars or summary_cap == 1:
+                break
+            overflow = after_chars - max_chars
+            summary_cap = max(1, summary_cap - overflow)
         if after_chars > max_chars:
             raise BudgetExceeded(
                 "formal compaction could not satisfy the character envelope: "
@@ -257,6 +294,7 @@ class CompactionRunner:
         )
         return compacted
 
+    @_runner_operation
     def enforce_token_budget(
         self,
         messages: list[dict[str, Any]],
@@ -367,6 +405,7 @@ class CompactionRunner:
             ),
         )
 
+    @_runner_operation
     def handle_action(
         self,
         action: str,
@@ -415,6 +454,7 @@ class CompactionRunner:
         )
         return response
 
+    @_runner_operation
     def find_prior_executions(self, command: str) -> list[Any]:
         """Find records with the complete normalized command signature."""
         signature = normalise_cmd_signature(command, max_chars=None)
@@ -423,6 +463,7 @@ class CompactionRunner:
         assert self.archive is not None
         return self.archive.find_by_signature(signature)
 
+    @_runner_operation
     def create_budget_guard(
         self,
         count_request: Callable[[Any], int],
@@ -437,6 +478,7 @@ class CompactionRunner:
             serialization_margin=self.config.serialization_margin,
         )
 
+    @_runner_operation
     def status(self) -> dict[str, Any]:
         """Return body-free runtime state suitable for CLI and analyzers."""
         self._require_open()

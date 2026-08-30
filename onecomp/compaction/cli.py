@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import queue
 import shlex
+import signal
 import subprocess
 import sys
 import tempfile
@@ -138,6 +139,10 @@ def _parser() -> argparse.ArgumentParser:
 
     migrate = subparsers.add_parser("migrate", help="import an experimental JSONL WAL")
     migrate.add_argument("source", type=Path)
+    migrate.add_argument(
+        "--migration-id",
+        help="stable identity for a WAL that may move or grow",
+    )
     migrate.add_argument("--dry-run", action="store_true")
     migrate.add_argument("--lenient", action="store_true")
     migrate.set_defaults(handler=_migrate)
@@ -415,6 +420,7 @@ def _migrate(args: argparse.Namespace) -> dict[str, Any]:
             runner.archive,
             strict=not args.lenient,
             dry_run=args.dry_run,
+            migration_id=args.migration_id,
         )
         return asdict(report)
 
@@ -612,6 +618,7 @@ def _capture_command(
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         bufsize=0,
+        start_new_session=os.name == "posix",
     )
     assert process.stdout is not None
     blocks: queue.Queue[bytes | None] = queue.Queue(maxsize=8)
@@ -624,7 +631,9 @@ def _capture_command(
                 if not block:
                     break
                 blocks.put(block)
-        except BaseException as exc:  # pragma: no cover - OS pipe failure
+        # The reader must always publish its sentinel, including interruption
+        # during interpreter shutdown; the main thread re-raises the failure.
+        except BaseException as exc:  # pylint: disable=broad-exception-caught
             read_errors.append(exc)
         finally:
             blocks.put(None)
@@ -644,9 +653,8 @@ def _capture_command(
             if deadline is not None:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    if process.poll() is None:
-                        process.kill()
-                        timed_out = True
+                    _terminate_command(process, graceful=True)
+                    timed_out = True
                     deadline = None
                 else:
                     wait = min(wait, remaining)
@@ -674,8 +682,7 @@ def _capture_command(
                 _copy_raw(capture)
                 oversized = True
     except BaseException:
-        if process.poll() is None:
-            process.kill()
+        _terminate_command(process, graceful=False)
         raise
     finally:
         process.wait()
@@ -684,6 +691,32 @@ def _capture_command(
     if read_errors:
         raise OSError(f"failed to read command output: {read_errors[0]}") from read_errors[0]
     return (124 if timed_out else int(process.returncode), timed_out, oversized)
+
+
+def _terminate_command(process: subprocess.Popen, *, graceful: bool) -> None:
+    """Terminate the isolated command process group without touching the host."""
+    if os.name != "posix":
+        if process.poll() is None:
+            process.terminate() if graceful else process.kill()
+        return
+    try:
+        os.killpg(process.pid, signal.SIGTERM if graceful else signal.SIGKILL)
+    except ProcessLookupError:
+        return
+    if not graceful:
+        return
+    try:
+        process.wait(timeout=0.5)
+    except subprocess.TimeoutExpired:
+        pass
+    # The direct child may have exited while a descendant still owns the
+    # capture pipe. Give the whole group a short grace period, then ensure no
+    # descendant can keep the reader alive indefinitely.
+    time.sleep(0.05)
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
 
 
 def _write_stderr_raw(value: bytes) -> None:

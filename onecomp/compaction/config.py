@@ -90,9 +90,11 @@ class CompactionConfig:
             if not isinstance(pattern, str):
                 raise TypeError(f"{name} must be a string")
             try:
-                re.compile(pattern)
+                compiled = re.compile(pattern)
             except re.error as exc:
                 raise ValueError(f"{name} is not a valid regular expression") from exc
+            if compiled.groups != 1:
+                raise ValueError(f"{name} must contain exactly one capture group")
         if self.context_window is None:
             if self.completion_reserve or self.serialization_margin:
                 raise ValueError(

@@ -16,7 +16,10 @@ from onecomp.compaction.adapters.openhands import (
     OpenHandsArcListTool,
     OpenHandsArcRecallAction,
     OpenHandsArcRecallTool,
+    _bounded_command,
+    _openhands_source_key,
 )
+import onecomp.compaction.adapters.openhands as openhands_adapter
 
 
 def _message_event(role: str, text: str) -> MessageEvent:
@@ -90,4 +93,38 @@ def test_openhands_index_is_newest_first_and_uses_stable_sequence_cursor():
         records[2].obs_id,
         records[1].obs_id,
     ]
+    condenser.close()
+
+
+@pytest.mark.parametrize("value", ["bad\ud800", "x" * 16_384 + "\ud800"])
+def test_openhands_identity_material_rejects_malformed_unicode(value):
+    with pytest.raises(ValueError, match="valid Unicode"):
+        _bounded_command(value)
+    with pytest.raises(ValueError, match="valid Unicode"):
+        _openhands_source_key(value)
+
+
+def test_openhands_rechecks_the_final_condensation_with_the_sdk_counter(monkeypatch):
+    events = [_message_event("user", "task"), _message_event("assistant", "answer")]
+    condenser = OpenHandsArcCondenser(
+        max_size=8,
+        keep_first=1,
+        max_tokens=1,
+    )
+    monkeypatch.setattr(
+        openhands_adapter,
+        "get_total_token_count",
+        lambda _events, _llm: 2,
+    )
+
+    with pytest.raises(
+        openhands_adapter.NoCondensationAvailableException,
+        match="exceeds max_tokens",
+    ):
+        condenser._build_condensation(  # pylint: disable=protected-access
+            View(events=events),
+            events,
+            0,
+            object(),
+        )
     condenser.close()

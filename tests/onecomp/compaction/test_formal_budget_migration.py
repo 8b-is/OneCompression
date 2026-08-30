@@ -46,6 +46,8 @@ def test_component_budget_rejects_hidden_or_overlapping_components():
                 labels={"baseline": 0},
             )
         )
+    with pytest.raises(TypeError, match="immutable"):
+        valid.labels["new"] = 1
 
 
 def test_guard_rejects_before_sync_dispatch_and_exposes_coverage():
@@ -72,6 +74,27 @@ def test_guard_rejects_before_sync_dispatch_and_exposes_coverage():
     assert guard.audit().checked_requests == 2
     assert guard.audit().dispatched_requests == 1
     assert guard.audit().rejected_requests == 1
+    assert guard.audit().dispatch_successes == 1
+    assert guard.audit().dispatch_failures == 0
+
+
+def test_guard_distinguishes_dispatch_attempts_from_provider_failures():
+    guard = InvocationBudgetGuard(
+        context_window=20,
+        completion_reserve=5,
+        count_request=lambda _request: 1,
+    )
+
+    def fail(_request):
+        raise RuntimeError("provider failed")
+
+    with pytest.raises(RuntimeError, match="provider failed"):
+        guard.dispatch({}, fail)
+
+    audit = guard.audit()
+    assert audit.dispatched_requests == 1
+    assert audit.dispatch_successes == 0
+    assert audit.dispatch_failures == 1
 
 
 def test_guard_rejects_before_async_dispatch():
@@ -133,6 +156,34 @@ def test_legacy_migration_preserves_old_citations_and_is_resumable(tmp_path, mon
         repeated = migrate_experimental_wal(wal, archive)
         assert repeated.loaded == 2
         assert archive.count == 2
+
+
+def test_migration_identity_survives_an_appended_source_file(tmp_path):
+    wal = tmp_path / "growing.jsonl"
+    first = {"cmd_signature": "first", "full_content": "one"}
+    second = {"cmd_signature": "second", "full_content": "two"}
+    wal.write_text(json.dumps(first) + "\n")
+
+    with SQLiteObservationArchive(tmp_path / "formal.db") as archive:
+        migrate_experimental_wal(wal, archive, migration_id="stable-run")
+        with wal.open("a") as stream:
+            stream.write(json.dumps(second) + "\n")
+        migrate_experimental_wal(wal, archive, migration_id="stable-run")
+
+        assert archive.count == 2
+        assert [record.cmd_signature for record in archive.catalog_page().items] == [
+            "first",
+            "second",
+        ]
+
+
+def test_migration_rejects_non_standard_json_numbers(tmp_path):
+    wal = tmp_path / "nan.jsonl"
+    wal.write_text('{"cmd_signature":"cmd","full_content":"body","extra":{"value":NaN}}\n')
+    with SQLiteObservationArchive(tmp_path / "formal.db") as archive:
+        with pytest.raises(LegacyMigrationError, match="JSON-serializable"):
+            migrate_experimental_wal(wal, archive)
+        assert archive.count == 0
 
 
 def test_migration_rolls_back_if_source_changes_between_validation_and_import(

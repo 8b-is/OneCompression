@@ -79,6 +79,37 @@ def test_oversized_final_serialization_never_reaches_provider():
         assert audit.rejected_requests == 1
 
 
+def test_rejected_compacted_candidate_does_not_mutate_source_history():
+    with _runner(result_max_chars=20, summary_max_chars=300) as runner:
+        messages = [
+            {"role": "system", "content": "system"},
+            {"role": "user", "content": "task"},
+        ]
+        for index in range(3):
+            record = runner.record_observation(
+                command=f"tool-{index}",
+                content="x" * 700,
+                source_key=f"source-{index}",
+            )
+            messages.extend(
+                [
+                    {"role": "assistant", "content": f"tool-{index}"},
+                    runner.make_observation_message(record),
+                ]
+            )
+        original = list(messages)
+        adapter = GuardedProviderAdapter(runner, lambda _request: 10_000)
+
+        with pytest.raises(BudgetExceeded):
+            adapter.dispatch(
+                {"messages": messages},
+                lambda _request: pytest.fail("provider must not run"),
+                compact_to_chars=900,
+            )
+
+        assert messages == original
+
+
 def test_async_dispatch_uses_the_same_guard():
     async def scenario():
         with _runner() as runner:
@@ -116,5 +147,8 @@ def test_prepare_request_deepcopies_large_payload_only_once(monkeypatch):
         source = {"messages": [{"role": "user", "content": [{"type": "text", "text": "payload"}]}]}
         outbound = adapter.prepare_request(source)
         assert calls == 1
+        opaque = object()
+        source["opaque"] = opaque
+        assert adapter.prepare_request(source)["opaque"] is opaque
         outbound["messages"][0]["content"][0]["text"] = "changed"
         assert source["messages"][0]["content"][0]["text"] == "payload"

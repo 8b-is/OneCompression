@@ -87,6 +87,46 @@ def test_hook_archives_long_output_when_host_command_is_empty(tmp_path):
         assert archive.get(archive.known_ids()[0]).cmd_signature.startswith("Bash(")
 
 
+def test_hook_rejects_non_json_values_before_replacing_output(tmp_path):
+    payload = {
+        "session_id": "non-json",
+        "tool_name": "ThirdParty",
+        "tool_input": {},
+        "tool_response": {"value": float("nan"), "padding": "x" * 1000},
+    }
+
+    with pytest.raises(ValueError, match="JSON-serializable"):
+        process_post_tool_use(payload, platform="codex", hook_root=tmp_path)
+
+    assert not list(tmp_path.glob("*.sqlite3"))
+
+
+def test_hook_rejects_malformed_unicode_in_identity_and_body(tmp_path):
+    with pytest.raises(ValueError, match="valid Unicode"):
+        process_post_tool_use(
+            {
+                "session_id": "bad\ud800",
+                "tool_name": "Read",
+                "tool_response": "x" * 1000,
+            },
+            platform="codex",
+            hook_root=tmp_path,
+        )
+
+    with pytest.raises(ValueError, match="valid Unicode"):
+        process_post_tool_use(
+            {
+                "session_id": "session",
+                "tool_name": "Read",
+                "tool_response": "bad\ud800" + "x" * 1000,
+            },
+            platform="codex",
+            hook_root=tmp_path,
+        )
+
+    assert not list(tmp_path.glob("*.sqlite3"))
+
+
 def test_hook_does_not_change_existing_root_permissions(tmp_path):
     root = tmp_path / "shared"
     root.mkdir()

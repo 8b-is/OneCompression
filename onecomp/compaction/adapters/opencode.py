@@ -41,6 +41,7 @@ def render_plugin(
 const pythonExecutable = {python_literal}
 const resultMaxChars = {result_max_chars}
 const maxArchiveBytes = {max_archive_bytes}
+const hookTimeoutMs = 30_000
 
 async function compact(payload: unknown): Promise<Record<string, unknown>> {{
   const process = Bun.spawn(
@@ -51,14 +52,25 @@ async function compact(payload: unknown): Promise<Record<string, unknown>> {{
   )
   process.stdin.write(JSON.stringify(payload))
   process.stdin.end()
-  const stdout = await new Response(process.stdout).text()
-  if ((await process.exited) !== 0) return {{}}
-  return JSON.parse(stdout) as Record<string, unknown>
+  let timedOut = false
+  const timeout = setTimeout(() => {{
+    timedOut = true
+    process.kill()
+  }}, hookTimeoutMs)
+  try {{
+    const stdout = await new Response(process.stdout).text()
+    if (timedOut || (await process.exited) !== 0) return {{}}
+    const decoded: unknown = JSON.parse(stdout)
+    if (decoded === null || Array.isArray(decoded) || typeof decoded !== "object") return {{}}
+    return decoded as Record<string, unknown>
+  }} finally {{
+    clearTimeout(timeout)
+  }}
 }}
 
 export const OneCompCompaction: Plugin = async () => ({{
   "tool.execute.after": async (input, output) => {{
-    if (output.output.length <= resultMaxChars) return
+    if (typeof output.output !== "string" || output.output.length <= resultMaxChars) return
     try {{
       const response = await compact({{
         session_id: input.sessionID,
@@ -75,6 +87,7 @@ export const OneCompCompaction: Plugin = async () => ({{
     }}
   }},
   "experimental.session.compacting": async (_input, output) => {{
+    if (!Array.isArray(output.context)) return
     output.context.push(
       "OneComp preserves large tool results under §<id>. Use the configured " +
       "onecomp-arc-recall command for exact bounded recovery; never guess from a preview.",

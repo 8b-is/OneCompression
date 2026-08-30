@@ -15,11 +15,11 @@ its original private history unchanged.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import re
 import threading
-import weakref
 from collections.abc import Sequence
 from typing import ClassVar, Literal, Optional
 from uuid import uuid4
@@ -52,16 +52,13 @@ except ImportError as exc:  # pragma: no cover - exercised only without the opti
     ) from exc
 
 from ..config import CompactionConfig
+from ..compactor import SUMMARY_HEADER
 from ..formal import FormalArcError
 from ..runner import CompactionRunner
 from .messages import message_role, message_text
 
-_RUNTIMES: weakref.WeakValueDictionary[str, "OpenHandsArcCondenser"] = (
-    weakref.WeakValueDictionary()
-)
-_RECALLED_ID_RE = re.compile(
-    r'<(?:recalled(?:_meta)?|observation_ref)\b[^>]*\b(?:obs_id|id)="§' + r'([0-9a-fA-F]{4,128})"'
-)
+_RUNTIMES: dict[str, "OpenHandsArcCondenser"] = {}
+_RUNTIMES_LOCK = threading.RLock()
 _TEXT_RECALL_HINT_RE = re.compile(
     r"\[to recall full output: issue `_recall §([0-9a-fA-F]{4,128})` "
     r"as your ONLY action — no output follows\]"
@@ -108,7 +105,11 @@ class OpenHandsArcCondenser(RollingCondenser):
             max_recall_units=self.recall_max_chars or 4096,
         )
         self._engine = CompactionRunner(config)
-        _RUNTIMES[self.runtime_id] = self
+        with _RUNTIMES_LOCK:
+            if self.runtime_id in _RUNTIMES:
+                self._engine.close()
+                raise ValueError(f"OpenHands ARC runtime_id is already active: {self.runtime_id}")
+            _RUNTIMES[self.runtime_id] = self
 
     @property
     def engine(self) -> CompactionRunner:
@@ -116,8 +117,11 @@ class OpenHandsArcCondenser(RollingCondenser):
         return self._engine
 
     def close(self) -> None:
-        self._engine.close()
-        _RUNTIMES.pop(self.runtime_id, None)
+        with _RUNTIMES_LOCK:
+            if _RUNTIMES.get(self.runtime_id) is self:
+                _RUNTIMES.pop(self.runtime_id, None)
+        with self._lock:
+            self._engine.close()
 
     def handles_condensation_requests(self) -> bool:
         return True
@@ -131,7 +135,7 @@ class OpenHandsArcCondenser(RollingCondenser):
             return super().condense(view, agent_llm=agent_llm)
 
     async def acondense(self, view: View, agent_llm: Optional[LLM] = None):
-        return self.condense(view, agent_llm=agent_llm)
+        return await asyncio.to_thread(self.condense, view, agent_llm)
 
     def condensation_requirement(
         self, view: View, agent_llm: Optional[LLM] = None
@@ -153,15 +157,14 @@ class OpenHandsArcCondenser(RollingCondenser):
             raise NoCondensationAvailableException(
                 "ARC condensation would make less than minimum_progress"
             )
-        return self._build_condensation(view, forgotten, offset)
+        return self._build_condensation(view, forgotten, offset, agent_llm)
 
     def hard_context_reset(
-        self, view: View, agent_llm: Optional[LLM] = None  # noqa: ARG002
+        self, view: View, agent_llm: Optional[LLM] = None
     ) -> Optional[Condensation]:
-        del agent_llm
         if not view.events:
             return None
-        return self._build_condensation(view, view.events, 0)
+        return self._build_condensation(view, view.events, 0, agent_llm)
 
     def recall(
         self,
@@ -255,28 +258,48 @@ class OpenHandsArcCondenser(RollingCondenser):
         return view[start:end], start
 
     def _build_condensation(
-        self, view: View, forgotten_events: Sequence, summary_offset: int
+        self,
+        view: View,
+        forgotten_events: Sequence,
+        summary_offset: int,
+        agent_llm: Optional[LLM] = None,
     ) -> Condensation:
+        event_ids = [str(getattr(event, "id", "")) for event in forgotten_events]
+        if any(not event_id for event_id in event_ids) or len(set(event_ids)) != len(event_ids):
+            raise NoCondensationAvailableException(
+                "ARC requires unique non-empty IDs for every forgotten event"
+            )
         by_id = {getattr(event, "id", ""): event for event in view.events}
         messages: list[dict] = [
             {"role": "system", "content": "OpenHands ARC condenser"},
             {"role": "user", "content": "Preserve the forgotten trajectory"},
         ]
+        converted_event_ids: set[str] = set()
         for event in forgotten_events:
             message = self._event_to_arc_message(event, by_id)
             if message is not None:
                 messages.append(message)
+                converted_event_ids.add(str(getattr(event, "id", "")))
 
-        if len(messages) == 2:
-            # An empty summary would claim successful condensation while
-            # silently deleting every forgotten event.  Let OpenHands choose
-            # another condenser/reset path instead.
+        forgotten_event_ids = set(event_ids)
+        if converted_event_ids != forgotten_event_ids:
+            missing = len(forgotten_event_ids - converted_event_ids)
             raise NoCondensationAvailableException(
-                "ARC could not convert any forgotten event to an LLM message"
+                f"ARC could not safely convert {missing} forgotten event(s)"
             )
 
         compacted = self._engine.compact(messages)
-        summary = compacted[2]["content"] if len(compacted) > 2 else ""
+        summary = next(
+            (
+                str(message.get("content", ""))
+                for message in compacted
+                if isinstance(message.get("content"), str)
+                and message["content"].startswith(SUMMARY_HEADER)
+            ),
+            "",
+        )
+        if not summary:
+            raise NoCondensationAvailableException("ARC did not produce a valid summary")
         summary = _TEXT_RECALL_HINT_RE.sub(
             lambda match: (
                 "[to recall full output: call the `arc_recall` tool with "
@@ -291,15 +314,20 @@ class OpenHandsArcCondenser(RollingCondenser):
             "Call arc_recall with full only when the item fits; otherwise use "
             "chunk or range. Call arc_list_observations to rediscover every occurrence.",
         )
-        digest = hashlib.sha1(
-            "\x1f".join(str(getattr(event, "id", "")) for event in forgotten_events).encode()
-        ).hexdigest()[:16]
-        return Condensation(
-            forgotten_event_ids={str(event.id) for event in forgotten_events},
+        digest = hashlib.sha1("\x1f".join(event_ids).encode()).hexdigest()[:16]
+        condensation = Condensation(
+            forgotten_event_ids=forgotten_event_ids,
             summary=summary,
             summary_offset=summary_offset,
             llm_response_id=f"arc-{digest}",
         )
+        if self.max_tokens is not None and agent_llm is not None:
+            final_events = condensation.apply(list(view.events))
+            if get_total_token_count(final_events, agent_llm) > self.max_tokens:
+                raise NoCondensationAvailableException(
+                    "ARC condensation still exceeds max_tokens after final SDK counting"
+                )
+        return condensation
 
     def _event_to_arc_message(self, event, by_id: dict[str, object]) -> Optional[dict]:
         try:
@@ -308,7 +336,9 @@ class OpenHandsArcCondenser(RollingCondenser):
             return None
         payload = llm_message.model_dump(mode="json", exclude_none=True)
         role = message_role(payload)
-        text = message_text(payload)
+        # Archival ingestion must not use the bounded summary projection.
+        # Store the complete SDK-visible observation before replacing it.
+        text = message_text(payload, max_chars=None)
         if not role:
             return None
 
@@ -319,11 +349,7 @@ class OpenHandsArcCondenser(RollingCondenser):
             return payload
 
         if role == "tool":
-            recalled = _RECALLED_ID_RE.search(text)
             assert self._engine.archive is not None
-            if recalled and self._engine.archive.has(recalled.group(1)):
-                payload["_obs_id"] = recalled.group(1).lower()
-                return payload
             parent = by_id.get(str(getattr(event, "action_id", "")))
             parent_action = getattr(parent, "action", parent)
             if isinstance(parent_action, OpenHandsArcRecallAction) and self._engine.archive.has(
@@ -334,19 +360,23 @@ class OpenHandsArcCondenser(RollingCondenser):
                 # each time a native recall result is later condensed.
                 payload["_obs_id"] = parent_action.obs_id.lower()
                 return payload
-            command = _event_command(parent) or str(getattr(event, "tool_name", "tool"))
+            command = _event_command(parent) or _bounded_command(
+                str(getattr(event, "tool_name", "tool"))
+            )
             observation = getattr(event, "observation", None)
             returncode = 1 if bool(getattr(observation, "is_error", False)) else 0
             record = self._engine.record_observation(
                 command=command,
                 content=text,
                 source_key=(
-                    f"openhands:{getattr(event, 'id', '')}" if getattr(event, "id", None) else None
+                    _openhands_source_key(str(getattr(event, "id", "")))
+                    if getattr(event, "id", None)
+                    else None
                 ),
                 returncode=returncode,
                 extra={
-                    "openhands_event_id": str(getattr(event, "id", "")),
-                    "tool_name": str(getattr(event, "tool_name", "")),
+                    "openhands_event_id": str(getattr(event, "id", ""))[:1024],
+                    "tool_name": str(getattr(event, "tool_name", ""))[:1024],
                 },
             )
             payload["_obs_id"] = record.obs_id
@@ -362,8 +392,34 @@ def _event_command(event: object) -> str:
         arguments = getattr(tool_call, "arguments", "")
         if not isinstance(arguments, str):
             arguments = json.dumps(arguments, ensure_ascii=False, sort_keys=True)
-        return f"{name}({arguments})"
-    return str(getattr(event, "tool_name", ""))
+        return _bounded_command(f"{name}({arguments})")
+    return _bounded_command(str(getattr(event, "tool_name", "")))
+
+
+def _bounded_command(value: str) -> str:
+    if len(value) <= 16_384:
+        _utf8_bytes("OpenHands command", value)
+        return value
+    digest = hashlib.sha256(_utf8_bytes("OpenHands command", value)).hexdigest()
+    suffix = f"… [sha256={digest}]"
+    return value[: 16_384 - len(suffix)] + suffix
+
+
+def _openhands_source_key(event_id: str) -> str:
+    digest = hashlib.sha256(_utf8_bytes("OpenHands event ID", event_id)).hexdigest()
+    return f"openhands:{digest}"
+
+
+def _utf8_bytes(name: str, value: str) -> bytes:
+    try:
+        return value.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise ValueError(f"{name} must contain valid Unicode") from exc
+
+
+def _get_runtime(runtime_id: str) -> Optional["OpenHandsArcCondenser"]:
+    with _RUNTIMES_LOCK:
+        return _RUNTIMES.get(runtime_id)
 
 
 class OpenHandsArcRecallAction(Action):
@@ -386,7 +442,7 @@ class _OpenHandsArcRecallExecutor(
 
     def __call__(self, action: OpenHandsArcRecallAction, conversation=None):  # noqa: ARG002
         del conversation
-        runtime = _RUNTIMES.get(self.runtime_id)
+        runtime = _get_runtime(self.runtime_id)
         if runtime is None:
             return OpenHandsArcRecallObservation.from_text(
                 "ARC runtime is unavailable; resume the condenser with its WAL first.",
@@ -459,7 +515,7 @@ class _OpenHandsArcListExecutor(ToolExecutor[OpenHandsArcListAction, OpenHandsAr
 
     def __call__(self, action: OpenHandsArcListAction, conversation=None):  # noqa: ARG002
         del conversation
-        runtime = _RUNTIMES.get(self.runtime_id)
+        runtime = _get_runtime(self.runtime_id)
         if runtime is None:
             return OpenHandsArcListObservation.from_text(
                 "ARC runtime is unavailable; resume the condenser with its WAL first.",
