@@ -6,9 +6,13 @@ Author: Akihiro Yoshida
 
 """
 
-from dataclasses import dataclass
+from __future__ import annotations
 
-import torch
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import torch
 
 _BYTES_PER_GB = 1e9
 
@@ -121,6 +125,8 @@ def _per_channel_meta(
             default for ``zero_bits`` (packed at ``wbits`` in the
             AutoGPTQ format).
     """
+    import torch  # pylint: disable=import-outside-toplevel
+
     if zero_bits is None:
         zero_bits = wbits
     meta_per_param = scale_bits + zero_bits
@@ -220,6 +226,8 @@ def estimate_target_bitwidth(
         >>> # Simulate 8 GB card
         >>> result = estimate_target_bitwidth(model, total_vram_gb=8.0)
     """
+    import torch  # pylint: disable=import-outside-toplevel
+
     if total_vram_gb is not None:
         if logger is not None:
             logger.info("Using user-specified VRAM: %.2f GB", total_vram_gb)
@@ -308,6 +316,7 @@ def estimate_wbits_from_vram(
         as the raw bpw value (suitable for display and for passing as
         ``target_bit`` to ``AutoBitQuantizer``).
     """
+    import torch  # pylint: disable=import-outside-toplevel
     from transformers import AutoConfig, AutoModelForCausalLM
 
     config = AutoConfig.from_pretrained(model_id)

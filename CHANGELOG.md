@@ -81,6 +81,8 @@
   terminates descendants that retain the captured output pipe.
 - Synchronized the `openhands` optional dependency into `uv.lock`, making its
   documented installation extra reproducible with locked environments.
+- Kept compaction analysis and MCP tool registration importable without torch by
+  lazily loading weight-outlier analysis and torch-backed VRAM estimation paths.
 
 ## [v1.1.1] 2026-05-21
 

@@ -50,6 +50,35 @@ def test_mcp_help_runs_without_site_packages():
     assert "--wal-root" in result.stdout
 
 
+def test_ci_compaction_imports_do_not_require_torch():
+    repository = Path(__file__).resolve().parents[3]
+    script = """
+import builtins
+
+real_import = builtins.__import__
+
+def without_torch(name, *args, **kwargs):
+    if name == "torch" or name.startswith("torch."):
+        raise ModuleNotFoundError("torch intentionally unavailable")
+    return real_import(name, *args, **kwargs)
+
+builtins.__import__ = without_torch
+from onecomp.analyzer.compaction import build_run_report
+from onecomp.mcp.tools import build_tools
+assert callable(build_run_report)
+assert callable(build_tools)
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=repository,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_compaction_only_mcp_creates_private_explicit_wal_root(tmp_path):
     repository = Path(__file__).resolve().parents[3]
     wal_root = tmp_path / "private-wal"
