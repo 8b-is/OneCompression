@@ -88,6 +88,7 @@ def collect_activation_stats_blockwise(
         tuple[dict, dict]: (a_diag, b_diag)
     """
     from transformers import AutoTokenizer
+
     from onecomp.calibration import prepare_calibration_dataset
 
     if device is None:

@@ -1,10 +1,6 @@
-# OneComp
+# Fujitsu One Compression
 
-**OneComp** is a research library for post-training compression of large language models (LLMs).
-It provides weight quantization (GPTQ, QEP, LPCD, JointQ, AutoBit, DBF) and
-KV-cache compression (HayateQuant, TurboQuant, TaperKV, ThinKV, PM-KVQ) under a unified Python API,
-with built-in vLLM plugin integration for deployment.
-
+Fujitsu One Compression (OneComp) is a Python package for LLM compression.
 Full documentation: **[https://FujitsuResearch.github.io/OneCompression/](https://FujitsuResearch.github.io/OneCompression/)**
 <p align="center">
   <img src="docs/assets/onecomp.gif" alt="OneComp" />
@@ -33,9 +29,9 @@ Runner.auto_run(model_id="meta-llama/Llama-2-7b-hf")
 
 ## 📖 Documentation
 
-## Algorithms
+Full documentation is available at **[https://FujitsuResearch.github.io/OneCompression/](https://FujitsuResearch.github.io/OneCompression/)**.
 
-### Weight Quantization
+## 📦 Features
 
 - **Quantization Error Propagation (QEP)**: A post-training quantization method that corrects quantization errors by propagating them to subsequent layers, improving the accuracy of quantized LLMs. See [Arai & Ichikawa, NeurIPS 2025](https://openreview.net/forum?id=a3l3K9khbL) for details. The original reference implementation is available at [FujitsuResearch/qep](https://github.com/FujitsuResearch/qep).
 - **Layer-Projected Coordinate Descent (LPCD)**: A unified Post Training Quantization (PTQ) framework that extends layer-wise quantization to arbitrary submodules by optimising relaxed objectives and projecting the solutions with layer-wise quantizers. See [Ichikawa et al., 2025](https://arxiv.org/abs/2512.01546) for details.
@@ -61,6 +57,8 @@ Runner.auto_run(model_id="meta-llama/Llama-2-7b-hf")
 | **TurboQuant** | Data-free rotated scalar Lloyd-Max quantization; Algorithm-1 quality and public-API speed baseline. | [arXiv:2504.19874](https://arxiv.org/abs/2504.19874) |
 | **FibQuant / BlockQuant** | Independent method-faithful quality baselines; BlockQuant remains descriptive where its public recipe cannot be fully matched. | — |
 | **StreamingLLM / SnapKV / H2O** | Eviction baselines. | — |
+
+## 🤖 Supported Models
 
 | # | Architecture | Verified Models | Status |
 |---|-------------|-----------------|--------|
@@ -427,14 +425,6 @@ kv_cfg = KVCompressionConfig(codec=build_hayatequant(3), residual_window=0)
 vllm serve ./quantized
 ```
 
-## Supported Models
-
-| Architecture | Verified Models |
-|---|---|
-| Llama | Llama-2, Llama-3 |
-| Qwen3 | Qwen3-0.6B – 32B |
-| Gemma | Gemma 2, 3, 4 |
-
 ## Benchmarks
 
 The reproducible HayateQuant/TurboQuant quality and vLLM speed grid is in
@@ -450,7 +440,7 @@ history replacement, final provider-budget coverage, catalog completeness,
 exact reconstruction, checksums, latency, and generates a body-free run
 dashboard.
 
-## License
+## 📄 License
 
 See [LICENSE](./LICENSE) for details.
 

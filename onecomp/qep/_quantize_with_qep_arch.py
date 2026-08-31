@@ -313,69 +313,6 @@ def _rtn_fallback_result(module: nn.Module, quantizer: Quantizer, name: str) -> 
 
 
 @torch.no_grad()
-def _compute_per_module_hessians(
-    block: nn.Module,
-    modules: list[nn.Module],
-    inps: torch.Tensor,
-    kwargs: dict[str, torch.Tensor],
-    batch_size: int,
-    device: torch.device,
-) -> dict[nn.Module, torch.Tensor | None]:
-    """Compute independent Hessians for each module via shared forward passes.
-
-    Used for MoE expert layers where the standard cross-term computation
-    is invalid (the router in quantized vs full-precision blocks may route
-    different tokens to the same expert).  Each module gets its own Hessian
-    built solely from the quantized block's activations.
-    """
-    dest: dict[int, torch.Tensor] = {}
-
-    def _make_hook(key):
-        def hook(_, inp, __):
-            dest[key] = inp[0] if isinstance(inp, tuple) else inp
-
-        return hook
-
-    handlers = [m.register_forward_hook(_make_hook(i)) for i, m in enumerate(modules)]
-
-    hessians: dict[int, torch.Tensor] = {}
-    nsamples: dict[int, int] = {}
-    for i, m in enumerate(modules):
-        dim = m.in_features
-        hessians[i] = torch.zeros((dim, dim), device=device)
-        nsamples[i] = 0
-
-    N = inps.size(0)
-    pli = kwargs.get(_PER_LAYER_INPUTS_KEY)
-
-    for first in range(0, N, batch_size):
-        last = min(first + batch_size, N)
-        bs = last - first
-        batch_kwargs = expand_kwargs_batch(kwargs, bs)
-        batch_kwargs = prepare_block_kwargs(batch_kwargs, block, pli, first, bs, device)
-        _ = block(inps[first:last].to(device), **batch_kwargs)
-
-        for i, m in enumerate(modules):
-            if i not in dest:
-                continue
-            x = dest[i].view(-1, m.in_features).float()
-            tmp = x.size(0)
-            if tmp == 0:
-                continue
-            hessians[i] *= nsamples[i] / (nsamples[i] + tmp)
-            nsamples[i] += tmp
-            x_scaled = math.sqrt(2 / nsamples[i]) * x
-            hessians[i] += x_scaled.t() @ x_scaled
-
-        dest.clear()
-
-    for h in handlers:
-        h.remove()
-
-    return {modules[i]: (hessians[i] if nsamples[i] > 0 else None) for i in range(len(modules))}
-
-
-@torch.no_grad()
 def run_quantize_with_qep_arch(
     model_config: ModelConfig,
     quantizer: Quantizer,
