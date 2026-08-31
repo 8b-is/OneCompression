@@ -1,7 +1,7 @@
 # Fujitsu One Compression
 
 Fujitsu One Compression (OneComp) is a Python package for LLM compression.
-Full documentation: **[https://FujitsuResearch.github.io/OneCompression/](https://FujitsuResearch.github.io/OneCompression/)**
+
 <p align="center">
   <img src="docs/assets/onecomp.gif" alt="OneComp" />
 </p>
@@ -245,6 +245,7 @@ cd OneCompression
 
 # First, install PyTorch with CUDA support for your environment
 pip install torch --index-url https://download.pytorch.org/whl/cu128
+# Then install onecomp with development dependencies
 pip install -e ".[dev]"
 ```
 
@@ -442,7 +443,7 @@ dashboard.
 
 ## 📄 License
 
-See [LICENSE](./LICENSE) for details.
+See [LICENSE](./LICENSE) for more details.
 
 ## Citation
 
@@ -484,7 +485,7 @@ LPCD (Layer-Projected Coordinate Descent):
 
 LPCD (Layer-Projected Coordinate Descent):
 
-```
+```bibtex
 @article{ichikawa2025lpcd,
 title={LPCD: Unified Framework from Layer-Wise to Submodule Quantization},
 author={Yuma Ichikawa and Yudai Fujimoto and Akira Sakai},
@@ -496,7 +497,7 @@ url={https://arxiv.org/abs/2512.01546}
 
 MDBF (Multi-Envelope Double Binary Factorization):
 
-```
+```bibtex
 @misc{ichikawa2025bitsmultienvelopedoublebinary,
       title={More Than Bits: Multi-Envelope Double Binary Factorization for Extreme Quantization}, 
       author={Yuma Ichikawa and Yoshihiko Fujisawa and Yudai Fujimoto and Akira Sakai and Katsuki Fujisawa},
