@@ -9,3 +9,4 @@ onecomp/compaction/*.py whitespace=cr-at-eol
 onecomp/compaction/adapters/*.py whitespace=cr-at-eol
 onecomp/mcp/compaction_tools.py whitespace=cr-at-eol
 tests/onecomp/mcp/test_compaction_tools.py whitespace=cr-at-eol
+*.py text eol=lf
