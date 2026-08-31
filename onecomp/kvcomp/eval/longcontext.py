@@ -41,6 +41,7 @@ from .compression_accounting import (
 
 logger = getLogger(__name__)
 
+<<<<<<< HEAD
 _Z95 = 1.959963984540054  # standard normal 97.5th percentile
 NEEDLE_PROTOCOL_VERSION = 2
 NEEDLE_PROTOCOL_LABEL = "deterministic synthetic needle-in-a-haystack v2"
@@ -48,6 +49,24 @@ NEEDLE_PROTOCOL_SCOPE = (
     "common deterministic prompts across methods; rendered prompt lengths, "
     "depths, predictions, and per-trial cache-accounting ledgers retained; "
     "Pareto comparison over realized memory rather than an external benchmark"
+=======
+
+def _number_hit(gold: str, text: str) -> bool:
+    """True iff ``gold`` appears in ``text`` as a standalone integer.
+
+    Uses digit boundaries so e.g. gold ``1234`` is not falsely matched inside
+    ``91234`` / ``12345`` -- a substring check would inflate accuracy.
+    """
+    return re.search(rf"(?<!\d){re.escape(gold)}(?!\d)", text) is not None
+
+_CITIES = ["Paris", "Tokyo", "Cairo", "Lima", "Oslo", "Delhi", "Quito", "Accra",
+           "Hanoi", "Sofia", "Riga", "Bern", "Doha", "Kyiv", "Amman", "Dakar"]
+_FILLER = (
+    "The history of cartography spans many centuries of patient observation. "
+    "Merchants traded spices along routes that crossed deserts and mountains. "
+    "Scholars debated the shape of coastlines while sailors charted the stars. "
+    "Libraries collected manuscripts describing distant provinces and rivers. "
+>>>>>>> 17000999 (Add paper-level benchmark presets and revise README)
 )
 
 
@@ -671,6 +690,7 @@ def needle_in_haystack(
                 )
                 txt = tokenizer.decode(gen[0], skip_special_tokens=True)
                 ok = _number_hit(gold, txt)
+<<<<<<< HEAD
                 hit += int(ok)
                 n += 1
                 by_len_hit[ctx][0] += int(ok)
@@ -707,6 +727,15 @@ def needle_in_haystack(
     compression, mem_fraction, mem_fraction_aggregation = aggregate_cache_compression_records(
         compression_records
     )
+=======
+                hit += int(ok); n += 1
+                by_len_hit[ctx][0] += int(ok); by_len_hit[ctx][1] += 1
+                if hasattr(cache, "mem_fraction"):
+                    mem.append(cache.mem_fraction())
+                elif hasattr(cache, "compression_ratio"):
+                    mem.append(1.0 / max(1e-9, cache.compression_ratio()))
+                grid.append({"ctx": ctx, "depth": depth, "seed": s, "hit": ok})
+>>>>>>> 17000999 (Add paper-level benchmark presets and revise README)
     return NeedleResult(
         n=n,
         hits=hit,
@@ -827,6 +856,7 @@ def ruler_multikey(
             )
             txt = tokenizer.decode(gen[0], skip_special_tokens=True)
             ok = _number_hit(gold, txt)
+<<<<<<< HEAD
             hit += int(ok)
             n += 1
             by_len_hit[ctx][0] += int(ok)
@@ -860,6 +890,15 @@ def ruler_multikey(
     compression, mem_fraction, mem_fraction_aggregation = aggregate_cache_compression_records(
         compression_records
     )
+=======
+            hit += int(ok); n += 1
+            by_len_hit[ctx][0] += int(ok); by_len_hit[ctx][1] += 1
+            if hasattr(cache, "mem_fraction"):
+                mem.append(cache.mem_fraction())
+            elif hasattr(cache, "compression_ratio"):
+                mem.append(1.0 / max(1e-9, cache.compression_ratio()))
+            grid.append({"ctx": ctx, "num_keys": num_keys, "seed": s, "hit": ok})
+>>>>>>> 17000999 (Add paper-level benchmark presets and revise README)
     return NeedleResult(
         n=n,
         hits=hit,

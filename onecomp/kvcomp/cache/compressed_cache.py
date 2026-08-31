@@ -330,7 +330,6 @@ class CompressedDynamicCache(DynamicCache):
     def teacher_forced_temporal_dependency(self):
         """Return the codec's cross-token dependency for causal evaluators.
 
-        This is intentionally exposed by the cache rather than inferred from
         its class name in each benchmark.  It keeps teacher-forced PPL and
         continuation likelihood aligned with the codec actually installed in
         the cache.
@@ -443,6 +442,11 @@ class CompressedDynamicCache(DynamicCache):
         self.stored_bits += (stored if stored is not None else fp16q) - fp16q
         keys[:, :, retire_start:retire_end].copy_(key_q.to(keys.dtype))
         values[:, :, retire_start:retire_end].copy_(value_q.to(values.dtype))
+
+    def _count_fp(self, bits: int) -> None:
+        """Account full-precision (sink / skip-layer) KV equally in stored & fp16."""
+        self.stored_bits += bits
+        self.fp16_bits += bits
 
     def compression_ratio(self) -> float:
         """Logical whole-cache data-plane ratio (fp16 bits / stored bits).

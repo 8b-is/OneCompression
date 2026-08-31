@@ -6,6 +6,7 @@ block-granularity TaperKV. It uses the deterministic synthetic needle protocol
 implemented by `onecomp.kvcomp.eval`; optional WikiText-2 evaluation uses the
 causal cache-state scorer.
 
+**Quick run** (single method, short context):
 ```bash
 srun --gres=gpu:1 .venv/bin/python \
   benchmark/kvcomp-longcontext/taperkv_benchmark.py \
