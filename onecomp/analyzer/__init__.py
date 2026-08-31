@@ -6,6 +6,7 @@ Author: Keiji Kimura
 
 """
 
+<<<<<<< HEAD
 # Public weight-analysis symbols are resolved through PEP 562 ``__getattr__``.
 # pylint: disable=undefined-all-variable
 
@@ -34,6 +35,16 @@ def plot_quantization_errors(*args, **kwargs):
 
     return _plot_quantization_errors(*args, **kwargs)
 
+=======
+from .quantization_error import plot_quantization_errors
+from .weight_outlier import (
+    LayerOutlierStats,
+    WeightOutlierAnalysis,
+    WeightOutlierAnalyzer,
+    analyze_weight_outliers,
+    save_weight_distribution_plots,
+)
+>>>>>>> export/v1-4-0
 
 __all__ = [
     "LayerOutlierStats",

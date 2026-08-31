@@ -30,8 +30,8 @@ References:
 
 """
 
-from datasets import load_dataset
 import torch
+from datasets import load_dataset
 from tqdm import tqdm
 
 from .model_inputs import add_model_specific_inputs
@@ -41,7 +41,7 @@ def calculate_perplexity(
     model=None,
     tokenizer=None,
     model_config=None,
-    dataset_name="wikitext",
+    dataset_name="Salesforce/wikitext",
     dataset_config="wikitext-2-raw-v1",
     split="test",
     max_samples=None,
@@ -53,7 +53,7 @@ def calculate_perplexity(
     Based on https://huggingface.co/docs/transformers/perplexity
 
     Args:
-        dataset_name (str): Dataset name (e.g. "wikitext", "allenai/c4").
+        dataset_name (str): Dataset name (e.g. "Salesforce/wikitext", "allenai/c4").
         dataset_config (str): Dataset configuration.
             - For WikiText: "wikitext-2-raw-v1"
             - For C4: "en/c4-train.00001-of-01024.json.gz" (treated as data_files)
@@ -125,7 +125,11 @@ def calculate_perplexity(
     if stride is None:
         stride = max_length
     seq_len = encodings.input_ids.size(1)
-    nll_sum = torch.tensor(0.0, dtype=torch.float64, device=device)
+    use_cpu_accum = (
+        device.type == "mps" if isinstance(device, torch.device) else str(device).startswith("mps")
+    )
+    accum_device = torch.device("cpu") if use_cpu_accum else device
+    nll_sum = torch.tensor(0.0, dtype=torch.float64, device=accum_device)
     n_tokens = 0
     prev_end_loc = 0
     for begin_loc in tqdm(range(0, seq_len, stride)):
@@ -144,7 +148,7 @@ def calculate_perplexity(
             # N.B. the model only calculates loss over trg_len - 1 labels,
             # because it internally shifts the labels
             # to the left by 1.
-            neg_log_likelihood = outputs.loss.to(torch.float64)
+            neg_log_likelihood = outputs.loss.to(accum_device).to(torch.float64)
         # Accumulate the total negative log-likelihood and the total number of tokens
         num_valid_tokens = (
             (target_ids != -100).sum().item()

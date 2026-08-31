@@ -222,6 +222,7 @@ def prepare_rotated_model(
     """
     if calibration_config is None:
         calibration_config = CalibrationConfig()
+<<<<<<< HEAD
     from .train_rotation import (
         PreprocessManager,
         apply_preprocess_eval,
@@ -247,6 +248,29 @@ def prepare_rotated_model(
         use_sdpa=use_sdpa,
         training_args_override=training_args_override,
     )
+=======
+    from ..calibration import prepare_calibration_dataset
+    from .train_rotation import PreprocessManager, apply_preprocess_eval, apply_preprocess_train
+
+    _validate_prepare_rotated_model_params(
+        rotation=rotation,
+        scaling=scaling,
+        rotation_mode=rotation_mode,
+        scaling_mode=scaling_mode,
+        seed=seed,
+        enable_training=enable_training,
+        calibration_config=calibration_config,
+        wbits=wbits,
+        sym=sym,
+        groupsize=groupsize,
+        mse=mse,
+        norm=norm,
+        grid=grid,
+        fp32_had=fp32_had,
+        use_sdpa=use_sdpa,
+        training_args_override=training_args_override,
+    )
+>>>>>>> export/v1-4-0
 
     total_start_time = time.time()
 
@@ -323,7 +347,7 @@ def prepare_rotated_model(
         t0 = time.time()
         model = AutoModelForCausalLM.from_pretrained(
             model_path,
-            torch_dtype="auto",
+            dtype="auto",
             device_map="cpu",
             low_cpu_mem_usage=True,
         )

@@ -4,16 +4,17 @@ Copyright 2025-2026 Fujitsu Ltd.
 """
 
 import math
+from logging import getLogger
+
 import torch
 import torch.nn.functional as F
 
 from onecomp.quantizer._quantizer import Quantizer
-from ._metric import ClosedFormSolverArgument, LpcdMetric
+
+from ..qep._quantize_with_qep_arch import compute_hessian_and_crossterm
 from ._gradient_solver import gradient_solver
 from ._lpcd_config import LPCDConfig
-from ..qep._quantize_with_qep_arch import compute_hessian_and_crossterm
-
-from logging import getLogger
+from ._metric import ClosedFormSolverArgument, LpcdMetric
 
 logger = getLogger(__name__)
 
@@ -146,7 +147,7 @@ def refiner(
             )
 
             # Projection step
-            H, _ = compute_hessian_and_crossterm(
+            H, _, nsamples = compute_hessian_and_crossterm(
                 metric_q.block,
                 metric_f.block,
                 module_q,
@@ -157,7 +158,13 @@ def refiner(
                 batch_size,
                 device,
             )
-            quantizer.quantize(module_q, None, None, hessian=H.clone())
+            quantizer.quantize(
+                module_q,
+                None,
+                None,
+                hessian=H.clone(),
+                nsamples=nsamples if quantizer.flag_nsamples else None,
+            )
 
             # Update the weights of the target layer
             dtype = module_q.weight.data.dtype

@@ -14,16 +14,23 @@ from typing import Any, Optional, Union
 import torch
 
 from onecomp.calibration import CalibrationConfig
+<<<<<<< HEAD
 from onecomp.utils import (
     effective_bits_per_param,
     effective_bits_for_quantizer,
 )
 from onecomp.quantizer._quantizer import Quantizer, QuantizationResult
+=======
+from onecomp.quantizer._quantizer import QuantizationResult, Quantizer
+>>>>>>> export/v1-4-0
 from onecomp.quantizer.dbf import DBF
 from onecomp.quantizer.gptq import GPTQ
-from .ilp import assign_by_ilp, _find_candidates
+from onecomp.quantizer.gptq.gptq_layer import PACKABLE_WBITS
+from onecomp.utils import effective_bits_for_quantizer, effective_bits_per_param
+
+from .dbf_fallback import inject_dbf, reject_mps_dbf_fallback
+from .ilp import _find_candidates, assign_by_ilp
 from .manual import assign_manually
-from .dbf_fallback import inject_dbf
 
 
 class AssignmentStrategy(StrEnum):
@@ -151,6 +158,11 @@ class AutoBitQuantizer(Quantizer):
     dbf_threshold: float = 2.0
     dbf_iters: int = None  # None → DBF default (600); set low (e.g. 10) for fast testing
 
+    # --- bitpack mode ---
+    # Propagated to GPTQ/DBF candidates and auto-created DBF fallbacks
+    # before child validation.
+    bitpack_on_quantize: bool = True
+
     # --- vLLM fused-layer constraints ---
     # Groups of module suffixes that vLLM fuses into a single linear
     fused_groups: list = field(
@@ -224,6 +236,20 @@ class AutoBitQuantizer(Quantizer):
             bad.append(
                 f"Invalid parameter 'calibration_config.max_length': "
                 f"{calib_config.max_length!r} (expected int >= 1)"
+<<<<<<< HEAD
+=======
+            )
+
+        # Propagate the bitpack mode to child candidates before their own
+        # validation, so a candidate validates with the AutoBit-level flag
+        # rather than its constructor default.
+        if isinstance(self.bitpack_on_quantize, bool):
+            self._sync_child_bitpack_on_quantize()
+        else:
+            bad.append(
+                f"Invalid parameter 'bitpack_on_quantize': {self.bitpack_on_quantize!r} "
+                f"(expected bool)"
+>>>>>>> export/v1-4-0
             )
 
         for i, q in enumerate(self.quantizers):
@@ -232,7 +258,6 @@ class AutoBitQuantizer(Quantizer):
             except (ValueError, TypeError) as e:
                 bad.append(f"quantizers[{i}] ({type(q).__name__}): {e}")
 
-        _VLLM_SUPPORTED_BITS = {2, 3, 4, 8}
         if self.enable_fused_groups:
             for i, q in enumerate(self.quantizers):
                 if not isinstance(q, GPTQ):
@@ -240,10 +265,10 @@ class AutoBitQuantizer(Quantizer):
                         f"quantizers[{i}] ({type(q).__name__}): "
                         f"enable_fused_groups=True requires all quantizers to be GPTQ"
                     )
-                elif q.wbits not in _VLLM_SUPPORTED_BITS:
+                elif q.wbits not in PACKABLE_WBITS:
                     bad.append(
                         f"quantizers[{i}] (GPTQ wbits={q.wbits}): "
-                        f"vLLM only supports GPTQ bit-widths {sorted(_VLLM_SUPPORTED_BITS)}"
+                        f"vLLM only supports GPTQ bit-widths {sorted(PACKABLE_WBITS)}"
                     )
 
             if self.assignment_strategy == AssignmentStrategy.MANUAL:
@@ -251,6 +276,27 @@ class AutoBitQuantizer(Quantizer):
 
         if bad:
             raise ValueError("; ".join(bad))
+
+    def _sync_child_bitpack_on_quantize(self):
+        """Propagate the AutoBit bitpack mode to GPTQ and DBF child quantizers.
+
+        Synchronization occurs before child validation so each supported child
+        validates with the AutoBit-level setting instead of its constructor
+        default. Unsupported GPTQ bit widths are not downgraded or silently
+        switched to unpacked mode; ``GPTQ.validate_params()`` reports them as
+        validation errors when bitpacking is enabled.
+        """
+        for q in self.quantizers:
+            if isinstance(q, (GPTQ, DBF)):
+                old_value = q.bitpack_on_quantize
+                if old_value != self.bitpack_on_quantize or not isinstance(old_value, bool):
+                    self.logger.info(
+                        "Updating %s bitpack_on_quantize from %s to %s.",
+                        q.name,
+                        old_value,
+                        self.bitpack_on_quantize,
+                    )
+                q.bitpack_on_quantize = self.bitpack_on_quantize
 
     def setup(self, model):
         self.validate_params()
@@ -272,7 +318,10 @@ class AutoBitQuantizer(Quantizer):
                     "budget. Use a higher target_bit or a smaller model."
                 )
 
+        model_device = next(model.parameters()).device
+
         if not is_manual and self.auto_dbf and self._needs_dbf_only():
+            reject_mps_dbf_fallback(model_device)
             min_eff = min(effective_bits_for_quantizer(q) for q in self.quantizers)
             self.logger.warning(
                 "target_bit=%.2f is at/below dbf_threshold=%.2f or "
@@ -297,6 +346,8 @@ class AutoBitQuantizer(Quantizer):
                 self.dbf_threshold,
                 self.logger,
                 dbf_iters=self.dbf_iters,
+                device=model_device,
+                bitpack_on_quantize=self.bitpack_on_quantize,
             )
             self._sync_flags()
 
@@ -328,7 +379,10 @@ class AutoBitQuantizer(Quantizer):
         ``setup()``, so the value here is always ≥ 1.0.
         """
         target_bits = self.target_bit
-        dbf_kwargs = {"target_bits": target_bits}
+        dbf_kwargs = {
+            "target_bits": target_bits,
+            "bitpack_on_quantize": self.bitpack_on_quantize,
+        }
         if self.dbf_iters is not None:
             dbf_kwargs["iters"] = self.dbf_iters
         dbf_q = DBF(**dbf_kwargs)
@@ -393,6 +447,10 @@ class AutoBitQuantizer(Quantizer):
             self.flag_calibration = any(q.flag_calibration for q in self.quantizers)
             self.flag_hessian = any(q.flag_hessian for q in self.quantizers)
             self.flag_xtx = any(q.flag_xtx for q in self.quantizers)
+<<<<<<< HEAD
+=======
+            self.flag_nsamples = any(q.flag_nsamples for q in self.quantizers)
+>>>>>>> export/v1-4-0
             # AutoBit supports QEP only when *all* candidate quantizers support it
             # (the per-layer assignment may dispatch to any child quantizer).
             self.flag_qep_supported = all(q.flag_qep_supported for q in self.quantizers)
@@ -487,10 +545,10 @@ class AutoBitQuantizer(Quantizer):
             self.logger.info("Saved assignment heatmap: %s", fig_path)
 
     def quantize(
-        self, module, input, output
+        self, module, input, output, hessian=None, nsamples=None
     ):  # pylint: disable=redefined-builtin, unused-argument
         child_q = self._module_to_quantizer[module]
-        child_q.quantize(module, input, output)
+        child_q.quantize(module, input, output, hessian=hessian, nsamples=nsamples)
         name = self.module_to_name[module]
         self.results[name] = child_q.results[name]
 
@@ -503,6 +561,7 @@ class AutoBitQuantizer(Quantizer):
         perccorr=0.5,
         hessian=None,
         delta_hatX=None,
+        nsamples=None,
     ):  # pylint: disable=too-many-arguments, too-many-positional-arguments
         child_q = self._module_to_quantizer[module]
         child_q.quantize_with_qep(
@@ -513,6 +572,7 @@ class AutoBitQuantizer(Quantizer):
             perccorr=perccorr,
             hessian=hessian,
             delta_hatX=delta_hatX,
+            nsamples=nsamples,
         )
         name = self.module_to_name[module]
         self.results[name] = child_q.results[name]
@@ -522,12 +582,15 @@ class AutoBitQuantizer(Quantizer):
         module,
         input=None,
         hessian=None,
+        nsamples=None,
     ) -> Union[torch.Tensor, QuantizationResult]:  # pylint: disable=redefined-builtin
         child_q = self._module_to_quantizer.get(module)
         if child_q is None:
             raise RuntimeError(
                 "Module is not assigned to any child quantizer. " "Ensure setup() has been called."
             )
+        if child_q.flag_nsamples:
+            return child_q.quantize_layer(module, input, hessian, nsamples=nsamples)
         return child_q.quantize_layer(module, input, hessian)
 
     def execute_post_processing(self):

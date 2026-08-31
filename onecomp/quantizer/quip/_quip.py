@@ -16,7 +16,7 @@ from typing import Optional
 
 import torch
 
-from onecomp.quantizer._quantizer import Quantizer, QuantizationResult
+from onecomp.quantizer._quantizer import QuantizationResult, Quantizer
 from onecomp.quantizer.quip.quip_impl import run_quip
 
 
@@ -131,7 +131,7 @@ class QUIP(Quantizer):
             QUIPResult: QUIP quantization result object containing quantized weights and parameters.
         """
         if hessian is None:
-            hessian = self.calculate_hessian(module, input)
+            hessian, _ = self.calculate_hessian(module, input)
 
         result_dict = run_quip(
             hessian,

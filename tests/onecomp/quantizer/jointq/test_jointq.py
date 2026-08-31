@@ -3,10 +3,11 @@
 Copyright 2025-2026 Fujitsu Ltd.
 """
 
-import sys
 import os
-import torch
+import sys
+
 import pytest
+import torch
 
 os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
@@ -18,8 +19,9 @@ try:
 except ImportError:
     HAS_JOINTQ = False
 
-from onecomp.quantizer._quantizer import QuantizationResult
 from test_module import BaseQuantizeSpec
+
+from onecomp.quantizer._quantizer import QuantizationResult
 
 
 @pytest.mark.skipif(not HAS_JOINTQ, reason="jointq package not installed")
@@ -34,10 +36,13 @@ class TestJointQ(BaseQuantizeSpec):
     quantizer_cls = JointQ if HAS_JOINTQ else None
     result_cls = QuantizationResult
     default_parameter_for_test = {
-        "bits": 1,
+        "bits": 2,
         "symmetric": False,
         "group_size": 1,
     }
+    # JointQ requires in_features divisible by pack_factor (32 // wbits = 16 for wbits=2).
+    _forward_error_features = 32
+
     boundary_parameters = [
         # bits: int >= 1 (validated by validate_params), no explicit upper
         {"bits": 1},  # bits lower boundary
@@ -254,13 +259,8 @@ class TestJointQ(BaseQuantizeSpec):
         inp = helper.make_input(batch=1, seq=1, hidden=128, device=device, dtype=torch.float32)
 
         q = self.make_quantizer(**params)
-        hessian = q.calculate_hessian(layer, inp)
-        result = q.quantize_layer(layer, inp, hessian=hessian)
+        result = self._quantize_with_calculated_hessian(q, layer, inp)
         self.check_quantize_layer(result, layer)
-
-    def test_forward_error(self, helper):
-        """Skip forward error test (no inference layer support)."""
-        pytest.skip("JointQ does not support create_inference_layer")
 
     # ------------------------------------------------------------------
     # incremental_lambda mode tests
@@ -281,8 +281,7 @@ class TestJointQ(BaseQuantizeSpec):
             lambda_list=[0.01, 0.5, 1.0],
             log_level=1,
         )
-        hessian = q.calculate_hessian(layer, inp)
-        result = q.quantize_layer(layer, inp, hessian=hessian)
+        result = self._quantize_with_calculated_hessian(q, layer, inp)
         self.check_quantize_layer(result, layer)
 
     @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
@@ -299,8 +298,7 @@ class TestJointQ(BaseQuantizeSpec):
             lambda_mode="incremental_lambda",
             lambda_list=[0.2],
         )
-        hessian = q.calculate_hessian(layer, inp)
-        result = q.quantize_layer(layer, inp, hessian=hessian)
+        result = self._quantize_with_calculated_hessian(q, layer, inp)
         self.check_quantize_layer(result, layer)
 
     def test_accept_candidate_both_decrease(self):

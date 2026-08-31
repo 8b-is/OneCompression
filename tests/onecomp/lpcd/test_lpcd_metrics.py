@@ -17,6 +17,7 @@ import torch
 from torch import nn
 
 from onecomp import LPCDConfig
+<<<<<<< HEAD
 from onecomp.lpcd._metric import (
     LpcdMetric,
     LpcdMetricGroup,
@@ -36,14 +37,23 @@ from onecomp.lpcd.arch._qwen3 import (
     Qwen3UpDown,
     Qwen3ValueOut,
 )
+=======
+from onecomp.lpcd._metric import LpcdMetric, LpcdMetricGroup, make_lpcd_metrics
+from onecomp.lpcd.arch._llama import LlamaDown, LlamaOut, LlamaQueryKey, LlamaUpDown, LlamaValueOut
+from onecomp.lpcd.arch._qwen3 import Qwen3Down, Qwen3Out, Qwen3QueryKey, Qwen3UpDown, Qwen3ValueOut
+>>>>>>> export/v1-4-0
 
 
 def _make_llama_block():
     """Build a tiny ``LlamaDecoderLayer`` on CPU (no weights downloaded)."""
+<<<<<<< HEAD
     from transformers.models.llama.modeling_llama import (
         LlamaConfig,
         LlamaDecoderLayer,
     )
+=======
+    from transformers.models.llama.modeling_llama import LlamaConfig, LlamaDecoderLayer
+>>>>>>> export/v1-4-0
 
     config = LlamaConfig(
         hidden_size=32,
@@ -59,10 +69,14 @@ def _make_llama_block():
 
 def _make_qwen3_block():
     """Build a tiny ``Qwen3DecoderLayer`` on CPU (no weights downloaded)."""
+<<<<<<< HEAD
     from transformers.models.qwen3.modeling_qwen3 import (
         Qwen3Config,
         Qwen3DecoderLayer,
     )
+=======
+    from transformers.models.qwen3.modeling_qwen3 import Qwen3Config, Qwen3DecoderLayer
+>>>>>>> export/v1-4-0
 
     config = Qwen3Config(
         hidden_size=32,

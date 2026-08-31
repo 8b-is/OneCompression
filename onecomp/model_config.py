@@ -8,8 +8,18 @@ Author: Keiji Kimura
 
 from logging import getLogger
 
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 import torch
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+
+from .utils.device import get_default_device
+from .utils.dtype import needs_bfloat16
+
+try:
+    from transformers import AutoModelForImageTextToText as _AutoVLM
+
+    _HAS_VLM_AUTO = True
+except ImportError:
+    _HAS_VLM_AUTO = False
 
 from .utils.dtype import needs_bfloat16
 
@@ -98,6 +108,30 @@ class ModelConfig:
             dtype=self.dtype if self.dtype == "auto" else getattr(torch, self.dtype),
             device_map=effective_device,
         )
+
+        config = self.load_config()
+        qcfg = getattr(config, "quantization_config", None)
+        if isinstance(qcfg, dict) and qcfg.get("quant_method") == "mxfp4":
+            from transformers import Mxfp4Config
+
+            from .utils.mxfp4_compat import patch_mxfp4_flat_blocks
+
+            # Some MXFP4 checkpoints (e.g. Tokyotech GPT-OSS-Swallow) store
+            # packed blocks in a flattened 3-D layout that transformers'
+            # dequantizer rejects; normalize them on the fly.
+            patch_mxfp4_flat_blocks(self.logger)
+
+            kwargs["quantization_config"] = Mxfp4Config(dequantize=True)
+            # MXFP4 dequantization targets bfloat16, and GPT-OSS (the only
+            # MXFP4 architecture) degrades in float16.
+            if kwargs["dtype"] != torch.bfloat16:
+                self.logger.warning(
+                    "MXFP4 model detected; overriding dtype from %s to bfloat16.",
+                    kwargs["dtype"],
+                )
+                kwargs["dtype"] = torch.bfloat16
+            self.logger.info("MXFP4 model detected; loading with dequantization enabled.")
+
         try:
             model = AutoModelForCausalLM.from_pretrained(self.get_model_id_or_path(), **kwargs)
         except ValueError as e:
@@ -113,6 +147,12 @@ class ModelConfig:
         model.eval()
         self.logger.info("Model loaded with dtype=%s", next(model.parameters()).dtype)
         return model
+
+    def get_device(self) -> torch.device:
+        """Return a concrete torch.device for PyTorch operations."""
+        if self.device == "auto":
+            return get_default_device()
+        return torch.device(self.device)
 
     def load_tokenizer(self):
         """Load the tokenizer"""

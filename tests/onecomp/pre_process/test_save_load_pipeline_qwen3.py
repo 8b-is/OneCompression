@@ -1,6 +1,7 @@
 """Save/load round-trip tests for rotation + quantization (Qwen3).
 
-3 cases: GPTQ quantized, GPTQ dequantized, RTN dequantized.
+5 cases: GPTQ quantized, GPTQ dequantized, DBF quantized, DBF dequantized,
+RTN dequantized.
 Requires CUDA and model download.
 
 Copyright 2025-2026 Fujitsu Ltd.
@@ -25,6 +26,8 @@ def _cases():
     return [
         pytest.param(mid, "gptq", "quantized", id="qwen3-gptq-save_quantized"),
         pytest.param(mid, "gptq", "dequantized", id="qwen3-gptq-save_dequantized"),
+        pytest.param(mid, "dbf", "quantized", id="qwen3-dbf-save_quantized"),
+        pytest.param(mid, "dbf", "dequantized", id="qwen3-dbf-save_dequantized"),
         pytest.param(mid, "rtn", "dequantized", id="qwen3-rtn-save_dequantized"),
     ]
 
@@ -35,8 +38,9 @@ class TestSaveLoadPipelineQwen3:
 
     @pytest.mark.parametrize("model_id, quant_type, save_type", _cases())
     def test_save_load(self, model_id, quant_type, save_type, tmp_path):
-        from onecomp import GPTQ, RTN, ModelConfig, Runner, load_quantized_model
         from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        from onecomp import DBF, GPTQ, RTN, ModelConfig, Runner, load_quantized_model
 
         device = "cuda:0"
         model_config = ModelConfig(model_id=model_id, device=device)
@@ -64,6 +68,8 @@ class TestSaveLoadPipelineQwen3:
 
         if quant_type == "gptq":
             quantizer = GPTQ(wbits=4, groupsize=128)
+        elif quant_type == "dbf":
+            quantizer = DBF(target_bits=1.5, iters=10, balance_iters=5)
         else:
             quantizer = RTN(wbits=4, groupsize=-1)
         runner = Runner(
@@ -83,7 +89,7 @@ class TestSaveLoadPipelineQwen3:
         else:
             model_before = AutoModelForCausalLM.from_pretrained(
                 rotated_config.path,
-                torch_dtype=torch.float16,
+                dtype=torch.float16,
                 device_map="cpu",
             )
             runner.update_model_weights(model_before)
@@ -105,7 +111,7 @@ class TestSaveLoadPipelineQwen3:
         else:
             model = AutoModelForCausalLM.from_pretrained(
                 save_dir,
-                torch_dtype=torch.float16,
+                dtype=torch.float16,
                 device_map=device,
             )
             tokenizer = AutoTokenizer.from_pretrained(save_dir)

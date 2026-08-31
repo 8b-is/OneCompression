@@ -6,16 +6,29 @@ Author: Keiji Kimura
 
 """
 
-from abc import ABCMeta
-from abc import abstractmethod
+import math
+import time
+from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass, field
 from logging import getLogger
 from typing import Any, Optional, Union
 
-import time
-import math
 import torch
-from torch.nn import Linear, Conv2d, Conv1d
+from torch.nn import Conv1d, Conv2d, Linear
+
+from onecomp.utils.device import empty_cache
+
+
+def _safe_cholesky_and_solve(hessian, rhs):
+    if hessian.device.type == "mps":
+        hessian_cpu = hessian.cpu()
+        rhs_cpu = rhs.cpu()
+        cholesky = torch.linalg.cholesky(hessian_cpu)
+        delta_weight = torch.cholesky_solve(rhs_cpu.t(), cholesky).to(hessian.device)
+    else:
+        cholesky = torch.linalg.cholesky(hessian)
+        delta_weight = torch.cholesky_solve(rhs.t(), cholesky)
+    return delta_weight
 
 
 @dataclass
@@ -98,6 +111,8 @@ class Quantizer(metaclass=ABCMeta):
         num_layers (int): The number of layers to be quantized,
             if None, all layers will be quantized.
         calc_quant_error (bool): If True, calculate quantization error.
+        bitpack_on_quantize (bool): If True, store quantized weights in a
+            bitpacked form during quantization. Default is False.
         exclude_layer_names (list[str]): List of layer names to exclude
             from quantization (exact match).
         include_layer_names (list[str]): List of layer names to include
@@ -124,6 +139,13 @@ class Quantizer(metaclass=ABCMeta):
     - Must implement the following method: quantize_layer
     - Set flag_calibration to True if calibration data is needed
     - Set flag_hessian to True if the Hessian matrix is needed
+    - Set flag_nsamples to True if the sample count used to build the
+      Hessian is needed; quantize_layer then also receives ``nsamples``
+    - Set flag_xtx to True if X^T X is needed instead of the Hessian;
+      quantizers that implement it directly (e.g. JointQ) accept
+      precomputed ``matrix_XX`` / ``dim_n``, which only the chunked
+      quantization path supplies, while the other paths pass input
+      activations for quantize_layer to build X^T X itself
 
     Examples:
         # Example 1: Exclude lm_head (default behavior)
@@ -153,6 +175,7 @@ class Quantizer(metaclass=ABCMeta):
     # Parameters for the quantizer
     num_layers: int = None
     calc_quant_error: bool = False
+    bitpack_on_quantize: bool = False
 
     # Layer selection parameters
     include_layer_names: list[str] = None  # Layers to explicitly quantize (exact match)
@@ -174,6 +197,7 @@ class Quantizer(metaclass=ABCMeta):
     flag_calibration: bool = False
     flag_hessian: bool = False
     flag_xtx: bool = False  # Whether X^T X is needed (e.g., JointQ)
+    flag_nsamples: bool = False  # Whether nsamples (used in Hessian) is needed (e.g., MDBF)
     flag_qep_supported: bool = True
 
     def __post_init__(self):
@@ -193,7 +217,7 @@ class Quantizer(metaclass=ABCMeta):
         pass
 
     def quantize(
-        self, module, input, output, hessian=None
+        self, module, input, output, hessian=None, nsamples=None
     ):  # pylint: disable=redefined-builtin, unused-argument
         """Quantize the layer
 
@@ -209,9 +233,13 @@ class Quantizer(metaclass=ABCMeta):
         self.logger.debug("Quantizing layer: %s", name)
         start_time = time.time()
         if hessian is None and self.flag_hessian:
-            hessian = self.calculate_hessian(module, input)
-
-        result = self.quantize_layer(module, input, hessian=hessian)
+            hessian, nsamples = self.calculate_hessian(module, input)
+        elif hessian is None:
+            hessian, nsamples = None, None
+        extra_kwargs = {}
+        if self.flag_nsamples:
+            extra_kwargs["nsamples"] = nsamples
+        result = self.quantize_layer(module, input, hessian=hessian, **extra_kwargs)
         end_time = time.time()
         if hessian is not None:
             del hessian
@@ -222,7 +250,7 @@ class Quantizer(metaclass=ABCMeta):
         result.quantization_time = end_time - start_time
 
         self.results[name] = result
-        torch.cuda.empty_cache()
+        empty_cache(module.weight.device)
 
         if self.calc_quant_error:
             # Record quantization error
@@ -237,6 +265,7 @@ class Quantizer(metaclass=ABCMeta):
         perccorr=0.5,
         hessian=None,
         delta_hatX=None,
+        nsamples=None,
     ):  # pylint: disable=too-many-arguments, too-many-positional-arguments
         """Quantize the layer with QEP
 
@@ -244,8 +273,13 @@ class Quantizer(metaclass=ABCMeta):
             module (torch.nn.Module): The layer module
             quant_input_activation (torch.Tensor): The input activations of the quantized layer
             original_input_activation (torch.Tensor): The input activations of the original layer
-            hessian (torch.Tensor): The Hessian matrix
+            hessian (torch.Tensor): The Hessian matrix. When provided by the
+                caller (e.g. QEP-arch), ``nsamples`` must also be supplied.
             delta_hatX (torch.Tensor): The cross-term matrix
+            nsamples (int, optional): Number of samples used to compute
+                ``hessian``. Required when the caller passes a precomputed
+                ``hessian`` and the quantizer has ``flag_nsamples=True``.
+                Otherwise inferred from ``calculate_hessian()``.
         """
 
         name = self.module_to_name[module]
@@ -254,7 +288,7 @@ class Quantizer(metaclass=ABCMeta):
 
         # Calculate the Hessian matrix
         if hessian is None and self.flag_hessian:
-            hessian = self.calculate_hessian(module, quant_input_activation)
+            hessian, nsamples = self.calculate_hessian(module, quant_input_activation)
 
         # Adjust the weights to be quantized
         if delta_hatX is not None or original_input_activation is not None:
@@ -268,10 +302,15 @@ class Quantizer(metaclass=ABCMeta):
                 percdamp=percdamp,
                 perccorr=perccorr,
             )
-            torch.cuda.empty_cache()
+            empty_cache(module.weight.device)
 
         self.logger.debug("Quantizing layer: %s", name)
-        result = self.quantize_layer(module, quant_input_activation, hessian=hessian)
+        extra_kwargs = {}
+        if self.flag_nsamples:
+            extra_kwargs["nsamples"] = nsamples
+        result = self.quantize_layer(
+            module, quant_input_activation, hessian=hessian, **extra_kwargs
+        )
         end_time = time.time()
         if hessian is not None:
             del hessian
@@ -282,7 +321,7 @@ class Quantizer(metaclass=ABCMeta):
         result.quantization_time = end_time - start_time
 
         self.results[name] = result
-        torch.cuda.empty_cache()
+        empty_cache(module.weight.device)
 
         if self.calc_quant_error:
             # Record quantization error
@@ -318,7 +357,7 @@ class Quantizer(metaclass=ABCMeta):
             result.relative_weight_squared_error,
         ) = self.calculate_weight_quantization_error(module, dequantized_weight)
 
-        torch.cuda.empty_cache()
+        empty_cache(module.weight.device)
 
     def adjust_weight(
         self,
@@ -341,8 +380,9 @@ class Quantizer(metaclass=ABCMeta):
         weight = weight.float()
 
         # Get the Hessian matrix
+        # adjust_weight does not need nsamples; discard it for ``flag_nsamples``-aware quantizers.
         if original_hessian is None:
-            hessian = self.calculate_hessian(module, quant_input_activation)
+            hessian, _ = self.calculate_hessian(module, quant_input_activation)
         else:
             hessian = original_hessian.clone()
 
@@ -363,9 +403,8 @@ class Quantizer(metaclass=ABCMeta):
         damp = percdamp * torch.mean(torch.diag(hessian))
         diag = torch.arange(hessian.shape[0], device=hessian.device)
         hessian[diag, diag] += damp
-        cholesky = torch.linalg.cholesky(hessian)
         rhs = weight @ delta_hatX
-        delta_weight = torch.cholesky_solve(rhs.t(), cholesky).t()
+        delta_weight = _safe_cholesky_and_solve(hessian, rhs).t()
         weight = weight + (perccorr * delta_weight)
 
         if isinstance(module, Conv1d):
@@ -382,6 +421,15 @@ class Quantizer(metaclass=ABCMeta):
             module (torch.nn.Module): The layer module
             input (tuple or torch.Tensor): The input to the layer
             hessian (torch.Tensor): The Hessian matrix
+
+        Subclasses that set ``flag_nsamples=True`` (e.g. MDBF) must also
+        accept an ``nsamples`` keyword argument; ``quantize()`` /
+        ``quantize_with_qep()`` pass the sample count returned by
+        ``calculate_hessian()`` (or supplied by the caller) only for those
+        quantizers. Quantizers that implement ``flag_xtx=True`` directly
+        (e.g. JointQ) additionally accept ``matrix_XX`` / ``dim_n``, which only
+        the chunked quantization path supplies; the other paths pass input
+        activations instead, leaving quantize_layer to build X^T X itself.
 
         Returns:
             Union[torch.Tensor, QuantizationResult]:
@@ -629,22 +677,40 @@ class Quantizer(metaclass=ABCMeta):
         torch.save(self.results, filepath)
         self.logger.info("Saved quantization results to %s", filepath)
 
-    def load_results(self, filepath, weights_only=False):
+    def load_results(self, filepath, *, weights_only=False, allow_unsafe_deserialization=False):
         """Load the quantization results from a file into self.results.
 
         Loads saved quantization results and stores them in self.results.
+
+        .. warning::
+            With ``weights_only=False`` this method deserializes arbitrary
+            Python objects via ``torch.load`` / ``pickle``, so a maliciously
+            crafted file can execute code during deserialization (CWE-502).
+            Only load result files you produced yourself or obtained from a
+            fully trusted source, and set ``allow_unsafe_deserialization=True``
+            to acknowledge the risk.
 
         Args:
             filepath (str): The path to load the results from.
             weights_only (bool): If True, only load tensor weights (safer but limited).
                 Default is False to support loading QuantizationResult objects.
+            allow_unsafe_deserialization (bool): Required to be True when
+                ``weights_only`` is False, to acknowledge the
+                unsafe-deserialization risk. Ignored when ``weights_only`` is
+                True (that path is safe). Defaults to False.
 
         Returns:
             dict: A dict mapping layer name -> QuantizationResult (same reference as self.results).
 
+        Raises:
+            ValueError: If ``weights_only`` is False and
+                ``allow_unsafe_deserialization`` is not True.
+
         Example:
             >>> quantizer = JointQ()
-            >>> quantizer.load_results("quantization_results.pt")
+            >>> quantizer.load_results(
+            ...     "quantization_results.pt", allow_unsafe_deserialization=True
+            ... )
             >>> for layer_name, result in quantizer.results.items():
             ...     print(f"{layer_name}: {result.dequantized_weight.shape}")
 
@@ -655,6 +721,22 @@ class Quantizer(metaclass=ABCMeta):
             - Loading files saved with older versions may fail if class
               definitions have changed.
         """
+        if not weights_only and not allow_unsafe_deserialization:
+            raise ValueError(
+                f"Refusing to load '{filepath}': loading with weights_only=False "
+                "deserializes arbitrary Python objects via pickle and can execute "
+                "code embedded in a malicious file (CWE-502). Only load result "
+                "files from a fully trusted source, then pass "
+                "allow_unsafe_deserialization=True to acknowledge this risk, or "
+                "use weights_only=True for the safe (tensors-only) path."
+            )
+        if not weights_only:
+            self.logger.warning(
+                "Loading '%s' with weights_only=False; arbitrary code in a "
+                "malicious file can execute during deserialization. Ensure this "
+                "file comes from a trusted source.",
+                filepath,
+            )
         self.results = torch.load(filepath, weights_only=weights_only)
         self.logger.info("Loaded quantization results from %s", filepath)
         return self.results
@@ -673,6 +755,12 @@ class Quantizer(metaclass=ABCMeta):
         Args:
             module (torch.nn.Module): The layer module
             input (tuple): The input to the layer
+
+        Returns:
+            tuple[torch.Tensor, int]: ``(hessian, nsamples)``. ``nsamples`` is
+            the total number of (batch * seq_len) rows folded into the Hessian.
+            Quantizers with ``flag_nsamples=True`` (e.g. MDBF) consume
+            this; others ignore it.
         """
 
         device = module.weight.device
@@ -721,7 +809,7 @@ class Quantizer(metaclass=ABCMeta):
             inp_scaled = math.sqrt(2 / nsamples) * inp.float()
             hessian += inp_scaled.matmul(inp_scaled.t())
 
-        return hessian
+        return hessian, nsamples
 
     def calculate_delta_hatX(
         self, module, quant_input_activation, original_input_activation
@@ -908,7 +996,7 @@ class Quantizer(metaclass=ABCMeta):
 
             del batch_diff, batch_X_T
 
-        torch.cuda.empty_cache()
+        empty_cache(device)
 
         # MSE = output_squared_error / (out_features * total_samples)
         mean_output_squared_error = output_squared_error / num_elements
@@ -939,6 +1027,9 @@ class ResultLoader(Quantizer):
     # Optional: load precomputed results at initialization time
     results_file: str = None
     weights_only: bool = False
+    # Required to be True when weights_only is False, to acknowledge the
+    # unsafe-deserialization risk of torch.load(weights_only=False) (CWE-502).
+    allow_unsafe_deserialization: bool = False
 
     # Ensure no layers are selected for quantization by default
     target_layer_types: tuple = field(default_factory=tuple)
@@ -950,7 +1041,11 @@ class ResultLoader(Quantizer):
     def __post_init__(self):
         super().__post_init__()
         if self.results_file is not None:
-            self.load_results(self.results_file, weights_only=self.weights_only)
+            self.load_results(
+                self.results_file,
+                weights_only=self.weights_only,
+                allow_unsafe_deserialization=self.allow_unsafe_deserialization,
+            )
 
     def setup(self, model):  # pylint: disable=unused-argument
         """Select no layers (no-op).

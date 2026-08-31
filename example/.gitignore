@@ -2,5 +2,8 @@ buf*.py
 run_*.sh
 tinyllama_gptq4*/
 TinyLlama*/
+tinyllama*
 quantized_model_saveload/
 rotated_model_*
+results
+cpu_inference/_run_out/

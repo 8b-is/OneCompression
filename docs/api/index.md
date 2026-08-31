@@ -16,6 +16,7 @@ The following are available directly from `import onecomp`:
 | `GPTQ`                 | Class    | GPTQ quantizer                           |
 | `RTN`                  | Class    | RTN quantizer                            |
 | `DBF`                  | Class    | DBF quantizer                            |
+| `MDBF`                 | Class    | MDBF (Multi-Envelope DBF) quantizer      |
 | `JointQ`               | Class    | JointQ quantizer                         |
 | `QUIP`                 | Class    | QuIP quantizer                           |
 | `ARB`                  | Class    | ARB quantizer                            |
@@ -28,6 +29,9 @@ The following are available directly from `import onecomp`:
 | `load_quantized_model_pt` | Function | Shortcut for `QuantizedModelLoader.load_quantized_model_pt` |
 | `prepare_rotated_model`| Function | Rotation preprocessing pipeline          |
 | `setup_logger`         | Function | Configure logging output                 |
+
+Evaluation (`onecomp-eval`, vLLM + MT-Bench / throughput) is documented separately:
+[Evaluation user guide](../user-guide/evaluation.md) and [Evaluation API](eval.md).
 
 ## Module Structure
 
@@ -49,10 +53,15 @@ onecomp/
         autobit/           # AutoBit (ILP mixed-precision)
         gptq/              # GPTQ
         dbf/               # DBF
+        mdbf/              # MDBF (Multi-Envelope DBF)
         rtn/               # RTN
         jointq/            # JointQ
         ...
     quantized_model_loader.py  # QuantizedModelLoader
     log.py                 # setup_logger
     utils/                 # Calibration, perplexity, accuracy utilities
+eval/                      # onecomp-eval harness (see api/eval.md)
+    schema.py              # EvalConfig, TaskResult, per-eval configs
+    orchestrator/          # vLLM server, subprocess dispatch, aggregation
+    evals/                 # mt_bench, throughput, ...
 ```

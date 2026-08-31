@@ -10,13 +10,13 @@ Phase 2: Quantize - Parallel quantization using multiple threads
 
 """
 
-from logging import getLogger
-import time
-from typing import Dict, List, Any, Optional
-from dataclasses import asdict
-from concurrent.futures import ThreadPoolExecutor
 import queue
 import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import asdict
+from logging import getLogger
+from typing import Any, Dict, List, Optional
 
 import torch
 
@@ -241,10 +241,15 @@ def run_quantization_phase(
 
         # Hessian computation + quantization
         layer_start = time.time()
-        hessian = None
+        hessian, nsamples = None, None
         if quantizer.flag_hessian:
-            hessian = quantizer.calculate_hessian(dummy_module, activation)
-        quant_result = quantizer.quantize_layer(dummy_module, activation, hessian=hessian)
+            hessian, nsamples = quantizer.calculate_hessian(dummy_module, activation)
+        extra_kwargs = {}
+        if quantizer.flag_nsamples:
+            extra_kwargs["nsamples"] = nsamples
+        quant_result = quantizer.quantize_layer(
+            dummy_module, activation, hessian=hessian, **extra_kwargs
+        )
         layer_elapsed = time.time() - layer_start
 
         # Backward compatibility: convert Tensor to QuantizationResult if needed

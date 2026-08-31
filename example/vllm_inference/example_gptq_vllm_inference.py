@@ -11,6 +11,18 @@ Performs the following steps:
 Requirements:
   pip install vllm
 
+Note:
+  vLLM runs a DeepGEMM (FP8) kernel warmup at engine startup even for
+  non-FP8 quantization such as GPTQ. If ``deep_gemm`` is not installed this
+  fails with ``RuntimeError: DeepGEMM backend is not available or outdated``.
+  OneComp-quantized models do not need DeepGEMM, so disable the FP8 path
+  before running this script::
+
+      export VLLM_USE_DEEP_GEMM=0
+      export VLLM_DEEP_GEMM_WARMUP=skip
+
+  See docs/user-guide/vllm-inference.md (Troubleshooting) for details.
+
 Copyright 2025-2026 Fujitsu Ltd.
 
 Author: Keiji Kimura
@@ -20,8 +32,13 @@ Author: Keiji Kimura
 import gc
 
 import torch
+<<<<<<< HEAD
 from onecomp import Runner, ModelConfig, CalibrationConfig, GPTQ, setup_logger
+=======
+>>>>>>> export/v1-4-0
 from vllm import LLM, SamplingParams
+
+from onecomp import GPTQ, CalibrationConfig, ModelConfig, Runner, setup_logger
 
 
 def main():
@@ -59,7 +76,9 @@ def main():
     # a single all-at-once forward pass.
     runner.run()
 
-    # Step 2: Save the quantized model
+    # Step 2: Save the quantized model.
+    # (Qwen3.6 needs save_format="full_wrapper" for vLLM serving;
+    #  see example/vllm_inference/example_gptq_vllm_qwen36_inference.py.)
     runner.save_quantized_model(save_dir)
 
     # Free GPU memory used by quantization before loading vLLM

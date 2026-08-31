@@ -22,17 +22,10 @@ from onecomp.model_config import ModelConfig
 from onecomp.qep import QEPConfig
 from onecomp.quantizer._quantizer import Quantizer
 
-from ._refiner import refiner, compute_mse
+from ..qep._quantize_with_qep_arch import compute_hessian_and_crossterm, make_grouped_module
+from ..utils.blockwise import forward_input, get_blocks_and_inputs, move_kwargs_to_device
 from ._metric import make_lpcd_metrics
-from ..utils.blockwise import (
-    get_blocks_and_inputs,
-    move_kwargs_to_device,
-    forward_input,
-)
-from ..qep._quantize_with_qep_arch import (
-    make_grouped_module,
-    compute_hessian_and_crossterm,
-)
+from ._refiner import compute_mse, refiner
 
 logger = getLogger(__name__)
 
@@ -134,7 +127,7 @@ def run_quantize_with_lpcd(
             )
 
             # 3-1. compute hessian and cross-term matrix
-            H, delta_hatX = compute_hessian_and_crossterm(
+            H, delta_hatX, nsamples_arch = compute_hessian_and_crossterm(
                 block_q,
                 block_f,
                 group_q[0],
@@ -174,6 +167,7 @@ def run_quantize_with_lpcd(
                             input=None,
                             output=None,
                             hessian=H.clone(),
+                            nsamples=nsamples_arch if quantizer.flag_nsamples else None,
                         )
                     else:
                         # Quantize with QEP
@@ -188,6 +182,7 @@ def run_quantize_with_lpcd(
                             perccorr=qep_config.perccorr,
                             hessian=H.clone(),
                             delta_hatX=layer_delta,
+                            nsamples=nsamples_arch if quantizer.flag_nsamples else None,
                         )
 
                     # Update the weights of the target layer

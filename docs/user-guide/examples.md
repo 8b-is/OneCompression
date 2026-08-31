@@ -2,6 +2,10 @@
 
 This page demonstrates common usage patterns beyond the basic workflow.
 
+!!! tip "Prefer a hands-on walkthrough?"
+    Try the [Tutorial Notebook](../getting-started/tutorial-notebook.md) in Jupyter or Google Colab.
+    It covers RTN visualization, `Runner.auto_run`, and vLLM chat inference step by step.
+
 ## One-liner with `auto_run`
 
 The simplest way to quantize a model:
@@ -370,12 +374,151 @@ outputs = model.generate(**inputs, max_new_tokens=50)
 print(tokenizer.decode(outputs[0], skip_special_tokens=True))
 ```
 
+<<<<<<< HEAD
 ## Block-wise PTQ
 
 Apply block-wise post-training quantization to improve accuracy after GPTQ quantization:
 
 ```python
 from onecomp import CalibrationConfig, GPTQ, BlockWisePTQ, ModelConfig, Runner, setup_logger
+=======
+On macOS, the model is placed on MPS automatically when available. For vLLM serving,
+use a Linux machine with an NVIDIA GPU. See the [macOS / MPS guide](mps.md).
+
+### Reload, post-process, and re-save
+
+For structure-preserving post-processes such as `BlockWisePTQ`,
+`GlobalPTQ`, and `GlobalPTQDistributed`, load the saved model on CPU,
+assign it to a `Runner`, run the post-processes, and save again:
+
+```python
+from onecomp import BlockWisePTQ, CalibrationConfig, ModelConfig, Runner, load_quantized_model
+
+model_config = ModelConfig(
+    model_id="TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T",
+    device="cuda:0",
+)
+
+model, _ = load_quantized_model("./output/my_quantized_model", device_map=None)
+
+runner = Runner(
+    model_config=model_config,
+    quantizer=None,
+    post_processes=[
+        BlockWisePTQ(
+            calibration_config=CalibrationConfig(num_calibration_samples=128),
+        )
+    ],
+)
+runner.quantized_model = model
+runner.run_post_processes()
+runner.save_quantized_model("./output/my_quantized_model_blockwise")
+```
+
+`device_map=None` keeps the loaded model on CPU, matching the post-process
+entry contract. The re-saved `config.json` retains the accumulated
+`quantization_config["onecomp_post_processes"]` audit history. See the full
+script at
+[`example/post_process/example_reload_post_process_resave.py`](https://github.com/FujitsuResearch/OneCompression/blob/main/example/post_process/example_reload_post_process_resave.py).
+
+## Global PTQ: KL Distillation
+
+Optimise quantization parameters globally via KL-divergence distillation from a full-precision teacher:
+
+```python
+from onecomp import CalibrationConfig, DBF, GPTQ, JointQ, RTN, ModelConfig, Runner, GlobalPTQ, setup_logger
+
+setup_logger()
+
+model_config = ModelConfig(
+    model_id="meta-llama/Llama-2-7b-hf",
+    device="cuda:0",
+)
+quantizer = GPTQ(wbits=4, groupsize=128)
+# quantizer = RTN(wbits=4, groupsize=128)
+# quantizer = JointQ(bits=4, group_size=128)
+# quantizer = DBF(target_bits=1.5)
+
+global_ptq = GlobalPTQ(
+    epochs=5,
+    gptq_lr=1e-5,
+    calibration_config=CalibrationConfig(
+        num_calibration_samples=128,
+        max_length=2048,
+    ),
+    eval_interval=1,
+)
+
+runner = Runner(
+    model_config=model_config,
+    quantizer=quantizer,
+    post_processes=[global_ptq],
+)
+runner.run()
+```
+
+The full `example_global_ptq.py` script also includes a commented direct
+invocation path using `post_process.run(model, model_config)`. Use that path
+when you want to inspect or evaluate the quantized-only model before applying
+GlobalPTQ.
+
+The explicit unpacked buffer path (`create_quantized_model(pack_weights=False)`
+→ `GlobalPTQ.run()`) is documented in the `GlobalPTQ` API reference and is only
+needed when GPTQLinear bit packing cannot represent the quantizer output (e.g.
+1-bit JointQ, or GPTQ/RTN bit widths outside `{2, 3, 4, 8}`).
+
+## Global PTQ: Multi-GPU with DeepSpeed
+
+For large models, use `GlobalPTQDistributed` with DeepSpeed ZeRO-2.
+
+!!! note "Installation"
+    Multi-GPU training requires DeepSpeed. Install it via the `distributed` extra:
+    
+    - **uv**: `uv sync --extra <cuda-extra> --extra distributed`
+    - **pip**: `pip install "onecomp[distributed]"`
+
+```python
+from onecomp import CalibrationConfig, GPTQ, ModelConfig, Runner, GlobalPTQDistributed, setup_logger
+
+setup_logger()
+
+model_config = ModelConfig(
+    model_id="meta-llama/Llama-2-7b-hf",
+    device="cuda:0",
+)
+gptq = GPTQ(wbits=4, groupsize=128)
+
+global_ptq = GlobalPTQDistributed(
+    epochs=5,
+    gptq_lr=1e-5,
+    deepspeed_config="ds_zero2.json",
+    calibration_config=CalibrationConfig(
+        num_calibration_samples=128,
+        max_length=2048,
+    ),
+)
+
+runner = Runner(
+    model_config=model_config,
+    quantizer=gptq,
+    post_processes=[global_ptq],
+)
+runner.run()
+```
+
+Launch with `torchrun`:
+
+```bash
+torchrun --nproc_per_node=2 my_script.py
+```
+
+## Block-wise PTQ
+
+Apply block-wise post-training quantization to improve accuracy after quantization:
+
+```python
+from onecomp import CalibrationConfig, DBF, GPTQ, JointQ, Onebit, RTN, BlockWisePTQ, ModelConfig, Runner, setup_logger
+>>>>>>> export/v1-4-0
 
 setup_logger()
 
@@ -383,6 +526,7 @@ model_config = ModelConfig(
     model_id="TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T",
     device="cuda:0",
 )
+<<<<<<< HEAD
 gptq = GPTQ(wbits=4, groupsize=128)
 
 # Step 1: Quantize
@@ -397,6 +541,16 @@ print(f"Original PPL:  {original_ppl:.4f}")
 print(f"Baseline PPL:  {baseline_ppl:.4f}")
 
 # Step 3: Apply BlockWisePTQ directly
+=======
+# Step 1: Choose a quantizer
+quantizer = GPTQ(wbits=4, groupsize=128)
+# quantizer = RTN(wbits=4, groupsize=128)
+# quantizer = JointQ(bits=4, group_size=128)
+# quantizer = DBF(target_bits=1.5)
+# quantizer = Onebit()
+
+# Step 2: Configure BlockWisePTQ
+>>>>>>> export/v1-4-0
 blockwise_ptq = BlockWisePTQ(
     lr=1e-4,
     epochs=10,
@@ -408,6 +562,7 @@ blockwise_ptq = BlockWisePTQ(
     ),
 )
 
+<<<<<<< HEAD
 model, _ = runner.create_quantized_model(pack_weights=False, use_gemlite=False)
 blockwise_ptq.run(model, model_config)
 runner.quantized_model = model
@@ -419,6 +574,33 @@ print(f"Improvement:       {baseline_ppl - improved_ppl:.4f}")
 ```
 
 See [Post-Process](post-process.md#block-wise-ptq) for the full guide including parameter reference.
+=======
+# Step 3: Quantize, then apply BlockWisePTQ in a single pass.
+# The Runner-managed post_processes path replaces the older
+# quantize -> create_quantized_model() -> blockwise_ptq.run() sequence:
+# run() quantizes first and then runs each post-process in order.
+runner = Runner(
+    model_config=model_config,
+    quantizer=quantizer,
+    post_processes=[blockwise_ptq],
+)
+runner.run()
+
+# Step 4: Measure PPL (original vs quantized + BlockWisePTQ)
+original_ppl, _, blockwise_ppl = runner.calculate_perplexity(
+    original_model=True,
+    quantized_model=True,
+)
+print(f"Original PPL:      {original_ppl:.4f}")
+print(f"BlockWisePTQ PPL:  {blockwise_ppl:.4f}")
+```
+
+See [Post-Process](post-process.md#block-wise-ptq) for the full guide including parameter reference.
+The explicit unpacked buffer path (`create_quantized_model(pack_weights=False)`
+→ `BlockWisePTQ.run()`) is documented in the `BlockWisePTQ` API reference and is
+only needed when GPTQLinear bit packing cannot represent the quantizer output
+(e.g. 1-bit JointQ, or GPTQ/RTN bit widths outside `{2, 3, 4, 8}`).
+>>>>>>> export/v1-4-0
 
 ## LoRA SFT: Accuracy Recovery
 
@@ -436,7 +618,7 @@ model_config = ModelConfig(
 gptq = GPTQ(wbits=4, groupsize=128)
 
 post_process = PostProcessLoraSFT(
-    dataset_name="wikitext",
+    dataset_name="Salesforce/wikitext",
     dataset_config_name="wikitext-2-raw-v1",
     train_split="train",
     text_column="text",
@@ -492,19 +674,29 @@ See [Post-Process (LoRA SFT)](post-process.md) for the full guide including teac
 
 ## Saving and Loading LoRA Models
 
-LoRA-applied models use a dedicated save/load API:
+LoRA-applied models are saved and loaded with the standard
+`save_quantized_model()` / `load_quantized_model()` API. The LoRA weights are
+written as a PEFT adapter sidecar and auto-detected on load:
 
 ```python
-# Save after LoRA SFT
-runner.save_quantized_model_pt("./my_model_lora")
+# Save after LoRA SFT (HF-compatible safetensors + PEFT sidecar)
+runner.save_quantized_model("./my_model_lora")
 
-# Load
-from onecomp import load_quantized_model_pt
-model, tokenizer = load_quantized_model_pt("./my_model_lora")
+# Load -- the LoRA adapter sidecar is auto-detected and re-applied
+from onecomp import load_quantized_model
+model, tokenizer = load_quantized_model("./my_model_lora")
 ```
 
-!!! note
-    For standard quantized models (without LoRA), use `save_quantized_model()` / `load_quantized_model()` instead.
+!!! note "Legacy `.pt` format (research/development only)"
+    The PyTorch `.pt` API (`save_quantized_model_pt()` /
+    `load_quantized_model_pt()`) predates the safetensors sidecar flow and is
+    **not recommended** for general or production use -- keep it for research
+    and development only. Its loader uses `torch.load(weights_only=False)`
+    (Python `pickle`), so a malicious file can execute arbitrary code
+    (CWE-502); it refuses to load unless you pass
+    `allow_unsafe_deserialization=True`, and you should only opt in for fully
+    trusted models. See
+    [Post-Process (Saving and Loading LoRA Models)](post-process.md#saving-and-loading-lora-models).
 
 ## Analyzing Cumulative Error
 

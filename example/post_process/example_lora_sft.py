@@ -5,8 +5,12 @@ End-to-end demonstration of the LoRA SFT post-process workflow:
     1. Quantize TinyLlama with GPTQ 4-bit (groupsize=128)
     2. Apply LoRA SFT post-process (WikiText-2)
     3. Evaluate PPL (original vs quantized+LoRA)
-    4. Save the LoRA-applied model via save_quantized_model_pt()
-    5. Load the saved model via load_quantized_model_pt()
+    4. Save via save_quantized_model() - writes HF-compatible safetensors
+       plus a PEFT-format LoRA adapter sidecar
+       (``lora_adapter/adapter_model.safetensors`` +
+       ``lora_adapter/adapter_config.json``)
+    5. Load via load_quantized_model() - the sidecar is auto-detected and
+       matching GPTQLinear layers are re-wrapped with LoRAGPTQLinear
     6. Generate text with the loaded model to verify it works
 
 Copyright 2025-2026 Fujitsu Ltd.
@@ -22,10 +26,11 @@ import torch
 from onecomp import (
     CalibrationConfig,
     GPTQ,
+    CalibrationConfig,
     ModelConfig,
     PostProcessLoraSFT,
     Runner,
-    load_quantized_model_pt,
+    load_quantized_model,
     setup_logger,
 )
 
@@ -62,7 +67,7 @@ model_config = ModelConfig(model_id=MODEL_ID, device="cuda:0")
 gptq = GPTQ(wbits=4, groupsize=128)
 
 post_process = PostProcessLoraSFT(
-    dataset_name="wikitext",
+    dataset_name="Salesforce/wikitext",
     dataset_config_name="wikitext-2-raw-v1",
     train_split="train",
     text_column="text",
@@ -114,14 +119,19 @@ print(f"  Original model PPL:              {original_ppl:.4f}")
 print(f"  Quantized + LoRA SFT model PPL:  {quantized_ppl:.4f}")
 
 # ================================================================
-# Step 3: Save the LoRA-applied model (PyTorch .pt format)
+# Step 3: Save the LoRA-applied model (HF safetensors + adapter sidecar)
 # ================================================================
 print("\n" + "=" * 70)
 print(f"Step 3: Saving LoRA-applied model to {SAVE_DIR}")
 print("=" * 70)
 
-runner.save_quantized_model_pt(SAVE_DIR)
+runner.save_quantized_model(SAVE_DIR)
 print(f"Model saved to: {SAVE_DIR}")
+print(
+    "  - model.safetensors / config.json : base GPTQ model (HF-compatible)\n"
+    "  - lora_adapter/adapter_model.safetensors : PEFT-format LoRA adapter\n"
+    "  - lora_adapter/adapter_config.json       : PEFT-format adapter config"
+)
 
 del runner
 torch.cuda.empty_cache()
@@ -133,7 +143,7 @@ print("\n" + "=" * 70)
 print(f"Step 4: Loading model from {SAVE_DIR}")
 print("=" * 70)
 
-loaded_model, loaded_tokenizer = load_quantized_model_pt(SAVE_DIR)
+loaded_model, loaded_tokenizer = load_quantized_model(SAVE_DIR)
 print(f"Loaded model type : {type(loaded_model).__name__}")
 print(f"Loaded model device: {next(loaded_model.parameters()).device}")
 

@@ -1,14 +1,19 @@
 # vLLM Inference
 
-OneComp provides vLLM plugins for serving quantized models.
-The plugins are automatically registered via Python entry points when `onecomp` is installed — no extra configuration is needed.
+OneComp-quantized models can be served with vLLM.
+Each quantizer writes a `quant_method` field into the saved `config.json`; vLLM reads it
+and dispatches to the matching plugin automatically — no extra configuration is needed.
+Some methods are served by vLLM's **built-in** GPTQ plugin, while others use the
+**OneComp** plugins that are registered via Python entry points when `onecomp` is installed.
 
 ## Supported Quantization Methods
 
-| Plugin | `quant_method` | Description |
-|--------|---------------|-------------|
-| DBF | `dbf` | 1-bit Double Binary Factorization. Uses GemLite kernels by default; set `ONECOMP_DBF_NAIVE_LINEAR=1` to use the naive fallback. |
-| Mixed-GPTQ | `mixed_gptq` | Per-layer mixed-bitwidth GPTQ. Automatically dispatches to Marlin or Exllama kernels based on bit-width and symmetry. |
+| OneComp Quantizer | `quant_method` | Served by | Notes |
+|-------------------|----------------|-----------|-------|
+| `GPTQ` (uniform bit-width), `RTN` | `gptq` | vLLM built-in GPTQ plugin | Uses GPTQ tensor layout (`qweight`/`scales`/`qzeros`). Use `wbits` in {2, 3, 4, 8} for vLLM serving. |
+| `JointQ` | `gptq` | vLLM built-in GPTQ plugin | Reuses GPTQ's tensor layout. Use `bits` in {2, 3, 4} for vLLM serving; `bits=1` is OneComp load-only with `pack_weights=False`. |
+| `GPTQ` (mixed bit-width), `AutoBitQuantizer` | `mixed_gptq` | OneComp Mixed-GPTQ plugin | Per-layer mixed-bitwidth GPTQ. Automatically dispatches to Marlin or Exllama kernels based on bit-width and symmetry. `FusedMoE` layers are dispatched to vLLM's `MoeWNA16Config` GPTQ MoE kernel instead, using one GPTQ scheme aggregated across all experts in the layer (see [GPTQ MoE + vLLM](#gptq-moe--vllm)). |
+| `DBF` | `dbf` | OneComp DBF plugin | 1-bit Double Binary Factorization. Uses GemLite kernels by default; set `ONECOMP_DBF_NAIVE_LINEAR=1` to use the naive fallback. |
 
 ## KV Cache Compression
 
@@ -86,6 +91,22 @@ python benchmark/kvcomp-codec/vllm_benchmark.py \
 
 !!! warning "Rotation-preprocessed models are not supported"
     Models quantized after rotation preprocessing (`prepare_rotated_model`) cannot be served with vLLM. vLLM kernels do not apply the online Hadamard transform on `down_proj` inputs that rotation-preprocessed models require for correct inference.
+!!! note "`Onebit` is not vLLM-servable"
+    The `Onebit` quantizer saves with `quant_method="onebit"`, for which no vLLM plugin
+    exists. OneBit-quantized models can still be loaded and run with OneComp's own
+    [`load_quantized_model()`](examples.md#load-a-saved-quantized-model),
+    but not served through vLLM.
+
+!!! note "Rotation-preprocessed models"
+    Models quantized after rotation preprocessing (`prepare_rotated_model`) are supported with the `mixed_gptq` and `dbf` plugins: the plugins reproduce the online Hadamard transform on `down_proj` inputs at inference time. The `dbf` plugin currently supports rotation only with `tensor_parallel_size=1`; `mixed_gptq` supports `tensor_parallel_size>1`.
+
+!!! warning "GPTQ MoE models with activation reordering (`desc_act`/`actorder`) are not vLLM-servable"
+    vLLM's GPTQ `FusedMoE` kernel (`MoeWNA16Method`) has no `g_idx` parameter, so a GPTQ
+    MoE checkpoint quantized with `desc_act=True` carries activation-order information
+    that cannot be served. `save_quantized_model(..., save_format="full_wrapper")` raises
+    `RuntimeError` at export time rather than producing a checkpoint that fails to load in
+    vLLM. Quantize MoE models with `desc_act=False` (the default) if you intend to serve
+    them with vLLM.
 
 ## Installation
 
@@ -98,7 +119,7 @@ vLLM is available as an optional dependency:
     ```
 
     !!! note "Use `cu130`; older CUDA extras are rejected"
-        Recent vLLM releases depend on `torch>=2.10`, whose wheels are only published for the `cu130` PyTorch index. `pyproject.toml` therefore declares `--extra vllm` as conflicting with `cpu`, `cu118`, `cu121`, `cu124`, `cu126`, and `cu128`; combining any of those with `--extra vllm` will fail at lock time. Use `--extra cu130` for vLLM workflows.
+        Recent vLLM releases depend on `torch>=2.10`, whose wheels are only published for the `cu130` PyTorch index. `pyproject.toml` therefore declares `--extra vllm` as conflicting with `cpu`, `mps`, `cu118`, `cu121`, `cu124`, `cu126`, and `cu128`; combining any of those with `--extra vllm` will fail at lock time. Use `--extra cu130` for vLLM workflows.
 
 === "pip"
 
@@ -106,8 +127,16 @@ vLLM is available as an optional dependency:
     pip install vllm
     ```
 
+!!! warning "vLLM 0.22+ is not supported"
+    OneComp's GPTQ serving relies on the Exllama GPTQ kernel for low bit-widths — 2-/3-bit, and 4-/8-bit when the model is asymmetric or uses activation reordering (`desc_act`). vLLM 0.22.0 removed the legacy Exllama GPTQ kernel, so these configurations fail at runtime. `pyproject.toml` therefore pins `vllm>=0.10,<0.22`; use a vLLM version below 0.22.
+
 !!! note
     vLLM requires CUDA and a compatible GPU. See the [vLLM documentation](https://docs.vllm.ai/) for detailed installation instructions and system requirements.
+
+!!! tip "macOS users"
+    vLLM is not available on macOS. Quantize on Mac with `device="mps"`, then run
+    inference locally via `load_quantized_model()` and Transformers `generate()`.
+    See the [macOS / MPS guide](mps.md#inference-with-transformers).
 
 !!! warning
     **uv users:** Do not install vLLM with `uv pip install vllm`. Packages installed via `uv pip` are not tracked by the lockfile and will be removed by subsequent `uv sync` or `uv run` commands. Always use `--extra vllm` instead.
@@ -135,6 +164,29 @@ When `enable_fused_groups=True`, the ILP solver constrains fused-layer constitue
 
 `Runner.auto_run()` always sets `enable_fused_groups=True`, so models quantized via `auto_run` or the CLI are always vLLM-compatible.
 
+## GPTQ MoE + vLLM
+
+This section covers models saved with `quant_method="mixed_gptq"` (OneComp Mixed-GPTQ
+plugin). vLLM's GPTQ `FusedMoE` kernel (`MoeWNA16Method`) dispatches **one** kernel
+instance per MoE layer, so every expert in that layer must share the same GPTQ scheme
+(bits, method, group size) — a mix within one layer is not representable.
+
+`_lookup_moe_config()` enforces this at model-load time: it aggregates each expert's
+config from `quantization_config`'s `quantization_bits`, and raises `ValueError` if the
+layer's experts disagree on bits/group size, or if some experts were left unquantized
+while others weren't.
+
+!!! warning "Partially- or inconsistently-quantized MoE layers fail to load in vLLM"
+    If a MoE layer has experts quantized with different `wbits`/`groupsize`, or only
+    some of its experts were quantized at all, vLLM raises `ValueError` while building
+    the model. This is the reason `run_quantize_with_qep_arch()` RTN-quantizes experts
+    that receive zero calibration tokens via `_rtn_fallback_result()` rather than
+    skipping them: an unquantized expert would otherwise leave its MoE layer partially
+    quantized and unservable.
+
+Quantizing MoE models with uniform `GPTQ` settings (no `module_wbits` overrides that
+single out individual experts) keeps every layer's experts consistent.
+
 ## Usage
 
 ### 1. Quantize and save a model with OneComp
@@ -149,6 +201,26 @@ runner = Runner(model_config=model_config, quantizer=quantizer, qep=True)
 runner.run()
 runner.save_quantized_model("./Llama-3.1-8B-Instruct-gptq-4bit")
 ```
+
+!!! note "Qwen3.6: use `save_format=\"full_wrapper\"`"
+    Qwen3.6 quantizes as a text-only checkpoint, whose native Hugging Face
+    layout (`model.layers.*`) does not match what vLLM's composite
+    `Qwen3_5ForConditionalGeneration` loader expects (`model.language_model.layers.*`).
+    Pass `save_format="full_wrapper"` to `save_quantized_model()` to remap the
+    checkpoint for vLLM serving:
+
+    ```python
+    runner.save_quantized_model("./Qwen3.6-gptq-4bit-vllm", save_format="full_wrapper")
+    ```
+
+    This option is specific to Qwen3.6 and will raise `RuntimeError` for any
+    other model. Leave `save_format` at its default (`"auto"`) for everything
+    else, including other VLMs.
+
+    For MoE variants (e.g. Qwen3.6-A3B), `full_wrapper` also drops each expert's
+    trivial `g_idx` buffer, since vLLM's GPTQ `FusedMoE` kernel has no `g_idx`
+    parameter and an unmapped one would crash weight loading — see the `desc_act`/
+    `actorder` warning above for when this isn't safe to drop.
 
 ### 2. Serve with vLLM
 
@@ -212,13 +284,90 @@ print(outputs[0].outputs[0].text)
 ```
 
 !!! tip
-    You do not need to pass `quantization=` explicitly. vLLM reads the `quant_method` from the model's `config.json` and automatically selects the correct OneComp plugin.
+    You do not need to pass `quantization=` explicitly. vLLM reads the `quant_method` from the model's `config.json` and automatically selects the correct plugin (vLLM's built-in GPTQ plugin for `gptq`, or the OneComp plugin for `mixed_gptq` / `dbf`).
 
 !!! warning
     When combining quantization and vLLM inference in a single script, you **must** wrap your code in `if __name__ == "__main__":`. vLLM spawns worker processes that re-import the script, so without this guard the quantization step will run again in each child process.
 
-A complete working example (quantization + vLLM inference) is available at
-[`example/vllm_inference/example_gptq_vllm_inference.py`](https://github.com/FujitsuResearch/OneCompression/blob/main/example/vllm_inference/example_gptq_vllm_inference.py).
+Complete working examples (quantization + vLLM inference) are available:
+
+- GPTQ: [`example/vllm_inference/example_gptq_vllm_inference.py`](https://github.com/FujitsuResearch/OneCompression/blob/main/example/vllm_inference/example_gptq_vllm_inference.py)
+- GPTQ (Qwen3.6 full-wrapper save): [`example/vllm_inference/example_gptq_vllm_qwen36_inference.py`](https://github.com/FujitsuResearch/OneCompression/blob/main/example/vllm_inference/example_gptq_vllm_qwen36_inference.py)
+- JointQ: [`example/vllm_inference/example_jointq_vllm_inference.py`](https://github.com/FujitsuResearch/OneCompression/blob/main/example/vllm_inference/example_jointq_vllm_inference.py)
+- AutoBit (mixed-precision): [`example/vllm_inference/example_autobit_vllm_inference.py`](https://github.com/FujitsuResearch/OneCompression/blob/main/example/vllm_inference/example_autobit_vllm_inference.py)
+- DBF: [`example/vllm_inference/example_dbf_vllm_inference.py`](https://github.com/FujitsuResearch/OneCompression/blob/main/example/vllm_inference/example_dbf_vllm_inference.py)
+
+`JointQ` and `RTN` follow exactly the same flow as the GPTQ example above —
+substitute `JointQ(bits=4, group_size=128)` or `RTN(wbits=4, groupsize=128)` for the
+quantizer (JointQ additionally requires `qep=False`).
+
+### 3. Chat with Open WebUI (optional)
+
+[Open WebUI](https://github.com/open-webui/open-webui) provides a ChatGPT-like browser interface.
+Because vLLM exposes an OpenAI-compatible API, Open WebUI can connect to it directly.
+
+#### 3-1. Start the vLLM server
+
+```bash
+vllm serve ./Llama-3.1-8B-Instruct-gptq-4bit
+```
+
+Keep this terminal open. The server listens on `http://localhost:8000` by default.
+
+#### 3-2. Launch Open WebUI
+
+=== "Docker (recommended)"
+
+    ```bash
+    docker run -d -p 3000:8080 \
+      --add-host=host.docker.internal:host-gateway \
+      --name open-webui \
+      ghcr.io/open-webui/open-webui:latest
+    ```
+
+    `--add-host` allows the container to reach the vLLM server running on the host (required on Linux; macOS/Windows Docker Desktop resolves it automatically).
+
+=== "pip"
+
+    Open WebUI requires **Python 3.11 or 3.12** (3.13+ is not supported).
+    To avoid dependency conflicts with OneComp/vLLM, create a separate virtual environment:
+
+    ```bash
+    # Create a dedicated venv (uv auto-downloads Python 3.12 if needed)
+    uv venv ~/open-webui-env --python 3.12
+    source ~/open-webui-env/bin/activate
+
+    # Install and launch
+    uv pip install open-webui
+    open-webui serve --port 3000
+    ```
+
+    When done, run `deactivate` to leave the venv.
+    To uninstall completely, remove the directory: `rm -rf ~/open-webui-env`.
+
+!!! note
+    The first launch takes several minutes while Open WebUI runs database migrations and downloads an embedding model (~80 MB). Subsequent launches start in seconds.
+
+#### 3-3. Connect to vLLM
+
+1. Open `http://localhost:3000` in your browser.
+2. Create an admin account on first launch.
+3. Go to **Admin Panel** → **Settings** → **Connections**.
+4. Under **OpenAI API**, set the URL:
+
+    | Setting | Value |
+    |---------|-------|
+    | URL | `http://host.docker.internal:8000/v1` (Docker) or `http://localhost:8000/v1` (pip) |
+    | API Key | `dummy` (any non-empty string) |
+
+5. Click **Save**. The quantized model appears in the model selector.
+
+#### 3-4. Start chatting
+
+Select the model from the dropdown at the top of the chat screen and start a conversation.
+
+!!! tip
+    Open WebUI persists chat history, supports multiple conversations, and provides features like system prompt customization and temperature control out of the box.
 
 ### 3. Chat with Open WebUI (optional)
 
@@ -293,6 +442,43 @@ Select the model from the dropdown at the top of the chat screen and start a con
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `ONECOMP_DBF_NAIVE_LINEAR` | `0` | Set to `1` to force the naive (non-GemLite) kernel for DBF inference. Useful for debugging or when GemLite is unavailable. |
+| `TRITON_CACHE_AUTOTUNING` | `1` | Set to `0` to disable Triton's autotune disk-cache. Recommended when GemLite fails at inference time due to the Triton autotune disk-cache bug (see below). |
+
+### GemLite Automatic Fallback
+
+The DBF plugin automatically falls back to the naive linear kernel if GemLite fails during inference.
+When this happens, a `WARNING` is logged:
+
+```
+WARNING [...] [DBF] GemLite inference path failed (ErrorType: detail).
+Disabling GemLite and falling back to the naive linear path for the remainder of this run.
+To run with GemLite, relaunch with TRITON_CACHE_AUTOTUNING=0 (works around the triton autotune disk-cache bug).
+To skip GemLite from the start, set ONECOMP_DBF_NAIVE_LINEAR=1.
+```
+
+The fallback is **process-wide**: once GemLite fails on any layer, all subsequent layers use the naive path for the rest of the process lifetime.
+Inference continues and produces correct output, but throughput may be lower than with GemLite.
+
+If the WARNING appears, try the following in order:
+
+1. **Set `TRITON_CACHE_AUTOTUNING=0`** — works around the Triton autotune disk-cache bug that is the most common cause of GemLite failures under vLLM:
+
+    ```bash
+    TRITON_CACHE_AUTOTUNING=0 vllm serve ./your-quantized-model
+    # or
+    TRITON_CACHE_AUTOTUNING=0 python your_vllm_script.py
+    ```
+
+2. **Set `ONECOMP_DBF_NAIVE_LINEAR=1`** — skips GemLite entirely from startup. Use this if the issue persists after step 1 or if you do not need GemLite performance:
+
+    ```bash
+    ONECOMP_DBF_NAIVE_LINEAR=1 vllm serve ./your-quantized-model
+    ```
+
+!!! note "Out-of-memory errors are not caught"
+    `torch.cuda.OutOfMemoryError` is re-raised immediately and does **not** trigger the fallback.
+    The naive path requires more memory than GemLite, so falling back on OOM would make the situation worse rather than better.
+    If you see an OOM error, reduce `--gpu-memory-utilization` or the model's context length.
 
 ## Troubleshooting
 
@@ -317,3 +503,28 @@ python your_vllm_script.py
 ```
 
 Both variables are read directly by vLLM; OneComp does not interpret them.
+
+
+## GPT-OSS (mixed_gptq)
+
+GPT-OSS (openai/gpt-oss-20b, openai/gpt-oss-120b) uses the mixed_gptq plugin but
+requires **additional vLLM runtime patches** and 4-bit MoE experts quantized with
+**`group_size=64`** (GPT-OSS `hidden_size` 2880 is not divisible by 128).
+
+See the full guide: **[GPT-OSS](gptoss.md)** — covers quantization, HF save/load,
+`apply_all` patches, and verification scripts.
+## ROCm support (AMD GPUs)
+
+GPTQ models can be served on AMD GPUs via ROCm using a dedicated opt-in venv and
+the `onecomp-vllm-v0-24-0-rocm` patch package, not the main `--extra vllm` workflow.
+
+!!! warning "Experimental / opt-in"
+    ROCm is not part of `uv sync --extra vllm`. The main project pins `vllm<0.22`
+    for CUDA (Exllama GPTQ compatibility); ROCm requires vLLM `0.24.0+rocm*`
+    from the [AMD wheel index](https://wheels.vllm.ai/rocm/0.24.0/rocm723).
+
+see [ROCm setup guide](https://github.com/FujitsuResearch/OneCompression/blob/main/envs/vllm/v0_24_0_rocm/README.md) for details.
+
+## See also
+
+- [Evaluation](evaluation.md) — `onecomp-eval` for MT-Bench and throughput benchmarks on vLLM-served models

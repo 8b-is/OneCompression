@@ -13,10 +13,11 @@ input activations, so they can be captured once and reused.
 
 """
 
-import math
 import copy
-from logging import getLogger
+import math
 from collections import OrderedDict
+from logging import getLogger
+from typing import Optional
 
 import torch
 import torch.nn.functional as F
@@ -25,14 +26,18 @@ from onecomp.calibration import CalibrationConfig, prepare_calibration_dataset
 from onecomp.model_config import ModelConfig
 from onecomp.qep._qep_config import QEPConfig
 from onecomp.quantizer._quantizer import Quantizer
+from onecomp.quantizer.autobit import AutoBitQuantizer
+from onecomp.quantizer.gptq._gptq import GPTQ, GPTQResult
+from onecomp.quantizer.rtn.rtn_impl import run_rtn
 from onecomp.utils.blockwise import (
     _PER_LAYER_INPUTS_KEY,
-    prepare_block_kwargs,
-    get_blocks_and_inputs,
-    forward_input,
-    move_kwargs_to_device,
     expand_kwargs_batch,
+    forward_input,
+    get_blocks_and_inputs,
+    move_kwargs_to_device,
+    prepare_block_kwargs,
 )
+from onecomp.utils.device import empty_cache
 from onecomp.utils.quantization_progress import QuantizationProgressTracker
 
 logger = getLogger(__name__)
@@ -120,7 +125,7 @@ def compute_hessian_and_crossterm(
     kwargs: dict[str, torch.Tensor],
     batch_size: int,
     device: torch.device,
-) -> tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, int]:
     """
 
     Args:
@@ -135,7 +140,8 @@ def compute_hessian_and_crossterm(
         device (torch.device): The device to use for computation.
 
     Returns:
-        tuple[torch.Tensor, torch.Tensor]: The Hessian matrix and the cross-term matrix.
+        tuple[torch.Tensor, torch.Tensor, int]: The Hessian matrix, the
+        cross-term matrix, and the total nsamples used to compute them.
     """
 
     # set input hook
@@ -191,7 +197,119 @@ def compute_hessian_and_crossterm(
     for handler in handlers:
         handler.remove()
 
-    return (H, C)
+    return (H, C, nsamples)
+
+
+@torch.no_grad()
+def _compute_per_module_hessians(
+    block: nn.Module,
+    modules: list[nn.Module],
+    inps: torch.Tensor,
+    kwargs: dict[str, torch.Tensor],
+    batch_size: int,
+    device: torch.device,
+) -> dict[nn.Module, tuple[torch.Tensor, int] | None]:
+    """Compute independent Hessians for each module via shared forward passes.
+
+    Used for MoE expert layers where the standard cross-term computation
+    is invalid (the router in quantized vs full-precision blocks may route
+    different tokens to the same expert).  Each module gets its own Hessian
+    built solely from the quantized block's activations.
+
+    Returns:
+        Mapping from module to ``(hessian, nsamples)`` where ``nsamples`` is
+        the number of tokens routed to that module, or ``None`` if the module
+        received no tokens during calibration.
+    """
+    dest: dict[int, torch.Tensor] = {}
+
+    def _make_hook(key):
+        def hook(_, inp, __):
+            dest[key] = inp[0] if isinstance(inp, tuple) else inp
+
+        return hook
+
+    handlers = [m.register_forward_hook(_make_hook(i)) for i, m in enumerate(modules)]
+
+    hessians: dict[int, torch.Tensor] = {}
+    nsamples: dict[int, int] = {}
+    for i, m in enumerate(modules):
+        dim = m.in_features
+        hessians[i] = torch.zeros((dim, dim), device=device)
+        nsamples[i] = 0
+
+    N = inps.size(0)
+    pli = kwargs.get(_PER_LAYER_INPUTS_KEY)
+
+    for first in range(0, N, batch_size):
+        last = min(first + batch_size, N)
+        bs = last - first
+        batch_kwargs = expand_kwargs_batch(kwargs, bs)
+        batch_kwargs = prepare_block_kwargs(batch_kwargs, block, pli, first, bs, device)
+        _ = block(inps[first:last].to(device), **batch_kwargs)
+
+        for i, m in enumerate(modules):
+            if i not in dest:
+                continue
+            x = dest[i].view(-1, m.in_features).float()
+            tmp = x.size(0)
+            if tmp == 0:
+                continue
+            hessians[i] *= nsamples[i] / (nsamples[i] + tmp)
+            nsamples[i] += tmp
+            x_scaled = math.sqrt(2 / nsamples[i]) * x
+            hessians[i] += x_scaled.t() @ x_scaled
+
+        dest.clear()
+
+    for h in handlers:
+        h.remove()
+
+    return {
+        modules[i]: ((hessians[i], nsamples[i]) if nsamples[i] > 0 else None)
+        for i in range(len(modules))
+    }
+
+
+def _resolve_gptq_for_rtn_fallback(quantizer: Quantizer, module: nn.Module) -> Optional[GPTQ]:
+    """Return the GPTQ instance to use for the no-tokens RTN fallback, if any.
+
+    Plain ``GPTQ`` quantizers fall back directly. ``AutoBitQuantizer`` falls
+    back too, but only when every child it assigned is a ``GPTQ`` (so the
+    module's own resolved bits/groupsize/sym can be looked up), since
+    ``AutoBitQuantizer`` itself has no such attributes.
+    """
+    if isinstance(quantizer, GPTQ):
+        return quantizer
+    if isinstance(quantizer, AutoBitQuantizer) and quantizer._all_children_gptq():
+        return quantizer._module_to_quantizer.get(module)
+    return None
+
+
+def _rtn_fallback_result(module: nn.Module, quantizer: Quantizer, name: str) -> GPTQResult:
+    """RTN-quantize a module with no calibration data, as a GPTQResult.
+
+    Returning a GPTQResult (not RTNResult) lets the module flow through the
+    same create_inference_layer / export path as calibrated GPTQ experts.
+    """
+    wbits = GPTQ.resolve_bits(name, quantizer.wbits, quantizer.mlp_wbits, quantizer.module_wbits)
+    groupsize = GPTQ.resolve_groupsize(name, quantizer.groupsize, quantizer.mlp_groupsize)
+
+    result_dict = run_rtn(module, wbits=wbits, groupsize=groupsize, sym=quantizer.sym)
+
+    # RTN's raw scale/zero are (out_features, num_groups); GPTQResult
+    # expects (num_groups, out_features).
+    return GPTQResult(
+        dequantized_weight=result_dict["dequantized_weight"],
+        wbits=wbits,
+        groupsize=groupsize,
+        actorder=False,
+        sym=quantizer.sym,
+        qweight=result_dict["quantized_weight"],
+        scales=result_dict["scale"].T,
+        qzeros=result_dict["zero"].T,
+        perm=None,
+    )
 
 
 @torch.no_grad()
@@ -382,6 +500,30 @@ def run_quantize_with_qep_arch(
             else:
                 regular_pairs.append((group_q, group_f))
 
+        # make_grouped_module only sees modules whose forward hook fired for
+        # its single calibration sample, so unrouted experts are missing
+        # from every group above. Add them here so _compute_per_module_hessians
+        # below computes their Hessian from the full calibration set instead
+        # of skipping them outright.
+        captured_experts = set(expert_modules_q)
+        recovered = 0
+        for _, module in block_q.named_modules():
+            if not isinstance(module, nn.Linear) or module in captured_experts:
+                continue
+            name = quantizer.module_to_name.get(module)
+            if name is None or ".experts." not in name:
+                continue
+            expert_modules_q.append(module)
+            captured_experts.add(module)
+            recovered += 1
+        if recovered:
+            logger.info(
+                "Recovered %d expert module(s) missed by single-sample "
+                "grouping; computing their Hessians from the full "
+                "calibration set",
+                recovered,
+            )
+
         # 3. Process regular (non-expert) groups with full QEP
         for group_q, group_f in regular_pairs:
 
@@ -391,7 +533,7 @@ def run_quantize_with_qep_arch(
             )
 
             # 3-1. compute hessian and cross-term matrix
-            H, delta_hatX = compute_hessian_and_crossterm(
+            H, delta_hatX, nsamples_arch = compute_hessian_and_crossterm(
                 block_q,
                 block_f,
                 group_q[0],
@@ -436,6 +578,7 @@ def run_quantize_with_qep_arch(
                     perccorr=qep_config.perccorr,
                     hessian=H.clone(),
                     delta_hatX=layer_delta,
+                    nsamples=nsamples_arch if quantizer.flag_nsamples else None,
                 )
 
                 # Update the weights of the target layer
@@ -471,30 +614,44 @@ def run_quantize_with_qep_arch(
             )
             for module_q in expert_modules_q:
                 name = quantizer.module_to_name[module_q]
-                H = expert_hessians[module_q]
-                if H is None:
-                    logger.warning(
-                        "Expert layer %s received no tokens during calibration; skipping",
+                entry = expert_hessians[module_q]
+                if entry is None:
+                    fallback_quantizer = _resolve_gptq_for_rtn_fallback(quantizer, module_q)
+                    if fallback_quantizer is not None:
+                        logger.warning(
+                            "Expert layer %s received no tokens during "
+                            "calibration; falling back to RTN so it stays "
+                            "quantized like its sibling experts",
+                            name,
+                        )
+                        quantizer.results[name] = _rtn_fallback_result(
+                            module_q, fallback_quantizer, name
+                        )
+                    else:
+                        logger.warning(
+                            "Expert layer %s received no tokens during calibration; skipping",
+                            name,
+                        )
+                        remaining_targets.discard(name)
+                        if progress is not None:
+                            progress.step_complete(f"{name}, skipped: no tokens")
+                        continue
+                else:
+                    H, nsamples_expert = entry
+                    logger.debug(
+                        "Processing layer: %s (no weight correction) =================================================",
                         name,
                     )
-                    remaining_targets.discard(name)
-                    if progress is not None:
-                        progress.step_complete(f"{name}, skipped: no tokens")
-                    continue
-
-                logger.debug(
-                    "Processing layer: %s (no weight correction) =================================================",
-                    name,
-                )
-                quantizer.quantize_with_qep(
-                    module_q,
-                    quant_input_activation=None,
-                    original_input_activation=None,
-                    percdamp=qep_config.percdamp,
-                    perccorr=qep_config.perccorr,
-                    hessian=H,
-                    delta_hatX=None,
-                )
+                    quantizer.quantize_with_qep(
+                        module_q,
+                        quant_input_activation=None,
+                        original_input_activation=None,
+                        percdamp=qep_config.percdamp,
+                        perccorr=qep_config.perccorr,
+                        hessian=H,
+                        delta_hatX=None,
+                        nsamples=nsamples_expert if quantizer.flag_nsamples else None,
+                    )
                 try:
                     dtype = module_q.weight.data.dtype
                     module_q.weight.data = (
@@ -520,6 +677,6 @@ def run_quantize_with_qep_arch(
 
         # free memory
         block_q.cpu()
-        torch.cuda.empty_cache()
+        empty_cache(device)
 
     quantizer.execute_post_processing()
