@@ -270,9 +270,7 @@ class LongBenchResult:
             "mem_fraction": round(self.mem_fraction, 4),
             "mem_fraction_aggregation": self.mem_fraction_aggregation,
             "example_cache_lifetime": PER_EXAMPLE_CACHE_LIFETIME,
-            "cross_iteration_tensor_retention": (
-                PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
-            ),
+            "cross_iteration_tensor_retention": (PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION),
             "limit_per_task": self.limit_per_task,
             "tasks": list(self.tasks),
             "dataset_revision": self.dataset_revision,
@@ -496,6 +494,7 @@ def longbench_e(
             large models; disabled by default.
     """
     from transformers import DynamicCache
+
     from .longcontext import effective_generation_eos_token_ids, greedy_answer
 
     tasks = list(LONGBENCH_E_TASKS if tasks is None else tasks)

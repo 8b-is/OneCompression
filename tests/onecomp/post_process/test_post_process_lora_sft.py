@@ -45,9 +45,7 @@ FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 SFT_DATA_FILE = str(FIXTURES_DIR / "sft_train_data.jsonl")
 
 # The whole module quantizes and fine-tunes on cuda:0.
-pytestmark = pytest.mark.skipif(
-    not torch.cuda.is_available(), reason="CUDA not available"
-)
+pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 
 
 @pytest.fixture(scope="module")

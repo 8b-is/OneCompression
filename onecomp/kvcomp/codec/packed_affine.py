@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .._base import KVCodec, CompressedKV
+from .._base import CompressedKV, KVCodec
 from .._registry import register_kv_codec
 from ._packing import (
     SUPPORTED_PACKED_BITS,

@@ -18,6 +18,8 @@ To regenerate selected artifacts into a separate directory::
 
     python -m onecomp.kvcomp.codec.hayate.codebooks.fit_codebooks \
       --output-dir /path/to/output --target 2:4 --target 2:16
+
+Copyright 2025-2026 Fujitsu Ltd.
 """
 
 from __future__ import annotations
@@ -27,7 +29,7 @@ import os
 
 import torch
 
-from ..vq import _kmeans_best_of, _gaussian_block_samples
+from ..vq import _gaussian_block_samples, _kmeans_best_of
 
 # Every (block_size, K) required by the canonical rates 2, 3, and 4.
 _TARGETS = (
@@ -56,7 +58,7 @@ def fit_all(
     out_dir = out_dir or os.path.dirname(os.path.abspath(__file__))
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     os.makedirs(out_dir, exist_ok=True)
-    from ..vq import quantize_to_vq_codebook, lookup_codewords
+    from ..vq import lookup_codewords, quantize_to_vq_codebook
 
     for b, k in targets:
         if b < 1 or k < 2 or k & (k - 1):

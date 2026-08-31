@@ -8,6 +8,8 @@ to mislabel in benchmark configurations.
 FibQuant and BlockQuant are intentionally excluded from codec/inference speed
 comparisons in this repository.  Their exact nearest-codeword Python research
 implementations are quality baselines, not packed serving kernels.
+
+Copyright 2025-2026 Fujitsu Ltd.
 """
 
 from __future__ import annotations

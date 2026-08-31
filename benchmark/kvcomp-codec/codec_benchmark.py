@@ -18,8 +18,8 @@ Usage (GPU node):
 
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import os
 import tempfile
 import time
@@ -32,6 +32,12 @@ from omegaconf import DictConfig, OmegaConf
 from transformers import AutoModelForCausalLM, AutoTokenizer, DynamicCache
 
 from onecomp.kvcomp import CompressedDynamicCache
+from onecomp.kvcomp.codec import TurboQuantCodec
+from onecomp.kvcomp.codec.hayate.recipes import (
+    HAYATEQUANT_NAME,
+    HAYATEQUANT_RATES,
+    build_hayatequant,
+)
 from onecomp.kvcomp.eval import wikitext2_perplexity
 from onecomp.kvcomp.eval.provenance import (
     load_run_provenance,
@@ -39,12 +45,6 @@ from onecomp.kvcomp.eval.provenance import (
     run_code_commit,
     run_code_revision,
     validate_model_provenance,
-)
-from onecomp.kvcomp.codec import TurboQuantCodec
-from onecomp.kvcomp.codec.hayate.recipes import (
-    HAYATEQUANT_NAME,
-    HAYATEQUANT_RATES,
-    build_hayatequant,
 )
 
 

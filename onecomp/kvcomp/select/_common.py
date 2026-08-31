@@ -52,9 +52,7 @@ def observation_attention(
     return F.softmax(logits, dim=-1)
 
 
-def mask_from_keep_indices(
-    keep_idx: torch.Tensor, seq_len: int
-) -> torch.Tensor:
+def mask_from_keep_indices(keep_idx: torch.Tensor, seq_len: int) -> torch.Tensor:
     """Build a boolean keep-mask ``(batch, heads, seq_len)`` from kept indices.
 
     ``keep_idx`` is ``(batch, heads, keep)``.

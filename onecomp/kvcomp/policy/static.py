@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 from .._base import KVPolicy
 from .._registry import register_kv_policy
-from ..config import CompressionPlan, Budget
+from ..config import Budget, CompressionPlan
 
 
 @register_kv_policy("static")

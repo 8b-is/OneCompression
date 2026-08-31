@@ -10,6 +10,7 @@ from openhands.sdk.context.view import View
 from openhands.sdk.event import Condensation, MessageEvent
 from openhands.sdk.llm import Message, TextContent
 
+import onecomp.compaction.adapters.openhands as openhands_adapter
 from onecomp.compaction.adapters.openhands import (
     OpenHandsArcCondenser,
     OpenHandsArcListAction,
@@ -19,7 +20,6 @@ from onecomp.compaction.adapters.openhands import (
     _bounded_command,
     _openhands_source_key,
 )
-import onecomp.compaction.adapters.openhands as openhands_adapter
 
 
 def _message_event(role: str, text: str) -> MessageEvent:

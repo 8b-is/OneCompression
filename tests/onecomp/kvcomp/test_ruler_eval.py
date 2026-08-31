@@ -190,10 +190,7 @@ def test_ruler_releases_cache_before_every_next_factory(tmp_path, monkeypatch):
     assert all(reference() is None for reference in references)
     assert Cache.live == 0
     assert Cache.peak_live == 1
-    assert (
-        result.as_dict()["example_cache_lifetime"]
-        == ruler_module.PER_EXAMPLE_CACHE_LIFETIME
-    )
+    assert result.as_dict()["example_cache_lifetime"] == ruler_module.PER_EXAMPLE_CACHE_LIFETIME
 
 
 def test_substring_scoring_matches_pinned_nvidia_protocol():

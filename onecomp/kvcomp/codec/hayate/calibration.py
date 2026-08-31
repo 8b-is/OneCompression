@@ -41,10 +41,10 @@ import torch
 
 from ..rotation import (
     hybrid_rotation_matrix,
-    random_orthogonal,
     is_power_of_two,
+    random_orthogonal,
 )
-from .vq import quantize_to_vq_codebook, lookup_codewords, build_vq_lut
+from .vq import build_vq_lut, lookup_codewords, quantize_to_vq_codebook
 
 _ROLES = ("k", "v")
 

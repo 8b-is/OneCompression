@@ -7,6 +7,8 @@ The adopted data-free operating points use a two-coordinate block and assign
 one extra bit per key coordinate at the expense of values. At average rates
 2, 3, and 4 this is K3/V1, K4/V2, and K5/V3 bits per coordinate, or K6/V2,
 K8/V4, and K10/V6 code bits per two-coordinate block.
+
+Copyright 2025-2026 Fujitsu Ltd.
 """
 
 from __future__ import annotations

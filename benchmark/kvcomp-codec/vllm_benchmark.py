@@ -9,16 +9,16 @@ result and backend-emitted JSONL evidence proving which data plane executed.
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
 import hashlib
 import json
 import os
-from pathlib import Path
 import shutil
-from statistics import median
 import sys
 import tempfile
 import time
+from contextlib import contextmanager
+from pathlib import Path
+from statistics import median
 
 from onecomp.kvcomp.eval.provenance import (
     load_run_provenance,

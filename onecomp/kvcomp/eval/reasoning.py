@@ -14,13 +14,14 @@ Copyright 2025-2026 Fujitsu Ltd.
 
 from __future__ import annotations
 
-import math
 import hashlib
+import math
 import re
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from functools import lru_cache
-from importlib.metadata import PackageNotFoundError, version as package_version
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as package_version
 from logging import getLogger
 from typing import Callable, List, Optional
 
@@ -174,9 +175,7 @@ class ReasoningResult:
             "compression_ratio": round(self.compression_ratio, 3),
             "compression_ratio_aggregation": self.compression_ratio_aggregation,
             "example_cache_lifetime": PER_EXAMPLE_CACHE_LIFETIME,
-            "cross_iteration_tensor_retention": (
-                PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
-            ),
+            "cross_iteration_tensor_retention": (PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION),
             "eviction_applicable": self.eviction_applicable,
             "eviction_fired": self.eviction_fired,
             "pass@1_sum": pass_at_1_sum,

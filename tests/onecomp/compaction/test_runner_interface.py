@@ -1,7 +1,7 @@
 """OneComp-style compaction configuration and runner tests."""
 
-from pathlib import Path
 import threading
+from pathlib import Path
 
 import pytest
 
@@ -13,11 +13,9 @@ from onecomp.compaction import (
     RecallRequiresChunking,
     sanitize_messages,
 )
-
-
+from onecomp.compaction.adapters.messages import total_text_chars
 from onecomp.compaction.formal import UnknownObservation
 from onecomp.compaction.runner import _message_chars
-from onecomp.compaction.adapters.messages import total_text_chars
 
 
 @pytest.mark.parametrize(

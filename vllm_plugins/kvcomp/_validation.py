@@ -1,9 +1,13 @@
-"""Dependency-free validation shared by KVComp's vLLM configuration layer."""
+"""
+Dependency-free validation shared by KVComp's vLLM configuration layer.
+
+Copyright 2025-2026 Fujitsu Ltd.
+"""
 
 from __future__ import annotations
 
-import operator
 import math
+import operator
 from typing import Any
 
 

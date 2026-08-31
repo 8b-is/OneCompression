@@ -40,8 +40,8 @@ from ..compaction import (
     RecallError,
     format_citation,
 )
-from ..compaction.formal import format_citation as format_formal_citation
 from ..compaction.adapters import total_text_chars
+from ..compaction.formal import format_citation as format_formal_citation
 from .archive_sessions import ManagedArcEngine, ManagedCompactionRunner, reserve_archive
 from .protocol import ToolDefinition
 from .session_registry import SessionRegistry

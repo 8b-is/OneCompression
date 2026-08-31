@@ -554,9 +554,7 @@ class RulerV1Result:
             "mem_fraction": round(self.mem_fraction, 6),
             "mem_fraction_aggregation": self.mem_fraction_aggregation,
             "example_cache_lifetime": PER_EXAMPLE_CACHE_LIFETIME,
-            "cross_iteration_tensor_retention": (
-                PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
-            ),
+            "cross_iteration_tensor_retention": (PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION),
             "start": self.start,
             "limit_per_task": self.limit_per_task,
             "samples_per_task": RULER_V1_SAMPLES_PER_TASK,

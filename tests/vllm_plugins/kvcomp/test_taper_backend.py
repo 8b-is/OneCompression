@@ -2,24 +2,24 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import torch
 import pytest
+import torch
 
 pytest.importorskip("vllm")
 
 from onecomp.kvcomp.cache.block_taper_cache import block_taper_bits  # noqa: E402
 from onecomp.kvcomp.cache.taper_cache import taper_bits  # noqa: E402
+from vllm_plugins.kvcomp.hayate_native import _all_first_chunk_prefills  # noqa: E402
 from vllm_plugins.kvcomp.taper_backend import (  # noqa: E402
     _UPSTREAM_KV_AXIS,
+    TaperKVImpl,
     _assert_unique_indices,
     _batched_taper_bits,
     _fake_quantize_variable_pages,
     _fake_quantize_variable_tokens,
     _transition_candidate_positions,
-    TaperKVImpl,
 )
 from vllm_plugins.kvcomp.taper_config import TaperKVVLLMRecipe  # noqa: E402
-from vllm_plugins.kvcomp.hayate_native import _all_first_chunk_prefills  # noqa: E402
 
 
 def _kv_cache(key: torch.Tensor, value: torch.Tensor) -> torch.Tensor:

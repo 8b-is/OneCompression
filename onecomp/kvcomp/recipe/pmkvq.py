@@ -79,7 +79,7 @@ class PMKVQPolicy(KVPolicy):
 
     key_bits: int = 8
     value_bits: int = 4
-    final_bits: int = 2            # value floor (Fbit)
+    final_bits: int = 2  # value floor (Fbit)
     key_final_bits: Optional[int] = None  # key floor; defaults to max(final_bits, 4) (MKLV: K>V)
     recent_window: int = 64
     ladder_span: int = 256
@@ -99,20 +99,35 @@ class PMKVQPolicy(KVPolicy):
     def target_avg_bits(self, seq_len: int) -> float:
         """Rough expected average bits (keys+values)/2 at a given length."""
         import torch  # local import; policy is light
+
         from ..cache.pmkvq_cache import progressive_bits
 
         r = torch.arange(seq_len - 1, -1, -1)
-        kb = progressive_bits(r, self.recent_window, self.ladder_span,
-                              self.key_bits, self.key_final_bits).float().mean()
-        vb = progressive_bits(r, self.recent_window, self.ladder_span,
-                              self.value_bits, self.final_bits).float().mean()
+        kb = (
+            progressive_bits(
+                r, self.recent_window, self.ladder_span, self.key_bits, self.key_final_bits
+            )
+            .float()
+            .mean()
+        )
+        vb = (
+            progressive_bits(
+                r, self.recent_window, self.ladder_span, self.value_bits, self.final_bits
+            )
+            .float()
+            .mean()
+        )
         return float((kb + vb) / 2)
 
     def get_kv_config(self) -> dict:
         return {
-            "name": "pmkvq", "key_bits": self.key_bits, "value_bits": self.value_bits,
-            "final_bits": self.final_bits, "key_final_bits": self.key_final_bits,
-            "recent_window": self.recent_window, "ladder_span": self.ladder_span,
+            "name": "pmkvq",
+            "key_bits": self.key_bits,
+            "value_bits": self.value_bits,
+            "final_bits": self.final_bits,
+            "key_final_bits": self.key_final_bits,
+            "recent_window": self.recent_window,
+            "ladder_span": self.ladder_span,
             "sensitive_layers": list(self.sensitive_layers),
             "sensitive_bump": self.sensitive_bump,
             # Block IP result is serialized (small int map); the per-channel key

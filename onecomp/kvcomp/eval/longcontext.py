@@ -212,14 +212,18 @@ def _content_token_count(tokenizer, text: str) -> int:
     if isinstance(input_ids, torch.Tensor):
         if input_ids.ndim == 2:
             if input_ids.shape[0] != 1:
-                raise RuntimeError("synthetic retrieval tokenizer returned a batched content encoding")
+                raise RuntimeError(
+                    "synthetic retrieval tokenizer returned a batched content encoding"
+                )
             return int(input_ids.shape[1])
         if input_ids.ndim == 1:
             return int(input_ids.shape[0])
     if isinstance(input_ids, (list, tuple)):
         if input_ids and isinstance(input_ids[0], (list, tuple)):
             if len(input_ids) != 1:
-                raise RuntimeError("synthetic retrieval tokenizer returned a batched content encoding")
+                raise RuntimeError(
+                    "synthetic retrieval tokenizer returned a batched content encoding"
+                )
             input_ids = input_ids[0]
         if all(isinstance(token, int) for token in input_ids):
             return len(input_ids)
@@ -280,9 +284,7 @@ class NeedleResult:
             "mem_fraction": round(self.mem_fraction, 4),
             "mem_fraction_aggregation": self.mem_fraction_aggregation,
             "example_cache_lifetime": PER_EXAMPLE_CACHE_LIFETIME,
-            "cross_iteration_tensor_retention": (
-                PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
-            ),
+            "cross_iteration_tensor_retention": (PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION),
             "compression_sufficient_statistics": self.compression_sufficient_statistics,
             "by_length": {k: round(v, 4) for k, v in self.by_length.items()},
             "by_depth": {str(k): round(v, 4) for k, v in self.by_depth.items()},
@@ -331,7 +333,11 @@ def make_needle_prompt(
     ``return_metadata=True`` adds deterministic prompt-construction facts used
     by the audit ledger.
     """
-    if isinstance(context_tokens, bool) or not isinstance(context_tokens, int) or context_tokens <= 0:
+    if (
+        isinstance(context_tokens, bool)
+        or not isinstance(context_tokens, int)
+        or context_tokens <= 0
+    ):
         raise ValueError("context_tokens must be a positive integer")
     if (
         isinstance(depth, bool)
@@ -681,7 +687,9 @@ def needle_in_haystack(
                 compression_records.append(cache_accounting)
                 content = messages[0].get("content") if messages else None
                 if not isinstance(content, str):
-                    raise RuntimeError("needle prompt must be one user message with string content")
+                    raise RuntimeError(
+                        "needle prompt must be one user message with string content"
+                    )
                 grid.append(
                     {
                         "ctx": ctx,
@@ -692,7 +700,8 @@ def needle_in_haystack(
                         "seed_index": s,
                         "prompt_seed": prompt_seed,
                         "rendered_prompt_tokens": int(ids.shape[1]),
-                        "reserved_prompt_plus_generation_tokens": int(ids.shape[1]) + max_new_tokens,
+                        "reserved_prompt_plus_generation_tokens": int(ids.shape[1])
+                        + max_new_tokens,
                         "model_context_capacity": capacity,
                         "prompt_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
                         "gold": gold,
@@ -835,7 +844,9 @@ def ruler_multikey(
             compression_records.append(cache_accounting)
             content = messages[0].get("content") if messages else None
             if not isinstance(content, str):
-                raise RuntimeError("synthetic multi-key prompt must be one user message with string content")
+                raise RuntimeError(
+                    "synthetic multi-key prompt must be one user message with string content"
+                )
             grid.append(
                 {
                     "ctx": ctx,

@@ -10,6 +10,8 @@ Unknown non-text blocks are represented by a short marker instead of their
 full JSON encoding.  This avoids accidentally copying base64 image payloads
 into an ARC summary.  Recent messages are returned unchanged by the compactor,
 so the marker is used only after a block has moved into compacted history.
+
+Copyright 2025-2026 Fujitsu Ltd.
 """
 
 from __future__ import annotations

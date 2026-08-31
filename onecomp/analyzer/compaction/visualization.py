@@ -1,4 +1,8 @@
-"""Professional light single-run dashboard for formal compaction telemetry."""
+"""
+Professional light single-run dashboard for formal compaction telemetry.
+
+Copyright 2025-2026 Fujitsu Ltd.
+"""
 
 from __future__ import annotations
 
@@ -6,8 +10,8 @@ from itertools import cycle, islice
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from .report import build_run_report, load_run_report, validate_run_report
 from ...compaction import CompactionRunner
+from .report import build_run_report, load_run_report, validate_run_report
 
 _BG = "#FFFFFF"
 _PANEL = "#FFFFFF"

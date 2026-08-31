@@ -8,14 +8,14 @@ GPTQ coexist in :mod:`onecomp.quantizer`.
 Copyright 2025-2026 Fujitsu Ltd.
 """
 
-from .affine import AffineKVCodec, Int8Codec, Int4Codec, Int3Codec, Int2Codec, KIVICodec
-from .fp8 import FP8Codec
-from .turboquant import TurboQuantCodec
-from .fibquant import FibQuantCodec
+from .affine import AffineKVCodec, Int2Codec, Int3Codec, Int4Codec, Int8Codec, KIVICodec
 from .blockquant import BlockQuantCodec
+from .fibquant import FibQuantCodec
+from .fp8 import FP8Codec
 from .hayate import HayateQuantCodec
 from .lowbit_fp import NVFP4Codec, TernaryCodec
 from .packed_affine import PackedAffineCodec
+from .turboquant import TurboQuantCodec
 
 __all__ = [
     "AffineKVCodec",

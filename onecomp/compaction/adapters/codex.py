@@ -4,6 +4,8 @@ Current Codex replaces a completed tool result with the post-tool ``reason``
 when ``decision`` is ``"block"``. OneComp names that behavior ``replace``;
 ``block`` remains as a wire-compatible alias and ``context`` keeps the original
 result while adding archival context.
+
+Copyright 2025-2026 Fujitsu Ltd.
 """
 
 from __future__ import annotations

@@ -68,19 +68,19 @@ from functools import lru_cache
 
 import torch
 
-from .._base import KVCodec, CompressedKV
+from .._base import CompressedKV, KVCodec
 from .._registry import register_kv_codec
+from ._quant_primitives import fake_quantize_affine
 from .rotation import (
     is_power_of_two,
-    random_sign,
+    lloyd_max_beta,
+    lloyd_max_gaussian,
+    quantize_to_codebook,
     random_orthogonal,
+    random_sign,
     rotate,
     unrotate,
-    lloyd_max_gaussian,
-    lloyd_max_beta,
-    quantize_to_codebook,
 )
-from ._quant_primitives import fake_quantize_affine
 
 
 @lru_cache(maxsize=16)

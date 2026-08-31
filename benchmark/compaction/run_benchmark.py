@@ -6,11 +6,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-from pathlib import Path
 import platform
 import random
 import statistics
 import time
+from pathlib import Path
 from typing import Any
 
 from onecomp.__version__ import __version__

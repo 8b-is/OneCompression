@@ -523,7 +523,6 @@ class DbfConfig(QuantizationConfig):
         )
 
 
-
 def register_vllm_plugin():
     # Register DBF quantization with vLLM's plugin system.
     register_quantization_config(DbfConfig)

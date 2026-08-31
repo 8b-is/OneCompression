@@ -1,9 +1,9 @@
 """Dependency-isolation checks for the formal-compaction MCP entry point."""
 
 import json
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 
 def test_compaction_only_mcp_runs_without_site_packages():

@@ -60,6 +60,12 @@ from .engine import (
     RecallOutcome,
     sanitize_messages,
 )
+from .formal import (
+    BudgetExceeded,
+    FormalArcError,
+    InvalidAction,
+    RecallRequiresChunking,
+)
 from .protocol import (
     RECALL_META_RE,
     RECALL_RE,
@@ -74,14 +80,8 @@ from .protocol import (
     parse_recall_meta,
     suggest_closest_obs_id,
 )
-from .store import ObsRecord, ObsStore
 from .runner import CompactionRunner
-from .formal import (
-    BudgetExceeded,
-    FormalArcError,
-    InvalidAction,
-    RecallRequiresChunking,
-)
+from .store import ObsRecord, ObsStore
 
 __all__ = [
     "ArcEngine",

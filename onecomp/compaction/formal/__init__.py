@@ -38,13 +38,13 @@ from .models import (
     TokenIdChunk,
 )
 from .protocol import (
+    SYSTEM_PROMPT_FORMAL_RECALL,
     CatalogAction,
     RecallAction,
     RecallChunkAction,
     RecallFullAction,
     RecallMetadataAction,
     RecallRangeAction,
-    SYSTEM_PROMPT_FORMAL_RECALL,
     format_catalog,
     format_citation,
     format_metadata,

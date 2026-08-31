@@ -1,4 +1,8 @@
-"""Wire response helpers for a Claude Code ``PostToolUse`` hook."""
+"""
+Wire response helpers for a Claude Code ``PostToolUse`` hook.
+
+Copyright 2025-2026 Fujitsu Ltd.
+"""
 
 from __future__ import annotations
 

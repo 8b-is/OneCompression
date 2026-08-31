@@ -121,7 +121,9 @@ def fake_quantize_affine(
     group_size: int = -1,
 ) -> torch.Tensor:
     """Quantize then dequantize ``x`` (simulated quantization)."""
-    q, scale, zero = quantize_affine(x, bits, axis=axis, symmetric=symmetric, group_size=group_size)
+    q, scale, zero = quantize_affine(
+        x, bits, axis=axis, symmetric=symmetric, group_size=group_size
+    )
     return dequantize_affine(q, scale, zero).to(x.dtype)
 
 

@@ -13,8 +13,8 @@ Author: Yuma Ichikawa
 import errno
 import fcntl
 import os
-from pathlib import Path
 import threading
+from pathlib import Path
 from typing import Dict, Optional
 
 from ..compaction import ArcEngine, CompactionRunner

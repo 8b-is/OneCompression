@@ -3,6 +3,8 @@
 The current backend applies the TaperKV schedule on GPU while retaining vLLM's
 model-dtype page allocation. It is suitable for inference and quality
 reproduction, but its physical memory must not be reported as packed TaperKV.
+
+Copyright 2025-2026 Fujitsu Ltd.
 """
 
 from __future__ import annotations

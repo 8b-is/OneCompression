@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
-from ._base import KVCodec, KVSelector, KVPolicy, ComposedPress
+from ._base import ComposedPress, KVCodec, KVPolicy, KVSelector
 
 
 @dataclass
@@ -133,7 +133,9 @@ class KVCompressionConfig:
         return {
             "codec": self.codec.get_kv_config() if self.codec is not None else None,
             "selector": self.selector.get_kv_config() if self.selector is not None else None,
-            "policy": self.policy.get_kv_config() if self.policy is not None else {"name": "static"},
+            "policy": (
+                self.policy.get_kv_config() if self.policy is not None else {"name": "static"}
+            ),
             "residual_window": self.residual_window,
         }
 
@@ -142,8 +144,8 @@ class KVCompressionConfig:
         """Reconstruct a config from a saved ``kv_compression_config`` block."""
         from ._registry import (  # pylint: disable=import-outside-toplevel
             build_codec,
-            build_selector,
             build_policy,
+            build_selector,
         )
 
         codec = None

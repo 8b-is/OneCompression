@@ -39,7 +39,9 @@ THIS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(THIS_DIR))
 
 from codec_benchmark import _codecs, hayatequant_provenance  # noqa: E402
+
 from onecomp.kvcomp import CompressedDynamicCache  # noqa: E402
+from onecomp.kvcomp.codec.hayate.recipes import HAYATEQUANT_NAME  # noqa: E402
 from onecomp.kvcomp.eval import zeroshot_accuracy  # noqa: E402
 from onecomp.kvcomp.eval.provenance import (  # noqa: E402
     load_run_provenance,
@@ -47,7 +49,6 @@ from onecomp.kvcomp.eval.provenance import (  # noqa: E402
     run_code_revision,
     validate_model_provenance,
 )
-from onecomp.kvcomp.codec.hayate.recipes import HAYATEQUANT_NAME  # noqa: E402
 
 DEFAULT_TASKS = ("arc_easy", "arc_challenge", "piqa", "hellaswag", "winogrande")
 DEFAULT_METHODS = (

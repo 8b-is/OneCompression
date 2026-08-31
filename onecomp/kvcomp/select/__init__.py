@@ -3,9 +3,9 @@
 Copyright 2025-2026 Fujitsu Ltd.
 """
 
-from .streaming import StreamingLLMSelector, RecentSelector
-from .snapkv import SnapKVSelector
 from .h2o import H2OSelector
+from .snapkv import SnapKVSelector
+from .streaming import RecentSelector, StreamingLLMSelector
 
 __all__ = [
     "StreamingLLMSelector",

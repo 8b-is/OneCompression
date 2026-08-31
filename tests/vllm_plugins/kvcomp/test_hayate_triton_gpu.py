@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
 import torch
 import torch.nn.functional as F
-import pytest
 
 pytest.importorskip("vllm")
 pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
 
+from onecomp.kvcomp.codec.hayate import triton_step  # noqa: E402
+from onecomp.kvcomp.codec.hayate.codec import _block_lut_code_bits_on  # noqa: E402
 from onecomp.kvcomp.codec.hayate.codec import (  # noqa: E402
     HayateQuantCodec,
     _block_codebook_by_code_bits,
@@ -19,19 +21,17 @@ from onecomp.kvcomp.codec.hayate.vq import (  # noqa: E402
     quantize_via_lut,
 )
 from vllm_plugins.kvcomp.hayate_config import hayatequant_native_recipe  # noqa: E402
+from vllm_plugins.kvcomp.hayate_native import (  # noqa: E402
+    _fold_value_rotation_into_projection,
+    _fold_value_rotation_into_qkv_projection,
+    _to_folded_value_basis,
+)
 from vllm_plugins.kvcomp.hayate_triton import (  # noqa: E402
     _rotate_dense_small_rows,
     triton_hayatequant_decode_attention,
     triton_hayatequant_dequant_kv,
     triton_hayatequant_store,
 )
-from vllm_plugins.kvcomp.hayate_native import (  # noqa: E402
-    _fold_value_rotation_into_qkv_projection,
-    _fold_value_rotation_into_projection,
-    _to_folded_value_basis,
-)
-from onecomp.kvcomp.codec.hayate.codec import _block_lut_code_bits_on  # noqa: E402
-from onecomp.kvcomp.codec.hayate import triton_step  # noqa: E402
 
 
 def _tables(rate: int, head_dim: int, device: torch.device):

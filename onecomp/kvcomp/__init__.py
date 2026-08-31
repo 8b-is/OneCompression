@@ -16,78 +16,77 @@ and methods are discoverable through a small registry.
 Copyright 2025-2026 Fujitsu Ltd.
 """
 
-from ._base import (
-    CompressedKV,
-    KVCodec,
-    KVSelector,
-    KVPolicy,
-    ComposedPress,
-)
-from ._registry import (
-    register_kv_codec,
-    register_kv_selector,
-    register_kv_policy,
-    build_codec,
-    build_selector,
-    build_policy,
-    list_codecs,
-    list_selectors,
-    list_policies,
-)
-from .config import (
-    Budget,
-    RequestState,
-    SystemState,
-    CompressionPlan,
-    KVCompressionConfig,
-)
-
 # Importing the method modules triggers their registry decorators.
 from . import codec as codec
-from . import select as select
-from . import prune as prune
 from . import policy as policy
+from . import prune as prune
 from . import recipe as recipe
-from .cache import (
-    CompressedDynamicCache,
-    build_compressed_cache,
-    kv_compressed_generate,
-    ThinKVCache,
-    thinkv_attention_capture,
-    TaperKVCache,
-    taper_bits,
-    BudgetTaperKVCache,
-    apply_byte_budget,
-    step_down_bits,
-    BlockTaperKVCache,
-    block_taper_bits,
-    fake_quant_blocks,
-    PMKVQCache,
-    StreamingLLMEvictCache,
-    GradedQuantCache,
-    RoleKVCache,
+from . import select as select
+from ._base import (
+    ComposedPress,
+    CompressedKV,
+    KVCodec,
+    KVPolicy,
+    KVSelector,
 )
-from .recipe import (
-    TaperKVPolicy,
-    BudgetTaperKVPolicy,
-    BlockTaperKVPolicy,
-    PMKVQPolicy,
-    ThinKVPolicy,
-    auto_configure_thinkv,
-    detect_outlier_layers,
-    calibrate_pmkvq,
-    estimate_block_sensitivity,
-    solve_block_allocation,
-    calibrate_channel_reparam,
-    RolePrecisionPolicy,
-    RoleSpan,
-    annotate_spans_from_chat,
+from ._registry import (
+    build_codec,
+    build_policy,
+    build_selector,
+    list_codecs,
+    list_policies,
+    list_selectors,
+    register_kv_codec,
+    register_kv_policy,
+    register_kv_selector,
+)
+from .cache import (
+    BlockTaperKVCache,
+    BudgetTaperKVCache,
+    CompressedDynamicCache,
+    GradedQuantCache,
+    PMKVQCache,
+    RoleKVCache,
+    StreamingLLMEvictCache,
+    TaperKVCache,
+    ThinKVCache,
+    apply_byte_budget,
+    block_taper_bits,
+    build_compressed_cache,
+    fake_quant_blocks,
+    kv_compressed_generate,
+    step_down_bits,
+    taper_bits,
+    thinkv_attention_capture,
 )
 from .checkpoint import (
     KVCheckpointCodec,
     KVCheckpointConfig,
     KVCheckpointInfo,
     extract_kv_layers,
+)
+from .config import (
+    Budget,
+    CompressionPlan,
+    KVCompressionConfig,
+    RequestState,
+    SystemState,
+)
+from .recipe import (
+    BlockTaperKVPolicy,
+    BudgetTaperKVPolicy,
+    PMKVQPolicy,
+    RolePrecisionPolicy,
+    RoleSpan,
+    TaperKVPolicy,
+    ThinKVPolicy,
+    annotate_spans_from_chat,
+    auto_configure_thinkv,
+    calibrate_channel_reparam,
+    calibrate_pmkvq,
+    detect_outlier_layers,
+    estimate_block_sensitivity,
+    solve_block_allocation,
 )
 
 __all__ = [

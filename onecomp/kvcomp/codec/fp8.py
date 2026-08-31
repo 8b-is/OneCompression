@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 import torch
 
-from .._base import KVCodec, CompressedKV
+from .._base import CompressedKV, KVCodec
 from .._registry import register_kv_codec
 from ._quant_primitives import fake_quantize_fp8
 
@@ -43,6 +43,7 @@ class FP8Codec(KVCodec):
         # the dequantized tensor, matching the weight side's behaviour.)
         kq = fake_quantize_fp8(key, axis=self.key_axis)
         vq = fake_quantize_fp8(value, axis=self.value_axis)
+
         def n_scales(x, axis):
             reduced = x.shape[-1] if axis == "token" else x.shape[-2]
             return x.numel() // reduced

@@ -7,8 +7,8 @@ pytest.importorskip("vllm")
 
 from vllm_plugins.kvcomp.taper_backend import (  # noqa: E402
     _UPSTREAM_KV_AXIS,
-    _fake_quantize_variable_tokens,
     TaperKVImpl,
+    _fake_quantize_variable_tokens,
 )
 from vllm_plugins.kvcomp.taper_triton import (  # noqa: E402
     triton_taper_quantize_and_store_kv,

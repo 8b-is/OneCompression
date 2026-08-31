@@ -54,8 +54,7 @@ _DEFAULT_CALIB_PROMPTS = (
     "How many clips did she sell altogether? Reason step by step.",
     "A rectangle has length 3 more than twice its width. Its perimeter is 36. "
     "Find its area. Reason step by step.",
-    "Compute the sum of all positive integers below 50 divisible by 3 or 5. "
-    "Show your work.",
+    "Compute the sum of all positive integers below 50 divisible by 3 or 5. " "Show your work.",
     "If 5x + 3 = 2x + 18, solve for x and verify the solution.",
 )
 
@@ -90,8 +89,11 @@ def _attn_modules(model) -> List[Tuple[object, object]]:
 def _ids(tokenizer, prompt: str, device) -> torch.Tensor:
     try:
         return tokenizer.apply_chat_template(
-            [{"role": "user", "content": prompt}], add_generation_prompt=True,
-            return_tensors="pt", return_dict=True)["input_ids"].to(device)
+            [{"role": "user", "content": prompt}],
+            add_generation_prompt=True,
+            return_tensors="pt",
+            return_dict=True,
+        )["input_ids"].to(device)
     except Exception:
         return tokenizer(prompt, return_tensors="pt").input_ids.to(device)
 
@@ -125,6 +127,7 @@ def estimate_block_sensitivity(
             t = out if isinstance(out, torch.Tensor) else out[0]
             t.retain_grad()
             captured.setdefault(li, {})[which] = t
+
         return hook
 
     handles = []
@@ -214,7 +217,7 @@ def solve_block_allocation(
 
     try:
         import numpy as np
-        from scipy.optimize import milp, LinearConstraint, Bounds
+        from scipy.optimize import Bounds, LinearConstraint, milp
 
         m = len(free)
         nvar = m * n_bits
@@ -223,7 +226,7 @@ def solve_block_allocation(
         # Each free layer selects exactly one bit: Σ_b x[i,b] = 1.
         A_eq = np.zeros((m, nvar))
         for r in range(m):
-            A_eq[r, r * n_bits:(r + 1) * n_bits] = 1.0
+            A_eq[r, r * n_bits : (r + 1) * n_bits] = 1.0
         eq = LinearConstraint(A_eq, lb=np.ones(m), ub=np.ones(m))
 
         # Memory budget: Σ_{i,b} x[i,b]·bits[b] ≤ budget_free.
@@ -231,8 +234,10 @@ def solve_block_allocation(
         ub = LinearConstraint(mem.reshape(1, -1), lb=-np.inf, ub=float(budget_free))
 
         res = milp(
-            c=c, constraints=[eq, ub],
-            integrality=np.ones(nvar), bounds=Bounds(0, 1),
+            c=c,
+            constraints=[eq, ub],
+            integrality=np.ones(nvar),
+            bounds=Bounds(0, 1),
         )
         if res.success and res.x is not None:
             x = np.round(res.x).reshape(m, n_bits)
@@ -311,8 +316,8 @@ def calibrate_channel_reparam(
         for li, layer in enumerate(layers):
             if li in skip:
                 continue
-            k = layer.keys.detach().float()[0]            # (n_kv_heads, seq, head_dim)
-            amax = k.abs().amax(dim=1)                      # (n_kv_heads, head_dim)
+            k = layer.keys.detach().float()[0]  # (n_kv_heads, seq, head_dim)
+            amax = k.abs().amax(dim=1)  # (n_kv_heads, head_dim)
             chan_max[li] = torch.maximum(chan_max[li], amax) if li in chan_max else amax
             # Keep a small sample of keys for the alpha MSE search (cap memory).
             key_samples.setdefault(li, [])
@@ -326,14 +331,15 @@ def calibrate_channel_reparam(
         # floor (MKLV K>V), so the reparam must target that bit-width.
         kb = max(final_bits_map.get(li, default_key_bits), default_key_bits)
         kb = max(2, min(kb, 8))
-        ks = torch.cat(key_samples[li], dim=1)             # (n_kv_heads, S, head_dim)
+        ks = torch.cat(key_samples[li], dim=1)  # (n_kv_heads, S, head_dim)
         best_alpha, best_mse, best_lam = 0.0, None, None
         base = amax.clamp_min(1e-6)
         for a in alpha_grid:
-            lam = base.pow(a).clamp_min(1e-6)              # (n_kv_heads, head_dim)
-            inv = (1.0 / lam).unsqueeze(1)                 # (n_kv_heads,1,head_dim)
+            lam = base.pow(a).clamp_min(1e-6)  # (n_kv_heads, head_dim)
+            inv = (1.0 / lam).unsqueeze(1)  # (n_kv_heads,1,head_dim)
             recon = lam.unsqueeze(1) * fake_quantize_affine(
-                ks * inv, kb, axis="token", group_size=group_size)
+                ks * inv, kb, axis="token", group_size=group_size
+            )
             mse = float((recon - ks).pow(2).mean())
             if best_mse is None or mse < best_mse:
                 best_alpha, best_mse, best_lam = a, mse, lam
@@ -374,23 +380,37 @@ def calibrate_pmkvq(
     if block_allocation:
         budget = avg_bit_budget if avg_bit_budget is not None else float(policy.final_bits)
         sens = estimate_block_sensitivity(
-            model, tokenizer, calib_prompts, bit_options=bit_options,
-            group_size=group_size, skip_layers=skip)
+            model,
+            tokenizer,
+            calib_prompts,
+            bit_options=bit_options,
+            group_size=group_size,
+            skip_layers=skip,
+        )
         alloc = solve_block_allocation(sens, bit_options, budget)
         policy.block_final_bits = alloc
         chosen = sorted(set(alloc.values()))
-        logger.info("PM-KVQ block allocation: %d layers, bits used=%s, avg=%.2f",
-                    len(alloc), chosen,
-                    sum(alloc.values()) / max(1, len(alloc)))
+        logger.info(
+            "PM-KVQ block allocation: %d layers, bits used=%s, avg=%.2f",
+            len(alloc),
+            chosen,
+            sum(alloc.values()) / max(1, len(alloc)),
+        )
 
     if channel_reparam:
         scales = calibrate_channel_reparam(
-            model, tokenizer, calib_prompts,
+            model,
+            tokenizer,
+            calib_prompts,
             final_bits_map=getattr(policy, "block_final_bits", {}) or {},
             default_key_bits=policy.key_final_bits,
-            pos_scale=pos_scale, skip_layers=skip, group_size=group_size)
+            pos_scale=pos_scale,
+            skip_layers=skip,
+            group_size=group_size,
+        )
         policy.key_channel_scale = scales
-        logger.info("PM-KVQ channel reparam: calibrated %d layers (pos_scale=%d)",
-                    len(scales), pos_scale)
+        logger.info(
+            "PM-KVQ channel reparam: calibrated %d layers (pos_scale=%d)", len(scales), pos_scale
+        )
 
     return policy

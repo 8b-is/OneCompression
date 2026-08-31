@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
+from onecomp.compaction.adapters.claude_code import post_tool_use_output as claude_output
 from onecomp.compaction.adapters.claude_code import (
-    post_tool_use_output as claude_output,
     replace_tool_output,
 )
 from onecomp.compaction.adapters.codex import post_tool_use_output as codex_output

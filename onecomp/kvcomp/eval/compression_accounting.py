@@ -1,4 +1,8 @@
-"""Exact per-generation KV-cache accounting for evaluation."""
+"""
+Exact per-generation KV-cache accounting for evaluation.
+
+Copyright 2025-2026 Fujitsu Ltd.
+"""
 
 from __future__ import annotations
 

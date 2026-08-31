@@ -1,5 +1,8 @@
-# Copyright 2026 Fujitsu Ltd.
-"""Stride-aware fused fake-quantization kernels for the TaperKV cache."""
+"""
+Stride-aware fused fake-quantization kernels for the TaperKV cache.
+
+Copyright 2025-2026 Fujitsu Ltd.
+"""
 
 from __future__ import annotations
 

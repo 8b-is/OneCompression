@@ -6,6 +6,8 @@ token to alter an earlier key before that earlier query is evaluated.  This
 module keeps the fast one-forward protocol for token-local codecs and uses a
 prefix prefill followed by token-step updates when the cache declares such a
 dependency.
+
+Copyright 2025-2026 Fujitsu Ltd.
 """
 
 from __future__ import annotations

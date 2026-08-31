@@ -4,6 +4,8 @@ The module is intentionally torch/vLLM-free.  It validates a serialized recipe,
 selects a native carrier dtype, and records whether the OneComp plugin must
 install a custom attention backend.  Unsupported or ambiguous recipes fail
 closed instead of running under a misleading method label.
+
+Copyright 2025-2026 Fujitsu Ltd.
 """
 
 from __future__ import annotations

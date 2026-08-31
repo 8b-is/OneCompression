@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 import torch
 
-from .._base import KVCodec, CompressedKV
+from .._base import CompressedKV, KVCodec
 from .._registry import register_kv_codec
 
 # E2M1 (FP4) representable magnitudes.
@@ -95,7 +95,8 @@ class NVFP4Codec(KVCodec):
             + _num_groups(value, self.group_size, self.value_axis)
         )
         return CompressedKV(
-            key_q=kq, value_q=vq,
+            key_q=kq,
+            value_q=vq,
             meta={"dtype": key.dtype, "stored_bits": int(stored), "bits": 4, "passthrough": True},
         )
 
@@ -122,7 +123,8 @@ class TernaryCodec(KVCodec):
             + _num_groups(value, self.group_size, self.value_axis)
         )
         return CompressedKV(
-            key_q=kq, value_q=vq,
+            key_q=kq,
+            value_q=vq,
             meta={"dtype": key.dtype, "stored_bits": int(stored), "bits": 2, "passthrough": True},
         )
 

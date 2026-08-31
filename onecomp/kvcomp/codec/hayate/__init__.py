@@ -1,7 +1,7 @@
 """HayateQuant data-free block-VQ KV-cache compression."""
 
-from .codec import HayateQuantCodec
 from .calibration import HayateQuantCalibration, calibrate_hayatequant, capture_kv_samples
+from .codec import HayateQuantCodec
 from .recipes import (
     HAYATEQUANT_BLOCK_SIZE,
     HAYATEQUANT_NAME,

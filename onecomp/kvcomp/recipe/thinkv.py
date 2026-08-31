@@ -43,8 +43,8 @@ import torch
 
 from .._base import KVPolicy
 from .._registry import register_kv_policy
-from ..codec.lowbit_fp import NVFP4Codec, TernaryCodec
 from ..codec.fp8 import FP8Codec
+from ..codec.lowbit_fp import NVFP4Codec, TernaryCodec
 
 # Thought type ids follow the paper's code listing: 0=Transition, 1=Execution, 2=Reasoning.
 T_TRANSITION, T_EXECUTION, T_REASONING = 0, 1, 2
@@ -320,7 +320,9 @@ class ThinKVEngine:
         ``thought`` may be supplied directly (e.g. from the L*-averaged sparsity
         computed by the driver); otherwise it is classified from ``attn_probs``.
         """
-        refresh = step % self.refresh_interval == 0 and (attn_probs is not None or thought is not None)
+        refresh = step % self.refresh_interval == 0 and (
+            attn_probs is not None or thought is not None
+        )
         if refresh:
             self.prev_thought = self.cur_thought
             if thought is not None:
@@ -526,7 +528,9 @@ class ThinKVPolicy(KVPolicy):
                 eligible[layer] = thr
         if not eligible:
             # Fallback: pool all layers' sparsity and use k-means thresholds.
-            non_empty = [torch.as_tensor(v).flatten() for v in layer_sparsity.values() if len(v) > 0]
+            non_empty = [
+                torch.as_tensor(v).flatten() for v in layer_sparsity.values() if len(v) > 0
+            ]
             if non_empty:
                 pooled = torch.cat(non_empty)
                 self.thresholds = self.make_classifier().calibrate(pooled, self.num_thoughts)
@@ -555,7 +559,9 @@ class ThinKVPolicy(KVPolicy):
         """
         if layer_sparsity is not None:
             return self.select_optimal_layers(layer_sparsity)[1]
-        self.thresholds = tuple(self.make_classifier().calibrate(sparsity_samples, self.num_thoughts))
+        self.thresholds = tuple(
+            self.make_classifier().calibrate(sparsity_samples, self.num_thoughts)
+        )
         if calib_layers is not None:
             self.calib_layers = list(calib_layers)
         return self.thresholds
@@ -588,8 +594,7 @@ _CALIB_PROMPTS = (
 
 
 @torch.no_grad()
-def detect_outlier_layers(model, input_ids, ratio_thresh: float = 50.0,
-                          agg: str = "mean") -> list:
+def detect_outlier_layers(model, input_ids, ratio_thresh: float = 50.0, agg: str = "mean") -> list:
     """Layers whose per-channel key range >> median (massive activations).
 
     These are left un-quantized by every KV-quant method (StreamingLLM/KIVI
@@ -618,8 +623,10 @@ def detect_outlier_layers(model, input_ids, ratio_thresh: float = 50.0,
         for layer in layers:
             k = layer.keys.float()[0]
             ratios.append(
-                float((k.abs().amax(dim=-1)
-                       / k.abs().median(dim=-1).values.clamp_min(1e-6)).mean()))
+                float(
+                    (k.abs().amax(dim=-1) / k.abs().median(dim=-1).values.clamp_min(1e-6)).mean()
+                )
+            )
         per_probe.append(ratios)
 
     n_layers = len(per_probe[0])
@@ -636,9 +643,17 @@ def detect_outlier_layers(model, input_ids, ratio_thresh: float = 50.0,
 
 
 @torch.no_grad()
-def auto_configure_thinkv(model, tokenizer, *, precision=None, sink_tokens: int = 4,
-                          token_budget: int = 1 << 30, max_new_tokens: int = 200,
-                          calib_prompts=None, skip_layers=None) -> "ThinKVPolicy":
+def auto_configure_thinkv(
+    model,
+    tokenizer,
+    *,
+    precision=None,
+    sink_tokens: int = 4,
+    token_budget: int = 1 << 30,
+    max_new_tokens: int = 200,
+    calib_prompts=None,
+    skip_layers=None,
+) -> "ThinKVPolicy":
     """Build a fully-calibrated :class:`ThinKVPolicy` (the faithful ``08`` setup).
 
     Runs outlier-layer detection, then collects attention-sparsity samples over a
@@ -657,18 +672,34 @@ def auto_configure_thinkv(model, tokenizer, *, precision=None, sink_tokens: int 
 
     def _ids(p):
         return tokenizer.apply_chat_template(
-            [{"role": "user", "content": p}], add_generation_prompt=True,
-            return_tensors="pt", return_dict=True)["input_ids"].to(model.device)
+            [{"role": "user", "content": p}],
+            add_generation_prompt=True,
+            return_tensors="pt",
+            return_dict=True,
+        )["input_ids"].to(model.device)
 
-    skip = list(skip_layers) if skip_layers is not None else detect_outlier_layers(model, _ids(calib_prompts[0]))
+    skip = (
+        list(skip_layers)
+        if skip_layers is not None
+        else detect_outlier_layers(model, _ids(calib_prompts[0]))
+    )
 
-    pol = ThinKVPolicy(token_budget=token_budget, sink_tokens=sink_tokens,
-                       skip_layers=skip, precision=dict(precision))
+    pol = ThinKVPolicy(
+        token_budget=token_budget,
+        sink_tokens=sink_tokens,
+        skip_layers=skip,
+        precision=dict(precision),
+    )
     ls = {i: [] for i in range(n_layers)}
     for p in calib_prompts:
-        out = model.generate(_ids(p), max_new_tokens=max_new_tokens, do_sample=False,
-                             output_attentions=True, return_dict_in_generate=True,
-                             pad_token_id=tokenizer.eos_token_id)
+        out = model.generate(
+            _ids(p),
+            max_new_tokens=max_new_tokens,
+            do_sample=False,
+            output_attentions=True,
+            return_dict_in_generate=True,
+            pad_token_id=tokenizer.eos_token_id,
+        )
         for step_attn in out.attentions[1:]:
             for li, a in enumerate(step_attn):
                 ls[li].append(float(attention_sparsity(a[:, :, -1, :].float()).mean()))

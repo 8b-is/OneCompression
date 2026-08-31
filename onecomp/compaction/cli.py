@@ -1,12 +1,14 @@
-"""Operational CLI for formal, standalone context compaction."""
+"""
+Operational CLI for formal, standalone context compaction.
+
+Copyright 2025-2026 Fujitsu Ltd.
+"""
 
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict
 import json
 import os
-from pathlib import Path
 import queue
 import shlex
 import signal
@@ -15,6 +17,8 @@ import sys
 import tempfile
 import threading
 import time
+from dataclasses import asdict
+from pathlib import Path
 from typing import Any, Optional
 
 from .adapters.opencode import write_plugin

@@ -65,8 +65,10 @@ def main():
             continue
 
         if outcome is not None:
-            print(f"           recalled \u00a7{outcome.obs_id} "
-                  f"({len(outcome.message['content'])} chars re-injected)")
+            print(
+                f"           recalled \u00a7{outcome.obs_id} "
+                f"({len(outcome.message['content'])} chars re-injected)"
+            )
             if "SECRET=" in outcome.message["content"]:
                 secret = outcome.message["content"].split("SECRET=")[1].split()[0]
                 print(f"           -> found SECRET: {secret}")
@@ -88,7 +90,9 @@ def main():
     print(f"observations stored : {engine.store.n_records}")
     print(f"compactions         : {len(engine.compaction_log)}")
     print(f"recalls             : {len(engine.recall_log)}")
-    print(f"clean for LLM API   : {all(set(m) <= {'role', 'content'} for m in sanitize_messages(messages))}")
+    print(
+        f"clean for LLM API   : {all(set(m) <= {'role', 'content'} for m in sanitize_messages(messages))}"
+    )
 
 
 if __name__ == "__main__":

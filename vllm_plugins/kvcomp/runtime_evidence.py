@@ -9,13 +9,15 @@ environment variable is unset.
 
 This is deliberately an evidence channel, not telemetry.  It accepts no
 arbitrary tensors or prompt text and fails closed when explicitly enabled.
+
+Copyright 2025-2026 Fujitsu Ltd.
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 import json
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Mapping
 

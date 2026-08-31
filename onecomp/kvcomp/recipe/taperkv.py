@@ -139,6 +139,7 @@ class TaperKVPolicy(KVPolicy):
     def target_avg_bits(self, seq_len: int) -> float:
         """Rough expected average bits (keys+values)/2 for a given length."""
         import torch  # local import; policy is light
+
         from ..cache.taper_cache import taper_bits
 
         if isinstance(seq_len, bool) or not isinstance(seq_len, int) or seq_len < 0:

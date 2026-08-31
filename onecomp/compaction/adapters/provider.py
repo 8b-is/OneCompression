@@ -1,4 +1,8 @@
-"""Provider-boundary integration with auditable final-request enforcement."""
+"""
+Provider-boundary integration with auditable final-request enforcement.
+
+Copyright 2025-2026 Fujitsu Ltd.
+"""
 
 from __future__ import annotations
 

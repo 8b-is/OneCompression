@@ -8,14 +8,11 @@ therefore never written into the source tree.
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
 import gzip
 import hashlib
 import json
 import math
 import os
-from pathlib import Path
 import shlex
 import shutil
 import stat
@@ -23,6 +20,9 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Iterable
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from onecomp.kvcomp.eval.metrics import kv_cache_bytes, summarize_compression
 from onecomp.kvcomp.eval.longbench import longbench_e
+from onecomp.kvcomp.eval.metrics import kv_cache_bytes, summarize_compression
 
 
 def _tiny_config():

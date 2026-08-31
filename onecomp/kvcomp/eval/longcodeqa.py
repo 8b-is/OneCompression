@@ -268,9 +268,7 @@ class LongCodeQAResult:
             "mem_fraction": round(self.mem_fraction, 6),
             "mem_fraction_aggregation": self.mem_fraction_aggregation,
             "example_cache_lifetime": PER_EXAMPLE_CACHE_LIFETIME,
-            "cross_iteration_tensor_retention": (
-                PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
-            ),
+            "cross_iteration_tensor_retention": (PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION),
             "max_context_tokens": self.max_context_tokens,
             "max_new_tokens": self.max_new_tokens,
             "start": self.start,
@@ -500,9 +498,7 @@ def aggregate_longcodeqa(results: List[LongCodeQAResult]) -> dict:
         "accuracy_stderr": round(stderr, 6),
         "accuracy_ci95": [round(low, 6), round(high, 6)],
         "example_cache_lifetime": PER_EXAMPLE_CACHE_LIFETIME,
-        "cross_iteration_tensor_retention": (
-            PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION
-        ),
+        "cross_iteration_tensor_retention": (PER_EXAMPLE_CROSS_ITERATION_TENSOR_RETENTION),
         "brackets": docs,
         "compression_sufficient_statistics": (
             aggregate_compression_sufficient_statistics(all_generation_records)

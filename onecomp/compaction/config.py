@@ -5,9 +5,9 @@ Copyright 2025-2026 Fujitsu Ltd.
 
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
-import re
 from typing import Any, Literal, Optional
 
 from .compactor import DEFAULT_ACTION_REGEX, DEFAULT_OBSERVATION_REGEX

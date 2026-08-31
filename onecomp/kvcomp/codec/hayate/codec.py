@@ -21,23 +21,23 @@ from typing import ClassVar
 
 import torch
 
-from ..._base import KVCodec, CompressedKV
+from ..._base import CompressedKV, KVCodec
 from ..._registry import register_kv_codec
+from .._scale import fit_scale
 from ..rotation import (
+    hybrid_rotation_matrix,
     is_power_of_two,
     random_orthogonal,
-    hybrid_rotation_matrix,
 )
 from .vq import (
+    build_vq_lut,
     load_hayatequant_codebook,
-    quantize_exact_pre,
     lookup_codewords,
     lut_spec_for,
-    build_vq_lut,
+    quantize_exact_pre,
     quantize_via_lut,
     require_hayatequant_codebooks,
 )
-from .._scale import fit_scale
 
 
 @lru_cache(maxsize=64)

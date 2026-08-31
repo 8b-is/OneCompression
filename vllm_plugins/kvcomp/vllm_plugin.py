@@ -4,6 +4,8 @@ The plugin reads kv_compression_config from a local model, validates it through
 vllm_plugins.kvcomp.mapping, and installs the required data plane.
 HayateQuant uses a packed K/V backend; TaperKV uses a standalone GPU semantic
 backend; recipes without an implemented faithful path fail before engine start.
+
+Copyright 2025-2026 Fujitsu Ltd.
 """
 
 from __future__ import annotations
@@ -194,12 +196,14 @@ def _install_hayatequant_cache_spec_hook() -> bool:
         return True
 
     from dataclasses import replace  # pylint: disable=import-outside-toplevel
+
     from vllm.model_executor.layers.attention.attention import (  # pylint: disable=import-outside-toplevel
         Attention,
     )
     from vllm.v1.kv_cache_interface import (  # pylint: disable=import-outside-toplevel
         TQFullAttentionSpec,
     )
+
     from vllm_plugins.kvcomp.hayate_config import (  # pylint: disable=import-outside-toplevel
         hayatequant_native_recipe_from_mapping,
     )
@@ -231,12 +235,14 @@ def _install_turboquant2_cache_spec_hook() -> bool:
         return True
 
     from dataclasses import replace  # pylint: disable=import-outside-toplevel
+
     from vllm.model_executor.layers.attention.attention import (  # pylint: disable=import-outside-toplevel
         Attention,
     )
     from vllm.v1.kv_cache_interface import (  # pylint: disable=import-outside-toplevel
         TQFullAttentionSpec,
     )
+
     from vllm_plugins.kvcomp.turboquant2_triton import (  # pylint: disable=import-outside-toplevel
         turboquant2_layout,
     )

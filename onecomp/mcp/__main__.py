@@ -59,15 +59,15 @@ def main(argv=None):
     # Parse first so ``--help`` remains dependency-free. Model tooling is loaded
     # only for the full server; the compaction-only path imports no torch,
     # transformers, model, or accelerator package.
+    from .compaction_tools import (  # pylint: disable=import-outside-toplevel
+        build_compaction_tools,
+        close_all_sessions,
+    )
     from .modern_protocol import (  # pylint: disable=import-outside-toplevel
         CompatibleMCPServer,
         ModernMCPServer,
     )
     from .protocol import MCPServer  # pylint: disable=import-outside-toplevel
-    from .compaction_tools import (  # pylint: disable=import-outside-toplevel
-        build_compaction_tools,
-        close_all_sessions,
-    )
 
     server_class = {
         "auto": CompatibleMCPServer,

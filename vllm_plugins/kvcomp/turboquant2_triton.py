@@ -5,6 +5,8 @@ Upstream vLLM's TurboQuant data plane currently has explicit 3-bit and 4-bit
 packing branches.  These kernels extend the same scalar method to K2/V2:
 Hadamard-rotated Lloyd--Max keys with norm correction and per-vector affine
 values.  Four codes are packed into every byte.
+
+Copyright 2025-2026 Fujitsu Ltd.
 """
 
 from __future__ import annotations
@@ -13,7 +15,6 @@ import math
 from typing import Any
 
 import torch
-
 from vllm.triton_utils import tl, triton
 from vllm.v1.attention.ops.triton_decode_attention import _fwd_kernel_stage2
 

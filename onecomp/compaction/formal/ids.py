@@ -5,9 +5,9 @@ Copyright 2025-2026 Fujitsu Ltd.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import re
+from dataclasses import dataclass
 
 from .errors import ArchiveCapacityExceeded
 

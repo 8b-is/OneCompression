@@ -1,11 +1,15 @@
-"""Generate a dependency-free OpenCode plugin for per-tool ARC ingestion."""
+"""
+Generate a dependency-free OpenCode plugin for per-tool ARC ingestion.
+
+Copyright 2025-2026 Fujitsu Ltd.
+"""
 
 from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import tempfile
+from pathlib import Path
 
 
 def render_plugin(

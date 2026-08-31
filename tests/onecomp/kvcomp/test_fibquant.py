@@ -14,14 +14,14 @@ from onecomp.kvcomp.codec.fibquant import (
     _paper_radii,
     fibquant_codebook,
 )
-from onecomp.kvcomp.codec.rotation import lloyd_max_beta
-from onecomp.kvcomp.codec.turboquant import TurboQuantCodec
 from onecomp.kvcomp.codec.quality_baselines import (
     FIBQUANT_PAPER_METHOD,
     build_fibquant_paper,
     fibquant_quality_provenance,
     is_quality_only_baseline,
 )
+from onecomp.kvcomp.codec.rotation import lloyd_max_beta
+from onecomp.kvcomp.codec.turboquant import TurboQuantCodec
 
 
 def _small_codec(**kwargs):

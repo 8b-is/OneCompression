@@ -11,6 +11,8 @@ forgotten events are genuinely removed from the model view.  The paired recall
 tool shares the condenser's in-process lossless store, avoiding the common but
 incorrect pattern where an MCP tool returns a shorter copy while the host keeps
 its original private history unchanged.
+
+Copyright 2025-2026 Fujitsu Ltd.
 """
 
 from __future__ import annotations
@@ -51,8 +53,8 @@ except ImportError as exc:  # pragma: no cover - exercised only without the opti
         "onecomp.compaction.adapters.openhands requires the optional 'openhands-sdk' package"
     ) from exc
 
-from ..config import CompactionConfig
 from ..compactor import SUMMARY_HEADER
+from ..config import CompactionConfig
 from ..formal import FormalArcError
 from ..runner import CompactionRunner
 from .messages import message_role, message_text

@@ -1,4 +1,8 @@
-"""Load the immutable preflight record attached to a paper benchmark job."""
+"""
+Load the immutable preflight record attached to a paper benchmark job.
+
+Copyright 2025-2026 Fujitsu Ltd.
+"""
 
 from __future__ import annotations
 

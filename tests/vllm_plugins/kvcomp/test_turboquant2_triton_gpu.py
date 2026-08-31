@@ -10,6 +10,7 @@ from vllm.model_executor.layers.quantization.turboquant.centroids import (  # no
     get_centroids,
 )
 from vllm.v1.attention.backends.turboquant_attn import _build_hadamard  # noqa: E402
+
 from vllm_plugins.kvcomp.turboquant2_triton import (  # noqa: E402
     triton_turboquant2_decode_attention,
     triton_turboquant2_dequant_kv,

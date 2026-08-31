@@ -11,7 +11,7 @@ import io
 import json
 
 from onecomp.__version__ import __version__
-from onecomp.mcp.protocol import MCPServer, PROTOCOL_VERSION, ToolDefinition
+from onecomp.mcp.protocol import PROTOCOL_VERSION, MCPServer, ToolDefinition
 
 
 def _stub_tools():
@@ -130,9 +130,7 @@ def test_initialize_negotiates_supported_protocol_versions():
 
 
 def test_initialize_rejects_malformed_params():
-    (response,) = _roundtrip(
-        [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": []}]
-    )
+    (response,) = _roundtrip([{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": []}])
     assert response["error"]["code"] == -32602
 
 

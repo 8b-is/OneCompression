@@ -14,7 +14,9 @@ import torch
 from onecomp.kvcomp.codec import rotation as R
 
 requires_cuda = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
-requires_fht = pytest.mark.skipif(R._fht_cuda is None, reason="fast_hadamard_transform not installed")
+requires_fht = pytest.mark.skipif(
+    R._fht_cuda is None, reason="fast_hadamard_transform not installed"
+)
 
 
 @requires_cuda

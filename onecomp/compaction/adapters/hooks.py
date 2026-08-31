@@ -9,6 +9,8 @@ A paired recall entry point prints the exact stored response on demand.
 These adapters operate at tool-result ingestion time.  They do not pretend
 that merely exposing the OneComp MCP server can rewrite a host application's
 already-owned conversation history.
+
+Copyright 2025-2026 Fujitsu Ltd.
 """
 
 from __future__ import annotations
@@ -32,11 +34,10 @@ from ..formal import (
     format_citation,
 )
 from ..runner import CompactionRunner
-from .claude_code import (
-    post_tool_use_output as claude_post_tool_use_output,
-    replace_tool_output as replace_claude_tool_output,
-)
-from .codex import CodexResultMode, post_tool_use_output as codex_post_tool_use_output
+from .claude_code import post_tool_use_output as claude_post_tool_use_output
+from .claude_code import replace_tool_output as replace_claude_tool_output
+from .codex import CodexResultMode
+from .codex import post_tool_use_output as codex_post_tool_use_output
 
 _OBS_ID_RE = re.compile(r"^[0-9a-fA-F]{4,128}$")
 _RECALL_COMMANDS = ("onecomp-arc-recall", "onecomp.compaction.adapters.hooks recall")

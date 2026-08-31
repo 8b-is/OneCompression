@@ -12,9 +12,9 @@ from dataclasses import dataclass
 
 import torch
 
-from .._base import KVCodec, CompressedKV
+from .._base import CompressedKV, KVCodec
 from .._registry import register_kv_codec
-from ._quant_primitives import quantize_affine, dequantize_affine
+from ._quant_primitives import dequantize_affine, quantize_affine
 
 
 def _stored_bits(x, bits: int, axis: str, group_size: int) -> int:

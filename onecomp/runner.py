@@ -26,7 +26,6 @@ from .log import setup_logger
 from .lpcd import LPCDConfig
 from .model_config import ModelConfig
 from .qep import QEPConfig
-from .lpcd import LPCDConfig
 from .quantizer import GPTQ, Quantizer
 from .quantizer.autobit import AssignmentStrategy, AutoBitQuantizer
 from .quantizer.autobit.dbf_fallback import MPS_DBF_FALLBACK_ERROR

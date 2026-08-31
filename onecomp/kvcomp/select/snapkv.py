@@ -19,7 +19,7 @@ import torch.nn.functional as F
 
 from .._base import KVSelector
 from .._registry import register_kv_selector
-from ._common import observation_attention, mask_from_keep_indices
+from ._common import mask_from_keep_indices, observation_attention
 
 
 @register_kv_selector("snapkv")
@@ -77,8 +77,10 @@ class SnapKVSelector(KVSelector):
         else:
             idx = torch.empty(batch, heads, 0, dtype=torch.long, device=scores.device)
 
-        mask = mask_from_keep_indices(idx, seq_len) if idx.numel() else torch.zeros(
-            batch, heads, seq_len, dtype=torch.bool, device=scores.device
+        mask = (
+            mask_from_keep_indices(idx, seq_len)
+            if idx.numel()
+            else torch.zeros(batch, heads, seq_len, dtype=torch.bool, device=scores.device)
         )
         if recent > 0:
             mask[:, :, -recent:] = True

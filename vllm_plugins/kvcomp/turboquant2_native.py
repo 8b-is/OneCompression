@@ -1,9 +1,10 @@
-# Copyright 2026 Fujitsu Ltd.
 """Packed K2/V2 TurboQuant backend for vLLM.
 
 vLLM 0.24 exposes only K/V widths 3 and 4 in its TurboQuant kernels.  This
 plugin keeps the upstream scalar quantizer semantics while replacing cache
 allocation, store, decode, and continuation dequantization for rate two.
+
+Copyright 2025-2026 Fujitsu Ltd.
 """
 
 from __future__ import annotations
@@ -15,7 +16,6 @@ from typing import Any
 
 import torch
 import torch.nn.functional as F
-
 from vllm.v1.attention.backends.turboquant_attn import (
     _HAS_FLASH_ATTN,
     TurboQuantAttentionBackend,

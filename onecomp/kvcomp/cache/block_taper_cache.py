@@ -4,6 +4,8 @@ This module deliberately models the layout that a packed paged cache needs:
 all tokens in a full block share a bit-width, and block mode has one affine
 scale/zero pair per *batch-head-block*.  It is still a fake-quant research
 cache; its reporting counts the corresponding packed payload and metadata.
+
+Copyright 2025-2026 Fujitsu Ltd.
 """
 
 from __future__ import annotations

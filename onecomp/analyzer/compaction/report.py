@@ -1,12 +1,16 @@
-"""Stable, body-free report schema for one compaction run."""
+"""
+Stable, body-free report schema for one compaction run.
+
+Copyright 2025-2026 Fujitsu Ltd.
+"""
 
 from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import tempfile
 import time
+from pathlib import Path
 from typing import Any, Mapping
 
 from ...compaction import CompactionRunner

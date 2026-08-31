@@ -24,7 +24,9 @@ def repo_root(anchor: Path | None = None) -> Path:
 
 
 def _looks_like_path(value: str) -> bool:
-    return value.startswith((".", "/", "~")) or os.sep in value or (os.altsep and os.altsep in value)
+    return (
+        value.startswith((".", "/", "~")) or os.sep in value or (os.altsep and os.altsep in value)
+    )
 
 
 def resolve_model_ref(value: str | Path, models_root: str | Path | None = None) -> str:

@@ -22,6 +22,7 @@ from typing import Optional
 import torch
 import torch.nn.functional as F
 from torch import nn
+
 from onecomp.calibration import CalibrationConfig, prepare_calibration_dataset
 from onecomp.model_config import ModelConfig
 from onecomp.qep._qep_config import QEPConfig

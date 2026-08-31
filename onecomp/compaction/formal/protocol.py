@@ -5,10 +5,10 @@ Copyright 2025-2026 Fujitsu Ltd.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from html import escape
 import json
 import re
+from dataclasses import dataclass
+from html import escape
 from typing import Optional, Union
 
 from .errors import InvalidAction

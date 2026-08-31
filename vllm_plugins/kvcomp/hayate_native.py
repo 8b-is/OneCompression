@@ -4,6 +4,8 @@
 The plugin uses vLLM's TURBOQUANT enum only as a carrier.  This backend replaces
 cache allocation, store, prefill, and decode, so the physical data plane and
 both K/V quantizers are canonical HayateQuant.
+
+Copyright 2025-2026 Fujitsu Ltd.
 """
 
 from __future__ import annotations
@@ -16,7 +18,6 @@ from typing import Any
 
 import torch
 import torch.nn.functional as F
-
 from vllm.v1.attention.backends.turboquant_attn import (
     _CONTINUATION_DECODE_THRESHOLD,
     _HAS_FLASH_ATTN,
@@ -34,8 +35,8 @@ from vllm_plugins.kvcomp.hayate_config import (
     HAYATEQUANT_LUT_BINS,
     HAYATEQUANT_LUT_CANDIDATES,
     HayateQuantNativeRecipe,
-    hayatequant_native_runtime_fields,
     hayatequant_native_recipe_from_mapping,
+    hayatequant_native_runtime_fields,
 )
 from vllm_plugins.kvcomp.hayate_triton import (
     triton_hayatequant_decode_attention,

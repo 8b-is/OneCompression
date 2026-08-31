@@ -4,6 +4,8 @@ The backend applies TaperKV's age schedule directly to vLLM paged-cache values
 on GPU. Precision only decreases for a resident slot/page, preventing repeated
 same-width fake quantization drift. The current allocator remains model dtype;
 runtime evidence therefore labels this a semantic, not packed-memory, backend.
+
+Copyright 2025-2026 Fujitsu Ltd.
 """
 
 from __future__ import annotations

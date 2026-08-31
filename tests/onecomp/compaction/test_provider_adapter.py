@@ -6,8 +6,8 @@ import pytest
 
 from onecomp.compaction import CompactionConfig, CompactionRunner
 from onecomp.compaction.adapters import GuardedProviderAdapter
-from onecomp.compaction.formal import BudgetExceeded
 from onecomp.compaction.adapters.messages import message_text
+from onecomp.compaction.formal import BudgetExceeded
 
 
 def _count(request):
@@ -132,6 +132,7 @@ def test_async_dispatch_uses_the_same_guard():
 
 def test_prepare_request_deepcopies_large_payload_only_once(monkeypatch):
     import copy
+
     from onecomp.compaction.adapters import provider
 
     calls = 0

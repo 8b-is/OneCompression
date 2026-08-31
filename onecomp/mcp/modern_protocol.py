@@ -13,8 +13,8 @@ import base64
 import hashlib
 import inspect
 import json
-from logging import getLogger
 import sys
+from logging import getLogger
 from typing import Any, Dict, List, Optional
 
 from ..__version__ import __version__

@@ -1,11 +1,11 @@
 """Formal archive invariants and failure-injection tests."""
 
-from concurrent.futures import ThreadPoolExecutor
 import os
-from pathlib import Path
 import sqlite3
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import pytest
 
@@ -14,8 +14,8 @@ from onecomp.compaction.formal import (
     ArchiveConfigurationMismatch,
     ArchiveIntegrityError,
     OccurrenceIdConfig,
-    SQLiteObservationArchive,
     SourceOccurrenceConflict,
+    SQLiteObservationArchive,
 )
 
 

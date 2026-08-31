@@ -1,10 +1,13 @@
-# Copyright 2026 Fujitsu Ltd.
-"""Dependency-free contract for the packed HayateQuant vLLM backend."""
+"""
+Dependency-free contract for the packed HayateQuant vLLM backend.
+
+Copyright 2025-2026 Fujitsu Ltd.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import math
+from dataclasses import dataclass
 from typing import Any, Mapping
 
 from vllm_plugins.kvcomp._validation import strict_integer

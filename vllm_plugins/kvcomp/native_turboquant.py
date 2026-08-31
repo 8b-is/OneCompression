@@ -5,6 +5,8 @@ vLLM exposes TurboQuant through named ``kv_cache_dtype`` strings rather than a
 free-form key/value bit configuration.  Keeping that mapping in one small module
 prevents serving integrations from duplicating the preset table and
 also gives users a direct helper when they want to run plain TQ in vLLM.
+
+Copyright 2025-2026 Fujitsu Ltd.
 """
 
 from __future__ import annotations

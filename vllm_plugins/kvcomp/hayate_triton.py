@@ -1,5 +1,5 @@
-# Copyright 2026 Fujitsu Ltd.
-"""Packed canonical HayateQuant store and attention kernels.
+"""
+Packed canonical HayateQuant store and attention kernels.
 
 This module quantizes both roles with HayateQuant's data-free rotated block
 codebooks. Keys use norm correction (NC); values use one LS fit,
@@ -10,6 +10,8 @@ The fixed CUDA candidate table makes assignment independent of request shape,
 so prefill and one-token decode use identical arithmetic. Code indices,
 scales, and packed bytes remain under the public-payload parity gate.
 Packed-cache decode and attention are native Triton.
+
+Copyright 2025-2026 Fujitsu Ltd.
 """
 
 from __future__ import annotations
@@ -17,6 +19,8 @@ from __future__ import annotations
 from typing import Any
 
 import torch
+from vllm.triton_utils import tl, triton
+from vllm.v1.attention.ops.triton_decode_attention import _fwd_kernel_stage2
 
 from onecomp.kvcomp.codec._scale import fit_scale
 from onecomp.kvcomp.codec.hayate.vq import (
@@ -25,9 +29,6 @@ from onecomp.kvcomp.codec.hayate.vq import (
     quantize_exact_pre,
     quantize_via_lut,
 )
-from vllm.triton_utils import tl, triton
-from vllm.v1.attention.ops.triton_decode_attention import _fwd_kernel_stage2
-
 from vllm_plugins.kvcomp.hayate_config import (
     HAYATEQUANT_LUT_BINS,
     HAYATEQUANT_LUT_CANDIDATES,

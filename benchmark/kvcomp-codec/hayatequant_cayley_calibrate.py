@@ -9,8 +9,8 @@ runtime path.
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import sys
+from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
@@ -18,13 +18,13 @@ sys.path.insert(0, str(REPO_ROOT))
 import torch  # noqa: E402
 from transformers import AutoModelForCausalLM, AutoTokenizer  # noqa: E402
 
-from onecomp.kvcomp.codec.hayate.recipes import (  # noqa: E402
-    build_hayatequant,
-    hayatequant_role_rates,
-)
 from onecomp.kvcomp.codec.hayate.calibration import (  # noqa: E402
     calibrate_hayatequant,
     capture_kv_samples,
+)
+from onecomp.kvcomp.codec.hayate.recipes import (  # noqa: E402
+    build_hayatequant,
+    hayatequant_role_rates,
 )
 
 DEFAULT_TEXT = (

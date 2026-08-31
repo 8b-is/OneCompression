@@ -5,13 +5,14 @@ Copyright 2025-2026 Fujitsu Ltd.
 
 from __future__ import annotations
 
+import threading
+import time
 from collections import deque
 from functools import wraps
 from pathlib import Path
-import threading
-import time
 from typing import Any, Callable, Optional
 
+from .adapters.messages import protected_prefix_count, recent_turn_start, total_text_chars
 from .compactor import compact_messages_arc
 from .config import CompactionConfig
 from .engine import (
@@ -22,6 +23,7 @@ from .engine import (
     sanitize_messages,
 )
 from .formal import (
+    SYSTEM_PROMPT_FORMAL_RECALL,
     ActionResponse,
     ArcCoreService,
     BudgetExceeded,
@@ -30,13 +32,11 @@ from .formal import (
     InvocationBudgetGuard,
     OccurrenceIdConfig,
     SQLiteObservationArchive,
-    SYSTEM_PROMPT_FORMAL_RECALL,
     looks_like_action_intent,
     parse_action,
 )
 from .formal.protocol import RecallMetadataAction
 from .protocol import normalise_cmd_signature
-from .adapters.messages import protected_prefix_count, recent_turn_start, total_text_chars
 
 
 def _runner_operation(method: Callable[..., Any]) -> Callable[..., Any]:
