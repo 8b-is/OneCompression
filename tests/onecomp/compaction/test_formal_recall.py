@@ -58,7 +58,7 @@ def test_huge_recall_never_silently_elides_the_middle(tmp_path):
 
 def test_text_chunk_property_over_diverse_unicode_and_limits():
     randomizer = random.Random(20260829)
-    alphabet = "abcXYZ012\n αβ🙂漢字"
+    alphabet = "abcXYZ012\n αβ🙂漢字"  # jp-check: ignore
     for _ in range(100):
         text = "".join(randomizer.choice(alphabet) for _ in range(randomizer.randrange(0, 400)))
         limit = randomizer.randrange(1, 35)

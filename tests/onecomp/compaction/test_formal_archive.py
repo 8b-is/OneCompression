@@ -295,7 +295,7 @@ def test_nested_batch_rollback_is_local_when_caller_recovers(tmp_path):
 
 def test_read_only_archive_recalls_without_chmod_or_writes(tmp_path, monkeypatch):
     path = tmp_path / "formal.db"
-    body = "prefix\n" + "日本語" * 10_000 + "\nsuffix"
+    body = "prefix\n" + "日本語" * 10_000 + "\nsuffix"  # jp-check: ignore
     with SQLiteObservationArchive(path) as archive:
         record = archive.append("cat large.log", body)
         archive.checkpoint(truncate=True)
@@ -467,7 +467,7 @@ def test_range_reads_use_verified_substrings_and_invalidate_on_external_commit(
 
 
 def test_range_reads_are_exact_across_utf8_block_boundaries(tmp_path):
-    text = "a" * 16_380 + "é😊漢字" + "z" * 20_000
+    text = "a" * 16_380 + "é😊漢字" + "z" * 20_000  # jp-check: ignore
     with SQLiteObservationArchive(tmp_path / "formal.db") as archive:
         record = archive.append("unicode", text)
 

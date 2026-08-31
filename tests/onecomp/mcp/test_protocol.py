@@ -305,7 +305,7 @@ def test_type_error_inside_tool_is_tool_error_not_invalid_params():
 
 def test_utf8_arguments_roundtrip():
     """Non-ASCII and embedded newlines survive the single-line framing."""
-    payload = {"model_id": "モデル/日本語✨", "wbits": 4}
+    payload = {"model_id": "モデル/日本語✨", "wbits": 4}  # jp-check: ignore
     (response,) = _roundtrip(
         [
             {
@@ -317,7 +317,7 @@ def test_utf8_arguments_roundtrip():
         ]
     )
     result = json.loads(response["result"]["content"][0]["text"])
-    assert result["model_id"] == "モデル/日本語✨"
+    assert result["model_id"] == "モデル/日本語✨"  # jp-check: ignore
 
 
 class TestNotificationWithId:

@@ -240,7 +240,7 @@ def run_benchmark(
 def _observation(rng: random.Random, index: int, target_chars: int, seed: int) -> tuple[str, str]:
     command = _observation_command(index)
     marker = f"VERIFY-{seed}-{index:04d}"
-    alphabet = "abcdefghijklmnopqrstuvwxyz0123456789 日本語 λ→✓\n"
+    alphabet = "abcdefghijklmnopqrstuvwxyz0123456789 日本語 λ→✓\n"  # jp-check: ignore
     prefix_length = max(0, target_chars // 2 - len(marker) // 2)
     prefix = "".join(rng.choice(alphabet) for _ in range(prefix_length))
     suffix = "".join(
