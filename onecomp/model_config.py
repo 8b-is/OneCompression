@@ -21,15 +21,6 @@ try:
 except ImportError:
     _HAS_VLM_AUTO = False
 
-from .utils.dtype import needs_bfloat16
-
-try:
-    from transformers import AutoModelForImageTextToText as _AutoVLM
-
-    _HAS_VLM_AUTO = True
-except ImportError:
-    _HAS_VLM_AUTO = False
-
 
 class ModelConfig:
     """Model and Tokenizer"""

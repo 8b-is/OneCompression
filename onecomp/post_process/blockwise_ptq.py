@@ -441,7 +441,12 @@ class BlockWisePTQ(PostQuantizationProcess):
                     )
                 elif method_i == "onebit":
                     from ._blockwise.onebit_cbq_optimizer import optimize_onebit_cross_block
+
+                    init_err, final_err = optimize_onebit_cross_block(
+                        layer_i=layer_si,
+                        layer_j=layer_sj,
                         inps=inps_cbq,
+                        target_outputs_j=target_outputs_j,
                         layer_kwargs=cbq_kw_cpu,
                         lr=cbq_lr,
                         epochs=cbq_epochs,

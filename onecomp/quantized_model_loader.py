@@ -177,51 +177,6 @@ class QuantizedModelLoader:
         _purge_orphan_parameters(model)
         _cast_fused_moe_parameters(model, target_dtype)
 
-        # ``assign=True`` swaps Parameter objects in place, which breaks the
-        # weight sharing established by ``from_config`` for models with
-        # ``tie_word_embeddings=True``.  Concretely, ``embed_tokens.weight``
-        # gets replaced by the bf16 tensor from the checkpoint while
-        # ``lm_head.weight`` keeps its original (often fp16) tensor, leading
-        # to a dtype mismatch at the final ``F.linear`` call during
-        # generation.  Re-tie when (a) the config tree still asks for it
-        # (multi-config VLMs such as Llama 3.2-Vision place the flag in
-        # ``text_config`` rather than at the top level, so we walk the
-        # nested configs) and (b) ``lm_head`` is still a plain
-        # ``nn.Linear`` -- if it has been replaced by a quantized layer
-        # (e.g. ``GPTQLinear``) it has no ``weight`` attribute to retie
-        # and tying would be meaningless.
-        if cls._should_retie_word_embeddings(model.config):
-            lm_head = getattr(model, "lm_head", None)
-            if isinstance(lm_head, torch.nn.Linear):
-                model.tie_weights()
-                logger.info("Re-tied lm_head to embed_tokens after assign-load")
-
-        # Safety net: ``load_state_dict(..., assign=True)`` only replaces
-        # parameters whose key in the checkpoint exactly matches the model's
-        # ``named_parameters`` path.  For some VLMs (e.g. Cohere2Vision's
-        # ``multi_modal_projector``) the path prefix differs between the
-        # checkpoint and the model class produced by ``from_config``, so a
-        # subset of params silently keeps the empty-model dtype.  Together
-        # with the config-based dtype default in
-        # ``_build_empty_model_from_config`` this normalises any remaining
-        # fp16 tensors of non-quantized modules to ``target_dtype``.  fp32
-        # params (e.g. fp32 LayerNorm in mixed-precision models) are left
-        # untouched, and quantized layers are skipped so that GPTQ scales
-        # and similar fp16 metadata are preserved.
-        target_dtype = (
-            torch_dtype if torch_dtype is not None else cls._resolve_dtype_from_config(config_dict)
-        )
-        if target_dtype is None:
-            target_dtype = torch.float16
-        converted = cls._cast_fp16_to_target_dtype(model, target_dtype)
-        if converted:
-            logger.info(
-                "Cast %d non-quantized fp16 tensor(s) to %s: %s",
-                len(converted),
-                target_dtype,
-                converted,
-            )
-
         # Register Hadamard hooks for rotation-preprocessed models
         if quant_config.get("rotated", False):
             from .pre_process.rotation_utils import (
