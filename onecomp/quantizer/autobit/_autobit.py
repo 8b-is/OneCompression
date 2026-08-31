@@ -14,15 +14,7 @@ from typing import Any, Optional, Union
 import torch
 
 from onecomp.calibration import CalibrationConfig
-<<<<<<< HEAD
-from onecomp.utils import (
-    effective_bits_per_param,
-    effective_bits_for_quantizer,
-)
-from onecomp.quantizer._quantizer import Quantizer, QuantizationResult
-=======
 from onecomp.quantizer._quantizer import QuantizationResult, Quantizer
->>>>>>> export/v1-4-0
 from onecomp.quantizer.dbf import DBF
 from onecomp.quantizer.gptq import GPTQ
 from onecomp.quantizer.gptq.gptq_layer import PACKABLE_WBITS
@@ -236,8 +228,6 @@ class AutoBitQuantizer(Quantizer):
             bad.append(
                 f"Invalid parameter 'calibration_config.max_length': "
                 f"{calib_config.max_length!r} (expected int >= 1)"
-<<<<<<< HEAD
-=======
             )
 
         # Propagate the bitpack mode to child candidates before their own
@@ -249,7 +239,6 @@ class AutoBitQuantizer(Quantizer):
             bad.append(
                 f"Invalid parameter 'bitpack_on_quantize': {self.bitpack_on_quantize!r} "
                 f"(expected bool)"
->>>>>>> export/v1-4-0
             )
 
         for i, q in enumerate(self.quantizers):
@@ -447,10 +436,7 @@ class AutoBitQuantizer(Quantizer):
             self.flag_calibration = any(q.flag_calibration for q in self.quantizers)
             self.flag_hessian = any(q.flag_hessian for q in self.quantizers)
             self.flag_xtx = any(q.flag_xtx for q in self.quantizers)
-<<<<<<< HEAD
-=======
             self.flag_nsamples = any(q.flag_nsamples for q in self.quantizers)
->>>>>>> export/v1-4-0
             # AutoBit supports QEP only when *all* candidate quantizers support it
             # (the per-layer assignment may dispatch to any child quantizer).
             self.flag_qep_supported = all(q.flag_qep_supported for q in self.quantizers)

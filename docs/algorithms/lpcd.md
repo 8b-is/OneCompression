@@ -71,10 +71,6 @@ lpcd_config = LPCDConfig(
     perccorr=0.5,
     percdamp=0.01,
     use_closed_form=True,
-<<<<<<< HEAD
-    device="cuda:0",
-=======
->>>>>>> export/v1-4-0
 )
 
 runner = Runner(

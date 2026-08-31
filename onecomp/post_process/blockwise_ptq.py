@@ -71,8 +71,6 @@ class BlockWisePTQ(PostQuantizationProcess):
             a :class:`CalibrationConfig` is created with
             ``num_calibration_samples=128``.
             See :class:`~onecomp.calibration.CalibrationConfig`.
-<<<<<<< HEAD
-=======
 
     Buffer layout:
         ``BlockWisePTQ`` accepts a quantized model with either packed or
@@ -91,7 +89,6 @@ class BlockWisePTQ(PostQuantizationProcess):
 
         For those cases, build the post-process input with ``pack_weights=False``
         and call :meth:`run` directly instead of going through ``Runner.run()``.
->>>>>>> export/v1-4-0
 
     Examples:
         Recommended Runner-managed path (packed buffers by default):
@@ -141,11 +138,7 @@ class BlockWisePTQ(PostQuantizationProcess):
     # Calibration (qep-dev: cfg.dataset / cfg.nsamples via get_loaders())
     calibration_config: CalibrationConfig = None
 
-<<<<<<< HEAD
-    def run(
-=======
     def _run(
->>>>>>> export/v1-4-0
         self,
         quantized_model: nn.Module,
         model_config: ModelConfig,
@@ -193,21 +186,12 @@ class BlockWisePTQ(PostQuantizationProcess):
         # 2. Get transformer blocks
         # ------------------------------------------------------------------
         from ._blockwise.helpers import (
-<<<<<<< HEAD
-            get_transformer_layers,
-            collect_layer_inputs,
-            layer_kwargs_to_device,
-            layer_forward_single,
-            deep_clone_layer_kwargs,
-            auto_detect_quantization_strategy,
-=======
             auto_detect_quantization_strategy,
             collect_layer_inputs,
             deep_clone_layer_kwargs,
             get_transformer_layers,
             layer_forward_single,
             layer_kwargs_to_device,
->>>>>>> export/v1-4-0
         )
 
         layers = get_transformer_layers(quantized_model)
@@ -424,13 +408,7 @@ class BlockWisePTQ(PostQuantizationProcess):
 
                 # CBQ optimisation
                 if method_i == "gptq":
-<<<<<<< HEAD
-                    from ._blockwise.gptq_cbq_optimizer import (
-                        optimize_gptq_cross_block,
-                    )
-=======
                     from ._blockwise.gptq_cbq_optimizer import optimize_gptq_cross_block
->>>>>>> export/v1-4-0
 
                     init_err, final_err = optimize_gptq_cross_block(
                         layer_i=layer_si,
@@ -446,13 +424,7 @@ class BlockWisePTQ(PostQuantizationProcess):
                         intweight_lr=self.gptq_intweight_lr,
                     )
                 elif method_i == "dbf":
-<<<<<<< HEAD
-                    from ._blockwise.dbf_cbq_optimizer import (
-                        optimize_dbf_cross_block,
-                    )
-=======
                     from ._blockwise.dbf_cbq_optimizer import optimize_dbf_cross_block
->>>>>>> export/v1-4-0
 
                     init_err, final_err = optimize_dbf_cross_block(
                         layer_i=layer_si,
@@ -468,19 +440,8 @@ class BlockWisePTQ(PostQuantizationProcess):
                         grad_clip=cbq_grad_clip,
                     )
                 elif method_i == "onebit":
-<<<<<<< HEAD
-                    from ._blockwise.onebit_cbq_optimizer import (
-                        optimize_onebit_cross_block,
-                    )
-=======
                     from ._blockwise.onebit_cbq_optimizer import optimize_onebit_cross_block
->>>>>>> export/v1-4-0
-
-                    init_err, final_err = optimize_onebit_cross_block(
-                        layer_i=layer_si,
-                        layer_j=layer_sj,
                         inps=inps_cbq,
-                        target_outputs_j=target_outputs_j,
                         layer_kwargs=cbq_kw_cpu,
                         lr=cbq_lr,
                         epochs=cbq_epochs,

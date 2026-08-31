@@ -20,10 +20,6 @@ from omegaconf import DictConfig, OmegaConf
 
 from onecomp import load_quantized_model, setup_logger
 
-<<<<<<< HEAD
-
-=======
->>>>>>> export/v1-4-0
 _DTYPE_MAP = {
     "float16": torch.float16,
     "bfloat16": torch.bfloat16,

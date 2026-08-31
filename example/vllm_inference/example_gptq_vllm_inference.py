@@ -32,10 +32,6 @@ Author: Keiji Kimura
 import gc
 
 import torch
-<<<<<<< HEAD
-from onecomp import Runner, ModelConfig, CalibrationConfig, GPTQ, setup_logger
-=======
->>>>>>> export/v1-4-0
 from vllm import LLM, SamplingParams
 
 from onecomp import GPTQ, CalibrationConfig, ModelConfig, Runner, setup_logger

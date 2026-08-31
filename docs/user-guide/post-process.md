@@ -1,15 +1,8 @@
-<<<<<<< HEAD
-# Post-Process (Block-wise PTQ / LoRA SFT)
-
-OneComp supports **post-quantization processing** — additional steps applied to a quantized model to improve accuracy or inject domain-specific knowledge. Two implementations are available:
-
-=======
 # Post-Process (Global PTQ / Block-wise PTQ / LoRA SFT)
 
 OneComp supports **post-quantization processing** — additional steps applied to a quantized model to improve accuracy or inject domain-specific knowledge. Three implementations are available:
 
 - **Global PTQ** — Globally optimises quantization parameters (scales, zeros, scaling factors) via KL distillation from a full-precision teacher model
->>>>>>> export/v1-4-0
 - **Block-wise PTQ** — Minimises intermediate-representation MSE against an FP16 teacher model at Transformer-block granularity. No training data labelling required.
 - **LoRA SFT** — Fine-tunes quantized models using Low-Rank Adaptation (LoRA) adapters with SFT loss, optional teacher distillation, and intermediate block alignment.
 
@@ -19,11 +12,7 @@ The post-process framework integrates into the `Runner` pipeline via the `post_p
 
 ```
 Quantize ──► Build Model ──► Post-Process 1 ──► Post-Process 2 ──► Evaluate / Save
-<<<<<<< HEAD
-                              (e.g. BlockWisePTQ)   (e.g. LoRA SFT)
-=======
                               (e.g. GlobalPTQ)   (e.g. LoRA SFT)
->>>>>>> export/v1-4-0
 ```
 
 ## Load -> Post-process -> Re-save

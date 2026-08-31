@@ -22,10 +22,6 @@ from .quantizer.dbf.config import resolve_dbf_layer_bits
 from .quantizer.dbf.dbf_layer import DoubleBinaryLinear
 from .quantizer.gptq.config import resolve_gptq_layer_group_size, resolve_gptq_layer_wbits
 from .quantizer.gptq.gptq_layer import GPTQLinear
-<<<<<<< HEAD
-from .utils.dtype import needs_bfloat16
-from .utils.quant_config import get_quant_param
-=======
 from .quantizer.mdbf.config import resolve_mdbf_layer_bits, resolve_mdbf_paths
 from .quantizer.mdbf.mdbf_layer import MDBFLinear, MultipathMDBFLinear
 from .quantizer.onebit.onebit_layer import OneBitLinear
@@ -34,7 +30,6 @@ from .utils.dtype import needs_bfloat16
 from .utils.lora import LORA_ADAPTER_SUBDIR
 from .utils.quant_config import get_quant_param, validate_quant_config
 from .utils.unfuse_moe import unfuse_moe_experts
->>>>>>> export/v1-4-0
 
 logger = getLogger(__name__)
 
@@ -433,10 +428,6 @@ class QuantizedModelLoader:
     def _cast_fp16_to_target_dtype(model: torch.nn.Module, target_dtype: torch.dtype) -> List[str]:
         """Cast fp16 params/buffers of non-quantized modules to ``target_dtype``.
 
-<<<<<<< HEAD
-        Quantized layers (``GPTQLinear``, ``DoubleBinaryLinear``) are
-        skipped so their fp16 metadata (e.g. GPTQ ``scales``) is preserved.
-=======
         Quantized layers (``GPTQLinear``, ``DoubleBinaryLinear``,
         ``MultipathMDBFLinear`` and its per-path ``MDBFLinear`` children,
         ``OneBitLinear``) are skipped so their fp16 metadata (e.g. GPTQ
@@ -445,7 +436,6 @@ class QuantizedModelLoader:
         skipping a parent does not skip its children — so ``MDBFLinear``
         (where the MDBF amplitudes actually live) must be listed in
         addition to its ``MultipathMDBFLinear`` parent.
->>>>>>> export/v1-4-0
         Only fp16 tensors are cast: fp32 params (e.g. fp32 LayerNorm in
         mixed-precision models) and other dtypes are left untouched.
 
@@ -465,9 +455,6 @@ class QuantizedModelLoader:
         converted: List[str] = []
         if target_dtype == torch.float16:
             return converted
-<<<<<<< HEAD
-        skip_types = (GPTQLinear, DoubleBinaryLinear)
-=======
         skip_types = (
             GPTQLinear,
             DoubleBinaryLinear,
@@ -475,7 +462,6 @@ class QuantizedModelLoader:
             MultipathMDBFLinear,
             OneBitLinear,
         )
->>>>>>> export/v1-4-0
         for mod_name, mod in model.named_modules():
             if isinstance(mod, skip_types):
                 continue
@@ -539,8 +525,6 @@ class QuantizedModelLoader:
                 return True
         return False
 
-<<<<<<< HEAD
-=======
     @classmethod
     def _retie_lm_head_if_needed(cls, model: torch.nn.Module, incompat) -> None:
         """Validate the just-loaded state_dict and re-tie lm_head if needed.
@@ -577,7 +561,6 @@ class QuantizedModelLoader:
             model.tie_weights()
             logger.info("Re-tied lm_head to embed_tokens after assign-load")
 
->>>>>>> export/v1-4-0
     @staticmethod
     def _resolve_dtype_from_config(
         config_dict: Dict,
@@ -1067,48 +1050,6 @@ class QuantizedModelLoader:
         name_to_module = dict(model.named_modules())
         sd_prefix_map = QuantizedModelLoader._build_state_dict_prefix_map(state_dict)
 
-<<<<<<< HEAD
-        # For VLMs with tied/shared submodules (e.g. Gemma3), the
-        # named_modules() path may differ from the state_dict key prefix.
-        # Build a suffix -> state_dict prefix map to handle this.
-        sd_prefix_map: dict[str, str] = {}
-        for key in state_dict:
-            parts = key.rsplit(".", 1)
-            if len(parts) == 2:
-                sd_prefix_map.setdefault(parts[0], parts[0])
-
-        def _get_layer_sd(name: str) -> dict:
-            prefix = name + "."
-            result = {k[len(prefix) :]: v for k, v in state_dict.items() if k.startswith(prefix)}
-            if result:
-                return result
-            # Fallback: match by layer suffix (e.g. "layers.0.self_attn.q_proj")
-            m = re.search(r"(layers\.\d+\..+)$", name)
-            if m:
-                suffix = m.group(1)
-                hits = [s for s in sd_prefix_map if s.endswith(suffix)]
-                if len(hits) > 1:
-                    logger.warning(
-                        "Ambiguous suffix %s for %s: %s",
-                        suffix,
-                        name,
-                        hits,
-                    )
-                if hits:
-                    alt_prefix = hits[0] + "."
-                    return {
-                        k[len(alt_prefix) :]: v
-                        for k, v in state_dict.items()
-                        if k.startswith(alt_prefix)
-                    }
-            return {}
-
-        for name in quantized_names:
-            if name not in name_to_module:
-                continue
-
-            layer_sd = _get_layer_sd(name)
-=======
         replaced = 0
         missing_modules = []
         missing_states = []
@@ -1128,7 +1069,6 @@ class QuantizedModelLoader:
                 state_dict,
                 sd_prefix_map,
             )
->>>>>>> export/v1-4-0
 
             if not layer_sd:
                 layer_sd, source_prefix = QuantizedModelLoader._find_layer_state(

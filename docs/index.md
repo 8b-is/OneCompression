@@ -9,11 +9,7 @@
 ---
 
 Fujitsu One Compression (OneComp) is an open-source Python library for post-training quantization of Large Language Models (LLMs).
-<<<<<<< HEAD
-It implements state-of-the-art quantization algorithms including GPTQ, DBF, RTN, and the
-=======
 It implements state-of-the-art quantization algorithms including GPTQ, DBF, MDBF, RTN, and the
->>>>>>> export/v1-4-0
 research methods **Quantization Error Propagation (QEP)** and
 **Layer-Projected Coordinate Descent (LPCD)**.
 
@@ -45,17 +41,11 @@ For full control over each step, see the [step-by-step workflow](user-guide/basi
 
 - **Quantization Error Propagation (QEP)** -- A post-training quantization method that corrects quantization errors by propagating them to subsequent layers, improving the accuracy of quantized LLMs. See [Arai & Ichikawa, NeurIPS 2025](https://openreview.net/forum?id=a3l3K9khbL) for details.
 - **Layer-Projected Coordinate Descent (LPCD)** -- A unified Post Training Quantization (PTQ) framework that extends layer-wise quantization to arbitrary submodules by optimising relaxed objectives and projecting the solutions with layer-wise quantizers. See [Ichikawa et al., 2025](https://arxiv.org/abs/2512.01546) for details.
-<<<<<<< HEAD
-- **vLLM Plugin Integration** -- Serve OneComp-quantized models with [vLLM](https://docs.vllm.ai/) via built-in plugins for DBF and Mixed-GPTQ quantization methods. Pair with [Open WebUI](https://github.com/open-webui/open-webui) for a ChatGPT-like chat experience on your local machine. See the [setup guide](user-guide/vllm-inference.md#3-chat-with-open-webui-optional).
-- **AutoBit** -- Mixed-precision quantization with ILP-based bitwidth assignment. Automatically estimates the target bitwidth from available VRAM and assigns per-layer bitwidths to minimize quantization error under the memory budget.
-- **JointQ** -- Joint quantization method that optimizes weight assignments and scale parameters simultaneously for improved quantization accuracy. Supports group-wise quantization (e.g., 4-bit, groupsize=128).
-=======
 - **vLLM Integration** -- Serve OneComp-quantized models with [vLLM](https://docs.vllm.ai/): GPTQ, JointQ, and RTN models use vLLM's built-in GPTQ plugin, while DBF and Mixed-GPTQ models are served via OneComp's own plugins. Pair with [Open WebUI](https://github.com/open-webui/open-webui) for a ChatGPT-like chat experience on your local machine. See the [setup guide](user-guide/vllm-inference.md#3-chat-with-open-webui-optional).
 - **Evaluation harness (`onecomp-eval`)** -- After quantization, benchmark served models with MT-Bench (default: English) and optional throughput metrics via a single vLLM server. See [Evaluation](user-guide/evaluation.md).
 - **AutoBit** -- Mixed-precision quantization with ILP-based bitwidth assignment. Automatically estimates the target bitwidth from available VRAM and assigns per-layer bitwidths to minimize quantization error under the memory budget.
 - **JointQ** -- Joint quantization method that optimizes weight assignments and scale parameters simultaneously for improved quantization accuracy. Supports group-wise quantization (e.g., 4-bit, groupsize=128).
 - **MDBF (Multi-Envelope Double Binary Factorization)** -- A binary factorization quantizer that approximates each weight matrix as a sum of multi-path sign matrices with multi-scale FP16 envelopes, generalizing DBF and LittleBit for aggressive low-bit (sub-1-bit) compression. Supports ADMM/gradient refinement, activation-aware initialization, and a GemLite-accelerated 1-bit inference path. See the [MDBF guide](algorithms/mdbf.md) for details.
->>>>>>> export/v1-4-0
 - **Block-wise PTQ** -- Post-quantization block-wise distillation that minimises intermediate-representation MSE against an FP16 teacher model at Transformer-block granularity. Includes greedy per-block optimisation (Phase 1) and cross-block sliding-window optimisation (Phase 2 CBQ). Supports GPTQ, DBF, and OneBit quantizers.
 - **LoRA SFT Post-Process** -- Fine-tune quantized models with LoRA adapters for accuracy recovery or domain-specific knowledge injection. Supports SFT loss, teacher distillation, and intermediate block alignment.
 - **Rotation Preprocessing** -- SpinQuant/OstQuant-based rotation preprocessing that reduces quantization error by learning optimal rotation matrices before quantization. Rotation/scaling matrices are absorbed into model weights, with online Hadamard hooks automatically registered at load time. Supports Llama and Qwen3 architectures.
@@ -72,11 +62,8 @@ Other Hugging Face-compatible models may work but are currently untested.
 | 1 | Llama | TinyLlama, Llama-2, Llama-3 | :white_check_mark: Verified |
 | 2 | Qwen3 | Qwen3-0.6B ~ 32B | :white_check_mark: Verified |
 | 3 | Gemma | Gemma 2, Gemma 3, Gemma 4 | :white_check_mark: Verified |
-<<<<<<< HEAD
-=======
 | 4 | [GPT-OSS](user-guide/gptoss.md) | openai/gpt-oss-20b, gpt-oss-120b | :white_check_mark: Verified |
 | 5 | Qwen3.6 | Qwen3.6-27B, Qwen3.6-35B-A3B | :white_check_mark: Verified |
->>>>>>> export/v1-4-0
 
 !!! note
     Support for additional architectures is planned. Contributions and test reports are welcome.
@@ -181,8 +168,6 @@ LPCD (Layer-Projected Coordinate Descent):
 }
 ```
 
-<<<<<<< HEAD
-=======
 MDBF (Multi-Envelope Double Binary Factorization):
 
 ```bibtex
@@ -197,7 +182,6 @@ MDBF (Multi-Envelope Double Binary Factorization):
 }
 ```
 
->>>>>>> export/v1-4-0
 ## License
 
 Fujitsu One Compression is released under the terms of the [LICENSE](https://github.com/FujitsuResearch/OneCompression/blob/main/LICENSE) file included in the repository.

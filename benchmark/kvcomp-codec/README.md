@@ -31,7 +31,6 @@ checkout. The resulting `source_provenance.json` is attached to every result.
 
 **Standard run:**
 ```bash
-<<<<<<< HEAD
 python benchmark/kvcomp-codec/reproduce_hayatequant_paper.py plan \
   --models-root "$MODELS_ROOT" \
   --output-root "$OUTPUT_ROOT" \
@@ -41,17 +40,6 @@ python benchmark/kvcomp-codec/reproduce_hayatequant_paper.py plan \
 python benchmark/kvcomp-codec/reproduce_hayatequant_paper.py submit-plan \
   --output-root "$OUTPUT_ROOT" \
   --partition "$SLURM_PARTITION"
-=======
-srun --gres=gpu:1 .venv/bin/python -u codec_benchmark.py \
-    model_path=/lustre/.../models/llama-3.1-8b-instruct
-```
-
-**Paper-level run** (100 timing iterations, 32 PPL windows):
-```bash
-srun --gres=gpu:1 .venv/bin/python -u codec_benchmark.py \
-    --config-name paper_run \
-    model_path=/lustre/.../models/llama-3.1-8b-instruct
->>>>>>> 17000999 (Add paper-level benchmark presets and revise README)
 ```
 
 `submit-plan` verifies and submits the exact frozen plan without hashing all

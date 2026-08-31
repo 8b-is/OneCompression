@@ -12,14 +12,7 @@ Usage::
 import pytest
 import torch
 
-<<<<<<< HEAD
-from onecomp.pre_process.prepare_rotated_model import (
-    _VALID_ROTATION_MODES,
-    prepare_rotated_model,
-)
-=======
 from onecomp.pre_process.prepare_rotated_model import _VALID_ROTATION_MODES, prepare_rotated_model
->>>>>>> export/v1-4-0
 
 from .conftest import E2E_CALIB, PROMPT, QWEN3_ID
 

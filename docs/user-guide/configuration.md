@@ -188,11 +188,7 @@ lpcd_config = LPCDConfig(
 | `gd_steps` | `int` | Gradient-descent steps per sub-problem | `20` |
 | `gd_batch_size` | `int` | Effective batch size for gradient accumulation | `16` |
 | `gd_base_lr` | `float` | Base learning rate for gradient solver | `1e-4` |
-<<<<<<< HEAD
-| `device` | `str` | Device for LPCD computation | `"cuda:0"` |
-=======
 | `device` | `str` | Device for LPCD computation | `None` |
->>>>>>> export/v1-4-0
 
 !!! tip
     `LPCDConfig()` defaults to residual-only refinement, which is the fastest

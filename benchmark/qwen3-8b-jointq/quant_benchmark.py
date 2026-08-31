@@ -102,16 +102,6 @@ def main(cfg: DictConfig):
             quantized_model=False,
         )
 
-<<<<<<< HEAD
-    if cfg.calc_ppl:
-        runner.benchmark_perplexity(
-            original_model=cfg.calc_original_ppl,
-            dequantized_model=True,
-            quantized_model=False,
-        )
-
-=======
->>>>>>> export/v1-4-0
     if cfg.calc_acc:
         runner.benchmark_accuracy(
             original_model=cfg.calc_original_acc,

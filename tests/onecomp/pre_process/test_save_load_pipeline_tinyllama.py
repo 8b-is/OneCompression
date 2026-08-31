@@ -1,11 +1,7 @@
 """Save/load round-trip tests for rotation + quantization (TinyLlama).
 
-<<<<<<< HEAD
-3 cases: GPTQ quantized, GPTQ dequantized, RTN dequantized.
-=======
 5 cases: GPTQ quantized, GPTQ dequantized, DBF quantized, DBF dequantized,
 RTN dequantized.
->>>>>>> export/v1-4-0
 Requires CUDA and model download.
 
 Copyright 2025-2026 Fujitsu Ltd.
@@ -30,11 +26,8 @@ def _cases():
     return [
         pytest.param(mid, "gptq", "quantized", id="tinyllama-gptq-save_quantized"),
         pytest.param(mid, "gptq", "dequantized", id="tinyllama-gptq-save_dequantized"),
-<<<<<<< HEAD
-=======
         pytest.param(mid, "dbf", "quantized", id="tinyllama-dbf-save_quantized"),
         pytest.param(mid, "dbf", "dequantized", id="tinyllama-dbf-save_dequantized"),
->>>>>>> export/v1-4-0
         pytest.param(mid, "rtn", "dequantized", id="tinyllama-rtn-save_dequantized"),
     ]
 
@@ -45,16 +38,10 @@ class TestSaveLoadPipelineTinyLlama:
 
     @pytest.mark.parametrize("model_id, quant_type, save_type", _cases())
     def test_save_load(self, model_id, quant_type, save_type, tmp_path):
-<<<<<<< HEAD
-        from onecomp import GPTQ, RTN, ModelConfig, Runner, load_quantized_model
-        from transformers import AutoModelForCausalLM, AutoTokenizer
-
-=======
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
         from onecomp import DBF, GPTQ, RTN, ModelConfig, Runner, load_quantized_model
 
->>>>>>> export/v1-4-0
         device = "cuda:0"
         model_config = ModelConfig(model_id=model_id, device=device)
 
@@ -81,11 +68,8 @@ class TestSaveLoadPipelineTinyLlama:
 
         if quant_type == "gptq":
             quantizer = GPTQ(wbits=4, groupsize=128)
-<<<<<<< HEAD
-=======
         elif quant_type == "dbf":
             quantizer = DBF(target_bits=1.5, iters=10, balance_iters=5)
->>>>>>> export/v1-4-0
         else:
             quantizer = RTN(wbits=4, groupsize=-1)
         runner = Runner(
@@ -105,11 +89,7 @@ class TestSaveLoadPipelineTinyLlama:
         else:
             model_before = AutoModelForCausalLM.from_pretrained(
                 rotated_config.path,
-<<<<<<< HEAD
-                torch_dtype=torch.float16,
-=======
                 dtype=torch.float16,
->>>>>>> export/v1-4-0
                 device_map="cpu",
             )
             runner.update_model_weights(model_before)
@@ -131,11 +111,7 @@ class TestSaveLoadPipelineTinyLlama:
         else:
             model = AutoModelForCausalLM.from_pretrained(
                 save_dir,
-<<<<<<< HEAD
-                torch_dtype=torch.float16,
-=======
                 dtype=torch.float16,
->>>>>>> export/v1-4-0
                 device_map=device,
             )
             tokenizer = AutoTokenizer.from_pretrained(save_dir)

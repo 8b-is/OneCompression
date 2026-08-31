@@ -18,18 +18,7 @@ Usage:
 import hydra
 from omegaconf import DictConfig, OmegaConf
 
-<<<<<<< HEAD
-from onecomp import (
-    AutoBitQuantizer,
-    CalibrationConfig,
-    GPTQ,
-    ModelConfig,
-    Runner,
-    setup_logger,
-)
-=======
 from onecomp import GPTQ, AutoBitQuantizer, CalibrationConfig, ModelConfig, Runner, setup_logger
->>>>>>> export/v1-4-0
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="validate")
@@ -39,12 +28,7 @@ def main(cfg: DictConfig):
 
     if cfg.model_id is None and cfg.model_path is None:
         raise ValueError(
-<<<<<<< HEAD
-            "Either model_id or model_path must be provided "
-            "(e.g. model_path=/path/to/model)"
-=======
             "Either model_id or model_path must be provided " "(e.g. model_path=/path/to/model)"
->>>>>>> export/v1-4-0
         )
     if cfg.model_id is not None and cfg.model_path is not None:
         raise ValueError("Specify only one of model_id or model_path")
@@ -62,13 +46,7 @@ def main(cfg: DictConfig):
             device="cuda:0",
         ),
         quantizer=quantizer,
-<<<<<<< HEAD
-        calibration_config=CalibrationConfig(
-            max_length=1024, num_calibration_samples=128
-        ),
-=======
         calibration_config=CalibrationConfig(max_length=1024, num_calibration_samples=128),
->>>>>>> export/v1-4-0
         qep=True,
     )
 

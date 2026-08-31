@@ -374,14 +374,6 @@ outputs = model.generate(**inputs, max_new_tokens=50)
 print(tokenizer.decode(outputs[0], skip_special_tokens=True))
 ```
 
-<<<<<<< HEAD
-## Block-wise PTQ
-
-Apply block-wise post-training quantization to improve accuracy after GPTQ quantization:
-
-```python
-from onecomp import CalibrationConfig, GPTQ, BlockWisePTQ, ModelConfig, Runner, setup_logger
-=======
 On macOS, the model is placed on MPS automatically when available. For vLLM serving,
 use a Linux machine with an NVIDIA GPU. See the [macOS / MPS guide](mps.md).
 
@@ -518,7 +510,6 @@ Apply block-wise post-training quantization to improve accuracy after quantizati
 
 ```python
 from onecomp import CalibrationConfig, DBF, GPTQ, JointQ, Onebit, RTN, BlockWisePTQ, ModelConfig, Runner, setup_logger
->>>>>>> export/v1-4-0
 
 setup_logger()
 
@@ -526,22 +517,6 @@ model_config = ModelConfig(
     model_id="TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T",
     device="cuda:0",
 )
-<<<<<<< HEAD
-gptq = GPTQ(wbits=4, groupsize=128)
-
-# Step 1: Quantize
-runner = Runner(model_config=model_config, quantizer=gptq)
-runner.run()
-
-# Step 2: Measure baseline PPL
-original_ppl, _, baseline_ppl = runner.calculate_perplexity(
-    original_model=True, quantized_model=True,
-)
-print(f"Original PPL:  {original_ppl:.4f}")
-print(f"Baseline PPL:  {baseline_ppl:.4f}")
-
-# Step 3: Apply BlockWisePTQ directly
-=======
 # Step 1: Choose a quantizer
 quantizer = GPTQ(wbits=4, groupsize=128)
 # quantizer = RTN(wbits=4, groupsize=128)
@@ -550,7 +525,6 @@ quantizer = GPTQ(wbits=4, groupsize=128)
 # quantizer = Onebit()
 
 # Step 2: Configure BlockWisePTQ
->>>>>>> export/v1-4-0
 blockwise_ptq = BlockWisePTQ(
     lr=1e-4,
     epochs=10,
@@ -562,19 +536,6 @@ blockwise_ptq = BlockWisePTQ(
     ),
 )
 
-<<<<<<< HEAD
-model, _ = runner.create_quantized_model(pack_weights=False, use_gemlite=False)
-blockwise_ptq.run(model, model_config)
-runner.quantized_model = model
-
-# Step 4: Measure improved PPL
-_, _, improved_ppl = runner.calculate_perplexity(quantized_model=True)
-print(f"BlockWisePTQ PPL:  {improved_ppl:.4f}")
-print(f"Improvement:       {baseline_ppl - improved_ppl:.4f}")
-```
-
-See [Post-Process](post-process.md#block-wise-ptq) for the full guide including parameter reference.
-=======
 # Step 3: Quantize, then apply BlockWisePTQ in a single pass.
 # The Runner-managed post_processes path replaces the older
 # quantize -> create_quantized_model() -> blockwise_ptq.run() sequence:
@@ -600,7 +561,6 @@ The explicit unpacked buffer path (`create_quantized_model(pack_weights=False)`
 → `BlockWisePTQ.run()`) is documented in the `BlockWisePTQ` API reference and is
 only needed when GPTQLinear bit packing cannot represent the quantizer output
 (e.g. 1-bit JointQ, or GPTQ/RTN bit widths outside `{2, 3, 4, 8}`).
->>>>>>> export/v1-4-0
 
 ## LoRA SFT: Accuracy Recovery
 
