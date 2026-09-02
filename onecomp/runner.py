@@ -113,7 +113,6 @@ class Runner:
         gpu_ids=None,
         post_processes=None,
         report_progress=True,
-        kv_config=None,
         moe_quant_experts=False,
     ):
         """__init__ method
@@ -170,14 +169,6 @@ class Runner:
                 completed steps, elapsed time, and a linear ETA estimate
                 during long quantization (calibration, chunked, multi-GPU,
                 QEP).  Set to ``False`` for quiet runs (e.g. CI).
-            kv_config (KVCompressionConfig or None):
-                Optional KV cache compression recipe
-                (:class:`onecomp.kvcomp.KVCompressionConfig`).  KV compression
-                is orthogonal to weight quantization and applied at inference
-                time; when set, its serialised recipe is written to the saved
-                model's ``config.json`` as ``kv_compression_config``, coexisting
-                with the weight ``quantization_config`` ("two-panel" config).
-                Default is None.
             moe_quant_experts (bool):
                 When ``True``, MoE experts are kept as per-expert GPTQ INT4
                 tensors (``...experts.{i}.{gate,up,down}_proj.{qweight,...}``)
@@ -276,7 +267,6 @@ class Runner:
             if self.lpcd_config.device is None and self.model_config is not None:
                 self.lpcd_config.device = str(self.model_config.get_device())
         self.report_progress = report_progress
-        self.kv_config = kv_config
 
     def check(self):
         """Check the settings
@@ -1903,16 +1893,6 @@ class Runner:
         # Add quantization config to model config
         model.config.quantization_config = quant_config
 
-        # KV cache compression is orthogonal to weight quantization: record its
-        # recipe alongside ``quantization_config`` so a serving runtime can load
-        # both ("two-panel" config).  No weight transformation is performed here.
-        if self.kv_config is not None:
-            model.config.kv_compression_config = self.kv_config.to_dict()
-            self.logger.info(
-                "Attached kv_compression_config (codec=%s) to model config",
-                getattr(self.kv_config.codec, "name", None),
-            )
-
         return model, tokenizer
 
     def _patch_k_eq_v_for_vllm(self, model, quant_config: dict) -> None:
@@ -2531,32 +2511,6 @@ class Runner:
                 legacy_path = save_path / legacy
                 if legacy_path.exists():
                     legacy_path.unlink()
-
-        # Gemma 4 PT models require BOS token for coherent generation but the
-        # upstream tokenizer_config.json omits add_bos_token.  Ensure it is
-        # set so that vLLM (and other runtimes) prepend <bos> automatically.
-        # See: https://github.com/vllm-project/vllm/issues/39827
-        tc_path = Path(save_directory) / "tokenizer_config.json"
-        if tc_path.exists():
-            tc = json.loads(tc_path.read_text())
-            if "add_bos_token" not in tc and tc.get("bos_token"):
-                tc["add_bos_token"] = True
-                tc_path.write_text(json.dumps(tc, indent=2, ensure_ascii=False) + "\n")
-                logger.info("Set add_bos_token=true in tokenizer_config.json")
-
-        # Copy auxiliary config / template files from the original model so the
-        # save directory is self-contained for VLM (image/audio) inference and
-        # for runtimes that expect e.g. ``preprocessor_config.json``,
-        # ``processor_config.json``, ``special_tokens_map.json``,
-        # ``chat_template.jinja`` to live next to the weights.
-        src_dir = self._resolve_source_model_dir()
-        if src_dir and os.path.isdir(src_dir):
-            self._copy_auxiliary_files(src_dir, save_directory)
-        else:
-            logger.warning("Source model dir not resolvable; skipping auxiliary file copy.")
-
-        logger.info(f"Quantized model saved to {save_directory}")
-        return save_directory
 
     def save_quantized_model_pt(self, save_directory: str):
         """Save the quantized model as a PyTorch .pt file.
