@@ -46,17 +46,6 @@ Full documentation is available at **[https://FujitsuResearch.github.io/OneCompr
 - **GGUF Export & Hugging Face Hub Integration**: Convert models to the GGUF v3 format (F16) for llama.cpp/Ollama with a dependency-free built-in writer, generate model cards with quantization recipes and evaluation results, and push save directories to the Hugging Face Hub. Supports Llama (SentencePiece or Llama-3-style BPE) and Qwen2 (BPE) architectures, including multi-EOS stop-token mapping. See the [GGUF Export guide](https://FujitsuResearch.github.io/OneCompression/user-guide/gguf-export/).
 - (TBD)
 
-### KV-Cache Compression
-
-| Algorithm | Description | Reference |
-|---|---|---|
-| **TaperKV** | Static age-graded precision ladder; no eviction; length-proportional allocation prevents collapse at long context. | (proposed) |
-| **ThinKV** | Per-thought static precision (R/E=4-bit, T=2-bit); TBQ buffer + KDE-calibrated L\* threshold + attention-sparsity thought classification. | [Ramachandran et al., ICLR 2026](https://openreview.net/...) |
-| **PM-KVQ** | Progressive dynamic quantization: fixed absolute high-precision window, older KV shrinks to a floor; block-wise layer allocation; K≥V. | [arXiv:2505.18610](https://arxiv.org/abs/2505.18610) |
-| **HayateQuant** | Data-free block-VQ with fixed K/V-asymmetric rates, rate-selected rotation, and role-aware scales. | (proposed) |
-| **TurboQuant** | Data-free rotated scalar Lloyd-Max quantization; Algorithm-1 quality and public-API speed baseline. | [arXiv:2504.19874](https://arxiv.org/abs/2504.19874) |
-| **FibQuant / BlockQuant** | Independent method-faithful quality baselines; BlockQuant remains descriptive where its public recipe cannot be fully matched. | — |
-| **StreamingLLM / SnapKV / H2O** | Eviction baselines. | — |
 
 ## 🤖 Supported Models
 
@@ -285,31 +274,6 @@ pre-commit run black --all-files
 uv run pre-commit run --all-files
 ```
 
-## Quick Start
-
-**Weight quantization (one line):**
-```python
-from onecomp import Runner
-Runner.auto_run(model_id="meta-llama/Llama-3.1-8B")
-```
-
-**GPTQ with QEP:**
-```python
-from onecomp import Runner
-runner = Runner(model_id="meta-llama/Llama-3.1-8B", quantizer="gptq", qep=True)
-runner.run()
-runner.save_quantized_model("./quantized")
-```
-
-**KV-cache compression:**
-```python
-from onecomp.kvcomp import KVCompressionConfig, TaperKVPolicy, kv_compressed_generate
-from transformers import AutoModelForCausalLM
-
-model = AutoModelForCausalLM.from_pretrained("...", device_map="cuda")
-kv_cfg = KVCompressionConfig(policy=TaperKVPolicy(), residual_window=0)
-out = kv_compressed_generate(model, kv_cfg, input_ids=ids, max_new_tokens=512)
-```
 ### Building Documentation Locally
 
 `--extra docs` alone is sufficient (no PyTorch `mps` / `cu*` extra required):
@@ -400,40 +364,7 @@ See the [GPT-OSS guide](docs/user-guide/gptoss.md) for HF save/load, patch detai
 - For security vulnerabilities, please **do not** open a public Issue. See our [Security Policy](./SECURITY.md) for how to report them privately.
 - For collaborations, partnerships, and other inquiries, please contact us at [contact-onecompression@cs.jp.fujitsu.com](mailto:contact-onecompression@cs.jp.fujitsu.com).
 
-**Joint weight + KV compression:**
-```python
-from onecomp import Runner
-from onecomp.kvcomp import KVCompressionConfig
-
-runner = Runner(model_id="...", quantizer="gptq",
-                kv_config=KVCompressionConfig.from_recipe("fp8"))
-runner.run()
-# config.json carries both quantization_config and kv_compression_config
-runner.save_quantized_model("./joint")
-```
-
-**HayateQuant:**
-```python
-from onecomp.kvcomp import KVCompressionConfig
-from onecomp.kvcomp.codec.hayate import build_hayatequant
-
-kv_cfg = KVCompressionConfig(codec=build_hayatequant(3), residual_window=0)
-```
-
-**vLLM serving:**
-```bash
-# The OneComp plugin reads kv_compression_config from the saved config.json.
-vllm serve ./quantized
-```
-
 ## Benchmarks
-
-The reproducible HayateQuant/TurboQuant quality and vLLM speed grid is in
-[`benchmark/kvcomp-codec`](benchmark/kvcomp-codec/README.md). The standalone
-TaperKV long-context correctness grid is in
-[`benchmark/kvcomp-longcontext`](benchmark/kvcomp-longcontext/README.md).
-Both require caller-selected model and output roots; generated results and
-Slurm logs are intentionally not versioned.
 
 The deterministic CPU-only formal compaction benchmark is in
 [`benchmark/compaction`](benchmark/compaction/README.md). It measures real host
