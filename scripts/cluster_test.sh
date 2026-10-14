@@ -5,6 +5,7 @@
 set -euo pipefail
 
 : "${ONECOMP_REPO:?ONECOMP_REPO is required}"
+: "${ONECOMP_CALIB_CACHE:?ONECOMP_CALIB_CACHE is required}"
 : "${CI_COMMIT_SHA:?CI_COMMIT_SHA is required}"
 : "${CI_JOB_TOKEN:?CI_JOB_TOKEN is required}"
 : "${CI_SERVER_HOST:?CI_SERVER_HOST is required}"
@@ -18,6 +19,11 @@ set -euo pipefail
 : "${CI_TORCH_EXTRA:?CI_TORCH_EXTRA is required}"
 
 CI_SLURM_EXCLUDE="${CI_SLURM_EXCLUDE:-}"
+CI_SLURM_PENDING_TIMEOUT_SECONDS="${CI_SLURM_PENDING_TIMEOUT_SECONDS:-900}"
+if [[ ! "${CI_SLURM_PENDING_TIMEOUT_SECONDS}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "ERROR: CI_SLURM_PENDING_TIMEOUT_SECONDS must be a positive integer" >&2
+  exit 1
+fi
 SLURM_EXCLUDE_LINE=""
 if [[ -n "${CI_SLURM_EXCLUDE}" ]]; then
   SLURM_EXCLUDE_LINE="#SBATCH --exclude=${CI_SLURM_EXCLUDE}"
@@ -39,27 +45,26 @@ echo "mode: ${CLUSTER_MODE}"
 echo "job label: ${JOB_LABEL}"
 echo "skip uv sync: ${SKIP_UV_SYNC}"
 echo "target: ${PYTEST_TARGET}"
+echo "pending timeout: ${CI_SLURM_PENDING_TIMEOUT_SECONDS}s"
 
 cd "${ONECOMP_REPO}"
 mkdir -p output error .cache
 
-# Sync repo to the MR commit. Temporarily swap origin to CI_JOB_TOKEN auth; restore on exit.
+# Sync repo to the MR commit without modifying the shared repository config.
 # flock: parallel matrix jobs share this Lustre checkout — serialize fetch/checkout.
-ORIGIN_URL="$(git remote get-url origin)"
-git remote set-url origin "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
-trap 'git remote set-url origin "${ORIGIN_URL}"' EXIT
-
+AUTH_REPO_URL="https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
 REF="${CI_COMMIT_REF_NAME:-}"
-flock "${ONECOMP_REPO}/.cache/git-sync.lock" bash -c '
-  set -euo pipefail
-  cd "'"${ONECOMP_REPO}"'"
-  if [[ -n "'"${REF}"'" ]]; then
-    git fetch origin "'"${REF}"'"
+(
+  flock 9
+  if [[ -n "${REF}" ]]; then
+    git fetch "${AUTH_REPO_URL}" "${REF}"
   else
-    git fetch origin
+    # Detached/manual pipelines may not provide a ref; fetch the exact commit
+    # because fetching the remote default branch need not include it.
+    git fetch "${AUTH_REPO_URL}" "${CI_COMMIT_SHA}"
   fi
-  git checkout "'"${CI_COMMIT_SHA}"'"
-'
+  git checkout "${CI_COMMIT_SHA}"
+) 9>"${ONECOMP_REPO}/.cache/git-sync.lock"
 
 PYTEST_TARGET_Q=""
 for target in ${PYTEST_TARGET}; do
@@ -134,6 +139,7 @@ uv --version
 
 export UV_PROJECT_ENVIRONMENT="${CI_UV_VENV}"
 export UV_CACHE_DIR="${ONECOMP_REPO}/.cache/uv"
+export ONECOMP_CALIB_CACHE=$(printf '%q' "${ONECOMP_CALIB_CACHE}")
 
 if [[ "${RUN_UV_SYNC}" -eq 1 ]]; then
   echo "=== uv sync (${CI_TORCH_EXTRA}, dev, vllm, visualize) -> ${CI_UV_VENV} on \$(uname -m) ==="
@@ -143,13 +149,38 @@ if [[ "${RUN_UV_SYNC}" -eq 1 ]]; then
     uv sync --extra ${CI_TORCH_EXTRA} --extra dev --extra vllm --extra visualize --frozen
 fi
 
+# Keep every test offline, not only the preflight verification. This makes an
+# unexpected calibration cache miss fail locally instead of contacting the Hub.
+export HF_DATASETS_OFFLINE=1
+export HF_HUB_OFFLINE=1
+
+cache_lock="\${ONECOMP_CALIB_CACHE}/.c4.lock"
+if [[ ! -r "\${cache_lock}" ]]; then
+  echo "ERROR: fixed calibration cache lock is not readable: \${cache_lock}" >&2
+  echo "Regenerate the cache with scripts/prepare_calibration_cache.py." >&2
+  exit 1
+fi
+exec 8<"\${cache_lock}"
+# Hold a reader lock through pytest so regeneration cannot replace the cache
+# between preflight verification and a later calibration-data load.
+flock -s 8
+
+if [[ ! -r "\${ONECOMP_CALIB_CACHE}/c4/dataset_dict.json" ]]; then
+  echo "ERROR: fixed calibration cache is not readable: \${ONECOMP_CALIB_CACHE}/c4" >&2
+  echo "Prepare it with scripts/prepare_calibration_cache.py before running cluster CI." >&2
+  exit 1
+fi
+uv run --no-sync python scripts/prepare_calibration_cache.py --verify
+
 echo "=== job info ==="
 echo "host:        \$(hostname)"
 echo "arch:        \$(uname -m)"
 echo "job id:      \${SLURM_JOB_ID:-N/A}"
 echo "node list:   \${SLURM_JOB_NODELIST:-N/A}"
 echo "cpus:        \${SLURM_CPUS_PER_TASK:-N/A}"
-uv run python - <<'PY'
+# The setup job is the only writer to the shared venv. Without --no-sync,
+# parallel matrix jobs can reinstall torch while another job is importing it.
+uv run --no-sync python - <<'PY'
 import platform, torch
 print(f"python arch: {platform.machine()}")
 print(f"torch:       {torch.__version__}")
@@ -160,7 +191,7 @@ PY
 echo "================"
 
 if [[ "${RUN_PYTEST}" -eq 1 ]]; then
-  uv run pytest -v --maxfail=0 --durations=20 ${PYTEST_M_ARGS} ${PYTEST_TARGET_Q}
+  uv run --no-sync pytest -v --maxfail=0 --durations=20 ${PYTEST_M_ARGS} ${PYTEST_TARGET_Q}
 else
   echo "=== cluster setup passed ==="
 fi
@@ -177,14 +208,20 @@ exit_file="${ONECOMP_REPO}/output/tests-${JOB_LABEL}-${job_id}.exit"
 stream_pid=""
 
 cleanup() {
+  trap - EXIT HUP INT TERM
   if [[ -n "${stream_pid}" ]]; then
     kill "${stream_pid}" 2>/dev/null || true
     wait "${stream_pid}" 2>/dev/null || true
     stream_pid=""
   fi
+  # Safe after normal completion, and avoids orphaning a job if squeue is unavailable.
+  scancel "${job_id}" 2>/dev/null || true
   rm -f "${job_script}"
 }
 trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # Stream GPU job log to GitLab CI in real time (SSH stdout → Runner job log).
 (
@@ -195,8 +232,44 @@ trap cleanup EXIT
 ) &
 stream_pid=$!
 
-# Wait for SLURM job to leave the queue, then poll for .exit (written by trap on GPU node).
-while squeue -j "${job_id}" -h 2>/dev/null | grep -q .; do
+# Wait for SLURM job to leave the queue, reporting its state and bounding PENDING time.
+pending_started=""
+last_status_report=-60
+squeue_failures=0
+while true; do
+  if queue_status="$(squeue -j "${job_id}" -h -o '%T|%R' 2>/dev/null | head -n 1)"; then
+    squeue_failures=0
+  else
+    squeue_failures=$((squeue_failures + 1))
+    if ((squeue_failures >= 3)); then
+      echo "ERROR: failed to query SLURM job ${job_id} ${squeue_failures} consecutive times" >&2
+      exit 1
+    fi
+    echo "WARNING: failed to query SLURM job ${job_id}; retrying in 5s (${squeue_failures}/3)" >&2
+    sleep 5
+    continue
+  fi
+  if [[ -z "${queue_status}" ]]; then
+    break
+  fi
+
+  job_state="${queue_status%%|*}"
+  job_reason="${queue_status#*|}"
+  if (( SECONDS - last_status_report >= 60 )); then
+    echo "SLURM job ${job_id}: state=${job_state}, reason=${job_reason}"
+    last_status_report=${SECONDS}
+  fi
+
+  if [[ "${job_state}" == "PENDING" ]]; then
+    if [[ -z "${pending_started}" ]]; then
+      pending_started=${SECONDS}
+    elif (( SECONDS - pending_started >= CI_SLURM_PENDING_TIMEOUT_SECONDS )); then
+      echo "ERROR: SLURM job ${job_id} remained PENDING for ${CI_SLURM_PENDING_TIMEOUT_SECONDS}s (reason=${job_reason})" >&2
+      exit 1
+    fi
+  else
+    pending_started=""
+  fi
   sleep 5
 done
 

@@ -220,28 +220,6 @@ runner.run()
 !!! info
     Chunked calibration is mathematically exact -- it accumulates \(X^T X\) across batches without approximation.
 
-## Multi-GPU Quantization
-
-Distribute layer-wise quantization across multiple GPUs:
-
-```python
-runner = Runner(
-    model_config=model_config,
-    quantizer=gptq,
-    multi_gpu=True,
-)
-runner.run()
-
-# Or specify particular GPUs
-runner = Runner(
-    model_config=model_config,
-    quantizer=gptq,
-    multi_gpu=True,
-    gpu_ids=[0, 2, 3],
-)
-runner.run()
-```
-
 ## Comparing Multiple Quantizers
 
 Run multiple quantizers in a single session with shared calibration data:
@@ -360,6 +338,12 @@ runner.save_quantized_model("./output/my_quantized_model")
 # Or save dequantized FP16 weights
 runner.save_dequantized_model("./output/my_dequantized_model")
 ```
+
+!!! note "Qwen3.6 save format"
+    For confirmed downstream workflows that require the full Hugging Face
+    wrapper layout, including vLLM serving and the current GGUF export workflow,
+    save Qwen3.6 models with `save_format="full_wrapper"`. See
+    [Basic Usage](basic-usage.md#step-5-save-the-model).
 
 ### Load a saved quantized model
 

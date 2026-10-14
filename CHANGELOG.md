@@ -1,6 +1,6 @@
 # Change log
 
-## Unreleased
+## [v1.5.0] 2026-mm-dd
 
 ### Formal agent context compaction
 
@@ -83,11 +83,97 @@
   documented installation extra reproducible with locked environments.
 - Kept compaction analysis and MCP tool registration importable without torch by
   lazily loading weight-outlier analysis and torch-backed VRAM estimation paths.
-## [v1.4.0] 2026-08-dd
+
+## [v1.4.0] 2026-10-09
+
+### Breaking Changes
+
+- Removed Runner's layer-wise multi-GPU quantization and its `multi_gpu` / `gpu_ids`
+  arguments. Remove these arguments from existing `Runner(...)` calls and use the
+  standard quantization workflow. Distributed post-processing via
+  `GlobalPTQDistributed` remains available.
+
+### New Features
+
+- **MDBF Global PTQ**: `GlobalPTQ` and `GlobalPTQDistributed` now optimize MDBF
+  amplitude parameters through KL distillation. Set `optimize_binary=True` to also
+  train binary factors using a straight-through estimator (STE). See the
+  [MDBF GlobalPTQ example](example/post_process/example_global_ptq_mdbf.py).
+- **Global PTQ device placement**: `GlobalPTQ` accepts `student_device` and
+  `teacher_device`; `GlobalPTQDistributed` accepts `teacher_device`. The distributed
+  implementation now defaults the teacher to CPU when using DeepSpeed or multiple
+  processes, reducing GPU memory usage.
+- **MoE router fine-tuning**: added `RouterFineTuning`, a post-process that trains
+  only router parameters with next-token prediction loss while quantized experts
+  and other weights remain frozen. Results use the normal quantized-model save/load
+  workflow. See the [router fine-tuning example](example/post_process/example_router_fine_tuning.py).
+- **MDBF GGUF export**: plain and rotated MDBF checkpoints can now be exported for
+  stock llama.cpp through the fallback path. Dense weights are reconstructed and
+  online Hadamard transforms are folded into them before conversion. The default
+  `Q4_K_M` output is re-quantized and does not retain MDBF's low-bit compression;
+  use `Q8_0` or `qtype=None` (f16, Python API only) to reduce additional quantization
+  error. See the [CPU inference guide](docs/user-guide/cpu-inference.md).
+
+### Environment
+
+- Added an isolated, dependency-locked **OpenVINO 2026.3.1** environment and a
+  OneComp GPTQ 4-bit text-generation export example. Checkpoint metadata is
+  normalized in a temporary copy without modifying the source checkpoint.
+  See the [OpenVINO export guide](envs/openvino/README.md) for supported-model
+  requirements and inference setup.
+
+### Bug Fixes
+
+- GGUF export now rejects forced `direct` and `mixed` modes for non-GPTQ layouts
+  and rotated checkpoints. Use `auto` or `fallback` for these checkpoints.
+- Hardened Global PTQ state restoration for GPTQ, DBF, and MDBF after training
+  failures, and rollback to the initial state when distributed training does not
+  improve the baseline loss.
+
+### Tests (CI)
+
+- Added README example-link validation and timeout handling for pending SLURM
+  test jobs.
+
+## [v1.3.4] 2026-09-18
+
+### Bug Fix
+
+- Resolve all quantizer-specific tensor state in the quantized-layer replacement path before generic state-dict key remapping. This prevents Gemma4 multimodal parameters such as `audio_tower.rel_pos_enc.inv_timescales` from capturing a GPTQ `scales` tensor, and supports GPTQ/DBF/MDBF/OneBit checkpoints with VLM/text wrapper prefix differences.
+- Fix scale layout handling for `groupsize=-1` in RTN fallback. This fallback is used when an MoE expert receives no routed calibration tokens, because GPTQ cannot compute activation-based statistics for that expert. The fix keeps the fallback result compatible with GPTQ's per-channel dequantization path.
+- Fix MPS loading of large sharded checkpoints by loading weights on CPU before moving the model to MPS.
+- Reject chunked calibration (`CalibrationConfig(batch_size=...)`) on MPS, where it is not supported.
+- Fix MoE fusion for Gemma 4 MoE and Qwen MoE models by preserving the `up_proj` and `down_proj` weight dtypes when allocating fused tensors.(`unfuse_moe.py`)
+- Support `UserDict`-based shared KV states when QEP processes transformer blocks one at a time.
+
+### Documentation
+
+- Clarified that OneComp is released under the MIT License and that licenses for dependency OSS may change when dependencies are updated.
+- Clarify the confirmed Qwen3.6 `save_format="full_wrapper"` workflows, including vLLM serving and the current GGUF export workflow.
+
+### Tests (CI)
+
+- Make cluster CI use an explicitly prepared, content-verified C4 calibration
+  cache from shared storage. This removes its dependency on Hugging Face Hub
+  connectivity and generated config hashes, which previously caused C4 loading
+  to fail on offline compute nodes despite unrelated cached configs being
+  present. Add an intentional cache preparation/verification script and fail
+  fast when `ONECOMP_CALIB_CACHE/c4` is missing or invalid.
+- Fix parallel cluster test jobs racing on the shared repository's
+  `.git/config.lock`. The cluster test orchestrator now fetches directly from
+  the authenticated CI URL under the existing lock without temporarily
+  rewriting the `origin` remote.
+
+## [v1.3.3] 2026-09-03
 
 ### Enhancement
 
 - Add device mode synchronization between ModelConfig and QEPConfig.
+
+### Bug Fix
+
+- Stop saving perm in `GPTQLinear` when `actorder=True`, as it is unnecessary for inference and causes vLLM serving errors.
+- Support retrying Cholesky decomposition with an increased damping coefficient during the QEP loop.
 
 ## [v1.3.2] 2026-08-24
 
