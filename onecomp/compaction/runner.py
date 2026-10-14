@@ -68,7 +68,7 @@ class CompactionRunner:
         *,
         unit_counter: Callable[[str], int] = len,
     ) -> None:
-        self.config = config or CompactionConfig()
+        self.config = config if config is not None else CompactionConfig()
         if not callable(unit_counter):
             raise TypeError("unit_counter must be callable")
         self.unit_counter = unit_counter
