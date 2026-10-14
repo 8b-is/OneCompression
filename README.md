@@ -334,6 +334,7 @@ See [`notebook/README.md`](./notebook/README.md) for local setup, or the
 | CPU Inference | [example_gptq_gguf_cpu.py](./example/cpu_inference/example_gptq_gguf_cpu.py) | Export GPTQ quantized models to GGUF and run CPU inference |
 | | [example_mixed_gptq_gguf_cpu.py](./example/cpu_inference/example_mixed_gptq_gguf_cpu.py) | Export Mixed-GPTQ quantized models to GGUF and run CPU inference |
 | | [example_serve_cpu.py](./example/cpu_inference/example_serve_cpu.py) | Serve a GGUF model with llama.cpp on CPU |
+| MCP | [example_mcp_client.py](./example/example_mcp_client.py) | Minimal stdio JSON-RPC client for MCP tool calls |
 | Context Compaction | [example_arc_engine.py](./example/compaction/example_arc_engine.py) | Minimal LLM-free agent loop with exact observation recall |
 
 ## 🔌 vLLM Inference
