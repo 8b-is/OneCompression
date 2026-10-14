@@ -4,85 +4,11 @@
 
 ### Formal agent context compaction
 
-- Added the production `onecomp.compaction` `formal-v1` profile with
-  occurrence-addressed fixed-width IDs, exactly-once host event keys,
-  transactional SQLite WAL persistence, integrity verification, stable
-  body-free catalog pagination, and explicit migration from the experimental
-  JSONL format.
-- Added bounded exact full, metadata, deterministic text-chunk, character-range,
-  and token-ID recovery. Oversized full recalls fail closed and direct callers,
-  host hooks, OpenHands, and MCP can use chunk/range recovery.
-- Added `CompactionConfig` and `CompactionRunner` as standalone top-level APIs,
-  plus `GuardedProviderAdapter` for real host transcript replacement and an
-  auditable final provider-request budget check.
-- Hardened MCP sessions with random hashed tokens, tenant binding, TTL/capacity
-  controls, and operation leases. Persistent formal archives retain only a
-  hashed tenant binding and reject simultaneous sessions or cross-tenant
-  resume. Added a stateless MCP `2026-07-28` profile with discovery,
-  per-request negotiation, structured content, output schemas, TTL/cache
-  metadata, and opaque pagination cursors; initialized legacy clients remain
-  supported through automatic routing.
-- Updated PostToolUse adapters for current host contracts, including Codex
-  completed-output replacement with an explicit archival-only compatibility
-  mode, migrated hook storage to the formal archive, generated an OpenCode
-  plugin, and moved the optional OpenHands condenser to the formal runner.
-- Added the `onecomp-arc` operational CLI (`init`, agent-safe `run`, `guide`,
-  `doctor`, `status`, `record`, `catalog`, bounded `recall`, redacted `export`,
-  `migrate`, and overwrite-safe plugin generation). The command boundary
-  preserves child status and fails open when durable archival is unavailable.
-- Added body-free single-run reports and professional white-base PNG/SVG
-  dashboards under `onecomp.analyzer.compaction`, plus a deterministic public
-  CPU benchmark in `benchmark/compaction`.
-- Made analyzer report writes atomic and strengthened report validation against
-  malformed numeric, identity, privacy, and high-cardinality rendering inputs.
-- Made formal body reads checksum-verifying, created SQLite archives with a
-  private mode before opening them, and made CLI report/config and generated
-  plugin writes atomic. Citation head/tail previews now honor independent
-  limits without duplicated overlap.
-- Added formal fault-injection, concurrency, restart, Unicode reconstruction,
-  host-wire, provider-boundary, concurrent multi-agent MCP, CLI, benchmark,
-  privacy, and visualization regression tests.
-- Added an `openhands` installation extra and a native-SDK integration contract
-  test for immutable views, condensation application, and exact chunk recall.
-- Restricted setuptools package discovery to `onecomp*` and `vllm_plugins*` so
-  generated build trees, examples, benchmarks, and validation scripts cannot be
-  recursively bundled into release wheels.
-- Hardened formal compaction after scale review: failed ARC-looking actions now
-  consume the per-response allowance, provider content blocks share one budget
-  projection, catalog responses no longer carry null observation tags, and
-  empty host commands remain archivable.
-- Made summary-cap construction linear, added hashed sparse-block SQLite
-  range/chunk reads without body duplication, batched recall telemetry and
-  legacy migration commits, streamed CLI
-  exports and oversized fail-open output, and removed redundant provider copies
-  and archive re-reads.
-- Added `_catalog find`, host-authoritative formal token budgeting, exact-filtered
-  FTS5 trigram progress search with a portable literal fallback, configurable
-  SQLite durability, and path-redacted analyzer reports.
-- Made hook recall sandbox-safe by opening committed archives read-only and
-  addressing the recall entry point through the hook's own Python environment
-  instead of relying on the agent shell's `PATH`.
-- Added provenance-checked compaction summaries, mixed human/tool block
-  preservation, explicit untrusted-tool envelopes, metadata-wide archive
-  digests with verified v1-to-v2 migration, stable growing-WAL migration IDs,
-  Unicode-casefolded catalog search, and two-phase provider/session boundaries.
-- Made MCP builders default to authenticated `formal-v1` sessions, bounded
-  model-controlled string schemas and handlers, and timeout/type-safe generated
-  host plugins. The direct legacy session function retains explicit
-  compatibility defaults for staged migration.
-- Added validated observation renderings, signed SQLite integer bounds, WAL
-  mode verification, and cross-process leases for persistent MCP archives.
-- Preserved structured summary entries across re-compaction, made formal
-  response metadata deeply immutable, tightened compatibility WAL replay, and
-  added exact-line and observation-bound MCP evidence checks.
-- Rejected malformed Unicode in hook and OpenHands identities and bodies
-  instead of silently replacing it while deriving archive or occurrence IDs.
-- Isolated standalone commands in a POSIX process group so timeout cleanup also
-  terminates descendants that retain the captured output pipe.
-- Synchronized the `openhands` optional dependency into `uv.lock`, making its
-  documented installation extra reproducible with locked environments.
-- Kept compaction analysis and MCP tool registration importable without torch by
-  lazily loading weight-outlier analysis and torch-backed VRAM estimation paths.
+- Added the production `onecomp.compaction` `formal-v1` profile with durable SQLite WAL archives, integrity and provenance checks, stable catalogs, explicit migration from JSONL, bounded exact recovery, and efficient chunk/range reads without duplicating stored bodies.
+- Added standalone compaction and provider APIs with host-authoritative budgeting, guarded transcript replacement, summary preservation, and updated PostToolUse, Codex, OpenCode, and OpenHands integrations.
+- Hardened MCP and archive operations with authenticated tenant-bound sessions, TTL/capacity limits, leases, safe pagination/search, immutable responses, validated tool inputs, and compatibility routing for legacy clients.
+- Added the `onecomp-arc` operational CLI, atomic and redacted reports, white-base PNG/SVG dashboards, deterministic CPU benchmarks, and sandbox-safe hook recall and export workflows.
+- Expanded reliability, privacy, Unicode, concurrency, restart, migration, provider-boundary, CLI, MCP, visualization, and native-SDK tests, while tightening package discovery, optional dependency locking, generated-file safety, and torch-free imports.
 
 ## [v1.4.0] 2026-10-09
 
