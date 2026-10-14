@@ -860,6 +860,9 @@ class SQLiteObservationArchive:
             conditions.append("instr(tags_json, ?) > 0")
             params.append(json.dumps(tag, ensure_ascii=False))
         params.append(limit + 1)
+        # All entries in `conditions` are fixed string literals chosen from the
+        # branches above; only `params` carries caller-supplied values, bound
+        # positionally below. The dynamic join is not an injection vector.
         sql = (
             "SELECT sequence, obs_id, source_key, cmd_signature, returncode, "
             "created_step, extra_json, tags_json, created_ns, content_sha256, "
@@ -868,7 +871,7 @@ class SQLiteObservationArchive:
             + " ORDER BY sequence LIMIT ?"
         )
         with self._lock:
-            rows = self._conn.execute(sql, params).fetchall()
+            rows = self._conn.execute(sql, params).fetchall()  # nosemgrep
         has_more = len(rows) > limit
         items = tuple(self._metadata_from_row(row) for row in rows[:limit])
         return CatalogPage(
@@ -1117,13 +1120,16 @@ class SQLiteObservationArchive:
         ):
             raise ValueError("batch_size must be an integer between 1 and 10000")
         self.flush_recall_metrics()
-        fields = (
-            "*"
+        select = (
+            "SELECT * FROM observations WHERE sequence > ? AND sequence <= ? "
+            "ORDER BY sequence LIMIT ?"
             if include_bodies
             else (
-                "sequence, obs_id, source_key, cmd_signature, returncode, created_step, "
-                "extra_json, tags_json, created_ns, content_sha256, char_count, "
-                "line_count, byte_count, record_sha256, last_recalled, n_recalls"
+                "SELECT sequence, obs_id, source_key, cmd_signature, returncode, "
+                "created_step, extra_json, tags_json, created_ns, content_sha256, "
+                "char_count, line_count, byte_count, record_sha256, last_recalled, "
+                "n_recalls FROM observations WHERE sequence > ? AND sequence <= ? "
+                "ORDER BY sequence LIMIT ?"
             )
         )
         cursor = -1
@@ -1135,9 +1141,7 @@ class SQLiteObservationArchive:
         while True:
             with self._lock:
                 rows = self._conn.execute(
-                    f"SELECT {fields} FROM observations "
-                    "WHERE sequence > ? AND sequence <= ? "
-                    "ORDER BY sequence LIMIT ?",
+                    select,
                     (cursor, high_watermark, batch_size),
                 ).fetchall()
             if not rows:
