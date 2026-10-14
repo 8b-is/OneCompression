@@ -124,6 +124,14 @@ def looks_like_action_intent(text: object) -> bool:
     return isinstance(text, str) and _ACTION_INTENT_RE.match(text.lstrip().lower()) is not None
 
 
+CITATION_RECOVERY_TEXT = (
+    "Use _recall only when the complete item fits. Otherwise use "
+    "_recall_chunk or _recall_range. Use _catalog [find <query>] to "
+    "rediscover occurrences. "
+    "Preview text is not the archived body."
+)
+
+
 def format_citation(
     record: ObservationRecord,
     *,
@@ -153,10 +161,7 @@ def format_citation(
         f'chars="{record.char_count}" bytes="{record.byte_count}" '
         f'sha256="{record.content_sha256}">\n'
         f"<command>{_bounded_escape(record.cmd_signature, 160)}</command>{preview}\n"
-        "<recovery>Use _recall only when the complete item fits. Otherwise use "
-        "_recall_chunk or _recall_range. Use _catalog [find <query>] to "
-        "rediscover occurrences. "
-        "Preview text is not the archived body.</recovery>\n"
+        f"<recovery>{CITATION_RECOVERY_TEXT}</recovery>\n"
         "</observation_ref>"
     )
 

@@ -56,8 +56,14 @@ except ImportError as exc:  # pragma: no cover - exercised only without the opti
 from ..compactor import SUMMARY_HEADER
 from ..config import CompactionConfig
 from ..formal import FormalArcError
+from ..formal.protocol import CITATION_RECOVERY_TEXT
 from ..runner import CompactionRunner
 from .messages import message_role, message_text
+
+_OPENHANDS_RECOVERY_TEXT = (
+    "Call arc_recall with full only when the item fits; otherwise use "
+    "chunk or range. Call arc_list_observations to rediscover every occurrence."
+)
 
 _RUNTIMES: dict[str, "OpenHandsArcCondenser"] = {}
 _RUNTIMES_LOCK = threading.RLock()
@@ -309,13 +315,7 @@ class OpenHandsArcCondenser(RollingCondenser):
             ),
             summary,
         )
-        summary = summary.replace(
-            "Use _recall only when the complete item fits. Otherwise use "
-            "_recall_chunk or _recall_range. Use _catalog to rediscover every "
-            "occurrence.",
-            "Call arc_recall with full only when the item fits; otherwise use "
-            "chunk or range. Call arc_list_observations to rediscover every occurrence.",
-        )
+        summary = summary.replace(CITATION_RECOVERY_TEXT, _OPENHANDS_RECOVERY_TEXT)
         digest = hashlib.sha1("\x1f".join(event_ids).encode()).hexdigest()[:16]
         condensation = Condensation(
             forgotten_event_ids=forgotten_event_ids,
