@@ -87,6 +87,7 @@ nav:
       - Basic Usage: user-guide/basic-usage.md
       - macOS / MPS: user-guide/mps.md
       - CLI: user-guide/cli.md
+      - Context Compaction: user-guide/arc-compaction.md
       - Configuration: user-guide/configuration.md
       - Pre-Process (Rotation): user-guide/pre-process.md
       - Post-Process (Global PTQ / Block-wise PTQ / Router Fine-Tuning / LoRA SFT): user-guide/post-process.md
