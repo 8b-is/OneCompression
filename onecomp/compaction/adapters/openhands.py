@@ -551,7 +551,8 @@ class OpenHandsArcListTool(ToolDefinition[OpenHandsArcListAction, OpenHandsArcLi
                 description=(
                     "Search the bounded ARC observation index by original command/path. "
                     "Use when a strict summary cap leaves bare or omitted handles, then "
-                    "call arc_recall with the returned obs_id."
+                    "call arc_recall with the returned obs_id. When multiple matches are "
+                    "returned, prefer the first result — observations are ordered newest first."
                 ),
                 action_type=OpenHandsArcListAction,
                 observation_type=OpenHandsArcListObservation,
