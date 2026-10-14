@@ -354,8 +354,12 @@ class OpenHandsArcCondenser(RollingCondenser):
             assert self._engine.archive is not None
             parent = by_id.get(str(getattr(event, "action_id", "")))
             parent_action = getattr(parent, "action", parent)
-            if isinstance(parent_action, OpenHandsArcRecallAction) and self._engine.archive.has(
-                parent_action.obs_id
+            observation = getattr(event, "observation", None)
+            is_error = bool(getattr(observation, "is_error", False))
+            if (
+                not is_error
+                and isinstance(parent_action, OpenHandsArcRecallAction)
+                and self._engine.archive.has(parent_action.obs_id)
             ):
                 # A recalled body is already archived under its original ID.
                 # Reusing that handle prevents recursive duplicate observations
@@ -365,8 +369,7 @@ class OpenHandsArcCondenser(RollingCondenser):
             command = _event_command(parent) or _bounded_command(
                 str(getattr(event, "tool_name", "tool"))
             )
-            observation = getattr(event, "observation", None)
-            returncode = 1 if bool(getattr(observation, "is_error", False)) else 0
+            returncode = 1 if is_error else 0
             record = self._engine.record_observation(
                 command=command,
                 content=text,
